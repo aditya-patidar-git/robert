@@ -68,7 +68,7 @@ function Home() {
 
     return (
         <div className="p-5 font-sans max-w-[1000px] mx-auto">
-            <h2 className="text-xl font-semibold mb-4">📞 Kadel Labs Voice Agent — MVP</h2>
+            <h2 className="text-xl font-semibold mb-4">📞 Robert Voice Agent — MVP</h2>
 
             <div className="flex items-center justify-between gap-2">
                 <NumberInputList numbers={numbers} onChange={handleNumberChange} />
