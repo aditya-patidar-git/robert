@@ -1,0 +1,202 @@
+Frontend Development Plan — React.js + MUI (JavaScript) 
+
+1. Project Setup 
+
+- Framework: React.js (with Vite) 
+- Routing: React Router v6 
+- Component Library: Material UI (MUI v5) with UMT theme (colors, fonts) 
+- Styling: MUI for components; Tailwind CSS optional for utilities 
+- State/data: React Query (TanStack) 
+- Forms: React Hook Form 
+- Charts: Recharts 
+- WebSocket client: native WebSocket API 
+- Testing: Jest + React Testing Library 
+- Layout: Sidebar (MUI Drawer), Topbar (MUI AppBar), MainContent (MUI Container) 
+
+2. Routing & Pages 
+
+Routes (all require auth except /login): 
+/login                  -> LoginPage 
+/dashboard              -> DashboardPage 
+/users                  -> UsersPage 
+/prompts                -> PromptsPage 
+/models                 -> ModelsPage 
+/audio-telephony        -> AudioTelephonyPage 
+/kb                     -> KBPage 
+/transcripts            -> TranscriptsPage 
+/transcripts/:id        -> TranscriptDetailPage 
+/crm                    -> CRMPlaceholderPage (pending client decision) 
+/privacy                -> PrivacyPage 
+/observability          -> ObservabilityPage 
+/complaints             -> ComplaintsPage 
+/system                 -> SystemConfigPage 
+/profile                -> ProfilePage 
+
+3. Authentication & RBAC 
+
+- Login: email + password 
+- MFA: toggle in Profile (off by default, user can enable) 
+- Self-registration: allowed + admin-created users 
+- Blocked users: explicit error message 
+- Roles: owner / admin / user 
+- Route Guards: role-based route protection 
+- Session Handling: logout on 401, redirect to /login 
+
+4. Dashboard / Monitoring 
+
+- Active calls (via WebSocket) 
+- System metrics (via REST): latency, MOS, active calls 
+- Alerts auto-clear after resolution 
+- Quick toggles: MCP on/off, routing switches 
+
+5. User Management 
+
+- UsersPage: 
+  - Table with search, filters, pagination 
+  - Actions: approve, block, exclude, delete 
+  - Create User modal 
+  - Allowlist Manager 
+  - Audit Log Viewer 
+
+6. Knowledge Base (KB) 
+
+- Upload files: PDF/HTML/MD, max 1 MB 
+- File table: title, tags, version, updated, drift badge 
+- Re-ingest button 
+- Drift detection: backend-driven; UI shows warnings + re-ingest option 
+- Retrieval Tester: query → passage + similarity score 
+
+7. Prompts & AI Controls 
+
+- Global Prompt Editor: edit, save, rollback 
+- Model & Voice Selector 
+- Voice Preview: play audio samples from backend 
+- AI Parameters: sliders for temperature, top-p, max tokens, speech rate 
+
+8. Audio & Telephony 
+
+- Audio Settings: 
+  - VAD threshold (100–2000 ms) 
+  - Start/end padding 
+  - Barge-in policy (pause/stop) 
+- Telephony Routing: 
+  - Configure existing numbers only 
+  - Assign: AI agent, transfer number, voicemail, after-hours 
+- CLI Presentation: global setting only 
+
+9. CRM Integration Controls (Pending) 
+
+- Placeholder page: /crm 
+- Banner: “CRM integration pending client decision (Playwright vs API)” 
+- Informational toggle for preference (no functional tasks) 
+
+10. Transcripts & Provenance 
+
+- Transcript List: filter/search 
+- Transcript Detail: 
+  - Speaker segmentation 
+  - Confidence scores 
+  - Provenance docs + similarity 
+  - Recording playback (if permitted) 
+  - Actions: export (ZIP), redact, delete 
+
+11. Privacy, Security & Compliance 
+
+- PrivacyPage: 
+  - Editable consent script 
+  - Retention sliders (audio vs metadata) 
+  - DSAR panel: search caller → export ZIP or delete 
+  - DSAR logs 
+- Redaction: backend-enforced, UI shows redacted text 
+
+12. Observability & Logs 
+
+- Summary metrics (admin-friendly) 
+- Errors/Warnings only 
+- Live updates from WebSocket 
+
+13. Complaints & Escalations 
+
+- Complaints Dashboard: logged complaints 
+- Escalation Logs: warm transfers with spoken handover summary 
+
+14. System Configuration 
+
+- MCP Tools Registry: 
+  - Toggle on/off, set rate limits 
+  - Backend defines tools (UI cannot add) 
+- Model Capability Registry: 
+  - Read-only view of models and features 
+  - No add/remove 
+
+15. Testing & Acceptance (UI only) 
+
+- Login / Auth flow: works with blocked users error 
+- Dashboard: active calls + metrics 
+- Users: create, block, delete users 
+- KB: upload ≤1 MB file, drift warning, re-ingest, retrieval test 
+- Prompts: edit global prompt, rollback version 
+- Audio & Telephony: save settings within allowed ranges 
+- Transcripts: view + playback + export ZIP 
+- DSAR: search caller → export ZIP + delete 
+- Observability: summary metrics + errors only 
+- Complaints: escalation logs with handover summary 
+- System Config: toggle MCP tools, view models 
+- CRM: placeholder visible 
+
+⚠️ Pending Item 
+
+- CRM Integration: To be finalized once client confirms Playwright automation vs API.  
+For now, placeholder UI only. 
+
+16. Code Structure & File Organization 
+
+To ensure maintainability, scalability, and ease of collaboration among developers, the following file/folder structure is recommended for the React.js + MUI frontend project. 
+ 
+src/ 
+│ 
+├── assets/                # Static assets (images, logos, audio samples) 
+├── components/            # Reusable UI components (buttons, forms, modals) 
+│   ├── common/            # Shared across pages (e.g., Navbar, Sidebar, Loader) 
+│   ├── forms/             # Form-specific components (inputs, validation helpers) 
+│   └── tables/            # DataGrid wrappers and table utilities 
+│ 
+├── context/               # React Contexts (e.g., AuthContext, ThemeContext) 
+│ 
+├── hooks/                 # Custom React hooks (useAuth, useFetch, useWebSocket) 
+│ 
+├── layouts/               # Layout components (AdminLayout, AuthLayout) 
+│ 
+├── pages/                 # Route-level components 
+│   ├── Auth/              # Login, Profile, Registration 
+│   ├── Dashboard/         # Dashboard page with metrics and live calls 
+│   ├── Users/             # User management 
+│   ├── KB/                # Knowledge Base management 
+│   ├── Prompts/           # Prompt editor and versioning 
+│   ├── AudioTelephony/    # Audio & telephony settings 
+│   ├── CRM/               # CRM placeholder (pending client decision) 
+│   ├── Transcripts/       # Transcripts list and details 
+│   ├── Privacy/           # Privacy and DSAR panel 
+│   ├── Observability/     # Observability dashboard and logs 
+│   ├── Complaints/        # Complaints and escalations 
+│   └── System/            # System configuration (MCP tools, model registry) 
+│ 
+├── routes/                # Route definitions and guards 
+│ 
+├── services/              # API clients (REST + WebSocket handlers) 
+│   ├── authService.js 
+│   ├── userService.js 
+│   ├── kbService.js 
+│   ├── promptService.js 
+│   ├── telephonyService.js 
+│   ├── transcriptService.js 
+│   ├── privacyService.js 
+│   ├── observabilityService.js 
+│   └── systemService.js 
+│ 
+├── utils/                 # Utility functions (formatting, validators) 
+│ 
+├── App.js                 # Main App component with Router 
+├── index.js               # Entry point 
+└── theme.js               # MUI theme customization (colors, typography) 
+ 
