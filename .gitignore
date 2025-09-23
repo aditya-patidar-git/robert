@@ -53,3 +53,11 @@ out/
 # Optional: Ignore backend uploads/temp if any
 uploads/
 tmp/
+-e 
+# Environment files
+*.env
+*.env.*
+-e 
+# Environment files
+*.env
+*.env.*
