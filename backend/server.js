@@ -7,6 +7,9 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import outboundRoutes from "./routes/outboundRoutes.js";
 import inboundRoutes from "./routes/inboundRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
 
 dotenv.config();
 
@@ -26,12 +29,21 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch(err => console.error("❌ MongoDB connection error:", err));
 
-// Routes
+// Health check
+app.get("/", (req, res) => res.send("Voxipro AI backend alive"));
+
+// Auth Routes
+app.use("/api/auth", authRoutes);
+
+// Admin Routes
+app.use("/api/admin", adminRoutes);
+
+// Call Routes
 app.use("/api/outbound", outboundRoutes);
 app.use("/api/inbound", inboundRoutes);
 
-// Health check
-app.get("/", (req, res) => res.send("Voxipro AI backend alive"));
+// Booking Routes
+app.use("/api/booking", bookingRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;
