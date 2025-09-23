@@ -31,7 +31,7 @@ app.use("/api/outbound", outboundRoutes);
 app.use("/api/inbound", inboundRoutes);
 
 // Health check
-app.get("/", (req, res) => res.send("Voxipro AI backend alive"));
+app.get("/", (req, res) => res.send("Robert AI backend alive"));
 
 // Start server
 const PORT = process.env.PORT || 5000;
