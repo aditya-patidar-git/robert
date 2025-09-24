@@ -2,17 +2,44 @@ import React from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AuthLayout from '../layouts/AuthLayout';
 import AdminLayout from '../layouts/AdminLayout';
+import ProtectedRoute from '../components/ProtectedRoute';
+
+// Public Pages
 import Home from '../pages/Home';
-import Login from '../pages/Login';
-import Dashboard from '../pages/Dashboard';
 import Mvp from '../pages/Mvp';
 
-// Import other pages as needed
-// import Users from '../pages/Users';
-// import AudioTelephony from '../pages/AudioTelephony';
-// import Settings from '../pages/Settings';
+// Auth Pages
+import LoginPage from '../pages/auth/LoginPage';
+import RegisterPage from '../pages/auth/RegisterPage';
+
+// Protected Pages
+import Dashboard from '../pages/Dashboard';
+import ProfilePage from '../pages/ProfilePage';
+
+// Placeholder components for future implementation
+const UsersPage = () => (
+  <div style={{ padding: '24px' }}>
+    <h2>Users Management</h2>
+    <p>User management functionality will be implemented here.</p>
+  </div>
+);
+
+const AudioTelephonyPage = () => (
+  <div style={{ padding: '24px' }}>
+    <h2>Audio Telephony</h2>
+    <p>Voice calling management functionality will be implemented here.</p>
+  </div>
+);
+
+const SettingsPage = () => (
+  <div style={{ padding: '24px' }}>
+    <h2>System Settings</h2>
+    <p>System configuration settings will be implemented here.</p>
+  </div>
+);
 
 const AppRoutes = createBrowserRouter([
+  // Public Routes
   {
     path: '/',
     element: <Home />,
@@ -21,13 +48,19 @@ const AppRoutes = createBrowserRouter([
     path: '/mvp',
     element: <Mvp />,
   },
+
+  // Authentication Routes
   {
     path: '/auth',
     element: <AuthLayout />,
     children: [
       {
         path: 'login',
-        element: <Login />,
+        element: <LoginPage />,
+      },
+      {
+        path: 'register',
+        element: <RegisterPage />,
       },
       {
         path: '',
@@ -35,9 +68,15 @@ const AppRoutes = createBrowserRouter([
       },
     ],
   },
+
+  // Protected Admin Routes
   {
     path: '/admin',
-    element: <AdminLayout />,
+    element: (
+      <ProtectedRoute>
+        <AdminLayout />
+      </ProtectedRoute>
+    ),
     children: [
       {
         path: 'dashboard',
@@ -45,15 +84,27 @@ const AppRoutes = createBrowserRouter([
       },
       {
         path: 'users',
-        element: <div>Users Page - To be implemented</div>,
+        element: (
+          <ProtectedRoute requiredRoles={['owner', 'admin']}>
+            <UsersPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'audio-telephony',
-        element: <div>Audio Telephony Page - To be implemented</div>,
+        element: (
+          <ProtectedRoute requiredRoles={['owner', 'admin']}>
+            <AudioTelephonyPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'settings',
-        element: <div>Settings Page - To be implemented</div>,
+        element: (
+          <ProtectedRoute requiredRoles={['owner', 'admin']}>
+            <SettingsPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: '',
@@ -61,16 +112,38 @@ const AppRoutes = createBrowserRouter([
       },
     ],
   },
-  // Redirect old routes to new structure
+
+  // Profile Route (accessible to all authenticated users)
+  {
+    path: '/profile',
+    element: (
+      <ProtectedRoute>
+        <AdminLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      {
+        path: '',
+        element: <ProfilePage />,
+      },
+    ],
+  },
+
+  // Legacy route redirects for backward compatibility
   {
     path: '/login',
     element: <Navigate to="/auth/login" replace />,
   },
   {
+    path: '/register',
+    element: <Navigate to="/auth/register" replace />,
+  },
+  {
     path: '/dashboard',
     element: <Navigate to="/admin/dashboard" replace />,
   },
-  // Catch all route
+
+  // Catch all route - redirect to home
   {
     path: '*',
     element: <Navigate to="/" replace />,
