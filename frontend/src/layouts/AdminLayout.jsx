@@ -32,10 +32,19 @@ import {
   AccountCircle,
   Person,
   Brightness4,
-  Brightness7
+  Brightness7,
+  MenuBook,
+  Psychology,
+  Headset,
+  Business,
+  Description,
+  Privacy,
+  Visibility,
+  ReportProblem,
+  Computer
 } from '@mui/icons-material';
-import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../components/ToastProvider';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../components/common/ToastProvider';
 import getTheme from '../theme';
 
 const drawerWidth = 240;
@@ -66,9 +75,57 @@ const AdminLayout = () => {
       roles: ['owner', 'admin'] 
     },
     { 
+      text: 'Knowledge Base', 
+      icon: <MenuBook />, 
+      path: '/admin/kb',
+      roles: ['owner', 'admin'] 
+    },
+    { 
+      text: 'Prompts', 
+      icon: <Psychology />, 
+      path: '/admin/prompts',
+      roles: ['owner', 'admin'] 
+    },
+    { 
       text: 'Audio Telephony', 
       icon: <Phone />, 
       path: '/admin/audio-telephony',
+      roles: ['owner', 'admin'] 
+    },
+    { 
+      text: 'CRM', 
+      icon: <Business />, 
+      path: '/admin/crm',
+      roles: ['owner', 'admin', 'user'] 
+    },
+    { 
+      text: 'Transcripts', 
+      icon: <Description />, 
+      path: '/admin/transcripts',
+      roles: ['owner', 'admin', 'user'] 
+    },
+    { 
+      text: 'Privacy & DSAR', 
+      icon: <Privacy />, 
+      path: '/admin/privacy',
+      roles: ['owner', 'admin'] 
+    },
+    { 
+      text: 'Observability', 
+      icon: <Visibility />, 
+      path: '/admin/observability',
+      roles: ['owner', 'admin'] 
+    },
+    { 
+      text: 'Complaints', 
+      icon: <ReportProblem />, 
+      path: '/admin/complaints',
+      roles: ['owner', 'admin', 'user'] 
+    },
+    { 
+      text: 'System', 
+      icon: <Computer />, 
+      path: '/admin/system',
       roles: ['owner', 'admin'] 
     },
     { 
