@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { makeCall, getAllCalls, getRecordingUrl } from "../api/api";
-import socket from "../socket";
+import { useSocket } from "../hooks/useSocket";
 
 function Home() {
+    const { on, off, isConnected } = useSocket();
     const [numbers, setNumbers] = useState(["+918717914659", "", ""]);
     const [message, setMessage] = useState("");
     const [statuses, setStatuses] = useState({});
@@ -48,23 +49,38 @@ function Home() {
 
     // Realtime updates via socket
     useEffect(() => {
-        socket.on("call-status", (data) => {
+        const handleCallStatus = (data) => {
             setStatuses((prev) => ({ ...prev, [data.callSid]: data.status }));
-        });
+        };
 
-        socket.on("all-calls", (records) => {
+        const handleAllCalls = (records) => {
             setCalls(records);
-        });
+        };
+
+        on("call-status", handleCallStatus);
+        on("all-calls", handleAllCalls);
 
         return () => {
-            socket.off("call-status");
-            socket.off("all-calls");
+            off("call-status", handleCallStatus);
+            off("all-calls", handleAllCalls);
         };
-    }, []);
+    }, [on, off]);
 
     return (
         <div className="p-5 font-sans max-w-[1000px] mx-auto">
-            <h2 className="text-xl font-semibold mb-4">📞 Robert Voice Agent — MVP</h2>
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">📞 Robert Voice Agent — MVP</h2>
+                <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    isConnected 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-red-100 text-red-800'
+                }`}>
+                    <div className={`w-2 h-2 rounded-full inline-block mr-2 ${
+                        isConnected ? 'bg-green-500' : 'bg-red-500'
+                    }`}></div>
+                    {isConnected ? 'Connected' : 'Disconnected'}
+                </div>
+            </div>
 
             <div className="flex items-center justify-between gap-2">
                 <div className="flex flex-wrap gap-2">
