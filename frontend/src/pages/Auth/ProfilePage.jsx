@@ -54,8 +54,6 @@ const ProfilePage = () => {
     reset: resetProfile
   } = useForm({
     defaultValues: {
-      firstName: user?.firstName || '',
-      lastName: user?.lastName || '',
       username: user?.username || '',
       email: user?.email || ''
     }
@@ -167,15 +165,15 @@ const ProfilePage = () => {
                   bgcolor: 'primary.main'
                 }}
               >
-                {user?.firstName?.[0]}{user?.lastName?.[0]}
+                {user?.username?.[0]?.toUpperCase()}
               </Avatar>
               
               <Typography variant="h5" gutterBottom>
-                {user?.firstName} {user?.lastName}
+                {user?.username}
               </Typography>
               
               <Typography variant="body2" color="text.secondary" gutterBottom>
-                @{user?.username}
+                {user?.email}
               </Typography>
               
               <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
@@ -206,28 +204,6 @@ const ProfilePage = () => {
             <CardContent>
               <Box component="form" onSubmit={handleProfileSubmit(handleProfileUpdate)}>
                 <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="First Name"
-                      {...registerProfile('firstName', {
-                        required: 'First name is required'
-                      })}
-                      error={!!profileErrors.firstName}
-                      helperText={profileErrors.firstName?.message}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Last Name"
-                      {...registerProfile('lastName', {
-                        required: 'Last name is required'
-                      })}
-                      error={!!profileErrors.lastName}
-                      helperText={profileErrors.lastName?.message}
-                    />
-                  </Grid>
                   <Grid item xs={12}>
                     <TextField
                       fullWidth

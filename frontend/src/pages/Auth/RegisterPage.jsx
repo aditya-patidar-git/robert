@@ -44,8 +44,6 @@ const RegisterPage = () => {
     reset
   } = useForm({
     defaultValues: {
-      firstName: '',
-      lastName: '',
       email: '',
       username: '',
       password: '',
@@ -131,61 +129,11 @@ const RegisterPage = () => {
 
           {/* Registration Form */}
           <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="First Name"
-                  autoComplete="given-name"
-                  autoFocus
-                  {...register('firstName', {
-                    required: 'First name is required',
-                    minLength: {
-                      value: 2,
-                      message: 'First name must be at least 2 characters'
-                    }
-                  })}
-                  error={!!errors.firstName}
-                  helperText={errors.firstName?.message}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Person color={errors.firstName ? 'error' : 'action'} />
-                      </InputAdornment>
-                    )
-                  }}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Last Name"
-                  autoComplete="family-name"
-                  {...register('lastName', {
-                    required: 'Last name is required',
-                    minLength: {
-                      value: 2,
-                      message: 'Last name must be at least 2 characters'
-                    }
-                  })}
-                  error={!!errors.lastName}
-                  helperText={errors.lastName?.message}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Person color={errors.lastName ? 'error' : 'action'} />
-                      </InputAdornment>
-                    )
-                  }}
-                />
-              </Grid>
-            </Grid>
-
             <TextField
               fullWidth
               label="Username"
               autoComplete="username"
+              autoFocus
               margin="normal"
               {...register('username', {
                 required: 'Username is required',

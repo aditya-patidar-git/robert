@@ -228,11 +228,11 @@ const AdminLayout = () => {
       <Box sx={{ p: 2, mt: 'auto' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
           <Avatar sx={{ width: 32, height: 32, mr: 1, fontSize: 14 }}>
-            {user?.firstName?.[0]}{user?.lastName?.[0]}
+            {user?.username?.[0]?.toUpperCase()}
           </Avatar>
           <Box sx={{ overflow: 'hidden' }}>
             <Typography variant="body2" noWrap>
-              {user?.firstName} {user?.lastName}
+              {user?.username}
             </Typography>
             <Typography variant="caption" color="text.secondary" noWrap>
               {user?.role}
@@ -290,7 +290,7 @@ const AdminLayout = () => {
                 color={user?.status === 'active' ? 'success' : 'warning'}
               >
                 <Avatar sx={{ width: 32, height: 32 }}>
-                  {user?.firstName?.[0]}{user?.lastName?.[0]}
+                  {user?.username?.[0]?.toUpperCase()}
                 </Avatar>
               </Badge>
             </IconButton>
@@ -310,7 +310,7 @@ const AdminLayout = () => {
         >
           <Box sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider' }}>
             <Typography variant="subtitle1" fontWeight="bold">
-              {user?.firstName} {user?.lastName}
+              {user?.username}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {user?.email}

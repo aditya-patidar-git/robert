@@ -145,7 +145,7 @@ function MyComponent() {
   
   return (
     <div>
-      Welcome, {user.firstName}!
+      Welcome, {user.username}!
       <button onClick={logout}>Logout</button>
     </div>
   );
