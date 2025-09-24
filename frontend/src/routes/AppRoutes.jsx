@@ -214,10 +214,10 @@ const AppRoutes = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-      {
-        path: '',
-        element: <Navigate to="/admin/dashboard" replace />,
-      },
+      // {
+      //   path: '',
+      //   element: <Navigate to="/admin/dashboard" replace />,
+      // },
     ],
   },
 
@@ -238,6 +238,10 @@ const AppRoutes = createBrowserRouter([
   },
 
   // Legacy route redirects for backward compatibility
+  {
+    path: '/dashboard',
+    element: <Dashboard/>,
+  },
   {
     path: '/login',
     element: <Navigate to="/auth/login" replace />,
