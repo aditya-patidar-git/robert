@@ -14,7 +14,7 @@ import RegisterPage from '../pages/Auth/RegisterPage';
 import ProfilePage from '../pages/Auth/ProfilePage';
 
 // Protected Pages
-import Dashboard from '../pages/Dashboard';
+import Dashboard from '../pages/Dashboard/index';
 
 // Placeholder components for future implementation
 const UsersPage = () => (
