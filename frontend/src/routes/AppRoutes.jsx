@@ -242,9 +242,10 @@ const AppRoutes = createBrowserRouter([
     path: '/dashboard',
     element: <Dashboard/>,
   },
+  // Temporary direct dashboard route for design purposes
   {
-    path: '/login',
-    element: <Navigate to="/auth/login" replace />,
+    path: '/dashboard',
+    element: <Dashboard />,
   },
   {
     path: '/register',
