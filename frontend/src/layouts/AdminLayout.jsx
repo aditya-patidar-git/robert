@@ -38,7 +38,7 @@ import {
   Headset,
   Business,
   Description,
-  Privacy,
+  PrivacyTip,
   Visibility,
   ReportProblem,
   Computer
@@ -106,7 +106,7 @@ const AdminLayout = () => {
     },
     { 
       text: 'Privacy & DSAR', 
-      icon: <Privacy />, 
+      icon: <PrivacyTip />, 
       path: '/admin/privacy',
       roles: ['owner', 'admin'] 
     },
