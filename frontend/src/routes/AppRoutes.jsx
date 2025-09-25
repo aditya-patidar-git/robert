@@ -172,7 +172,11 @@ const AppRoutes = createBrowserRouter([
       },
       {
         path: 'crm',
-        element: <CRMPage />,
+        element: (
+          <ProtectedRoute requiredRoles={['owner', 'admin']}>
+            <CRMPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'transcripts',
