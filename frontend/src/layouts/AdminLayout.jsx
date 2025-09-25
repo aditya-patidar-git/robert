@@ -66,13 +66,13 @@ const AdminLayout = () => {
       text: 'Dashboard', 
       icon: <Dashboard />, 
       path: '/admin/dashboard',
-      roles: ['owner', 'admin', 'user'] 
+      roles: ['owner', 'admin'] 
     },
     { 
       text: 'Users', 
       icon: <People />, 
       path: '/admin/users',
-      roles: ['owner', 'admin'] 
+      roles: ['owner'] 
     },
     { 
       text: 'Knowledge Base & AI Controls', 
@@ -90,7 +90,7 @@ const AdminLayout = () => {
       text: 'Transcripts & Escalations', 
       icon: <Description />, 
       path: '/admin/transcripts',
-      roles: ['owner', 'admin', 'user'] 
+      roles: ['owner', 'admin'] 
     },
     { 
       text: 'Privacy & Compliance', 

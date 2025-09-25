@@ -122,7 +122,7 @@ const AppRoutes = createBrowserRouter([
       {
         path: 'users',
         element: (
-          <ProtectedRoute requiredRoles={['owner', 'admin']}>
+          <ProtectedRoute requiredRoles={['owner']}>
             <UsersPage />
           </ProtectedRoute>
         ),

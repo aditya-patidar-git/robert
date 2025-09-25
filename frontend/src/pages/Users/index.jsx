@@ -150,7 +150,6 @@ const UsersPage = () => {
     switch (role) {
       case 'owner': return 'error';
       case 'admin': return 'warning';
-      case 'user': return 'primary';
       default: return 'default';
     }
   };
@@ -302,10 +301,10 @@ const UsersPage = () => {
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
-          User Management
+          Admin Management
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Manage user accounts, roles, and permissions
+          Manage admin accounts, roles, and permissions
         </Typography>
       </Box>
 
@@ -336,7 +335,6 @@ const UsersPage = () => {
               <MenuItem value="">All Roles</MenuItem>
               <MenuItem value="owner">Owner</MenuItem>
               <MenuItem value="admin">Admin</MenuItem>
-              <MenuItem value="user">User</MenuItem>
             </Select>
           </FormControl>
 
@@ -361,7 +359,7 @@ const UsersPage = () => {
       <Paper sx={{ mb: 4 }}>
         <Box sx={{ p: 2 }}>
           <Typography variant="h6" gutterBottom>
-            Users ({filteredUsers.length})
+            Admins ({filteredUsers.length})
           </Typography>
         </Box>
         <Box sx={{ height: 400 }}>
