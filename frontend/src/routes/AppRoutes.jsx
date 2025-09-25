@@ -40,7 +40,7 @@ const PromptsPage = () => (
 
 const AudioTelephonyPage = () => (
   <div style={{ padding: '24px' }}>
-    <h2>Audio Telephony</h2>
+    <h2>Audio & Telephony</h2>
     <p>Voice calling management functionality will be implemented here.</p>
   </div>
 );
