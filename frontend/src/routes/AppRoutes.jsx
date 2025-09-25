@@ -47,8 +47,8 @@ const AudioTelephonyPage = () => (
 
 const CRMPage = () => (
   <div style={{ padding: '24px' }}>
-    <h2>CRM</h2>
-    <p>Customer relationship management functionality will be implemented here.</p>
+    <h2>CRM Integration</h2>
+    <p>Customer relationship management integration functionality will be implemented here.</p>
   </div>
 );
 
