@@ -6,15 +6,15 @@
 
 | Old Name | New Name | Roles |
 |----------|----------|--------|
-| Dashboard | Dashboard | Owner, Admin, User |
-| Users | Users | Owner, Admin |
+| Dashboard | Dashboard | Owner, Admin |
+| Users | Users | Owner |
 | Knowledge Base | Knowledge Base | Owner, Admin |
 | **Prompts** | **Prompts & AI Controls** | Owner, Admin |
 | **Audio Telephony** | **Audio & Telephony** | Owner, Admin |
-| **Transcripts** | **Transcripts & Provenance** | Owner, Admin, User |
+| **Transcripts** | **Transcripts & Provenance** | Owner, Admin |
 | **Privacy & DSAR** | **Privacy & Compliance** | Owner, Admin |
 | Observability | Observability | Owner, Admin |
-| **Complaints** | **Complaints & Escalations** | Owner, Admin, User |
+| **Complaints** | **Complaints & Escalations** | Owner, Admin |
 | **System** | **System Configuration** | Owner, Admin |
 | **CRM** | **CRM Integration** | Owner, Admin |
 | ~~Settings~~ | *(Removed)* | N/A |
@@ -36,7 +36,7 @@
 
 ### **Admin Role (🛠️ Operational Authority):**
 - ✅ Dashboard (full metrics view)
-- ✅ Users (create/edit/delete, except Owner role management)
+- ❌ Users (no access - Owner only)
 - ✅ Knowledge Base (same as Owner)
 - ✅ Prompts & AI Controls (same as Owner)
 - ✅ Audio & Telephony (same as Owner)
@@ -47,18 +47,6 @@
 - ✅ System Configuration (same as Owner, except Owner-only settings)
 - ✅ CRM Integration (placeholder access)
 
-### **User Role (👤 Limited Access):**
-- ✅ Dashboard (Active Calls + MOS only, own calls only)
-- ❌ Users (no access)
-- ❌ Knowledge Base (no access)
-- ❌ Prompts & AI Controls (no access)
-- ❌ Audio & Telephony (no access)
-- ✅ Transcripts & Provenance (own calls only, no delete/export/redact)
-- ❌ Privacy & Compliance (can only request own DSAR export)
-- ❌ Observability (no access)
-- ✅ Complaints & Escalations (can submit complaints only)
-- ❌ System Configuration (no access)
-- ❌ CRM Integration (no access)
 
 ## 🚀 **Technical Implementation**
 
@@ -73,15 +61,15 @@ const filteredMenuItems = menuItems.filter(item =>
 ### **Updated Menu Structure:**
 ```javascript
 const menuItems = [
-  { text: 'Dashboard', roles: ['owner', 'admin', 'user'] },
-  { text: 'Users', roles: ['owner', 'admin'] },
+  { text: 'Dashboard', roles: ['owner', 'admin'] },
+  { text: 'Users', roles: ['owner'] },
   { text: 'Knowledge Base', roles: ['owner', 'admin'] },
   { text: 'Prompts & AI Controls', roles: ['owner', 'admin'] },
   { text: 'Audio & Telephony', roles: ['owner', 'admin'] },
-  { text: 'Transcripts & Provenance', roles: ['owner', 'admin', 'user'] },
+  { text: 'Transcripts & Provenance', roles: ['owner', 'admin'] },
   { text: 'Privacy & Compliance', roles: ['owner', 'admin'] },
   { text: 'Observability', roles: ['owner', 'admin'] },
-  { text: 'Complaints & Escalations', roles: ['owner', 'admin', 'user'] },
+  { text: 'Complaints & Escalations', roles: ['owner', 'admin'] },
   { text: 'System Configuration', roles: ['owner', 'admin'] },
   { text: 'CRM Integration', roles: ['owner', 'admin'] }
 ];
@@ -89,7 +77,7 @@ const menuItems = [
 
 ## 📱 **User Experience by Role**
 
-### **Owner/Admin Sidebar (11 items):**
+### **Owner Sidebar (11 items):**
 ```
 📊 Dashboard
 👥 Users
@@ -104,12 +92,20 @@ const menuItems = [
 🏢 CRM Integration
 ```
 
-### **User Sidebar (3 items only):**
+### **Admin Sidebar (10 items):**
 ```
-📊 Dashboard (limited view)
-📄 Transcripts & Provenance (own calls only)
-⚠️ Complaints & Escalations (submit only)
+📊 Dashboard
+📚 Knowledge Base
+🧠 Prompts & AI Controls
+📞 Audio & Telephony
+📄 Transcripts & Provenance
+🔒 Privacy & Compliance
+👁️ Observability
+⚠️ Complaints & Escalations
+⚙️ System Configuration
+🏢 CRM Integration
 ```
+
 
 ## 🔄 **Routes Updated**
 

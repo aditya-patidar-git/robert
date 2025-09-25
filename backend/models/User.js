@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const userSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     username: { type: String, required: true, unique: true },
-    role: { type: String, enum: ["owner", "admin", "user"], default: "user" },
+    role: { type: String, enum: ["owner", "admin"], default: "admin" },
     status: { type: String, enum: ["pending", "active", "blocked", "excluded", "deleted"], default: "pending" },
     passwordHash: { type: String, required: true },
     mfaEnabled: { type: Boolean, default: false },

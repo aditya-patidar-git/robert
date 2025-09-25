@@ -16,7 +16,7 @@ export const signup = async (req, res) => {
         email,
         username,
         passwordHash,
-        role: "user",      // default role for self-registration
+        role: "admin",     // default role for self-registration
         status: "pending"  // needs approval by admin
     });
 
