@@ -79,7 +79,7 @@ const AppRoutes = createBrowserRouter([
   // Public Routes
   {
     path: '/',
-    element: <Home />,
+    element: <LoginPage />,
   },
   {
     path: '/mvp',
