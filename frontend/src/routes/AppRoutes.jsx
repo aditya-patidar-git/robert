@@ -61,8 +61,8 @@ const TranscriptsPage = () => (
 
 const PrivacyPage = () => (
   <div style={{ padding: '24px' }}>
-    <h2>Privacy & DSAR</h2>
-    <p>Data privacy and DSAR management functionality will be implemented here.</p>
+    <h2>Privacy & Compliance</h2>
+    <p>Data privacy and compliance management functionality will be implemented here.</p>
   </div>
 );
 
