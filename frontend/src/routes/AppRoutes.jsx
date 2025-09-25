@@ -82,7 +82,7 @@ const ComplaintsPage = () => (
 
 const SystemPage = () => (
   <div style={{ padding: '24px' }}>
-    <h2>System Management</h2>
+    <h2>System Configuration</h2>
     <p>MCP tools, models, and system configuration functionality will be implemented here.</p>
   </div>
 );
