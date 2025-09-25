@@ -30,7 +30,7 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.error("❌ MongoDB connection error:", err));
 
 // Health check
-app.get("/", (req, res) => res.send("Voxipro AI backend alive"));
+app.get("/", (req, res) => res.send("Robert AI backend alive"));
 
 // Auth Routes
 app.use("/api/auth", authRoutes);
