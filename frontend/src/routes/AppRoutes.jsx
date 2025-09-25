@@ -24,12 +24,6 @@ import ObservabilityPage from '../pages/Observability/index';
 import SystemConfigPage from '../pages/System/index';
 
 // Placeholder components for future implementation
-const UsersPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>Users Management</h2>
-    <p>User management functionality will be implemented here.</p>
-  </div>
-);
 
 const KBPage = () => (
   <div style={{ padding: '24px' }}>
@@ -42,13 +36,6 @@ const PromptsPage = () => (
   <div style={{ padding: '24px' }}>
     <h2>Prompts & AI Controls</h2>
     <p>AI prompt management and control functionality will be implemented here.</p>
-  </div>
-);
-
-const AudioTelephonyPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>Audio & Telephony</h2>
-    <p>Voice calling management functionality will be implemented here.</p>
   </div>
 );
 
@@ -66,19 +53,6 @@ const TranscriptsPage = () => (
   </div>
 );
 
-const PrivacyPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>Privacy & Compliance</h2>
-    <p>Data privacy and compliance management functionality will be implemented here.</p>
-  </div>
-);
-
-const ObservabilityPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>Observability</h2>
-    <p>System monitoring and observability functionality will be implemented here.</p>
-  </div>
-);
 
 const ComplaintsPage = () => (
   <div style={{ padding: '24px' }}>

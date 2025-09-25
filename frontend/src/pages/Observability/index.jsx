@@ -28,7 +28,7 @@ import {
   Bar
 } from 'recharts';
 import {
-  Trending as TrendingIcon,
+  TrendingUp as TrendingIcon,
   Speed,
   Phone,
   Error as ErrorIcon,

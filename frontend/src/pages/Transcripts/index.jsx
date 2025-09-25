@@ -20,15 +20,17 @@ import {
   DialogContent,
   DialogActions,
   Chip,
+  TextField,
+  Alert
+} from '@mui/material';
+import {
   Timeline,
   TimelineItem,
   TimelineSeparator,
   TimelineConnector,
   TimelineContent,
   TimelineDot,
-  TextField,
-  Alert
-} from '@mui/material';
+} from '@mui/lab';
 import {
   Visibility,
   PlayArrow,

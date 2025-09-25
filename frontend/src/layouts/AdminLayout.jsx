@@ -75,15 +75,9 @@ const AdminLayout = () => {
       roles: ['owner', 'admin'] 
     },
     { 
-      text: 'Knowledge Base', 
+      text: 'Knowledge Base & AI Controls', 
       icon: <MenuBook />, 
       path: '/admin/kb',
-      roles: ['owner', 'admin'] 
-    },
-    { 
-      text: 'Prompts & AI Controls', 
-      icon: <Psychology />, 
-      path: '/admin/prompts',
       roles: ['owner', 'admin'] 
     },
     { 
@@ -93,7 +87,7 @@ const AdminLayout = () => {
       roles: ['owner', 'admin'] 
     },
     { 
-      text: 'Transcripts & Provenance', 
+      text: 'Transcripts & Escalations', 
       icon: <Description />, 
       path: '/admin/transcripts',
       roles: ['owner', 'admin', 'user'] 
@@ -109,12 +103,6 @@ const AdminLayout = () => {
       icon: <Visibility />, 
       path: '/admin/observability',
       roles: ['owner', 'admin'] 
-    },
-    { 
-      text: 'Complaints & Escalations', 
-      icon: <ReportProblem />, 
-      path: '/admin/complaints',
-      roles: ['owner', 'admin', 'user'] 
     },
     { 
       text: 'System Configuration', 

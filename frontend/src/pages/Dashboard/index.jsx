@@ -260,12 +260,10 @@ const Dashboard = () => {
     <Container maxWidth="xl" sx={{ py: 4 }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom fontWeight="bold" textAlign="center">
+        <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
           Dashboard
-          <br color='text.secondary'/>
         </Typography>
-        <Divider sx={{ bgcolor: "black" }} />
-        <Typography mt={2} variant="body1" color="text.secondary">
+        <Typography variant="body1" color="text.secondary">
           Monitor your Robert Voice Agent system performance and manage operations
         </Typography>
       </Box>

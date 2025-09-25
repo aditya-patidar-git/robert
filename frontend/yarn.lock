@@ -353,6 +353,18 @@
   dependencies:
     "@babel/runtime" "^7.28.3"
 
+"@mui/lab@^7.0.0-beta.17":
+  version "7.0.0-beta.17"
+  resolved "https://registry.npmjs.org/@mui/lab/-/lab-7.0.0-beta.17.tgz"
+  integrity sha512-H8tSINm6Xgbi7o49MplAwks4tAEE6SpFNd9l7n4NURl0GSpOv0CZvgXKSJt4+6TmquDhE7pomHpHWJiVh/2aCg==
+  dependencies:
+    "@babel/runtime" "^7.28.3"
+    "@mui/system" "^7.3.2"
+    "@mui/types" "^7.4.6"
+    "@mui/utils" "^7.3.2"
+    clsx "^2.1.1"
+    prop-types "^15.8.1"
+
 "@mui/material@^5.15.14 || ^6.0.0 || ^7.0.0", "@mui/material@^7.3.2":
   version "7.3.2"
   resolved "https://registry.npmjs.org/@mui/material/-/material-7.3.2.tgz"
@@ -437,6 +449,19 @@
     clsx "^2.1.1"
     prop-types "^15.8.1"
     use-sync-external-store "^1.5.0"
+
+"@mui/x-date-pickers@^8.11.3":
+  version "8.11.3"
+  resolved "https://registry.npmjs.org/@mui/x-date-pickers/-/x-date-pickers-8.11.3.tgz"
+  integrity sha512-RCvaACeTvlT930jn4s4weD/3Ow30sy7A4dRK8vmA3Pc3RIBy/b2CC4nYdkMiOwI56cjOVF4WPLFp5hBcEeGSvQ==
+  dependencies:
+    "@babel/runtime" "^7.28.2"
+    "@mui/utils" "^7.3.2"
+    "@mui/x-internals" "8.11.3"
+    "@types/react-transition-group" "^4.4.12"
+    clsx "^2.1.1"
+    prop-types "^15.8.1"
+    react-transition-group "^4.4.5"
 
 "@mui/x-internals@8.11.3":
   version "8.11.3"
