@@ -15,6 +15,13 @@ import ProfilePage from '../pages/Auth/ProfilePage';
 
 // Protected Pages
 import Dashboard from '../pages/Dashboard/index';
+import UsersPage from '../pages/Users/index';
+import AIKnowledgePage from '../pages/KB/index';
+import AudioTelephonyPage from '../pages/AudioTelephony/index';
+import TranscriptsComplaintsPage from '../pages/Transcripts/index';
+import PrivacyPage from '../pages/Privacy/index';
+import ObservabilityPage from '../pages/Observability/index';
+import SystemConfigPage from '../pages/System/index';
 
 // Placeholder components for future implementation
 const UsersPage = () => (
