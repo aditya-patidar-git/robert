@@ -211,14 +211,6 @@ const AppRoutes = createBrowserRouter([
         ),
       },
       {
-        path: 'settings',
-        element: (
-          <ProtectedRoute requiredRoles={['owner', 'admin']}>
-            <SettingsPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
         path: '',
         element: <Navigate to="/admin/dashboard" replace />,
       },
