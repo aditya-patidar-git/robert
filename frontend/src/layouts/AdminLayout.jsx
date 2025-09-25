@@ -81,31 +81,25 @@ const AdminLayout = () => {
       roles: ['owner', 'admin'] 
     },
     { 
-      text: 'Prompts', 
+      text: 'Prompts & AI Controls', 
       icon: <Psychology />, 
       path: '/admin/prompts',
       roles: ['owner', 'admin'] 
     },
     { 
-      text: 'Audio Telephony', 
+      text: 'Audio & Telephony', 
       icon: <Phone />, 
       path: '/admin/audio-telephony',
       roles: ['owner', 'admin'] 
     },
     { 
-      text: 'CRM', 
-      icon: <Business />, 
-      path: '/admin/crm',
-      roles: ['owner', 'admin', 'user'] 
-    },
-    { 
-      text: 'Transcripts', 
+      text: 'Transcripts & Provenance', 
       icon: <Description />, 
       path: '/admin/transcripts',
       roles: ['owner', 'admin', 'user'] 
     },
     { 
-      text: 'Privacy & DSAR', 
+      text: 'Privacy & Compliance', 
       icon: <PrivacyTip />, 
       path: '/admin/privacy',
       roles: ['owner', 'admin'] 
@@ -117,23 +111,23 @@ const AdminLayout = () => {
       roles: ['owner', 'admin'] 
     },
     { 
-      text: 'Complaints', 
+      text: 'Complaints & Escalations', 
       icon: <ReportProblem />, 
       path: '/admin/complaints',
       roles: ['owner', 'admin', 'user'] 
     },
     { 
-      text: 'System', 
+      text: 'System Configuration', 
       icon: <Computer />, 
       path: '/admin/system',
       roles: ['owner', 'admin'] 
     },
     { 
-      text: 'Settings', 
-      icon: <Settings />, 
-      path: '/admin/settings',
+      text: 'CRM Integration', 
+      icon: <Business />, 
+      path: '/admin/crm',
       roles: ['owner', 'admin'] 
-    },
+    }
   ];
 
   // Filter menu items based on user role
