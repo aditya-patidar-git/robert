@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }) => {
       _id : "68d3d2d86f15796dc1badabc",
 email : "admin@example.com",
 username : "admin",
-role : "user",
+role : "admin",
 status : "active"
     }
     try {
