@@ -54,8 +54,8 @@ const CRMPage = () => (
 
 const TranscriptsPage = () => (
   <div style={{ padding: '24px' }}>
-    <h2>Transcripts</h2>
-    <p>Call transcript management functionality will be implemented here.</p>
+    <h2>Transcripts & Provenance</h2>
+    <p>Call transcript management and provenance functionality will be implemented here.</p>
   </div>
 );
 
