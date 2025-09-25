@@ -157,7 +157,7 @@ const AppRoutes = createBrowserRouter([
         path: 'kb',
         element: (
           <ProtectedRoute requiredRoles={['owner', 'admin']}>
-            <KBPage />
+            <AIKnowledgePage />
           </ProtectedRoute>
         ),
       },
@@ -165,7 +165,7 @@ const AppRoutes = createBrowserRouter([
         path: 'prompts',
         element: (
           <ProtectedRoute requiredRoles={['owner', 'admin']}>
-            <PromptsPage />
+            <AIKnowledgePage />
           </ProtectedRoute>
         ),
       },
@@ -178,16 +178,8 @@ const AppRoutes = createBrowserRouter([
         ),
       },
       {
-        path: 'crm',
-        element: (
-          <ProtectedRoute requiredRoles={['owner', 'admin']}>
-            <CRMPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
         path: 'transcripts',
-        element: <TranscriptsPage />,
+        element: <TranscriptsComplaintsPage />,
       },
       {
         path: 'privacy',
@@ -207,13 +199,13 @@ const AppRoutes = createBrowserRouter([
       },
       {
         path: 'complaints',
-        element: <ComplaintsPage />,
+        element: <TranscriptsComplaintsPage />,
       },
       {
         path: 'system',
         element: (
           <ProtectedRoute requiredRoles={['owner', 'admin']}>
-            <SystemPage />
+            <SystemConfigPage />
           </ProtectedRoute>
         ),
       },
