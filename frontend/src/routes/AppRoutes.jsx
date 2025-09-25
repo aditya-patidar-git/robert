@@ -33,8 +33,8 @@ const KBPage = () => (
 
 const PromptsPage = () => (
   <div style={{ padding: '24px' }}>
-    <h2>Prompts Management</h2>
-    <p>AI prompt management functionality will be implemented here.</p>
+    <h2>Prompts & AI Controls</h2>
+    <p>AI prompt management and control functionality will be implemented here.</p>
   </div>
 );
 
