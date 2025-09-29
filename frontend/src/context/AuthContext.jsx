@@ -30,11 +30,11 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuthStatus = async () => {
     const mockadminuser = {
-      _id : "68d3d2d86f15796dc1badabc",
-email : "admin@example.com",
-username : "admin",
-role : "admin",
-status : "active"
+      _id: "68d3d2d86f15796dc1badabc",
+      email: "admin@example.com",
+      username: "admin",
+      role: "admin",
+      status: "active"
     }
     try {
       setIsLoading(true);
@@ -59,20 +59,20 @@ status : "active"
       return { success: true, user: response.user };
     } catch (error) {
       console.error('Login error:', error);
-      
+
       // Handle specific error cases
       if (error.response?.data?.message?.includes('blocked')) {
-        return { 
-          success: false, 
+        return {
+          success: false,
           error: 'Your account has been blocked. Contact admin.',
-          isBlocked: true 
+          isBlocked: true
         };
       }
-      
-      return { 
-        success: false, 
+
+      return {
+        success: false,
         error: error.response?.data?.message || 'Invalid credentials. Please try again.',
-        isBlocked: false 
+        isBlocked: false
       };
     }
   };
@@ -83,9 +83,9 @@ status : "active"
       return { success: true, message: 'Registration successful! Please log in.' };
     } catch (error) {
       console.error('Registration error:', error);
-      return { 
-        success: false, 
-        error: error.response?.data?.message || 'Registration failed. Please try again.' 
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Registration failed. Please try again.'
       };
     }
   };
@@ -108,9 +108,9 @@ status : "active"
       return { success: true, message: 'Profile updated successfully!' };
     } catch (error) {
       console.error('Profile update error:', error);
-      return { 
-        success: false, 
-        error: error.response?.data?.message || 'Profile update failed.' 
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Profile update failed.'
       };
     }
   };

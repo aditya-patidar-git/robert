@@ -5,7 +5,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 // Create axios instance with default config
 const apiClient = axios.create({
   baseURL: API_BASE,
-  withCredentials: true, // Important for httpOnly cookies
+  // withCredentials: true, // Important for httpOnly cookies
   headers: {
     'Content-Type': 'application/json',
   },
