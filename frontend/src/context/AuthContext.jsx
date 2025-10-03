@@ -5,9 +5,7 @@ const AuthContext = createContext(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
 
@@ -17,12 +15,10 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
 
-  // Initialize auth state on app load
   useEffect(() => {
     checkAuthStatus();
   }, []);
 
-  // Apply theme to document
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
@@ -41,9 +37,9 @@ export const AuthProvider = ({ children }) => {
       const userData = await authService.getProfile();
       setUser(userData);
       setIsAuthenticated(true);
-    } catch (error) {
-      console.log('No valid session found');
+    } catch {
       setUser(null);
+      setIsAuthenticated(false);
       // setIsAuthenticated(true);
       setIsAuthenticated(false);
     } finally {
@@ -54,39 +50,27 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       const response = await authService.login(credentials);
+      console.log("response:", response)
       setUser(response.user);
       setIsAuthenticated(true);
       return { success: true, user: response.user };
     } catch (error) {
-      console.error('Login error:', error);
-
-      // Handle specific error cases
-      if (error.response?.data?.message?.includes('blocked')) {
-        return {
-          success: false,
-          error: 'Your account has been blocked. Contact admin.',
-          isBlocked: true
-        };
-      }
-
-      return {
-        success: false,
-        error: error.response?.data?.message || 'Invalid credentials. Please try again.',
-        isBlocked: false
-      };
+      console.log("eroro:", error)
+      const message =
+        error?.response?.data?.message || 'Invalid credentials. Please try again.';
+      const isBlocked = message.toLowerCase().includes('blocked');
+      return { success: false, error: message, isBlocked };
     }
   };
 
   const register = async (userData) => {
     try {
-      const response = await authService.register(userData);
+      await authService.register(userData);
       return { success: true, message: 'Registration successful! Please log in.' };
     } catch (error) {
-      console.error('Registration error:', error);
-      return {
-        success: false,
-        error: error.response?.data?.message || 'Registration failed. Please try again.'
-      };
+      const message =
+        error?.response?.data?.message || 'Registration failed. Please try again.';
+      return { success: false, error: message };
     }
   };
 
@@ -107,33 +91,29 @@ export const AuthProvider = ({ children }) => {
       setUser(updatedUser);
       return { success: true, message: 'Profile updated successfully!' };
     } catch (error) {
-      console.error('Profile update error:', error);
-      return {
-        success: false,
-        error: error.response?.data?.message || 'Profile update failed.'
-      };
+      const message =
+        error?.response?.data?.message || 'Profile update failed.';
+      return { success: false, error: message };
     }
   };
 
-  const toggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
-  };
-
-  const value = {
-    user,
-    isAuthenticated,
-    isLoading,
-    theme,
-    login,
-    register,
-    logout,
-    updateProfile,
-    toggleTheme,
-    checkAuthStatus
-  };
+  const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated,
+        isLoading,
+        theme,
+        login,
+        register,
+        logout,
+        updateProfile,
+        toggleTheme,
+        checkAuthStatus
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
