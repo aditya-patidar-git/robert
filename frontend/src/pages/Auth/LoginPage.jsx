@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
   Box,
@@ -14,69 +14,44 @@ import {
   CircularProgress,
   Divider
 } from '@mui/material';
-import { 
-  Visibility, 
-  VisibilityOff, 
-  Email, 
-  Lock,
-  Login as LoginIcon 
-} from '@mui/icons-material';
+import { Visibility, VisibilityOff, Email, Lock, Login as LoginIcon } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/common/ToastProvider';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const { login } = useAuth();
   const { showSuccess, showError } = useToast();
-  
+
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
 
-  const from = location.state?.from?.pathname || '/admin/dashboard';
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    reset
-  } = useForm({
-    defaultValues: {
-      email: '',
-      password: ''
-    }
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    defaultValues: { email: '', password: '' }
   });
 
   const onSubmit = async (data) => {
+    setIsLoading(true);
+    setLoginError('');
+
     try {
-      setIsLoading(true);
-      setLoginError('');
-      
       const result = await login(data);
-      
       if (result.success) {
         showSuccess(`Welcome back, ${result.user.username}!`);
-        navigate(from, { replace: true });
+        navigate('/admin/dashboard');
       } else {
         setLoginError(result.error);
-        if (result.isBlocked) {
-          showError(result.error, 'Account Blocked');
-        } else {
-          showError(result.error, 'Login Failed');
-        }
+        showError(result.error, result.isBlocked ? 'Account Blocked' : 'Login Failed');
       }
-    } catch (error) {
+    } catch (err) {
+      console.error('Unexpected error:', err);
       const errorMessage = 'An unexpected error occurred. Please try again.';
       setLoginError(errorMessage);
       showError(errorMessage);
     } finally {
-      setIsLoading(false);
+      // setIsLoading(false);
     }
-  };
-
-  const togglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
   };
 
   return (
@@ -91,19 +66,11 @@ const LoginPage = () => {
         px: 2
       }}
     >
-      <Card 
-        elevation={8}
-        sx={{ 
-          maxWidth: 450, 
-          width: '100%',
-          borderRadius: 2
-        }}
-      >
+      <Card elevation={8} sx={{ maxWidth: 450, width: '100%', borderRadius: 2 }}>
         <CardContent sx={{ p: 4 }}>
-          {/* Header */}
           <Box sx={{ textAlign: 'center', mb: 4 }}>
             <LoginIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-            <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
+            <Typography variant="h4" fontWeight="bold" gutterBottom>
               Welcome Back
             </Typography>
             <Typography variant="body1" color="text.secondary">
@@ -111,18 +78,14 @@ const LoginPage = () => {
             </Typography>
           </Box>
 
-          {/* Error Alert */}
           {loginError && (
-            <Alert 
-              severity={loginError.includes('blocked') ? 'error' : 'warning'} 
-              sx={{ mb: 3 }}
-            >
+            <Alert severity={loginError.includes('blocked') ? 'error' : 'warning'} sx={{ mb: 3 }}>
               {loginError}
             </Alert>
           )}
 
-          {/* Login Form */}
-          <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
+          {/* <-- Use actual form element --> */}
+          <form onSubmit={handleSubmit(onSubmit)} noValidate>
             <TextField
               fullWidth
               label="Email Address"
@@ -132,10 +95,7 @@ const LoginPage = () => {
               margin="normal"
               {...register('email', {
                 required: 'Email is required',
-                pattern: {
-                  value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                  message: 'Invalid email address'
-                }
+                pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: 'Invalid email' }
               })}
               error={!!errors.email}
               helperText={errors.email?.message}
@@ -156,10 +116,7 @@ const LoginPage = () => {
               margin="normal"
               {...register('password', {
                 required: 'Password is required',
-                minLength: {
-                  value: 6,
-                  message: 'Password must be at least 6 characters'
-                }
+                minLength: { value: 6, message: 'Password must be at least 6 characters' }
               })}
               error={!!errors.password}
               helperText={errors.password?.message}
@@ -171,11 +128,7 @@ const LoginPage = () => {
                 ),
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton
-                      onClick={togglePasswordVisibility}
-                      edge="end"
-                      aria-label="toggle password visibility"
-                    >
+                    <IconButton onClick={() => setShowPassword(!showPassword)} edge="end">
                       {showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
@@ -184,7 +137,7 @@ const LoginPage = () => {
             />
 
             <Button
-              type="submit"
+              type="submit"  // form submission is now handled by React Hook Form
               fullWidth
               variant="contained"
               size="large"
@@ -194,22 +147,14 @@ const LoginPage = () => {
             >
               {isLoading ? 'Signing In...' : 'Sign In'}
             </Button>
-          </Box>
+          </form>
 
           <Divider sx={{ my: 3 }} />
 
-          {/* Registration Link */}
           <Box sx={{ textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
               Don't have an account?{' '}
-              <Link 
-                to="/auth/register" 
-                style={{ 
-                  color: 'inherit',
-                  textDecoration: 'none',
-                  fontWeight: 'bold'
-                }}
-              >
+              <Link to="/auth/register" style={{ fontWeight: 'bold', textDecoration: 'none' }}>
                 Create Account
               </Link>
             </Typography>
