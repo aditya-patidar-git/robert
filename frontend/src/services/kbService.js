@@ -14,25 +14,25 @@ const kbService = {
   // Get all knowledge base articles
   async getAllArticles() {
     const response = await apiClient.get('/api/kb/articles');
-    return response.data;
+    return response.data.articles || [];
   },
 
   // Get article by ID
   async getArticle(articleId) {
     const response = await apiClient.get(`/api/kb/articles/${articleId}`);
-    return response.data;
+    return response.data.article;
   },
 
   // Create new article
   async createArticle(articleData) {
     const response = await apiClient.post('/api/kb/articles', articleData);
-    return response.data;
+    return response.data.article;
   },
 
   // Update article
   async updateArticle(articleId, articleData) {
     const response = await apiClient.put(`/api/kb/articles/${articleId}`, articleData);
-    return response.data;
+    return response.data.article;
   },
 
   // Delete article
@@ -44,7 +44,7 @@ const kbService = {
   // Search articles
   async searchArticles(query) {
     const response = await apiClient.get(`/api/kb/search`, { params: { q: query } });
-    return response.data;
+    return response.data.articles || [];
   }
 };
 

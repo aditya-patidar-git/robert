@@ -10,6 +10,16 @@ import inboundRoutes from "./routes/inboundRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import kbRoutes from "./routes/kbRoutes.js";
+import aiRoutes from "./routes/aiRoutes.js";
+import voiceRoutes from "./routes/voiceRoutes.js";
+import vectorStoreRoutes from "./routes/vectorStoreRoutes.js";
+import fileSearchRoutes from "./routes/fileSearchRoutes.js";
+import driftRoutes from "./routes/driftRoutes.js";
+import reingestRoutes from "./routes/reingestRoutes.js";
+import testRetrievalRoutes from "./routes/testRetrievalRoutes.js";
+import provenanceRoutes from "./routes/provenanceRoutes.js";
+import uncertaintyGateRoutes from "./routes/uncertaintyGateRoutes.js";
 
 dotenv.config();
 
@@ -26,7 +36,17 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ Connected to MongoDB"))
+  .then(async () => {
+    console.log("✅ Connected to MongoDB");
+    
+    // Initialize services after MongoDB connection
+    try {
+      const initializeServices = (await import('./scripts/initializeServices.js')).default;
+      await initializeServices();
+    } catch (error) {
+      console.error("❌ Service initialization error:", error);
+    }
+  })
   .catch(err => console.error("❌ MongoDB connection error:", err));
 
 // Health check
@@ -44,6 +64,28 @@ app.use("/api/inbound", inboundRoutes);
 
 // Booking Routes
 app.use("/api/booking", bookingRoutes);
+
+// Knowledge Base Routes
+app.use("/api/kb", kbRoutes);
+
+// AI Configuration Routes
+app.use("/api/admin/ai", aiRoutes);
+
+// Voice Routes
+app.use("/api/admin/voice", voiceRoutes);
+
+// Vector Store Routes
+app.use("/api/vector-store", vectorStoreRoutes);
+
+// File Search Routes
+app.use("/api/file-search", fileSearchRoutes);
+
+// Phase 3: Advanced KB Features Routes
+app.use("/api/drift", driftRoutes);
+app.use("/api/reingest", reingestRoutes);
+app.use("/api/test-retrieval", testRetrievalRoutes);
+app.use("/api/provenance", provenanceRoutes);
+app.use("/api/uncertainty-gate", uncertaintyGateRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

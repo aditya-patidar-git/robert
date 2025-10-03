@@ -14,19 +14,19 @@ const promptService = {
   // Get all prompts
   async getAllPrompts() {
     const response = await apiClient.get('/api/admin/prompt');
-    return response.data;
+    return response.data.prompts || [];
   },
 
   // Create new prompt
   async createPrompt(promptData) {
     const response = await apiClient.post('/api/admin/prompt', promptData);
-    return response.data;
+    return response.data.prompt;
   },
 
   // Update prompt
   async updatePrompt(promptId, promptData) {
     const response = await apiClient.put(`/api/admin/prompt/${promptId}`, promptData);
-    return response.data;
+    return response.data.prompt;
   },
 
   // Delete prompt
@@ -38,7 +38,7 @@ const promptService = {
   // Get prompt by ID
   async getPrompt(promptId) {
     const response = await apiClient.get(`/api/admin/prompt/${promptId}`);
-    return response.data;
+    return response.data.prompt;
   }
 };
 

@@ -14,19 +14,20 @@ const aiService = {
   // Get current AI configuration
   async getConfig() {
     const response = await apiClient.get('/api/admin/ai/config');
-    return response.data;
+    return response.data.config;
   },
 
   // Update AI configuration
   async updateConfig(config) {
     const response = await apiClient.put('/api/admin/ai/config', config);
-    return response.data;
+    return response.data.config;
   },
 
-  // Get available models
-  async getModels() {
-    const response = await apiClient.get('/api/admin/ai/models');
-    return response.data;
+  // Get available models (discovered from OpenAI)
+  async getModels(forceRefresh = false) {
+    const params = forceRefresh ? { forceRefresh: 'true' } : {};
+    const response = await apiClient.get('/api/admin/ai/models', { params });
+    return response.data.models || [];
   },
 
   // Test AI response
@@ -35,7 +36,7 @@ const aiService = {
       prompt,
       ...parameters
     });
-    return response.data;
+    return response.data.result;
   }
 };
 

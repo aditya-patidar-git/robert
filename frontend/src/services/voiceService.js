@@ -11,10 +11,11 @@ const apiClient = axios.create({
 });
 
 const voiceService = {
-  // Get available voices
-  async getVoices() {
-    const response = await apiClient.get('/api/admin/voice/list');
-    return response.data;
+  // Get available voices (discovered from OpenAI)
+  async getVoices(forceRefresh = false) {
+    const params = forceRefresh ? { forceRefresh: 'true' } : {};
+    const response = await apiClient.get('/api/admin/voice/voices', { params });
+    return response.data.voices || [];
   },
 
   // Preview voice sample
@@ -22,22 +23,38 @@ const voiceService = {
     const response = await apiClient.post('/api/admin/voice/preview', {
       voiceId,
       text
-    }, {
-      responseType: 'blob'
     });
+    return response.data.preview;
+  },
+
+  // Get voice by ID
+  async getVoice(voiceId) {
+    const response = await apiClient.get(`/api/admin/voice/voices/${voiceId}`);
+    return response.data.voice;
+  },
+
+  // Create new voice
+  async createVoice(voiceData) {
+    const response = await apiClient.post('/api/admin/voice/voices', voiceData);
+    return response.data.voice;
+  },
+
+  // Update voice
+  async updateVoice(voiceId, voiceData) {
+    const response = await apiClient.put(`/api/admin/voice/voices/${voiceId}`, voiceData);
+    return response.data.voice;
+  },
+
+  // Delete voice
+  async deleteVoice(voiceId) {
+    const response = await apiClient.delete(`/api/admin/voice/voices/${voiceId}`);
     return response.data;
   },
 
-  // Get voice configuration
-  async getConfig() {
-    const response = await apiClient.get('/api/admin/voice/config');
-    return response.data;
-  },
-
-  // Update voice configuration
-  async updateConfig(config) {
-    const response = await apiClient.put('/api/admin/voice/config', config);
-    return response.data;
+  // Set default voice
+  async setDefaultVoice(voiceId) {
+    const response = await apiClient.patch(`/api/admin/voice/voices/${voiceId}/default`);
+    return response.data.voice;
   }
 };
 
