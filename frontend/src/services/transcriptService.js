@@ -4,20 +4,20 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 
 const apiClient = axios.create({
   baseURL: API_BASE,
-  // withCredentials: true,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
 const transcriptService = {
-  // Get all transcripts
-  async getAllTranscripts() {
-    const response = await apiClient.get('/api/transcripts');
+  // Get all transcripts with pagination and filtering
+  async getAllTranscripts(params = {}) {
+    const response = await apiClient.get('/api/transcripts', { params });
     return response.data;
   },
 
-  // Get transcript by ID
+  // Get transcript by ID with full details
   async getTranscript(transcriptId) {
     const response = await apiClient.get(`/api/transcripts/${transcriptId}`);
     return response.data;
@@ -40,10 +40,31 @@ const transcriptService = {
     return response.data;
   },
 
-  // Delete transcript
-  async deleteTranscript(transcriptId) {
-    const response = await apiClient.delete(`/api/transcripts/${transcriptId}`);
+  // Delete or redact transcript
+  async deleteTranscript(transcriptId, redact = false) {
+    const response = await apiClient.delete(`/api/transcripts/${transcriptId}`, {
+      data: { redact }
+    });
     return response.data;
+  },
+
+  // Submit complaint
+  async submitComplaint(complaintData) {
+    const response = await apiClient.post('/api/transcripts/complaint', complaintData);
+    return response.data;
+  },
+
+  // Get escalation timeline for a call
+  async getEscalationTimeline(callId) {
+    const response = await apiClient.get(`/api/transcripts/${callId}/escalations`);
+    return response.data;
+  },
+
+  // Get recording URL (if available)
+  async getRecordingUrl(callSid) {
+    // This would typically come from the transcript data
+    // For now, we'll construct it based on Twilio patterns
+    return `${API_BASE}/api/outbound/recording/${callSid}`;
   }
 };
 

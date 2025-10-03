@@ -21,7 +21,13 @@ import {
   DialogActions,
   Chip,
   TextField,
-  Alert
+  Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Grid,
+  Pagination
 } from '@mui/material';
 import {
   Timeline,
@@ -61,18 +67,27 @@ const TranscriptsComplaintsPage = () => {
   // Check if user can see all data or just their own
   const canSeeAll = user?.role === 'owner' || user?.role === 'admin';
 
-  // Fetch transcripts
-  const { data: transcripts = [], isLoading: transcriptsLoading } = useQuery({
-    queryKey: ['transcripts', user?.id],
-    queryFn: () => transcriptService.getAllTranscripts(),
+  // Fetch transcripts with pagination and filtering
+  const [transcriptFilters, setTranscriptFilters] = useState({
+    page: 1,
+    limit: 20,
+    search: '',
+    result: '',
+    escalated: '',
+    hasComplaint: ''
+  });
+
+  const { data: transcriptData, isLoading: transcriptsLoading } = useQuery({
+    queryKey: ['transcripts', user?.id, transcriptFilters],
+    queryFn: () => transcriptService.getAllTranscripts(transcriptFilters),
     select: (data) => {
-      // Filter for users to see only their own
-      if (!canSeeAll) {
-        return data.filter(transcript => transcript.userId === user?.id);
-      }
+      // Role-based filtering is now handled on the backend
       return data;
     }
   });
+
+  const transcripts = transcriptData?.transcripts || [];
+  const pagination = transcriptData?.pagination;
 
   // Mock complaints data - replace with actual service
   const mockComplaints = [
@@ -94,27 +109,14 @@ const TranscriptsComplaintsPage = () => {
     }
   ];
 
-  // Mock escalation logs
-  const mockEscalations = [
-    {
-      id: 'esc_001',
-      callId: 'call_001',
-      timestamp: new Date().toISOString(),
-      from: 'AI Agent',
-      to: 'Human Agent',
-      reason: 'Complex technical query',
-      summary: 'Customer needed detailed technical support beyond AI capabilities'
-    },
-    {
-      id: 'esc_002',
-      callId: 'call_002',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      from: 'AI Agent',
-      to: 'Supervisor',
-      reason: 'Customer complaint',
-      summary: 'Customer expressed dissatisfaction with service quality'
-    }
-  ];
+  // Fetch escalation timeline for selected transcript
+  const { data: escalationData } = useQuery({
+    queryKey: ['escalations', selectedTranscript?.callSid],
+    queryFn: () => transcriptService.getEscalationTimeline(selectedTranscript?.callSid),
+    enabled: !!selectedTranscript?.callSid
+  });
+
+  const escalations = escalationData?.escalations || [];
 
   // Export transcripts mutation
   const exportMutation = useMutation({
@@ -155,18 +157,39 @@ const TranscriptsComplaintsPage = () => {
     }
   };
 
-  const handleSubmitComplaint = () => {
-    // Mock complaint submission
-    showSuccess('Complaint submitted successfully');
-    setComplaintDialog(false);
-    setComplaintText('');
+  const handleSubmitComplaint = async () => {
+    try {
+      await transcriptService.submitComplaint({
+        callId: selectedTranscript?.callSid,
+        complaintText: complaintText,
+        complaintType: 'service_quality',
+        callerId: selectedTranscript?.from
+      });
+      showSuccess('Complaint submitted successfully');
+      setComplaintDialog(false);
+      setComplaintText('');
+      queryClient.invalidateQueries(['transcripts']);
+    } catch (error) {
+      showError('Failed to submit complaint');
+    }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'completed': return 'success';
-      case 'in_progress': return 'info';
-      case 'failed': return 'error';
+      case 'resolved': return 'success';
+      case 'escalated': return 'warning';
+      case 'voicemail': return 'info';
+      case 'error': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const getResultColor = (result) => {
+    switch (result) {
+      case 'resolved': return 'success';
+      case 'escalated': return 'warning';
+      case 'voicemail': return 'info';
+      case 'error': return 'error';
       default: return 'default';
     }
   };
@@ -230,7 +253,7 @@ const TranscriptsComplaintsPage = () => {
         <Paper>
           <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6">
-              Call Transcripts ({transcripts.length})
+              Call Transcripts ({pagination?.total || transcripts.length})
             </Typography>
             {canSeeAll && (
               <Button
@@ -243,16 +266,90 @@ const TranscriptsComplaintsPage = () => {
               </Button>
             )}
           </Box>
+          
+          {/* Filters */}
+          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} md={3}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Search"
+                  value={transcriptFilters.search}
+                  onChange={(e) => setTranscriptFilters(prev => ({ ...prev, search: e.target.value }))}
+                  placeholder="Search transcripts..."
+                />
+              </Grid>
+              <Grid item xs={12} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Result</InputLabel>
+                  <Select
+                    value={transcriptFilters.result}
+                    onChange={(e) => setTranscriptFilters(prev => ({ ...prev, result: e.target.value }))}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    <MenuItem value="resolved">Resolved</MenuItem>
+                    <MenuItem value="escalated">Escalated</MenuItem>
+                    <MenuItem value="voicemail">Voicemail</MenuItem>
+                    <MenuItem value="error">Error</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Escalated</InputLabel>
+                  <Select
+                    value={transcriptFilters.escalated}
+                    onChange={(e) => setTranscriptFilters(prev => ({ ...prev, escalated: e.target.value }))}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    <MenuItem value="true">Yes</MenuItem>
+                    <MenuItem value="false">No</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Complaint</InputLabel>
+                  <Select
+                    value={transcriptFilters.hasComplaint}
+                    onChange={(e) => setTranscriptFilters(prev => ({ ...prev, hasComplaint: e.target.value }))}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    <MenuItem value="true">Yes</MenuItem>
+                    <MenuItem value="false">No</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <Button
+                  variant="outlined"
+                  onClick={() => setTranscriptFilters({
+                    page: 1,
+                    limit: 20,
+                    search: '',
+                    result: '',
+                    escalated: '',
+                    hasComplaint: ''
+                  })}
+                >
+                  Clear Filters
+                </Button>
+              </Grid>
+            </Grid>
+          </Box>
           <TableContainer>
             <Table>
               <TableHead>
-                <TableRow>
-                  <TableCell>Caller ID</TableCell>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Duration</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
+                  <TableRow>
+                    <TableCell>Caller ID</TableCell>
+                    <TableCell>Date</TableCell>
+                    <TableCell>Duration</TableCell>
+                    <TableCell>Result</TableCell>
+                    <TableCell>Escalated</TableCell>
+                    <TableCell>Complaint</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
               </TableHead>
               <TableBody>
                 {transcripts.map((transcript) => (
@@ -266,8 +363,22 @@ const TranscriptsComplaintsPage = () => {
                     <TableCell>{formatDuration(transcript.duration)}</TableCell>
                     <TableCell>
                       <Chip
-                        label={transcript.status || 'completed'}
-                        color={getStatusColor(transcript.status)}
+                        label={transcript.result || 'resolved'}
+                        color={getResultColor(transcript.result)}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={transcript.escalation?.escalated ? 'Yes' : 'No'}
+                        color={transcript.escalation?.escalated ? 'warning' : 'default'}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={transcript.complaint?.hasComplaint ? 'Yes' : 'No'}
+                        color={transcript.complaint?.hasComplaint ? 'error' : 'default'}
                         size="small"
                       />
                     </TableCell>
@@ -313,6 +424,18 @@ const TranscriptsComplaintsPage = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          
+          {/* Pagination */}
+          {pagination && pagination.pages > 1 && (
+            <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
+              <Pagination
+                count={pagination.pages}
+                page={transcriptFilters.page}
+                onChange={(event, page) => setTranscriptFilters(prev => ({ ...prev, page }))}
+                color="primary"
+              />
+            </Box>
+          )}
         </Paper>
       )}
 
@@ -391,8 +514,8 @@ const TranscriptsComplaintsPage = () => {
               </Box>
               <Box sx={{ p: 3 }}>
                 <Timeline>
-                  {mockEscalations.map((escalation) => (
-                    <TimelineItem key={escalation.id}>
+                  {escalations.map((escalation) => (
+                    <TimelineItem key={escalation._id}>
                       <TimelineSeparator>
                         <TimelineDot color="primary">
                           <Phone fontSize="small" />
@@ -405,14 +528,22 @@ const TranscriptsComplaintsPage = () => {
                             {escalation.from} → {escalation.to}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {formatDateTime(escalation.timestamp)}
+                            {formatDateTime(escalation.initiatedAt)}
                           </Typography>
                           <Typography variant="body2" sx={{ mt: 1 }}>
-                            <strong>Reason:</strong> {escalation.reason}
+                            <strong>Reason:</strong> {escalation.reason.replace('_', ' ').toUpperCase()}
                           </Typography>
                           <Typography variant="body2">
                             <strong>Summary:</strong> {escalation.summary}
                           </Typography>
+                          <Typography variant="body2">
+                            <strong>Status:</strong> {escalation.escalationStatus}
+                          </Typography>
+                          {escalation.handoverSummary && (
+                            <Typography variant="body2">
+                              <strong>Handover:</strong> {escalation.handoverSummary}
+                            </Typography>
+                          )}
                         </Box>
                       </TimelineContent>
                     </TimelineItem>

@@ -13,23 +13,53 @@ const apiClient = axios.create({
 const configService = {
   // Audio & Telephony Configuration
   async getAudioConfig() {
-    const response = await apiClient.get('/api/admin/config/audio');
+    const response = await apiClient.get('/api/admin/audio-telephony/config/audio');
     return response.data;
   },
 
   async updateAudioConfig(config) {
-    const response = await apiClient.put('/api/admin/config/audio', config);
+    const response = await apiClient.put('/api/admin/audio-telephony/config/audio', config);
+    return response.data;
+  },
+
+  async testAudioConfig(voiceId, text) {
+    const response = await apiClient.post('/api/admin/audio-telephony/config/audio/test', { voiceId, text });
+    return response.data;
+  },
+
+  async getAudioMetrics() {
+    const response = await apiClient.get('/api/admin/audio-telephony/config/audio/metrics');
     return response.data;
   },
 
   // Telephony Configuration
   async getTelephonyConfig() {
-    const response = await apiClient.get('/api/admin/config/telephony');
+    const response = await apiClient.get('/api/admin/audio-telephony/config/telephony');
     return response.data;
   },
 
   async updateTelephonyConfig(config) {
-    const response = await apiClient.put('/api/admin/config/telephony', config);
+    const response = await apiClient.put('/api/admin/audio-telephony/config/telephony', config);
+    return response.data;
+  },
+
+  async addPhoneNumber(numberData) {
+    const response = await apiClient.post('/api/admin/audio-telephony/config/telephony/numbers', numberData);
+    return response.data;
+  },
+
+  async updatePhoneNumber(number, numberData) {
+    const response = await apiClient.put(`/api/admin/audio-telephony/config/telephony/numbers/${number}`, numberData);
+    return response.data;
+  },
+
+  async removePhoneNumber(number) {
+    const response = await apiClient.delete(`/api/admin/audio-telephony/config/telephony/numbers/${number}`);
+    return response.data;
+  },
+
+  async testPhoneNumber(number) {
+    const response = await apiClient.post(`/api/admin/audio-telephony/config/telephony/numbers/${number}/test`);
     return response.data;
   },
 

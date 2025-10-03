@@ -38,14 +38,14 @@ export const AuthProvider = ({ children }) => {
     }
     try {
       setIsLoading(true);
-      // const userData = await authService.getProfile();
-      setUser(mockadminuser);
+      const userData = await authService.getProfile();
+      setUser(userData);
       setIsAuthenticated(true);
     } catch (error) {
       console.log('No valid session found');
       setUser(null);
-      setIsAuthenticated(true);
-      // setIsAuthenticated(false);
+      // setIsAuthenticated(true);
+      setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
     }

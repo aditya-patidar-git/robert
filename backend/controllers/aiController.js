@@ -167,7 +167,7 @@ export const testPrompt = async (req, res) => {
     console.error("Error testing prompt:", err);
     res.status(500).json({ 
       status: "error", 
-      message: "Internal server error" 
+      message: "Internal server error"  
     });
   }
 };

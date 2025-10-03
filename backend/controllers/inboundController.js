@@ -10,7 +10,12 @@ const VoiceResponse = twilio.twiml.VoiceResponse;
 export const handleIncomingCall = async (req, res) => {
     const { CallSid, From, To } = req.body;
     if (!inboundConversations[CallSid]) {
-        inboundConversations[CallSid] = { transcript: [], from: From, to: To };
+        inboundConversations[CallSid] = { 
+            transcript: [], 
+            from: From, 
+            to: To, 
+            startTime: Date.now() 
+        };
     }
 
     // Initial AI greeting
@@ -140,6 +145,15 @@ export const handleRecordingStatus = async (req, res) => {
                 transcript: inboundConversations[CallSid].transcript,
                 recordingUrl: RecordingUrl,
                 summary,
+                entryPath: 'SIP', // Default for inbound calls
+                result: 'resolved', // Default, can be updated based on call outcome
+                confidenceScores: {
+                    overall: 0.8, // Default confidence
+                    transcription: 0.9,
+                    understanding: 0.7
+                },
+                language: 'en-GB',
+                duration: Date.now() - new Date(inboundConversations[CallSid].startTime || Date.now())
             });
 
             await rec.save();

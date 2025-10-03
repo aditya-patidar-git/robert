@@ -20,6 +20,8 @@ import reingestRoutes from "./routes/reingestRoutes.js";
 import testRetrievalRoutes from "./routes/testRetrievalRoutes.js";
 import provenanceRoutes from "./routes/provenanceRoutes.js";
 import uncertaintyGateRoutes from "./routes/uncertaintyGateRoutes.js";
+import transcriptRoutes from "./routes/transcriptRoutes.js";
+import audioTelephonyRoutes from "./routes/audioTelephonyRoutes.js";
 
 dotenv.config();
 
@@ -86,6 +88,10 @@ app.use("/api/reingest", reingestRoutes);
 app.use("/api/test-retrieval", testRetrievalRoutes);
 app.use("/api/provenance", provenanceRoutes);
 app.use("/api/uncertainty-gate", uncertaintyGateRoutes);
+app.use("/api/transcripts", transcriptRoutes);
+
+// Audio & Telephony Routes
+app.use("/api/admin/audio-telephony", audioTelephonyRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

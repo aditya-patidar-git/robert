@@ -191,7 +191,7 @@ class ProvenanceService {
         });
 
         if (fileScores.length > 0) {
-          stats.averageSimilarityScore = fileScores.reduce((sum, score => sum + score, 0) / fileScores.length;
+          stats.averageSimilarityScore = fileScores.reduce((sum, score => sum + score, 0) / fileScores.length);
         }
 
         // Get first and last usage
