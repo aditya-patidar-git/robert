@@ -68,3 +68,8 @@ complaintRecordSchema.index({ callerId: 1 });
 complaintRecordSchema.index({ complaintType: 1 });
 
 export default mongoose.model("ComplaintRecord", complaintRecordSchema);
+
+
+
+
+

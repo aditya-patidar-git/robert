@@ -3,7 +3,7 @@ import driftDetectionService from '../services/driftDetectionService.js';
 // Get drift detection status
 export const getDriftStatus = async (req, res) => {
   try {
-    const status = driftDetectionService.getDriftStatus();
+    const status = await driftDetectionService.getDriftStatus();
     res.json({ status: "success", ...status });
   } catch (err) {
     console.error("Error getting drift status:", err);
@@ -44,3 +44,8 @@ export const clearDriftFlags = async (req, res) => {
     res.status(500).json({ status: "error", message: "Failed to clear drift flags" });
   }
 };
+
+
+
+
+

@@ -83,9 +83,7 @@ class OpenAIService {
   async searchFiles(query, fileIds = null, limit = 5) {
     try {
       const searchParams = {
-        query,
-        limit,
-        vector_store_id: this.vectorStoreId
+        query
       };
 
       if (fileIds && fileIds.length > 0) {

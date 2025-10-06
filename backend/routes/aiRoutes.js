@@ -1,4 +1,6 @@
 import express from "express";
+import { protect } from "../middleware/authMiddleware.js";
+import { authorizeRoles } from "../middleware/rbacMiddleware.js";
 import {
   getConfig,
   updateConfig,
@@ -7,6 +9,10 @@ import {
 } from "../controllers/aiController.js";
 
 const router = express.Router();
+
+// Protect all AI routes + RBAC
+router.use(protect);
+router.use(authorizeRoles("owner", "admin"));
 
 // AI Configuration Routes
 router.get("/config", getConfig);

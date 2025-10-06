@@ -4,13 +4,18 @@ import Prompt from "../models/Prompt.js";
 // Add Global Prompt (Admin)
 export const addPrompt = async (req, res) => {
     try {
-        const { title, content } = req.body;
+        const { title, content, parameters } = req.body;
 
         if (!title || !content) {
             return res.status(400).json({ status: "error", message: "Title and content are required" });
         }
 
-        const newPrompt = new Prompt({ title, content, createdBy: "admin" });
+        const newPrompt = new Prompt({ 
+            title, 
+            content, 
+            parameters: parameters || {},
+            createdBy: "admin" 
+        });
         await newPrompt.save();
 
         res.status(201).json({
@@ -39,7 +44,7 @@ export const getPrompts = async (req, res) => {
 export const updatePrompt = async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, content } = req.body;
+        const { title, content, parameters } = req.body;
 
         const prompt = await Prompt.findById(id);
         if (!prompt) {
@@ -48,6 +53,7 @@ export const updatePrompt = async (req, res) => {
 
         if (title) prompt.title = title;
         if (content) prompt.content = content;
+        if (parameters) prompt.parameters = parameters;
 
         await prompt.save();
 

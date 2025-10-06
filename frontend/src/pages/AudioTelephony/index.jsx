@@ -127,8 +127,10 @@ const AudioTelephonyPage = () => {
     queryKey: ['voices'],
     queryFn: () => voiceService.getVoices(),
     onSuccess: (data) => {
-      if (data?.voices?.length > 0) {
-        const defaultVoice = data.voices.find(v => v.isDefault) || data.voices[0];
+      // Handle both old and new response structures
+      const voices = Array.isArray(data) ? data : (data?.voices || []);
+      if (voices.length > 0) {
+        const defaultVoice = voices.find(v => v.isDefault) || voices[0];
         setSelectedVoice(defaultVoice);
       }
     }
@@ -411,7 +413,7 @@ const AudioTelephonyPage = () => {
               <LinearProgress />
             ) : (
               <Grid container spacing={3}>
-                {voicesData?.voices?.map((voice) => (
+                {(Array.isArray(voicesData) ? voicesData : (voicesData?.voices || [])).map((voice) => (
                   <Grid item xs={12} md={6} lg={4} key={voice.id}>
                     <Card sx={{ 
                       border: selectedVoice?.id === voice.id ? 2 : 1,

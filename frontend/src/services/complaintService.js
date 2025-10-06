@@ -1,37 +1,27 @@
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
-
-const apiClient = axios.create({
-  baseURL: API_BASE,
-  withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+import authenticatedApiClient from '../api/authenticatedApi.js';
 
 const complaintService = {
   // Get all complaints with filtering
   async getAllComplaints(params = {}) {
-    const response = await apiClient.get('/api/complaints', { params });
+    const response = await authenticatedApiClient.get('/api/complaints', { params });
     return response.data;
   },
 
   // Get complaint by ID
   async getComplaint(complaintId) {
-    const response = await apiClient.get(`/api/complaints/${complaintId}`);
+    const response = await authenticatedApiClient.get(`/api/complaints/${complaintId}`);
     return response.data;
   },
 
   // Submit new complaint
   async submitComplaint(complaintData) {
-    const response = await apiClient.post('/api/transcripts/complaint', complaintData);
+    const response = await authenticatedApiClient.post('/api/transcripts/complaint', complaintData);
     return response.data;
   },
 
   // Update complaint status
   async updateComplaintStatus(complaintId, status, resolution = '') {
-    const response = await apiClient.patch(`/api/complaints/${complaintId}/status`, {
+    const response = await authenticatedApiClient.patch(`/api/complaints/${complaintId}/status`, {
       status,
       resolution
     });
@@ -40,7 +30,7 @@ const complaintService = {
 
   // Assign complaint to manager
   async assignComplaint(complaintId, assignedTo) {
-    const response = await apiClient.patch(`/api/complaints/${complaintId}/assign`, {
+    const response = await authenticatedApiClient.patch(`/api/complaints/${complaintId}/assign`, {
       assignedTo
     });
     return response.data;
@@ -48,9 +38,14 @@ const complaintService = {
 
   // Get complaint statistics
   async getComplaintStats() {
-    const response = await apiClient.get('/api/complaints/stats');
+    const response = await authenticatedApiClient.get('/api/complaints/stats');
     return response.data;
   }
 };
 
 export default complaintService;
+
+
+
+
+

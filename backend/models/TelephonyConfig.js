@@ -155,3 +155,8 @@ const TelephonyConfigSchema = new mongoose.Schema({
 });
 
 export default mongoose.model("TelephonyConfig", TelephonyConfigSchema);
+
+
+
+
+

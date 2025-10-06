@@ -96,13 +96,34 @@ class DriftDetectionService {
   }
 
   // Get drift detection status
-  getDriftStatus() {
-    return {
-      lastCheck: this.lastCheck,
-      checkInterval: this.checkInterval,
-      driftThreshold: this.driftThreshold,
-      isCheckNeeded: this.isCheckNeeded()
-    };
+  async getDriftStatus() {
+    try {
+      // Get current drift status from database
+      const totalFiles = await KnowledgeBase.countDocuments({ status: 'Active' });
+      const filesWithDrift = await KnowledgeBase.countDocuments({ 
+        hasDrift: true, 
+        status: 'Active' 
+      });
+
+      return {
+        lastCheck: this.lastCheck,
+        checkInterval: this.checkInterval,
+        driftThreshold: this.driftThreshold,
+        isCheckNeeded: this.isCheckNeeded(),
+        totalFiles,
+        filesWithDrift
+      };
+    } catch (error) {
+      console.error('Error getting drift status:', error);
+      return {
+        lastCheck: this.lastCheck,
+        checkInterval: this.checkInterval,
+        driftThreshold: this.driftThreshold,
+        isCheckNeeded: this.isCheckNeeded(),
+        totalFiles: 0,
+        filesWithDrift: 0
+      };
+    }
   }
 
   // Check if drift detection is needed
@@ -173,3 +194,8 @@ class DriftDetectionService {
 }
 
 export default new DriftDetectionService();
+
+
+
+
+

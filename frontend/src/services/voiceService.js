@@ -1,13 +1,4 @@
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
-
-const apiClient = axios.create({
-  baseURL: API_BASE,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+import authenticatedApiClient from '../api/authenticatedApi.js';
 
 const voiceService = {
   // Get all available voices
@@ -16,40 +7,72 @@ const voiceService = {
     if (language) params.language = language;
     if (forceRefresh) params.forceRefresh = true;
     
-    const response = await apiClient.get('/api/admin/audio-telephony/voices', { params });
-    return response.data;
+    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/voices', { params });
+    const data = response.data;
+    
+    // Handle the response structure from backend
+    if (data.status === 'success' && data.voices) {
+      return data.voices;
+    }
+    
+    // Fallback to original structure if response format is different
+    return data.voices || data || [];
   },
 
   // Get specific voice by ID
   async getVoice(voiceId) {
-    const response = await apiClient.get(`/api/admin/audio-telephony/voices/${voiceId}`);
-    return response.data;
+    const response = await authenticatedApiClient.get(`/api/admin/audio-telephony/voices/${voiceId}`);
+    const data = response.data;
+    
+    // Handle the response structure from backend
+    if (data.status === 'success' && data.voice) {
+      return data.voice;
+    }
+    
+    // Fallback to original structure if response format is different
+    return data.voice || data;
   },
 
   // Preview voice with custom text
   async previewVoice(voiceId, text) {
-    const response = await apiClient.post('/api/admin/audio-telephony/voices/preview', {
+    const response = await authenticatedApiClient.post('/api/admin/audio-telephony/voices/preview', {
       voiceId,
       text
     });
-    return response.data;
+    const data = response.data;
+    
+    // Handle the response structure from backend
+    if (data.status === 'success' && data.preview) {
+      return data.preview;
+    }
+    
+    // Fallback to original structure if response format is different
+    return data.preview || data;
   },
 
   // Set default voice
   async setDefaultVoice(voiceId) {
-    const response = await apiClient.patch(`/api/admin/audio-telephony/voices/${voiceId}/default`);
-    return response.data;
+    const response = await authenticatedApiClient.patch(`/api/admin/audio-telephony/voices/${voiceId}/default`);
+    const data = response.data;
+    
+    // Handle the response structure from backend
+    if (data.status === 'success' && data.voice) {
+      return data.voice;
+    }
+    
+    // Fallback to original structure if response format is different
+    return data.voice || data;
   },
 
   // Get voice discovery status
   async getDiscoveryStatus() {
-    const response = await apiClient.get('/api/admin/audio-telephony/voices/discovery-status');
+    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/voices/discovery-status');
     return response.data;
   },
 
   // Force voice discovery refresh
   async refreshVoices() {
-    const response = await apiClient.post('/api/admin/audio-telephony/voices/refresh');
+    const response = await authenticatedApiClient.post('/api/admin/audio-telephony/voices/refresh');
     return response.data;
   }
 };

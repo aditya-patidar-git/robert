@@ -1,4 +1,6 @@
 import express from "express";
+import { protect } from "../middleware/authMiddleware.js";
+import { authorizeRoles } from "../middleware/rbacMiddleware.js";
 import {
   getAudioConfig,
   updateAudioConfig,
@@ -22,6 +24,10 @@ import {
 
 const router = express.Router();
 
+// Protect all audio-telephony routes + RBAC
+router.use(protect);
+router.use(authorizeRoles("owner", "admin"));
+
 // Audio Configuration Routes
 router.get("/config/audio", getAudioConfig);
 router.put("/config/audio", updateAudioConfig);
@@ -43,3 +49,8 @@ router.post("/voices/preview", previewVoice);
 router.patch("/voices/:id/default", setDefaultVoice);
 
 export default router;
+
+
+
+
+

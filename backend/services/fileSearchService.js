@@ -38,9 +38,7 @@ class FileSearchService {
 
       // Search using File Search tool
       const searchParams = {
-        query,
-        max_results: maxResults,
-        similarity_threshold: similarityThreshold
+        query
       };
 
       // Add file filtering if specified
@@ -49,7 +47,7 @@ class FileSearchService {
       }
 
       // Perform the search
-      const searchResults = await openai.vectorStores.files.search(
+      const searchResults = await openai.vectorStores.search(
         this.vectorStoreId,
         searchParams
       );
@@ -217,3 +215,8 @@ class FileSearchService {
 }
 
 export default new FileSearchService();
+
+
+
+
+

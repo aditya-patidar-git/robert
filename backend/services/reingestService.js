@@ -139,8 +139,11 @@ class ReingestService {
   // Get reingest status
   getReingestStatus() {
     return {
-      ...this.reingestStatus,
-      isRunning: this.reingestStatus.isRunning
+      isRunning: this.reingestStatus.isRunning,
+      lastRun: this.reingestStatus.lastRun,
+      filesProcessed: this.reingestStatus.filesProcessed,
+      filesFailed: this.reingestStatus.filesFailed,
+      errors: this.reingestStatus.errors
     };
   }
 
@@ -192,3 +195,8 @@ class ReingestService {
 }
 
 export default new ReingestService();
+
+
+
+
+

@@ -17,3 +17,8 @@ router.get("/vector-store/status", getVectorStoreStatus);
 router.post("/test", testSearch);
 
 export default router;
+
+
+
+
+

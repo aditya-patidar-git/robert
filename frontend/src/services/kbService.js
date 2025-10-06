@@ -1,50 +1,51 @@
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
-
-const apiClient = axios.create({
-  baseURL: API_BASE,
-  // withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+import authenticatedApiClient from '../api/authenticatedApi.js';
 
 const kbService = {
-  // Get all knowledge base articles
-  async getAllArticles() {
-    const response = await apiClient.get('/api/kb/articles');
-    return response.data.articles || [];
+  // Get all files from OpenAI
+  async getAllFiles() {
+    const response = await authenticatedApiClient.get('/api/kb/files');
+    return response.data.files || [];
   },
 
-  // Get article by ID
-  async getArticle(articleId) {
-    const response = await apiClient.get(`/api/kb/articles/${articleId}`);
-    return response.data.article;
+  // Get file by ID
+  async getFile(fileId) {
+    const response = await authenticatedApiClient.get(`/api/kb/files/${fileId}`);
+    return response.data.file;
   },
 
-  // Create new article
-  async createArticle(articleData) {
-    const response = await apiClient.post('/api/kb/articles', articleData);
-    return response.data.article;
+  // Upload file to OpenAI
+  async uploadFile(file, tags = []) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('tags', JSON.stringify(tags));
+
+    const response = await authenticatedApiClient.post('/api/kb/files/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data.file;
   },
 
-  // Update article
-  async updateArticle(articleId, articleData) {
-    const response = await apiClient.put(`/api/kb/articles/${articleId}`, articleData);
-    return response.data.article;
-  },
-
-  // Delete article
-  async deleteArticle(articleId) {
-    const response = await apiClient.delete(`/api/kb/articles/${articleId}`);
+  // Delete file from OpenAI
+  async deleteFile(fileId) {
+    const response = await authenticatedApiClient.delete(`/api/kb/files/${fileId}`);
     return response.data;
   },
 
-  // Search articles
-  async searchArticles(query) {
-    const response = await apiClient.get(`/api/kb/search`, { params: { q: query } });
-    return response.data.articles || [];
+  // Search files using OpenAI File Search
+  async searchFiles(query, fileIds = null) {
+    const response = await authenticatedApiClient.post('/api/kb/search', {
+      query,
+      fileIds
+    });
+    return response.data;
+  },
+
+  // Get vector store status
+  async getVectorStoreStatus() {
+    const response = await authenticatedApiClient.get('/api/kb/vector-store/status');
+    return response.data.vectorStore;
   }
 };
 

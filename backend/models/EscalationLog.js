@@ -46,3 +46,8 @@ escalationLogSchema.index({ escalationStatus: 1 });
 escalationLogSchema.index({ reason: 1 });
 
 export default mongoose.model("EscalationLog", escalationLogSchema);
+
+
+
+
+

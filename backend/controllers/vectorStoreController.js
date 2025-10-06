@@ -25,9 +25,21 @@ export const getVectorStoreStatus = async (req, res) => {
     });
   } catch (err) {
     console.error("Error getting vector store status:", err);
-    res.status(500).json({ 
-      status: "error", 
-      message: "Internal server error" 
+    
+    // Return fallback data instead of error
+    res.json({
+      status: "success",
+      vectorStore: {
+        id: "unknown",
+        name: "Vector Store",
+        status: "error",
+        fileCounts: { total: 0, in_progress: 0, completed: 0, failed: 0 },
+        created_at: null
+      },
+      files: 0,
+      migration: vectorMigrationService.getMigrationStatus(),
+      discovery: modelDiscoveryService.getDiscoveryStatus(),
+      error: err.message
     });
   }
 };
@@ -285,3 +297,8 @@ export const cleanupOrphanedFiles = async (req, res) => {
     });
   }
 };
+
+
+
+
+

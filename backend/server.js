@@ -10,7 +10,7 @@ import inboundRoutes from "./routes/inboundRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
-import kbRoutes from "./routes/kbRoutes.js";
+import openaiKbRoutes from "./routes/openaiKbRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
 import voiceRoutes from "./routes/voiceRoutes.js";
 import vectorStoreRoutes from "./routes/vectorStoreRoutes.js";
@@ -29,10 +29,18 @@ const app = express();
 const httpServer = createServer(app);
 
 // Export io for controllers
-export const io = new Server(httpServer, { cors: { origin: "*" } });
+export const io = new Server(httpServer, { 
+  cors: { 
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    credentials: true 
+  } 
+});
 
 // Middlewares
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -67,8 +75,8 @@ app.use("/api/inbound", inboundRoutes);
 // Booking Routes
 app.use("/api/booking", bookingRoutes);
 
-// Knowledge Base Routes
-app.use("/api/kb", kbRoutes);
+// Knowledge Base Routes (OpenAI-based)
+app.use("/api/kb", openaiKbRoutes);
 
 // AI Configuration Routes
 app.use("/api/admin/ai", aiRoutes);

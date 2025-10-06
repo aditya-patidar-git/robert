@@ -16,6 +16,17 @@ export const AuthProvider = ({ children }) => {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
 
   useEffect(() => {
+    // Clean up any legacy tokens on app initialization
+      const cleanupLegacyTokens = () => {
+        const legacyTokens = ['voxipro_token', 'token', 'access_token', 'jwt_token'];
+        legacyTokens.forEach(legacyToken => {
+          if (localStorage.getItem(legacyToken)) {
+            localStorage.removeItem(legacyToken);
+          }
+        });
+      };
+    
+    cleanupLegacyTokens();
     checkAuthStatus();
   }, []);
 
@@ -25,23 +36,69 @@ export const AuthProvider = ({ children }) => {
   }, [theme]);
 
   const checkAuthStatus = async () => {
-    const mockadminuser = {
-      _id: "68d3d2d86f15796dc1badabc",
-      email: "admin@example.com",
-      username: "admin",
-      role: "admin",
-      status: "active"
-    }
     try {
       setIsLoading(true);
+      
+      // Clean up any legacy tokens that might interfere
+      const legacyTokens = ['voxipro_token', 'token', 'access_token', 'jwt_token'];
+      legacyTokens.forEach(legacyToken => {
+        if (localStorage.getItem(legacyToken)) {
+          localStorage.removeItem(legacyToken);
+        }
+      });
+      
+      // Only check auth status if we have a token
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setUser(null);
+        setIsAuthenticated(false);
+        return;
+      }
+      
+      // Check if token is expired (basic JWT decode)
+      try {
+        const parts = token.split('.');
+        if (parts.length !== 3) {
+          throw new Error('Invalid token format');
+        }
+        
+        const payload = JSON.parse(atob(parts[1]));
+        const currentTime = Date.now() / 1000;
+        
+        if (payload.exp && payload.exp < currentTime) {
+          throw new Error('Token expired');
+        }
+      } catch (jwtError) {
+        console.log('Token validation failed:', jwtError.message);
+        localStorage.removeItem('authToken');
+        setUser(null);
+        setIsAuthenticated(false);
+        return;
+      }
+      
       const userData = await authService.getProfile();
-      setUser(userData);
-      setIsAuthenticated(true);
-    } catch {
+      
+      if (userData && userData.id) {
+        setUser(userData);
+        setIsAuthenticated(true);
+      } else {
+        throw new Error('Invalid user data');
+      }
+    } catch (error) {
+      console.log('No valid session found:', error.message);
       setUser(null);
       setIsAuthenticated(false);
-      // setIsAuthenticated(true);
-      setIsAuthenticated(false);
+      // Clear invalid token
+      localStorage.removeItem('authToken');
+      
+      // Only redirect to login if we're not already on an auth page
+      const currentPath = window.location.pathname;
+      if (!currentPath.includes('/auth/') && !currentPath.includes('/login') && !currentPath.includes('/register')) {
+        // Use a small delay to prevent race conditions
+        setTimeout(() => {
+          window.location.href = '/auth/login';
+        }, 100);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -50,12 +107,17 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       const response = await authService.login(credentials);
-      console.log("response:", response)
-      setUser(response.user);
-      setIsAuthenticated(true);
-      return { success: true, user: response.user };
+      
+      // Validate the response structure
+      if (response && response.user && response.token) {
+        setUser(response.user);
+        setIsAuthenticated(true);
+        return { success: true, user: response.user };
+      } else {
+        throw new Error('Invalid login response structure');
+      }
     } catch (error) {
-      console.log("eroro:", error)
+      console.log("error:", error);
       const message =
         error?.response?.data?.message || 'Invalid credentials. Please try again.';
       const isBlocked = message.toLowerCase().includes('blocked');
@@ -82,6 +144,8 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setUser(null);
       setIsAuthenticated(false);
+      // Clear token from localStorage
+      localStorage.removeItem('authToken');
     }
   };
 
@@ -99,6 +163,18 @@ export const AuthProvider = ({ children }) => {
 
   const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
 
+  const clearAllTokens = () => {
+    // Clear all possible token keys
+    const allTokenKeys = ['authToken', 'voxipro_token', 'token', 'access_token', 'jwt_token', 'user'];
+    allTokenKeys.forEach(key => {
+      if (localStorage.getItem(key)) {
+        localStorage.removeItem(key);
+      }
+    });
+    setUser(null);
+    setIsAuthenticated(false);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -111,7 +187,8 @@ export const AuthProvider = ({ children }) => {
         logout,
         updateProfile,
         toggleTheme,
-        checkAuthStatus
+        checkAuthStatus,
+        clearAllTokens
       }}
     >
       {children}

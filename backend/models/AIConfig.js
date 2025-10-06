@@ -98,3 +98,8 @@ const AIConfigSchema = new mongoose.Schema({
 });
 
 export default mongoose.model("AIConfig", AIConfigSchema);
+
+
+
+
+

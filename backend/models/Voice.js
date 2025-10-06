@@ -68,3 +68,8 @@ const VoiceSchema = new mongoose.Schema({
 VoiceSchema.index({ language: 1, isDefault: 1 }, { unique: true, partialFilterExpression: { isDefault: true } });
 
 export default mongoose.model("Voice", VoiceSchema);
+
+
+
+
+
