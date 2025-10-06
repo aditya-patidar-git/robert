@@ -1,41 +1,32 @@
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
-
-const apiClient = axios.create({
-  baseURL: API_BASE,
-  // withCredentials: true,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+import authenticatedApiClient from '../api/authenticatedApi.js';
 
 const aiService = {
   // Get current AI configuration
   async getConfig() {
-    const response = await apiClient.get('/api/admin/ai/config');
-    return response.data;
+    const response = await authenticatedApiClient.get('/api/admin/ai/config');
+    return response.data.config;
   },
 
   // Update AI configuration
   async updateConfig(config) {
-    const response = await apiClient.put('/api/admin/ai/config', config);
-    return response.data;
+    const response = await authenticatedApiClient.put('/api/admin/ai/config', config);
+    return response.data.config;
   },
 
-  // Get available models
-  async getModels() {
-    const response = await apiClient.get('/api/admin/ai/models');
-    return response.data;
+  // Get available models (discovered from OpenAI)
+  async getModels(forceRefresh = false) {
+    const params = forceRefresh ? { forceRefresh: 'true' } : {};
+    const response = await authenticatedApiClient.get('/api/admin/ai/models', { params });
+    return response.data.models || [];
   },
 
   // Test AI response
   async testPrompt(prompt, parameters) {
-    const response = await apiClient.post('/api/admin/ai/test', {
+    const response = await authenticatedApiClient.post('/api/admin/ai/test', {
       prompt,
       ...parameters
     });
-    return response.data;
+    return response.data.result;
   }
 };
 
