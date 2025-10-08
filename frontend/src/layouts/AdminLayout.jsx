@@ -54,72 +54,72 @@ const AdminLayout = () => {
   const { showSuccess } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const muiTheme = getTheme(theme);
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('md'));
-  
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
 
   const menuItems = [
-    { 
-      text: 'Dashboard', 
-      icon: <Dashboard />, 
+    {
+      text: 'Dashboard',
+      icon: <Dashboard />,
       path: '/admin/dashboard',
-      roles: ['owner', 'admin'] 
+      roles: ['owner', 'admin']
     },
-    { 
-      text: 'Users', 
-      icon: <People />, 
+    {
+      text: 'Users',
+      icon: <People />,
       path: '/admin/users',
-      roles: ['owner'] 
+      roles: ['owner']
     },
-    { 
-      text: 'Knowledge Base & AI Controls', 
-      icon: <MenuBook />, 
+    {
+      text: 'Knowledge Base & AI Controls',
+      icon: <MenuBook />,
       path: '/admin/kb',
-      roles: ['owner', 'admin'] 
+      roles: ['owner', 'admin']
     },
-    { 
-      text: 'Audio & Telephony', 
-      icon: <Phone />, 
+    {
+      text: 'Audio & Telephony',
+      icon: <Phone />,
       path: '/admin/audio-telephony',
-      roles: ['owner', 'admin'] 
+      roles: ['owner', 'admin']
     },
-    { 
-      text: 'Transcripts & Escalations', 
-      icon: <Description />, 
+    {
+      text: 'Transcripts & Escalations',
+      icon: <Description />,
       path: '/admin/transcripts',
-      roles: ['owner', 'admin'] 
+      roles: ['owner', 'admin']
     },
-    { 
-      text: 'Privacy & Compliance', 
-      icon: <PrivacyTip />, 
+    {
+      text: 'Privacy & Compliance',
+      icon: <PrivacyTip />,
       path: '/admin/privacy',
-      roles: ['owner', 'admin'] 
+      roles: ['owner', 'admin']
     },
-    { 
-      text: 'Observability', 
-      icon: <Visibility />, 
+    {
+      text: 'Observability',
+      icon: <Visibility />,
       path: '/admin/observability',
-      roles: ['owner', 'admin'] 
+      roles: ['owner', 'admin']
     },
-    { 
-      text: 'System Configuration', 
-      icon: <Computer />, 
+    {
+      text: 'System Configuration',
+      icon: <Computer />,
       path: '/admin/system',
-      roles: ['owner', 'admin'] 
+      roles: ['owner', 'admin']
     },
-    { 
-      text: 'CRM Integration', 
-      icon: <Business />, 
-      path: '/admin/crm',
-      roles: ['owner', 'admin'] 
-    }
+    // { 
+    //   text: 'CRM Integration', 
+    //   icon: <Business />, 
+    //   path: '/admin/crm',
+    //   roles: ['owner', 'admin'] 
+    // }
   ];
 
   // Filter menu items based on user role
-  const filteredMenuItems = menuItems.filter(item => 
+  const filteredMenuItems = menuItems.filter(item =>
     item.roles.includes(user?.role)
   );
 
@@ -159,7 +159,7 @@ const AdminLayout = () => {
   };
 
   const getCurrentPageTitle = () => {
-    const currentItem = filteredMenuItems.find(item => 
+    const currentItem = filteredMenuItems.find(item =>
       location.pathname.startsWith(item.path)
     );
     return currentItem?.text || 'Robert Admin';
@@ -203,9 +203,9 @@ const AdminLayout = () => {
           </ListItem>
         ))}
       </List>
-      
+
       <Divider sx={{ mt: 'auto' }} />
-      
+
       {/* User Info in Sidebar */}
       <Box sx={{ p: 2, mt: 'auto' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -245,7 +245,7 @@ const AdminLayout = () => {
             >
               <MenuIcon />
             </IconButton>
-            
+
             <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
               {getCurrentPageTitle()}
             </Typography>
@@ -298,16 +298,16 @@ const AdminLayout = () => {
               {user?.email}
             </Typography>
           </Box>
-          
+
           <MenuItem onClick={handleProfileClick}>
             <ListItemIcon>
               <Person fontSize="small" />
             </ListItemIcon>
             Profile Settings
           </MenuItem>
-          
+
           <Divider />
-          
+
           <MenuItem onClick={handleLogout}>
             <ListItemIcon>
               <Logout fontSize="small" />
@@ -329,8 +329,8 @@ const AdminLayout = () => {
             ModalProps={{ keepMounted: true }}
             sx={{
               display: { xs: 'block', md: 'none' },
-              '& .MuiDrawer-paper': { 
-                boxSizing: 'border-box', 
+              '& .MuiDrawer-paper': {
+                boxSizing: 'border-box',
                 width: drawerWidth,
                 height: '100%',
                 display: 'flex',
@@ -340,14 +340,14 @@ const AdminLayout = () => {
           >
             {drawer}
           </Drawer>
-          
+
           {/* Desktop drawer */}
           <Drawer
             variant="permanent"
             sx={{
               display: { xs: 'none', md: 'block' },
-              '& .MuiDrawer-paper': { 
-                boxSizing: 'border-box', 
+              '& .MuiDrawer-paper': {
+                boxSizing: 'border-box',
                 width: drawerWidth,
                 height: '100%',
                 display: 'flex',

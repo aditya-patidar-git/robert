@@ -29,11 +29,11 @@ const app = express();
 const httpServer = createServer(app);
 
 // Export io for controllers
-export const io = new Server(httpServer, { 
-  cors: { 
+export const io = new Server(httpServer, {
+  cors: {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    credentials: true 
-  } 
+    credentials: true
+  }
 });
 
 // Middlewares
@@ -48,7 +48,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log("✅ Connected to MongoDB");
-    
+
     // Initialize services after MongoDB connection
     try {
       const initializeServices = (await import('./scripts/initializeServices.js')).default;
