@@ -202,7 +202,7 @@ const Dashboard = () => {
     try {
       // Simulate refresh
       setLoading({ metrics: true, calls: true, alerts: true });
-      
+
       // Refresh data
       setTimeout(() => {
         setMetrics(mockMetrics);
@@ -269,7 +269,7 @@ const Dashboard = () => {
       </Box>
 
       {/* Section A: Header Metrics */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={3} sx={{ mb: 4, justifyContent: "space-between" }}>
         {visibleMetrics.map((metric, index) => (
           <Grid item xs={12} sm={6} md={3} key={index}>
             <MetricCard

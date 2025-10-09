@@ -2,7 +2,10 @@ import twilio from "twilio";
 import axios from "axios";
 import CallRecord from "../models/CallRecord.js";
 import client from "../utils/twilioClient.js";
-import { getAIResponse } from "../utils/ai.js";
+import { getAIResponse, executeToolCall } from "../utils/ai.js";
+import observabilityService from "../services/observabilityService.js";
+import multilingualService from "../services/multilingualService.js";
+import gdprService from "../services/gdprService.js";
 import { io } from "../server.js";
 
 const conversations = {}; // in-memory storage
@@ -45,18 +48,31 @@ export const aiIntro = async (req, res) => {
     const { CallSid } = req.body;
     if (!conversations[CallSid]) conversations[CallSid] = { transcript: [] };
 
-    // Generate AI greeting
+    // Record call start
+    observabilityService.incrementMetric('app.total_calls');
+    observabilityService.incrementMetric('telephony.outbound_calls');
+    
+    // Record consent for GDPR
+    await gdprService.recordConsent(CallSid, 'recording', true);
+    await gdprService.recordConsent(CallSid, 'processing', true);
+
+    // Generate AI greeting with multilingual support
+    const language = multilingualService.getCurrentLanguage();
+    const greeting = multilingualService.getGreetingMessage(language);
+    
     const aiReply = await getAIResponse(
-        "The user picked up the call. Start the conversation."
+        `The user picked up the call. Start the conversation with: ${greeting}`
     );
+    
     conversations[CallSid].transcript.push({ role: "agent", text: aiReply });
+    conversations[CallSid].language = language;
 
     const twiml = new VoiceResponse();
 
     // Gather configuration for low-latency
     const gatherAttributes = {
         input: ["speech"],
-        language: "en-US",
+        language: multilingualService.getLanguageConfig(language).code,
         bargeIn: true,                     // Stop AI speech if user starts talking
         speechTimeout: "auto",                // Short silence threshold
         timeout: 3,                        // Max wait for user response
@@ -79,15 +95,63 @@ export const handleResponse = async (req, res) => {
     const userAnswer = req.body.SpeechResult || "";
 
     if (!conversations[callSid]) conversations[callSid] = { transcript: [] };
+    
+    // Detect language from user input
+    const detectedLanguage = multilingualService.detectLanguage(userAnswer);
+    if (detectedLanguage !== conversations[callSid].language) {
+        multilingualService.switchLanguage(detectedLanguage);
+        conversations[callSid].language = detectedLanguage;
+    }
+    
     conversations[callSid].transcript.push({ role: "user", text: userAnswer });
 
-    // Generate AI reply based on full conversation so far
-    const conversationText = conversations[callSid].transcript
-        .map(t => `${t.role === "agent" ? "AI" : "User"}: ${t.text}`)
-        .join("\n");
+    // Start performance trace
+    const traceId = observabilityService.startTrace('ai_response', { callSid, userAnswer });
 
-    const aiReply = await getAIResponse(conversationText);
-    conversations[callSid].transcript.push({ role: "agent", text: aiReply });
+    try {
+        // Generate AI reply with tool execution capability
+        const conversationText = conversations[callSid].transcript
+            .map(t => `${t.role === "agent" ? "AI" : "User"}: ${t.text}`)
+            .join("\n");
+
+        const callContext = {
+            callSid,
+            language: conversations[callSid].language,
+            userAnswer
+        };
+
+        const aiResponse = await getAIResponse(conversationText, null, callContext);
+        
+        let aiReply = aiResponse.content;
+        
+        // Handle tool execution if required
+        if (aiResponse.requires_tool_execution && aiResponse.tool_calls) {
+            for (const toolCall of aiResponse.tool_calls) {
+                const toolResult = await executeToolCall(toolCall, callContext);
+                
+                if (toolResult.success) {
+                    // Add tool result to conversation context
+                    aiReply += ` [Tool result: ${JSON.stringify(toolResult.result)}]`;
+                } else {
+                    aiReply += ` [Tool error: ${toolResult.error}]`;
+                }
+            }
+        }
+        
+        conversations[callSid].transcript.push({ role: "agent", text: aiReply });
+        
+        // Record successful AI response
+        observabilityService.incrementMetric('ai.successful_requests');
+        observabilityService.endTrace(traceId, { success: true });
+        
+    } catch (error) {
+        observabilityService.error('AI response error', { callSid, error: error.message });
+        observabilityService.incrementMetric('ai.failed_requests');
+        observabilityService.endTrace(traceId, { success: false, error: error.message });
+        
+        aiReply = "I'm sorry, I'm having trouble understanding. Could you please repeat that?";
+        conversations[callSid].transcript.push({ role: "agent", text: aiReply });
+    }
 
     const twiml = new VoiceResponse();
 
@@ -97,9 +161,10 @@ export const handleResponse = async (req, res) => {
         twiml.hangup();
     } else {
         // Prepare next gather for user input
+        const language = conversations[callSid].language || 'en';
         const gatherAttributes = {
             input: ["speech"],
-            language: "en-US",
+            language: multilingualService.getLanguageConfig(language).code,
             bargeIn: true,
             speechTimeout: "auto",
             timeout: 3,
@@ -169,15 +234,33 @@ export const recordingStatus = async (req, res) => {
                 console.error("Summary generation failed:", err.message);
             }
 
+            // Mask PII in transcript for GDPR compliance
+            const maskedTranscript = conversations[CallSid].transcript.map(entry => ({
+                ...entry,
+                text: gdprService.maskPII(entry.text, 'partial')
+            }));
+
             const rec = new CallRecord({
                 callSid: CallSid,
                 from: conversations[CallSid].from || "Unknown",
                 to: conversations[CallSid].to || "Unknown",
-                transcript: conversations[CallSid].transcript,
+                transcript: maskedTranscript,
                 recordingUrl: RecordingUrl,
                 summary,
+                language: conversations[CallSid].language || 'en',
+                piiDetected: gdprService.detectPII(conversations[CallSid].transcript.map(t => t.text).join(' ')),
+                gdprCompliant: true
             });
             await rec.save();
+            
+            // Log GDPR compliance
+            await gdprService.logAuditEvent('call_recorded', {
+                callSid: CallSid,
+                recordingUrl: RecordingUrl,
+                piiDetected: rec.piiDetected,
+                language: rec.language
+            });
+            
             delete conversations[CallSid];
 
             const records = await CallRecord.find().sort({ createdAt: -1 });

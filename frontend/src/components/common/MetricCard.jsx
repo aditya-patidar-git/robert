@@ -34,7 +34,7 @@ const MetricCard = ({
     >
       <CardContent sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <Box sx={{ flex: 1 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
               {title}
             </Typography>
@@ -42,16 +42,27 @@ const MetricCard = ({
               {loading ? '---' : value}
             </Typography>
             {change && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 0.5,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden'
+              }}>
                 {getTrendIcon()}
                 <Typography 
                   variant="body2" 
                   color={changeType === 'positive' ? 'success.main' : 'error.main'}
                   fontWeight="medium"
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   {change}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography 
+                  variant="body2" 
+                  color="text.secondary"
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
                   vs last period
                 </Typography>
               </Box>
@@ -59,8 +70,6 @@ const MetricCard = ({
           </Box>
           <Box
             sx={{
-              width: 48,
-              height: 48,
               borderRadius: '50%',
               backgroundColor: `${color}.main`,
               color: 'white',

@@ -100,20 +100,49 @@ const ActiveCallsTable = ({ calls, loading = false, onRowClick, userRole }) => {
         onRowClick={handleRowClick}
         sx={{
           border: 0,
+          backgroundColor: 'white',
           '& .MuiDataGrid-row': {
             cursor: 'pointer',
+            backgroundColor: 'white',
             '&:hover': {
-              backgroundColor: 'action.hover',
+              backgroundColor: 'rgba(0, 0, 0, 0.08) !important',
             },
+            '&:nth-of-type(even)': {
+              backgroundColor: 'white',
+            },
+            '&:nth-of-type(odd)': {
+              backgroundColor: 'white',
+            },
+          },
+          '& .MuiDataGrid-row:hover': {
+            backgroundColor: 'rgba(0, 0, 0, 0.08) !important',
           },
           '& .MuiDataGrid-cell': {
             borderBottom: '1px solid',
             borderBottomColor: 'divider',
+            backgroundColor: 'transparent',
           },
           '& .MuiDataGrid-columnHeaders': {
-            backgroundColor: 'background.paper',
+            backgroundColor: 'white',
             borderBottom: '2px solid',
             borderBottomColor: 'primary.main',
+            '& .MuiDataGrid-columnHeader': {
+              backgroundColor: 'white',
+            },
+            '& .MuiDataGrid-columnHeaderTitle': {
+              fontWeight: 'bold',
+              color: 'text.primary',
+            },
+          },
+          '& .MuiDataGrid-footerContainer': {
+            backgroundColor: 'white',
+            borderTop: '1px solid',
+            borderTopColor: 'divider',
+          },
+          '& .MuiDataGrid-toolbarContainer': {
+            backgroundColor: 'white',
+            borderBottom: '1px solid',
+            borderBottomColor: 'divider',
           },
         }}
         getRowId={(row) => row.callSid || row.id}

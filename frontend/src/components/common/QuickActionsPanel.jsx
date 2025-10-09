@@ -138,7 +138,7 @@ const QuickActionsPanel = ({ onToggleMCPTools, onPauseRouting, onRefreshSystem, 
             disabled={loading.refresh}
             color="info"
           >
-            Refresh Status
+            Refresh
           </Button>
         </ButtonGroup>
       </Box>

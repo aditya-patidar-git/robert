@@ -123,7 +123,7 @@ const ObservabilityPage = () => {
       value: '1,247',
       icon: <Phone />,
       color: 'primary',
-      change: '+8.2%',
+      change: '+8%',
       changeType: 'positive'
     },
     {
@@ -139,7 +139,7 @@ const ObservabilityPage = () => {
       value: '4.3',
       icon: <TrendingIcon />,
       color: 'success',
-      change: '+0.1',
+      change: '+1',
       changeType: 'positive'
     },
     {
@@ -147,7 +147,7 @@ const ObservabilityPage = () => {
       value: '0.8%',
       icon: <ErrorIcon />,
       color: 'error',
-      change: '-0.2%',
+      change: '2%',
       changeType: 'positive'
     }
   ];
@@ -260,7 +260,7 @@ const ObservabilityPage = () => {
       </Paper>
 
       {/* Summary Metrics */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={3} sx={{ mb: 4, justifyContent: "space-between" }}>
         {summaryMetrics.map((metric, index) => (
           <Grid item xs={12} sm={6} md={3} key={index}>
             <MetricCard
@@ -363,12 +363,47 @@ const ObservabilityPage = () => {
             disableSelectionOnClick
             sx={{
               border: 0,
+              backgroundColor: 'white',
               '& .MuiDataGrid-row': {
+                cursor: 'pointer',
+                backgroundColor: 'white',
                 '&:hover': {
-                  backgroundColor: 'action.hover',
+                  backgroundColor: 'rgba(0, 0, 0, 0.08) !important',
+                },
+                '&:nth-of-type(even)': {
+                  backgroundColor: 'white',
+                },
+                '&:nth-of-type(odd)': {
+                  backgroundColor: 'white',
                 },
               },
+              '& .MuiDataGrid-row:hover': {
+                backgroundColor: 'rgba(0, 0, 0, 0.08) !important',
+              },
               '& .MuiDataGrid-cell': {
+                borderBottom: '1px solid',
+                borderBottomColor: 'divider',
+                backgroundColor: 'transparent',
+              },
+              '& .MuiDataGrid-columnHeaders': {
+                backgroundColor: 'white',
+                borderBottom: '2px solid',
+                borderBottomColor: 'primary.main',
+                '& .MuiDataGrid-columnHeader': {
+                  backgroundColor: 'white',
+                },
+                '& .MuiDataGrid-columnHeaderTitle': {
+                  fontWeight: 'bold',
+                  color: 'text.primary',
+                },
+              },
+              '& .MuiDataGrid-footerContainer': {
+                backgroundColor: 'white',
+                borderTop: '1px solid',
+                borderTopColor: 'divider',
+              },
+              '& .MuiDataGrid-toolbarContainer': {
+                backgroundColor: 'white',
                 borderBottom: '1px solid',
                 borderBottomColor: 'divider',
               },

@@ -61,6 +61,35 @@ const callRecordSchema = new mongoose.Schema({
   },
   language: { type: String, default: 'en-GB' },
   duration: Number, // in seconds
+  // GDPR Compliance fields
+  piiDetected: {
+    phone: [String],
+    email: [String],
+    creditCard: [String],
+    postcode: [String],
+    nationalInsurance: [String],
+    drivingLicense: [String]
+  },
+  gdprCompliant: { type: Boolean, default: true },
+  consentRecorded: {
+    recording: { type: Boolean, default: false },
+    processing: { type: Boolean, default: false },
+    timestamp: Date
+  },
+  // Observability fields
+  metrics: {
+    aiResponseTime: Number,
+    toolExecutionTime: Number,
+    totalTokens: Number,
+    errorCount: Number
+  },
+  // MCP Tools usage
+  toolsUsed: [{
+    toolName: String,
+    executionTime: Number,
+    success: Boolean,
+    timestamp: { type: Date, default: Date.now }
+  }],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 }, {
