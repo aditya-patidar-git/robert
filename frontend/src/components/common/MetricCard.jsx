@@ -22,6 +22,7 @@ const MetricCard = ({
   return (
     <Card 
       sx={{ 
+        width: '100%',
         height: '100%',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
@@ -70,16 +71,19 @@ const MetricCard = ({
           </Box>
           <Box
             sx={{
+              width: 48,
+              height: 48,
               borderRadius: '50%',
               backgroundColor: `${color}.main`,
               color: 'white',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              ml: 2
+              ml: 2,
+              flexShrink: 0
             }}
           >
-            {icon}
+            {React.cloneElement(icon, { sx: { fontSize: 24 } })}
           </Box>
         </Box>
       </CardContent>

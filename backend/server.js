@@ -24,7 +24,6 @@ import transcriptRoutes from "./routes/transcriptRoutes.js";
 import audioTelephonyRoutes from "./routes/audioTelephonyRoutes.js";
 import mcpToolsRoutes from "./routes/mcpToolsRoutes.js";
 import gdprRoutes from "./routes/gdprRoutes.js";
-import observabilityRoutes from "./routes/observabilityRoutes.js";
 
 dotenv.config();
 
@@ -109,9 +108,6 @@ app.use("/api/mcp-tools", mcpToolsRoutes);
 
 // GDPR Routes
 app.use("/api/gdpr", gdprRoutes);
-
-// Observability Routes
-app.use("/api/observability", observabilityRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

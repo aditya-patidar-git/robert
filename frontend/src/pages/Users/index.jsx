@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Container,
   Typography,
   Box,
   Paper,
   TextField,
-  InputAdornment,
   FormControl,
   InputLabel,
   Select,
@@ -20,145 +18,97 @@ import {
   Button,
   Alert
 } from '@mui/material';
-import {
-  DataGrid,
-  GridToolbarContainer,
-  GridToolbarFilterButton,
-  GridToolbarExport
-} from '@mui/x-data-grid';
-import {
-  Search,
-  PersonAdd,
-  Check,
-  Block,
-  Delete,
-  RemoveCircle,
-  Visibility
-} from '@mui/icons-material';
+import { DataGrid } from '@mui/x-data-grid';
+import { Search, Check, Block, Delete, RemoveCircle } from '@mui/icons-material';
+import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { formatDateTime } from '../../utils/formatters';
 import { useToast } from '../../components/common/ToastProvider';
 import userService from '../../services/userService';
-import auditService from '../../services/auditService';
+
+// ✅ MOCK AUDIT LOGS (for UI testing)
+const MOCK_AUDIT_LOGS = [
+  { id: 1, userEmail: 'john.doe@example.com', action: 'Approved new admin account', timestamp: new Date() },
+  { id: 2, userEmail: 'sarah.smith@example.com', action: 'Blocked user: alex.jones@example.com', timestamp: new Date(Date.now() - 3600_000) },
+  { id: 3, userEmail: 'admin@system.com', action: 'Deleted user: test.user@example.com', timestamp: new Date(Date.now() - 7200_000) },
+  { id: 4, userEmail: 'owner@example.com', action: 'Changed role of mike.lee@example.com to admin', timestamp: new Date(Date.now() - 10_800_000) },
+];
 
 const UsersPage = () => {
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [confirmDialog, setConfirmDialog] = useState({ open: false, user: null, action: '' });
 
-  // Fetch users
+  // ✅ Fetch users
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ['users'],
     queryFn: userService.getAllUsers
   });
 
-  // Fetch audit logs
-  const { data: auditLogs = [], isLoading: auditLoading } = useQuery({
-    queryKey: ['audit-logs'],
-    queryFn: auditService.getLogs
-  });
+  // ✅ Mock audit logs instead of API
+  const auditLogs = MOCK_AUDIT_LOGS;
 
-  // User action mutations
-  const approveUserMutation = useMutation({
-    mutationFn: userService.approveUser,
-    onSuccess: () => {
-      showSuccess('User approved successfully');
-      queryClient.invalidateQueries(['users']);
-    },
-    onError: () => showError('Failed to approve user')
-  });
+  // ✅ User action mutations
+  const actionHandler = (mutationFn, successMsg, errorMsg) =>
+    useMutation({
+      mutationFn,
+      onSuccess: () => {
+        showSuccess(successMsg);
+        queryClient.invalidateQueries(['users']);
+      },
+      onError: () => showError(errorMsg),
+    });
 
-  const blockUserMutation = useMutation({
-    mutationFn: userService.blockUser,
-    onSuccess: () => {
-      showSuccess('User blocked successfully');
-      queryClient.invalidateQueries(['users']);
-    },
-    onError: () => showError('Failed to block user')
-  });
+  const approveUser = actionHandler(userService.approveUser, 'User approved', 'Approval failed');
+  const blockUser = actionHandler(userService.blockUser, 'User blocked', 'Blocking failed');
+  const excludeUser = actionHandler(userService.excludeUser, 'User excluded', 'Exclusion failed');
+  const deleteUser = actionHandler(userService.deleteUser, 'User deleted', 'Deletion failed');
 
-  const excludeUserMutation = useMutation({
-    mutationFn: userService.excludeUser,
-    onSuccess: () => {
-      showSuccess('User excluded successfully');
-      queryClient.invalidateQueries(['users']);
-    },
-    onError: () => showError('Failed to exclude user')
-  });
-
-  const deleteUserMutation = useMutation({
-    mutationFn: userService.deleteUser,
-    onSuccess: () => {
-      showSuccess('User deleted successfully');
-      queryClient.invalidateQueries(['users']);
-    },
-    onError: () => showError('Failed to delete user')
-  });
-
-  // Filter users based on search and filters
+  // ✅ Filter logic
   const filteredUsers = users.filter(user => {
-    const matchesSearch = !searchTerm || 
+    const matchSearch =
+      !searchTerm ||
       user.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesRole = !roleFilter || user.role === roleFilter;
-    const matchesStatus = !statusFilter || user.status === statusFilter;
-    
-    return matchesSearch && matchesRole && matchesStatus;
+
+    const matchRole = !roleFilter || user.role === roleFilter;
+    const matchStatus = !statusFilter || user.status === statusFilter;
+    return matchSearch && matchRole && matchStatus;
   });
 
-  const handleAction = (user, action) => {
-    setConfirmDialog({ open: true, user, action });
-  };
+  const handleAction = (user, action) => setConfirmDialog({ open: true, user, action });
 
   const executeAction = () => {
     const { user, action } = confirmDialog;
-    
-    switch (action) {
-      case 'approve':
-        approveUserMutation.mutate(user.id);
-        break;
-      case 'block':
-        blockUserMutation.mutate(user.id);
-        break;
-      case 'exclude':
-        excludeUserMutation.mutate(user.id);
-        break;
-      case 'delete':
-        deleteUserMutation.mutate(user.id);
-        break;
-    }
-    
+    if (action === 'approve') approveUser.mutate(user.id);
+    if (action === 'block') blockUser.mutate(user.id);
+    if (action === 'exclude') excludeUser.mutate(user.id);
+    if (action === 'delete') deleteUser.mutate(user.id);
     setConfirmDialog({ open: false, user: null, action: '' });
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'active': return 'success';
-      case 'pending': return 'warning';
-      case 'blocked': return 'error';
-      case 'excluded': return 'default';
-      default: return 'default';
-    }
-  };
+  const getStatusColor = (status) => ({
+    active: 'success',
+    pending: 'warning',
+    blocked: 'error',
+    excluded: 'default'
+  }[status] || 'default');
 
-  const getRoleColor = (role) => {
-    switch (role) {
-      case 'owner': return 'error';
-      case 'admin': return 'warning';
-      default: return 'default';
-    }
-  };
+  const getRoleColor = (role) => ({
+    owner: 'error',
+    admin: 'warning'
+  }[role] || 'default');
 
+  // ✅ Columns
   const userColumns = [
     {
       field: 'name',
       headerName: 'Name',
-      width: 200,
+      width: 180,
       renderCell: (params) => (
         <Box>
           <Typography variant="body2" fontWeight="medium">
@@ -170,27 +120,13 @@ const UsersPage = () => {
         </Box>
       )
     },
-    {
-      field: 'email',
-      headerName: 'Email',
-      width: 250,
-      renderCell: (params) => (
-        <Typography variant="body2">
-          {params.value}
-        </Typography>
-      )
-    },
+    { field: 'email', headerName: 'Email', width: 240 },
     {
       field: 'role',
       headerName: 'Role',
       width: 120,
       renderCell: (params) => (
-        <Chip
-          label={params.value}
-          color={getRoleColor(params.value)}
-          size="small"
-          variant="filled"
-        />
+        <Chip label={params.value} color={getRoleColor(params.value)} size="small" />
       )
     },
     {
@@ -198,61 +134,30 @@ const UsersPage = () => {
       headerName: 'Status',
       width: 120,
       renderCell: (params) => (
-        <Chip
-          label={params.value}
-          color={getStatusColor(params.value)}
-          size="small"
-          variant="outlined"
-        />
+        <Chip label={params.value} color={getStatusColor(params.value)} size="small" variant="outlined" />
       )
-    },
-    {
-      field: 'createdAt',
-      headerName: 'Created At',
-      width: 180,
-      renderCell: (params) => formatDateTime(params.value)
     },
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 200,
+      width: 180,
       sortable: false,
       renderCell: (params) => (
         <Box sx={{ display: 'flex', gap: 0.5 }}>
           {params.row.status === 'pending' && (
-            <IconButton
-              size="small"
-              color="success"
-              onClick={() => handleAction(params.row, 'approve')}
-              title="Approve"
-            >
+            <IconButton size="small" color="success" onClick={() => handleAction(params.row, 'approve')}>
               <Check fontSize="small" />
             </IconButton>
           )}
           {params.row.status === 'active' && (
-            <IconButton
-              size="small"
-              color="warning"
-              onClick={() => handleAction(params.row, 'block')}
-              title="Block"
-            >
+            <IconButton size="small" color="warning" onClick={() => handleAction(params.row, 'block')}>
               <Block fontSize="small" />
             </IconButton>
           )}
-          <IconButton
-            size="small"
-            color="default"
-            onClick={() => handleAction(params.row, 'exclude')}
-            title="Exclude"
-          >
+          <IconButton size="small" color="default" onClick={() => handleAction(params.row, 'exclude')}>
             <RemoveCircle fontSize="small" />
           </IconButton>
-          <IconButton
-            size="small"
-            color="error"
-            onClick={() => handleAction(params.row, 'delete')}
-            title="Delete"
-          >
+          <IconButton size="small" color="error" onClick={() => handleAction(params.row, 'delete')}>
             <Delete fontSize="small" />
           </IconButton>
         </Box>
@@ -261,90 +166,48 @@ const UsersPage = () => {
   ];
 
   const auditColumns = [
-    {
-      field: 'user',
-      headerName: 'User',
-      width: 200,
-      renderCell: (params) => (
-        <Typography variant="body2">
-          {params.row.userEmail || 'System'}
-        </Typography>
-      )
-    },
-    {
-      field: 'action',
-      headerName: 'Action',
-      width: 250,
-      renderCell: (params) => (
-        <Typography variant="body2" fontFamily="monospace">
-          {params.value}
-        </Typography>
-      )
-    },
+    { field: 'userEmail', headerName: 'User', width: 220 },
+    { field: 'action', headerName: 'Action', width: 380 },
     {
       field: 'timestamp',
       headerName: 'Timestamp',
-      width: 180,
+      width: 200,
       renderCell: (params) => formatDateTime(params.value)
     }
   ];
 
-  const CustomToolbar = () => (
-    <GridToolbarContainer>
-      <GridToolbarFilterButton />
-      <GridToolbarExport />
-    </GridToolbarContainer>
-  );
-
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
-      {/* Page Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
-          Admin Management
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Manage admin accounts, roles, and permissions
-        </Typography>
-      </Box>
+      <Typography variant="h4" fontWeight="bold" gutterBottom>
+        Admin Management
+      </Typography>
 
       {/* Filters */}
-      <Paper sx={{ p: 3, mb: 3 }}>
+      <Paper sx={{ p: 2, mb: 3 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <TextField
             placeholder="Search by name or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            sx={{ minWidth: 300 }}
+            size="small"
+            sx={{ minWidth: 280 }}
             InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search />
-                </InputAdornment>
-              )
+              startAdornment: <Search fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
             }}
           />
-          
-          <FormControl sx={{ minWidth: 120 }}>
+
+          <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Role</InputLabel>
-            <Select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              label="Role"
-            >
+            <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} label="Role">
               <MenuItem value="">All Roles</MenuItem>
               <MenuItem value="owner">Owner</MenuItem>
               <MenuItem value="admin">Admin</MenuItem>
             </Select>
           </FormControl>
 
-          <FormControl sx={{ minWidth: 120 }}>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Status</InputLabel>
-            <Select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              label="Status"
-            >
+            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} label="Status">
               <MenuItem value="">All Status</MenuItem>
               <MenuItem value="active">Active</MenuItem>
               <MenuItem value="pending">Pending</MenuItem>
@@ -357,56 +220,41 @@ const UsersPage = () => {
 
       {/* Users Table */}
       <Paper sx={{ mb: 4 }}>
-        <Box sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Admins ({filteredUsers.length})
-          </Typography>
-        </Box>
+        <Typography variant="h6" sx={{ p: 2 }}>
+          Admins ({filteredUsers.length})
+        </Typography>
         <Box sx={{ height: 400 }}>
           <DataGrid
             rows={filteredUsers}
             columns={userColumns}
             loading={usersLoading}
             pageSize={10}
-            rowsPerPageOptions={[5, 10, 25, 50]}
-            disableSelectionOnClick
-            components={{
-              Toolbar: CustomToolbar
-            }}
-            getRowId={(row) => row.id || row._id}
-            sx={{
-              border: 0,
-              '& .MuiDataGrid-cell': {
-                borderBottom: '1px solid',
-                borderBottomColor: 'divider'
-              }
-            }}
-          />
-        </Box>
-      </Paper>
-
-      {/* Audit Log Viewer */}
-      <Paper>
-        <Box sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Audit Logs
-          </Typography>
-        </Box>
-        <Box sx={{ height: 300 }}>
-          <DataGrid
-            rows={auditLogs}
-            columns={auditColumns}
-            loading={auditLoading}
-            pageSize={10}
             rowsPerPageOptions={[5, 10, 25]}
             disableSelectionOnClick
             getRowId={(row) => row.id || row._id}
             sx={{
               border: 0,
-              '& .MuiDataGrid-cell': {
-                borderBottom: '1px solid',
-                borderBottomColor: 'divider'
-              }
+              '& .MuiDataGrid-cell': { borderBottom: '1px solid', borderBottomColor: 'divider' }
+            }}
+          />
+        </Box>
+      </Paper>
+
+      {/* Audit Logs */}
+      <Paper>
+        <Typography variant="h6" sx={{ p: 2 }}>
+          Audit Logs
+        </Typography>
+        <Box sx={{ height: 300 }}>
+          <DataGrid
+            rows={auditLogs}
+            columns={auditColumns}
+            pageSize={5}
+            rowsPerPageOptions={[5, 10]}
+            disableSelectionOnClick
+            sx={{
+              border: 0,
+              '& .MuiDataGrid-cell': { borderBottom: '1px solid', borderBottomColor: 'divider' }
             }}
           />
         </Box>
@@ -414,9 +262,7 @@ const UsersPage = () => {
 
       {/* Confirmation Dialog */}
       <Dialog open={confirmDialog.open} onClose={() => setConfirmDialog({ open: false, user: null, action: '' })}>
-        <DialogTitle>
-          Confirm {confirmDialog.action}
-        </DialogTitle>
+        <DialogTitle>Confirm {confirmDialog.action}</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
             Are you sure you want to {confirmDialog.action} user "{confirmDialog.user?.email}"?
@@ -424,9 +270,7 @@ const UsersPage = () => {
           </Alert>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmDialog({ open: false, user: null, action: '' })}>
-            Cancel
-          </Button>
+          <Button onClick={() => setConfirmDialog({ open: false, user: null, action: '' })}>Cancel</Button>
           <Button onClick={executeAction} variant="contained" color="warning">
             Confirm
           </Button>

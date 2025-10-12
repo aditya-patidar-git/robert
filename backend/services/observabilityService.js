@@ -9,6 +9,7 @@ class ObservabilityService {
     this.alerts = [];
     this.performanceData = new Map();
     this.initializeMetrics();
+    this.initializeSampleLogs();
   }
 
   initializeMetrics() {
@@ -26,6 +27,12 @@ class ObservabilityService {
     this.metrics.set('app.avg_response_time', 0);
     this.metrics.set('app.error_rate', 0);
     
+    // Business metrics - Initialize with sample data for demo
+    this.metrics.set('business.total_calls', 1247);
+    this.metrics.set('business.active_calls', 3);
+    this.metrics.set('business.total_bookings', 89);
+    this.metrics.set('business.total_users', 156);
+    
     // AI metrics
     this.metrics.set('ai.total_requests', 0);
     this.metrics.set('ai.successful_requests', 0);
@@ -39,6 +46,35 @@ class ObservabilityService {
     this.metrics.set('telephony.transfers', 0);
     this.metrics.set('telephony.avg_call_duration', 0);
     this.metrics.set('telephony.call_quality', 0);
+  }
+
+  initializeSampleLogs() {
+    // Add some sample logs for demo purposes
+    const sampleLogs = [
+      {
+        timestamp: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
+        level: 'error',
+        message: 'Database connection timeout',
+        context: { service: 'database', retryCount: 3 },
+        service: 'robert-ai'
+      },
+      {
+        timestamp: new Date(Date.now() - 600000).toISOString(), // 10 minutes ago
+        level: 'warn',
+        message: 'High memory usage detected',
+        context: { memoryUsage: '85%', threshold: '80%' },
+        service: 'robert-ai'
+      },
+      {
+        timestamp: new Date(Date.now() - 900000).toISOString(), // 15 minutes ago
+        level: 'error',
+        message: 'AI service response timeout',
+        context: { service: 'openai', timeout: '30s' },
+        service: 'robert-ai'
+      }
+    ];
+    
+    this.logs = sampleLogs;
   }
 
   // Metrics Collection
@@ -118,217 +154,10 @@ class ObservabilityService {
     this.log('debug', message, context);
   }
 
-  // Tracing
-  startTrace(operationName, context = {}) {
-    const traceId = `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const spanId = `span_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const trace = {
-      traceId,
-      spanId,
-      operationName,
-      startTime: Date.now(),
-      context,
-      status: 'started'
-    };
-    
-    this.traces.push(trace);
-    return traceId;
-  }
 
-  endTrace(traceId, result = {}) {
-    const trace = this.traces.find(t => t.traceId === traceId);
-    if (trace) {
-      trace.endTime = Date.now();
-      trace.duration = trace.endTime - trace.startTime;
-      trace.status = 'completed';
-      trace.result = result;
-      
-      this.logMetric('trace.duration', trace.duration, { operation: trace.operationName });
-    }
-  }
 
-  // Performance Monitoring
-  recordPerformance(operation, duration, metadata = {}) {
-    const perfData = {
-      operation,
-      duration,
-      timestamp: new Date().toISOString(),
-      metadata
-    };
-    
-    if (!this.performanceData.has(operation)) {
-      this.performanceData.set(operation, []);
-    }
-    
-    const operationData = this.performanceData.get(operation);
-    operationData.push(perfData);
-    
-    // Keep only last 100 performance records per operation
-    if (operationData.length > 100) {
-      operationData.splice(0, operationData.length - 100);
-    }
-    
-    this.recordMetric(`performance.${operation}`, duration);
-  }
 
-  getPerformanceData(operation) {
-    return this.performanceData.get(operation) || [];
-  }
 
-  getPerformanceSummary(operation) {
-    const data = this.getPerformanceData(operation);
-    if (data.length === 0) return null;
-    
-    const durations = data.map(d => d.duration);
-    return {
-      operation,
-      count: data.length,
-      avgDuration: durations.reduce((a, b) => a + b, 0) / durations.length,
-      minDuration: Math.min(...durations),
-      maxDuration: Math.max(...durations),
-      p95Duration: this.percentile(durations, 0.95),
-      p99Duration: this.percentile(durations, 0.99)
-    };
-  }
-
-  percentile(arr, p) {
-    const sorted = arr.sort((a, b) => a - b);
-    const index = Math.ceil(sorted.length * p) - 1;
-    return sorted[index];
-  }
-
-  // Alerting
-  createAlert(alertType, severity, message, context = {}) {
-    const alert = {
-      id: `alert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      type: alertType,
-      severity,
-      message,
-      context,
-      timestamp: new Date().toISOString(),
-      status: 'active',
-      acknowledged: false
-    };
-    
-    this.alerts.push(alert);
-    
-    // Send alert notification
-    this.sendAlertNotification(alert);
-    
-    return alert;
-  }
-
-  acknowledgeAlert(alertId, acknowledgedBy) {
-    const alert = this.alerts.find(a => a.id === alertId);
-    if (alert) {
-      alert.acknowledged = true;
-      alert.acknowledgedBy = acknowledgedBy;
-      alert.acknowledgedAt = new Date().toISOString();
-    }
-  }
-
-  resolveAlert(alertId, resolvedBy) {
-    const alert = this.alerts.find(a => a.id === alertId);
-    if (alert) {
-      alert.status = 'resolved';
-      alert.resolvedBy = resolvedBy;
-      alert.resolvedAt = new Date().toISOString();
-    }
-  }
-
-  getActiveAlerts() {
-    return this.alerts.filter(a => a.status === 'active');
-  }
-
-  // Health Checks
-  async performHealthCheck() {
-    const healthCheck = {
-      timestamp: new Date().toISOString(),
-      status: 'healthy',
-      checks: {}
-    };
-    
-    // Database health
-    healthCheck.checks.database = await this.checkDatabaseHealth();
-    
-    // AI service health
-    healthCheck.checks.ai = await this.checkAIHealth();
-    
-    // Telephony health
-    healthCheck.checks.telephony = await this.checkTelephonyHealth();
-    
-    // Overall status
-    const allChecks = Object.values(healthCheck.checks);
-    healthCheck.status = allChecks.every(check => check.status === 'healthy') ? 'healthy' : 'unhealthy';
-    
-    return healthCheck;
-  }
-
-  async checkDatabaseHealth() {
-    try {
-      // In a real implementation, this would check database connection
-      return {
-        status: 'healthy',
-        responseTime: 50,
-        lastChecked: new Date().toISOString()
-      };
-    } catch (error) {
-      return {
-        status: 'unhealthy',
-        error: error.message,
-        lastChecked: new Date().toISOString()
-      };
-    }
-  }
-
-  async checkAIHealth() {
-    try {
-      // In a real implementation, this would check AI service
-      return {
-        status: 'healthy',
-        responseTime: 200,
-        lastChecked: new Date().toISOString()
-      };
-    } catch (error) {
-      return {
-        status: 'unhealthy',
-        error: error.message,
-        lastChecked: new Date().toISOString()
-      };
-    }
-  }
-
-  async checkTelephonyHealth() {
-    try {
-      // In a real implementation, this would check Twilio connection
-      return {
-        status: 'healthy',
-        responseTime: 100,
-        lastChecked: new Date().toISOString()
-      };
-    } catch (error) {
-      return {
-        status: 'unhealthy',
-        error: error.message,
-        lastChecked: new Date().toISOString()
-      };
-    }
-  }
-
-  // Reporting
-  generateReport(period = 'hourly') {
-    const report = {
-      period,
-      generatedAt: new Date().toISOString(),
-      metrics: this.getAllMetrics(),
-      performance: this.getPerformanceSummary('all'),
-      alerts: this.getActiveAlerts().length,
-      health: 'healthy' // Would be determined by health check
-    };
-    
-    return report;
-  }
 
   // File Operations
   writeLogToFile(logEntry) {
@@ -363,10 +192,6 @@ class ObservabilityService {
     }
   }
 
-  sendAlertNotification(alert) {
-    // In a real implementation, this would send notifications via email, Slack, etc.
-    console.log(`🚨 ALERT [${alert.severity.toUpperCase()}] ${alert.message}`, alert.context);
-  }
 }
 
 export default new ObservabilityService();

@@ -21,6 +21,7 @@ import {
   previewVoice,
   setDefaultVoice
 } from "../controllers/voiceController.js";
+import telephonyService from "../services/telephonyService.js";
 
 const router = express.Router();
 
@@ -47,6 +48,19 @@ router.get("/voices", getVoices);
 router.get("/voices/:id", getVoice);
 router.post("/voices/preview", previewVoice);
 router.patch("/voices/:id/default", setDefaultVoice);
+
+// Active Calls Route
+router.get("/active-calls", async (req, res) => {
+  try {
+    console.log('Backend - Active calls route called');
+    const activeCalls = await telephonyService.getActiveCalls();
+    console.log('Backend - Active calls response:', activeCalls);
+    res.json({ success: true, calls: activeCalls });
+  } catch (error) {
+    console.error('Backend - Active calls error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 export default router;
 

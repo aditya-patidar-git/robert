@@ -4,13 +4,28 @@ const callRecordSchema = new mongoose.Schema({
   callSid: { type: String, index: true, unique: true },
   from: String,
   to: String,
+  callStatus: {
+    type: String,
+    enum: [
+      'queued',
+      'ringing',
+      'in-progress',
+      'completed',
+      'busy',
+      'failed',
+      'no-answer',
+      'canceled'
+    ],
+    default: 'queued',
+    index: true
+  },
   transcript: [
     {
       role: { type: String, enum: ["user", "agent"], required: true },
       text: { type: String, required: true },
       timestamp: { type: Date, default: Date.now },
       confidence: { type: Number, min: 0, max: 1 },
-      redactions: [{ type: String }] // PII redaction markers
+      redactions: [{ type: String }]
     }
   ],
   recordingUrl: String,
@@ -100,6 +115,7 @@ const callRecordSchema = new mongoose.Schema({
 callRecordSchema.index({ createdAt: -1 });
 callRecordSchema.index({ from: 1 });
 callRecordSchema.index({ result: 1 });
+callRecordSchema.index({ callStatus: 1 });
 callRecordSchema.index({ 'escalation.escalated': 1 });
 callRecordSchema.index({ 'complaint.hasComplaint': 1 });
 

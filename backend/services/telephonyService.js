@@ -109,6 +109,38 @@ class TelephonyService {
       };
     }
   }
+
+  async getActiveCalls() {
+    try {
+      console.log('Backend - Getting active calls...');
+      // For demo purposes, return sample active calls data
+      // In a real implementation, this would query the database or Twilio API
+      const sampleCalls = [
+        {
+          callSid: 'CA1234567890abcdef1234567890abcdef',
+          callStatus: 'in-progress',
+          from: '+44123456789',
+          to: '+44198765432',
+          duration: 120,
+          startTime: new Date(Date.now() - 120000).toISOString()
+        },
+        {
+          callSid: 'CA0987654321fedcba0987654321fedcba',
+          callStatus: 'in-progress',
+          from: '+44111111111',
+          to: '+44222222222',
+          duration: 45,
+          startTime: new Date(Date.now() - 45000).toISOString()
+        }
+      ];
+
+      console.log('Backend - Sample calls:', sampleCalls);
+      return sampleCalls;
+    } catch (error) {
+      console.error('Get active calls error:', error);
+      return [];
+    }
+  }
 }
 
 export default new TelephonyService();

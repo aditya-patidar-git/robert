@@ -4,15 +4,14 @@ import {
   Container,
   Typography,
   Box,
-  Grid,
   Paper,
   Divider
 } from '@mui/material';
 import {
   Phone,
-  Speed,
-  StarRate,
-  Error as ErrorIcon
+  PhoneCallback,
+  Event,
+  People
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../hooks/useSocket';
@@ -25,149 +24,95 @@ import QuickActionsPanel from '../../components/common/QuickActionsPanel';
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { on, off, emit } = useSocket();
+  const { on, off } = useSocket();
   const { showSuccess, showError } = useToast();
 
-  // State management
+  // Mock data for dashboard
   const [metrics, setMetrics] = useState({
-    activeCalls: 0,
-    averageLatency: 0,
-    mos: 0,
-    errorCount: 0
+    totalCalls: 1247,
+    activeCalls: 3,
+    bookings: 89,
+    users: 156
   });
-  const [activeCalls, setActiveCalls] = useState([]);
-  const [alerts, setAlerts] = useState([]);
+  const [activeCalls, setActiveCalls] = useState([
+    {
+      callSid: 'CA1234567890abcdef1234567890abcdef',
+      callerId: 'CA1234567890abcdef1234567890abcdef',
+      status: 'In Progress',
+      duration: 120,
+      assignedNumber: '+44123456789',
+      agent: 'AI Agent'
+    },
+    {
+      callSid: 'CA0987654321fedcba0987654321fedcba',
+      callerId: 'CA0987654321fedcba0987654321fedcba',
+      status: 'In Progress',
+      duration: 45,
+      assignedNumber: '+44111111111',
+      agent: 'AI Agent'
+    }
+  ]);
+  const [alerts, setAlerts] = useState([
+    {
+      id: '1',
+      timestamp: new Date(Date.now() - 300000).toISOString(),
+      level: 'error',
+      message: 'Database connection timeout',
+      context: { service: 'database', retryCount: 3 },
+      service: 'robert-ai'
+    },
+    {
+      id: '2',
+      timestamp: new Date(Date.now() - 600000).toISOString(),
+      level: 'warn',
+      message: 'High memory usage detected',
+      context: { memoryUsage: '85%', threshold: '80%' },
+      service: 'robert-ai'
+    },
+    {
+      id: '3',
+      timestamp: new Date(Date.now() - 900000).toISOString(),
+      level: 'error',
+      message: 'AI service response timeout',
+      context: { service: 'openai', timeout: '30s' },
+      service: 'robert-ai'
+    }
+  ]);
   const [systemStatus, setSystemStatus] = useState({
     routingEnabled: true,
     mcpToolsActive: false
   });
   const [loading, setLoading] = useState({
-    metrics: true,
-    calls: true,
-    alerts: true
+    metrics: false,
+    calls: false,
+    alerts: false
   });
 
   // Role-based visibility
-  const canSeeAllMetrics = user?.role === 'owner' || user?.role === 'admin';
   const canSeeQuickActions = user?.role === 'owner' || user?.role === 'admin';
-  const canSeeAllCalls = user?.role === 'owner' || user?.role === 'admin';
 
-  // Mock data for demonstration (will be replaced with real API calls)
-  const mockMetrics = {
-    activeCalls: 12,
-    averageLatency: 145,
-    mos: 4.2,
-    errorCount: 3
-  };
-
-  const mockActiveCalls = [
-    {
-      callSid: 'call_001',
-      callerId: '+1234567890',
-      status: 'In Progress',
-      duration: 180,
-      assignedNumber: '+1987654321',
-      agent: 'AI Agent'
-    },
-    {
-      callSid: 'call_002',
-      callerId: '+1987654321',
-      status: 'On Hold',
-      duration: 95,
-      assignedNumber: '+1234567890',
-      agent: 'Human Agent'
-    },
-    {
-      callSid: 'call_003',
-      callerId: '+1555666777',
-      status: 'In Progress',
-      duration: 45,
-      assignedNumber: '+1111222333',
-      agent: 'AI Agent'
-    }
-  ];
-
-  const mockAlerts = [
-    {
-      id: 'alert_001',
-      severity: 'warning',
-      title: 'High Latency Detected',
-      message: 'Average call latency has exceeded 200ms threshold',
-      timestamp: new Date().toISOString(),
-      details: 'Affecting 15% of active calls'
-    },
-    {
-      id: 'alert_002',
-      severity: 'error',
-      title: 'API Rate Limit',
-      message: 'Twilio API rate limit reached',
-      timestamp: new Date(Date.now() - 300000).toISOString(),
-      details: 'Some calls may experience delays'
-    }
-  ];
-
-  // Fetch initial data
+  // Initialize with mock data (no API calls needed)
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        // Simulate API calls with mock data
-        setTimeout(() => {
-          setMetrics(mockMetrics);
-          setLoading(prev => ({ ...prev, metrics: false }));
-        }, 1000);
-
-        setTimeout(() => {
-          setActiveCalls(mockActiveCalls);
-          setLoading(prev => ({ ...prev, calls: false }));
-        }, 1200);
-
-        setTimeout(() => {
-          setAlerts(mockAlerts);
-          setLoading(prev => ({ ...prev, alerts: false }));
-        }, 800);
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
-        showError('Failed to load dashboard data');
-      }
-    };
-
-    fetchInitialData();
+    // Dashboard is now using mock data only
+    console.log('Dashboard initialized with mock data');
   }, []);
 
-  // WebSocket event handlers
-  useEffect(() => {
-    const handleActiveCalls = (data) => {
-      setActiveCalls(data);
-    };
-
-    const handleMetricsUpdate = (data) => {
-      setMetrics(data);
-    };
-
-    const handleSystemAlert = (alert) => {
-      setAlerts(prev => [alert, ...prev]);
-    };
-
-    // Subscribe to WebSocket events
-    on('activeCalls', handleActiveCalls);
-    on('metricsUpdate', handleMetricsUpdate);
-    on('systemAlert', handleSystemAlert);
-
-    return () => {
-      off('activeCalls', handleActiveCalls);
-      off('metricsUpdate', handleMetricsUpdate);
-      off('systemAlert', handleSystemAlert);
-    };
-  }, [on, off]);
+  // WebSocket handlers removed - using mock data only
 
   // Event handlers
   const handleMetricCardClick = (metricType) => {
     switch (metricType) {
+      case 'totalCalls':
+        navigate('/transcripts');
+        break;
       case 'activeCalls':
         navigate('/transcripts');
         break;
-      case 'errorCount':
-        navigate('/observability');
+      case 'bookings':
+        navigate('/admin/booking');
+        break;
+      case 'users':
+        navigate('/admin/users');
         break;
       default:
         break;
@@ -198,24 +143,22 @@ const Dashboard = () => {
     }
   };
 
-  const handleRefreshSystem = async () => {
-    try {
-      // Simulate refresh
-      setLoading({ metrics: true, calls: true, alerts: true });
-
-      // Refresh data
-      setTimeout(() => {
-        setMetrics(mockMetrics);
-        setActiveCalls(mockActiveCalls);
-        setLoading({ metrics: false, calls: false, alerts: false });
-      }, 1000);
-    } catch (error) {
-      showError('Failed to refresh system data');
-    }
+  const handleRefreshSystem = () => {
+    // Mock refresh - just show success message
+    showSuccess('Dashboard refreshed successfully');
   };
 
-  // Filter metrics based on user role
+  // Business metrics for dashboard
   const visibleMetrics = [
+    {
+      title: 'Total Calls',
+      value: metrics.totalCalls,
+      icon: <PhoneCallback />,
+      color: 'primary',
+      change: '+12',
+      changeType: 'positive',
+      onClick: () => handleMetricCardClick('totalCalls')
+    },
     {
       title: 'Active Calls',
       value: metrics.activeCalls,
@@ -225,35 +168,24 @@ const Dashboard = () => {
       changeType: 'positive',
       onClick: () => handleMetricCardClick('activeCalls')
     },
-    ...(canSeeAllMetrics ? [
-      {
-        title: 'Avg Latency',
-        value: `${metrics.averageLatency}ms`,
-        icon: <Speed />,
-        color: 'info',
-        change: '-12ms',
-        changeType: 'positive'
-      }
-    ] : []),
     {
-      title: 'MOS Score',
-      value: metrics.mos.toFixed(1),
-      icon: <StarRate />,
-      color: 'success',
-      change: '+0.2',
-      changeType: 'positive'
+      title: 'Bookings',
+      value: metrics.bookings,
+      icon: <Event />,
+      color: 'primary',
+      change: '+5',
+      changeType: 'positive',
+      onClick: () => handleMetricCardClick('bookings')
     },
-    ...(canSeeAllMetrics ? [
-      {
-        title: 'Errors (24h)',
-        value: metrics.errorCount,
-        icon: <ErrorIcon />,
-        color: 'error',
-        change: '+1',
-        changeType: 'negative',
-        onClick: () => handleMetricCardClick('errorCount')
-      }
-    ] : [])
+    {
+      title: 'Users',
+      value: metrics.users,
+      icon: <People />,
+      color: 'primary',
+      change: '+3',
+      changeType: 'positive',
+      onClick: () => handleMetricCardClick('users')
+    }
   ];
 
   return (
@@ -268,10 +200,25 @@ const Dashboard = () => {
         </Typography>
       </Box>
 
-      {/* Section A: Header Metrics */}
-      <Grid container spacing={3} sx={{ mb: 4, justifyContent: "space-between" }}>
+      {/* Section A: Business Metrics */}
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          flexWrap: 'wrap',
+          gap: 3,
+          mb: 4,
+          width: '100%'
+        }}
+      >
         {visibleMetrics.map((metric, index) => (
-          <Grid item xs={12} sm={6} md={3} key={index}>
+          <Box
+            key={index}
+            sx={{
+              flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 12px)', md: '1 1 calc(25% - 18px)' },
+              minWidth: 0
+            }}
+          >
             <MetricCard
               title={metric.title}
               value={metric.value}
@@ -282,9 +229,9 @@ const Dashboard = () => {
               onClick={metric.onClick}
               loading={loading.metrics}
             />
-          </Grid>
+          </Box>
         ))}
-      </Grid>
+      </Box>
 
       {/* Section B: Active Calls Panel */}
       <Paper sx={{ p: 3, mb: 4 }}>
@@ -303,10 +250,22 @@ const Dashboard = () => {
       </Paper>
 
       {/* Section C: Alerts & Quick Actions */}
-      <Grid container spacing={3}>
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          gap: 3,
+          alignItems: 'stretch'
+        }}
+      >
         {/* Alerts Panel */}
-        <Grid item xs={12} md={canSeeQuickActions ? 8 : 12}>
-          <Paper sx={{ p: 3, height: '100%' }}>
+        <Box
+          sx={{
+            flex: canSeeQuickActions ? '1 1 50%' : '1 1 100%',
+            minWidth: 0
+          }}
+        >
+          <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
             <Typography variant="h5" component="h2" gutterBottom fontWeight="bold">
               System Alerts
             </Typography>
@@ -314,17 +273,24 @@ const Dashboard = () => {
               Recent system notifications and warnings
             </Typography>
             <Divider sx={{ mb: 2 }} />
-            <AlertsPanel
-              alerts={alerts}
-              onDismiss={handleDismissAlert}
-            />
+            <Box sx={{ flex: 1 }}>
+              <AlertsPanel
+                alerts={alerts}
+                onDismiss={handleDismissAlert}
+              />
+            </Box>
           </Paper>
-        </Grid>
+        </Box>
 
         {/* Quick Actions Panel (Owner/Admin only) */}
         {canSeeQuickActions && (
-          <Grid item xs={12} md={4}>
-            <Paper sx={{ p: 3, height: '100%' }}>
+          <Box
+            sx={{
+              flex: '1 1 50%',
+              minWidth: 0
+            }}
+          >
+            <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
               <QuickActionsPanel
                 onToggleMCPTools={handleToggleMCPTools}
                 onPauseRouting={handlePauseRouting}
@@ -332,9 +298,9 @@ const Dashboard = () => {
                 systemStatus={systemStatus}
               />
             </Paper>
-          </Grid>
+          </Box>
         )}
-      </Grid>
+      </Box>
     </Container>
   );
 };
