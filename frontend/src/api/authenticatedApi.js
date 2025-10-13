@@ -16,8 +16,14 @@ authenticatedApiClient.interceptors.request.use(
   (config) => {
     // Get token from localStorage
     const token = localStorage.getItem('authToken');
+    console.log('🔐 Frontend - Token from localStorage:', token ? 'Present' : 'Missing');
+    console.log('🔐 Frontend - Request URL:', config.url);
+    
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('🔐 Frontend - Authorization header set');
+    } else {
+      console.log('❌ Frontend - No token found in localStorage');
     }
     return config;
   },

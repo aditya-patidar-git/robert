@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -14,44 +14,26 @@ import {
   People
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
-import { useSocket } from '../../hooks/useSocket';
 import { useToast } from '../../components/common/ToastProvider';
 import MetricCard from '../../components/common/MetricCard';
 import ActiveCallsTable from '../../components/common/ActiveCallsTable';
 import AlertsPanel from '../../components/common/AlertsPanel';
 import QuickActionsPanel from '../../components/common/QuickActionsPanel';
+import dashboardService from '../../services/dashboardService';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { on, off } = useSocket();
   const { showSuccess, showError } = useToast();
 
-  // Mock data for dashboard
+  // Dashboard state
   const [metrics, setMetrics] = useState({
-    totalCalls: 1247,
-    activeCalls: 3,
-    bookings: 89,
-    users: 156
+    totalCalls: 0,
+    activeCalls: 0,
+    bookings: 0,
+    users: 0
   });
-  const [activeCalls, setActiveCalls] = useState([
-    {
-      callSid: 'CA1234567890abcdef1234567890abcdef',
-      callerId: 'CA1234567890abcdef1234567890abcdef',
-      status: 'In Progress',
-      duration: 120,
-      assignedNumber: '+44123456789',
-      agent: 'AI Agent'
-    },
-    {
-      callSid: 'CA0987654321fedcba0987654321fedcba',
-      callerId: 'CA0987654321fedcba0987654321fedcba',
-      status: 'In Progress',
-      duration: 45,
-      assignedNumber: '+44111111111',
-      agent: 'AI Agent'
-    }
-  ]);
+  const [activeCalls, setActiveCalls] = useState([]);
   const [alerts, setAlerts] = useState([
     {
       id: '1',
@@ -83,19 +65,57 @@ const Dashboard = () => {
     mcpToolsActive: false
   });
   const [loading, setLoading] = useState({
-    metrics: false,
-    calls: false,
+    metrics: true,
+    calls: true,
     alerts: false
   });
 
   // Role-based visibility
   const canSeeQuickActions = user?.role === 'owner' || user?.role === 'admin';
 
-  // Initialize with mock data (no API calls needed)
+  // Fetch dashboard data from API
   useEffect(() => {
-    // Dashboard is now using mock data only
-    console.log('Dashboard initialized with mock data');
-  }, []);
+    const fetchDashboardData = async () => {
+      try {
+        setLoading({ metrics: true, calls: true, alerts: false });
+
+        const dashboardData = await dashboardService.getDashboardAnalytics();
+
+        if (dashboardData.success) {
+          // Update metrics
+          setMetrics({
+            totalCalls: dashboardData.metrics.totalCalls,
+            activeCalls: dashboardData.metrics.activeCalls,
+            bookings: dashboardData.metrics.totalBookings,
+            users: dashboardData.metrics.totalUsers
+          });
+
+          // Update active calls
+          setActiveCalls(dashboardData.liveCalls || []);
+
+        } else {
+          console.error('❌ Dashboard API returned error:', dashboardData.error);
+          showError('Failed to load dashboard data');
+        }
+      } catch (error) {
+        console.error('❌ Error fetching dashboard data:', error);
+        showError('Failed to load dashboard data');
+
+        // Set fallback data on error
+        setMetrics({
+          totalCalls: 0,
+          activeCalls: 0,
+          bookings: 0,
+          users: 0
+        });
+        setActiveCalls([]);
+      } finally {
+        setLoading({ metrics: false, calls: false, alerts: false });
+      }
+    };
+
+    fetchDashboardData();
+  }, [showError]);
 
   // WebSocket handlers removed - using mock data only
 
@@ -143,9 +163,35 @@ const Dashboard = () => {
     }
   };
 
-  const handleRefreshSystem = () => {
-    // Mock refresh - just show success message
-    showSuccess('Dashboard refreshed successfully');
+  const handleRefreshSystem = async () => {
+    try {
+      setLoading({ metrics: true, calls: true, alerts: false });
+      console.log('🔄 Refreshing dashboard data...');
+
+      const dashboardData = await dashboardService.getDashboardAnalytics();
+
+      if (dashboardData.success) {
+        // Update metrics
+        setMetrics({
+          totalCalls: dashboardData.metrics.totalCalls,
+          activeCalls: dashboardData.metrics.activeCalls,
+          bookings: dashboardData.metrics.totalBookings,
+          users: dashboardData.metrics.totalUsers
+        });
+
+        // Update active calls
+        setActiveCalls(dashboardData.liveCalls || []);
+
+        showSuccess('Dashboard refreshed successfully');
+      } else {
+        showError('Failed to refresh dashboard data');
+      }
+    } catch (error) {
+      console.error('❌ Error refreshing dashboard:', error);
+      showError('Failed to refresh dashboard data');
+    } finally {
+      setLoading({ metrics: false, calls: false, alerts: false });
+    }
   };
 
   // Business metrics for dashboard

@@ -2,26 +2,26 @@ import React from 'react';
 import { Card, CardContent, Box, Typography, IconButton, Chip } from '@mui/material';
 import { TrendingUp, TrendingDown } from '@mui/icons-material';
 
-const MetricCard = ({ 
-  title, 
-  value, 
-  icon, 
-  color = 'primary', 
-  change, 
+const MetricCard = ({
+  title,
+  value,
+  icon,
+  color = 'primary',
+  change,
   changeType = 'positive',
   onClick,
-  loading = false 
+  loading = false
 }) => {
   const getTrendIcon = () => {
     if (!change) return null;
-    return changeType === 'positive' ? 
-      <TrendingUp sx={{ fontSize: 16, color: 'success.main' }} /> : 
+    return changeType === 'positive' ?
+      <TrendingUp sx={{ fontSize: 16, color: 'success.main' }} /> :
       <TrendingDown sx={{ fontSize: 16, color: 'error.main' }} />;
   };
 
   return (
-    <Card 
-      sx={{ 
+    <Card
+      sx={{
         width: '100%',
         height: '100%',
         cursor: onClick ? 'pointer' : 'default',
@@ -42,32 +42,6 @@ const MetricCard = ({
             <Typography variant="h4" component="div" fontWeight="bold" sx={{ mb: 1 }}>
               {loading ? '---' : value}
             </Typography>
-            {change && (
-              <Box sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: 0.5,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden'
-              }}>
-                {getTrendIcon()}
-                <Typography 
-                  variant="body2" 
-                  color={changeType === 'positive' ? 'success.main' : 'error.main'}
-                  fontWeight="medium"
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  {change}
-                </Typography>
-                <Typography 
-                  variant="body2" 
-                  color="text.secondary"
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  vs last period
-                </Typography>
-              </Box>
-            )}
           </Box>
           <Box
             sx={{

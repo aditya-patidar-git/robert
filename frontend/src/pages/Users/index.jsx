@@ -88,6 +88,11 @@ const UsersPage = () => {
     if (action === 'block') blockUser.mutate(user.id);
     if (action === 'exclude') excludeUser.mutate(user.id);
     if (action === 'delete') deleteUser.mutate(user.id);
+    if (action === 'delete-audit') {
+      // Handle audit log deletion (mock implementation)
+      console.log('Deleting audit log:', user);
+      showSuccess('Audit log deleted successfully');
+    }
     setConfirmDialog({ open: false, user: null, action: '' });
   };
 
@@ -108,7 +113,7 @@ const UsersPage = () => {
     {
       field: 'name',
       headerName: 'Name',
-      width: 180,
+      width: 220,
       renderCell: (params) => (
         <Box>
           <Typography variant="body2" fontWeight="medium">
@@ -120,7 +125,7 @@ const UsersPage = () => {
         </Box>
       )
     },
-    { field: 'email', headerName: 'Email', width: 240 },
+    { field: 'email', headerName: 'Email', width: 330 },
     {
       field: 'role',
       headerName: 'Role',
@@ -166,13 +171,26 @@ const UsersPage = () => {
   ];
 
   const auditColumns = [
-    { field: 'userEmail', headerName: 'User', width: 220 },
-    { field: 'action', headerName: 'Action', width: 380 },
+    { field: 'userEmail', headerName: 'User', width: 241 },
+    { field: 'action', headerName: 'Action', width: 300 },
     {
       field: 'timestamp',
       headerName: 'Timestamp',
       width: 200,
       renderCell: (params) => formatDateTime(params.value)
+    },
+    {
+      field: 'actions',
+      headerName: 'Actions',
+      width: 220,
+      sortable: false,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <IconButton size="small" color="error" onClick={() => handleAction(params.row, 'delete-audit')}>
+            <Delete fontSize="small" />
+          </IconButton>
+        </Box>
+      )
     }
   ];
 
@@ -232,10 +250,6 @@ const UsersPage = () => {
             rowsPerPageOptions={[5, 10, 25]}
             disableSelectionOnClick
             getRowId={(row) => row.id || row._id}
-            sx={{
-              border: 0,
-              '& .MuiDataGrid-cell': { borderBottom: '1px solid', borderBottomColor: 'divider' }
-            }}
           />
         </Box>
       </Paper>
@@ -245,17 +259,13 @@ const UsersPage = () => {
         <Typography variant="h6" sx={{ p: 2 }}>
           Audit Logs
         </Typography>
-        <Box sx={{ height: 300 }}>
+        <Box sx={{ height: 350 }}>
           <DataGrid
             rows={auditLogs}
             columns={auditColumns}
             pageSize={5}
             rowsPerPageOptions={[5, 10]}
             disableSelectionOnClick
-            sx={{
-              border: 0,
-              '& .MuiDataGrid-cell': { borderBottom: '1px solid', borderBottomColor: 'divider' }
-            }}
           />
         </Box>
       </Paper>
@@ -265,8 +275,25 @@ const UsersPage = () => {
         <DialogTitle>Confirm {confirmDialog.action}</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            Are you sure you want to {confirmDialog.action} user "{confirmDialog.user?.email}"?
-            {confirmDialog.action === 'delete' && ' This action cannot be undone.'}
+            {confirmDialog.action === 'delete-audit' ? (
+              <>
+                Are you sure you want to delete this audit log entry?
+                <br />
+                <strong>Action:</strong> {confirmDialog.user?.action}
+                <br />
+                <strong>User:</strong> {confirmDialog.user?.userEmail}
+                <br />
+                <strong>Timestamp:</strong> {formatDateTime(confirmDialog.user?.timestamp)}
+                <br />
+                <br />
+                This action cannot be undone.
+              </>
+            ) : (
+              <>
+                Are you sure you want to {confirmDialog.action} user "{confirmDialog.user?.email}"?
+                {confirmDialog.action === 'delete' && ' This action cannot be undone.'}
+              </>
+            )}
           </Alert>
         </DialogContent>
         <DialogActions>

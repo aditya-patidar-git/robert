@@ -13,20 +13,20 @@ const __dirname = path.dirname(__filename);
 // Get all transcripts with filtering and pagination
 export const getAllTranscripts = async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      search, 
-      result, 
-      escalated, 
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      result,
+      escalated,
       hasComplaint,
       startDate,
       endDate,
-      userId 
+      userId
     } = req.query;
 
     const filter = {};
-    
+
     // Role-based filtering
     if (userId && req.user.role !== 'owner' && req.user.role !== 'admin') {
       // Users can only see their own calls (if we track user association)
@@ -66,7 +66,7 @@ export const getAllTranscripts = async (req, res) => {
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+
     const [transcripts, total] = await Promise.all([
       CallRecord.find(filter)
         .sort({ createdAt: -1 })
@@ -95,7 +95,7 @@ export const getAllTranscripts = async (req, res) => {
 export const getTranscript = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const transcript = await CallRecord.findById(id);
     if (!transcript) {
       return res.status(404).json({ error: 'Transcript not found' });
@@ -129,7 +129,7 @@ export const getTranscript = async (req, res) => {
 export const searchTranscripts = async (req, res) => {
   try {
     const { q, filters = {} } = req.query;
-    
+
     if (!q) {
       return res.status(400).json({ error: 'Search query is required' });
     }
@@ -162,7 +162,7 @@ export const searchTranscripts = async (req, res) => {
 export const exportTranscripts = async (req, res) => {
   try {
     const { format = 'csv', filters = {} } = req.query;
-    
+
     const transcripts = await CallRecord.find(filters)
       .sort({ createdAt: -1 })
       .lean();
@@ -205,7 +205,7 @@ export const deleteTranscript = async (req, res) => {
       }));
       transcript.summary = redactPII(transcript.summary);
       await transcript.save();
-      
+
       res.json({ message: 'Transcript redacted successfully' });
     } else {
       // Hard delete
@@ -254,7 +254,7 @@ export const submitComplaint = async (req, res) => {
     // Emit real-time update
     io.emit('complaint-submitted', { callId, complaintId: complaint._id });
 
-    res.json({ 
+    res.json({
       message: 'Complaint submitted successfully',
       complaintId: complaint._id,
       complaintEmail: 'complaints@universalmct.co.uk'
@@ -269,7 +269,7 @@ export const submitComplaint = async (req, res) => {
 export const getEscalationTimeline = async (req, res) => {
   try {
     const { callId } = req.params;
-    
+
     const escalations = await EscalationLog.find({ callId })
       .sort({ initiatedAt: -1 })
       .lean();
@@ -286,7 +286,7 @@ function generateCSV(transcripts) {
   const headers = [
     'Call SID',
     'From',
-    'To', 
+    'To',
     'Date',
     'Duration',
     'Result',
@@ -314,16 +314,16 @@ function generateCSV(transcripts) {
 
 function redactPII(text) {
   if (!text) return text;
-  
+
   // Redact phone numbers
   text = text.replace(/\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g, '[PHONE_REDACTED]');
-  
+
   // Redact email addresses
   text = text.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '[EMAIL_REDACTED]');
-  
+
   // Redact credit card numbers (basic pattern)
   text = text.replace(/\b\d{4}[-.\s]?\d{4}[-.\s]?\d{4}[-.\s]?\d{4}\b/g, '[CARD_REDACTED]');
-  
+
   return text;
 }
 

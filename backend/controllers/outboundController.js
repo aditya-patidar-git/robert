@@ -3,7 +3,7 @@ import axios from "axios";
 import CallRecord from "../models/CallRecord.js";
 import client from "../utils/twilioClient.js";
 import { getAIResponse, executeToolCall } from "../utils/ai.js";
-import observabilityService from "../services/observabilityService.js";
+// import observabilityService from "../services/observabilityService.js";
 import multilingualService from "../services/multilingualService.js";
 import gdprService from "../services/gdprService.js";
 import { io } from "../server.js";
