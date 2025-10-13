@@ -3,8 +3,15 @@ import authenticatedApiClient from '../api/authenticatedApi.js';
 const kbService = {
   // Get all files from OpenAI
   async getAllFiles() {
-    const response = await authenticatedApiClient.get('/api/kb/files');
-    return response.data.files || [];
+    console.log('🔍 KB Service - Fetching files from /api/kb/files');
+    try {
+      const response = await authenticatedApiClient.get('/api/kb/files');
+      console.log('🔍 KB Service - Response:', response.data);
+      return response.data.files || [];
+    } catch (error) {
+      console.error('🔍 KB Service - Error:', error);
+      throw error;
+    }
   },
 
   // Get file by ID
@@ -46,6 +53,12 @@ const kbService = {
   async getVectorStoreStatus() {
     const response = await authenticatedApiClient.get('/api/kb/vector-store/status');
     return response.data.vectorStore;
+  },
+
+  // Get file content for viewing
+  async getFileContent(fileId) {
+    const response = await authenticatedApiClient.get(`/api/kb/files/${fileId}/content`);
+    return response.data.content; // Return just the content object, not the full response
   }
 };
 

@@ -4,7 +4,7 @@ import path from 'path';
 
 // Configure multer for file uploads (temporary storage before OpenAI upload)
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: {
     fileSize: 25 * 1024 * 1024 // 25MB limit (OpenAI's limit)
@@ -19,7 +19,7 @@ const upload = multer({
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ];
-    
+
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -32,7 +32,7 @@ const upload = multer({
 export const getAllFiles = async (req, res) => {
   try {
     const files = await openaiFilesService.getAllFiles();
-    
+
     res.json({
       status: "success",
       files,
@@ -53,7 +53,7 @@ export const getFile = async (req, res) => {
   try {
     const { id } = req.params;
     const file = await openaiFilesService.getFile(id);
-    
+
     res.json({
       status: "success",
       file
@@ -85,7 +85,7 @@ export const uploadFile = async (req, res) => {
     const uploadedFile = await openaiFilesService.uploadFile(
       buffer,
       originalname,
-      'assistants'
+      'fine-tune' // Changed from 'assistants' to allow downloads
     );
 
     // Add file to vector store
@@ -114,9 +114,9 @@ export const uploadFile = async (req, res) => {
 export const deleteFile = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     await openaiFilesService.deleteFile(id);
-    
+
     res.json({
       status: "success",
       message: "File deleted successfully"
@@ -135,7 +135,7 @@ export const deleteFile = async (req, res) => {
 export const searchFiles = async (req, res) => {
   try {
     const { query, fileIds } = req.body;
-    
+
     if (!query) {
       return res.status(400).json({
         status: "error",
@@ -144,7 +144,7 @@ export const searchFiles = async (req, res) => {
     }
 
     const results = await openaiFilesService.searchFiles(query, fileIds);
-    
+
     res.json({
       status: "success",
       ...results
@@ -163,7 +163,7 @@ export const searchFiles = async (req, res) => {
 export const getVectorStoreStatus = async (req, res) => {
   try {
     const status = await openaiFilesService.getVectorStoreStatus();
-    
+
     res.json({
       status: "success",
       vectorStore: status
@@ -173,6 +173,26 @@ export const getVectorStoreStatus = async (req, res) => {
     res.status(500).json({
       status: "error",
       message: "Failed to fetch vector store status",
+      error: error.message
+    });
+  }
+};
+
+// Get file content for viewing
+export const getFileContent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const content = await openaiFilesService.getFileContent(id);
+
+    res.json({
+      status: "success",
+      content
+    });
+  } catch (error) {
+    console.error("Error fetching file content:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to fetch file content",
       error: error.message
     });
   }

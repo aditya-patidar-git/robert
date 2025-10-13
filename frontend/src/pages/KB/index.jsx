@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Container,
@@ -30,19 +30,17 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon,
-  Divider
+  ListItemIcon
 } from '@mui/material';
 import {
   CloudUpload,
   Refresh,
   PlayArrow,
   Description,
-  Warning,
   VolumeUp,
   Save,
   Undo,
-  Delete
+  Visibility
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { useToast } from '../../components/common/ToastProvider';
@@ -69,13 +67,16 @@ const AIKnowledgePage = () => {
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [fileSearchResults, setFileSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-  
+
   // Phase 3: Advanced Features State
   const [driftStatus, setDriftStatus] = useState(null);
   const [reingestStatus, setReingestStatus] = useState(null);
   const [testResults, setTestResults] = useState(null);
   const [provenanceData, setProvenanceData] = useState(null);
   const [uncertaintyConfig, setUncertaintyConfig] = useState(null);
+  
+  // View file modal state
+  const [viewFileModal, setViewFileModal] = useState({ open: false, file: null, content: null });
 
   const { control, handleSubmit, setValue, watch } = useForm({
     defaultValues: {
@@ -93,8 +94,11 @@ const AIKnowledgePage = () => {
   const { data: kbFiles = [], isLoading: kbLoading, error: kbError } = useQuery({
     queryKey: ['kb-files'],
     queryFn: kbService.getAllFiles,
+    onSuccess: (data) => {
+      console.log('🔍 KB Page - Files loaded successfully:', data);
+    },
     onError: (error) => {
-      console.error('KB Files Error:', error);
+      console.error('🔍 KB Page - KB Files Error:', error);
       showError('Failed to load knowledge base files');
     }
   });
@@ -209,16 +213,6 @@ const AIKnowledgePage = () => {
     onError: () => showError('Failed to upload file to OpenAI')
   });
 
-  // Delete file mutation
-  const deleteFileMutation = useMutation({
-    mutationFn: kbService.deleteFile,
-    onSuccess: () => {
-      showSuccess('File deleted successfully from OpenAI');
-      queryClient.invalidateQueries(['kb-files']);
-    },
-    onError: () => showError('Failed to delete file from OpenAI')
-  });
-
   // Save prompt mutation
   const savePromptMutation = useMutation({
     mutationFn: (data) => {
@@ -302,9 +296,9 @@ const AIKnowledgePage = () => {
     if (file) {
       // Validate file type and size
       const allowedTypes = [
-        'application/pdf', 
-        'text/html', 
-        'text/markdown', 
+        'application/pdf',
+        'text/html',
+        'text/markdown',
         'text/plain',
         'application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -321,8 +315,8 @@ const AIKnowledgePage = () => {
         return;
       }
 
-      uploadFileMutation.mutate({ 
-        file, 
+      uploadFileMutation.mutate({
+        file,
         tags: ['policy', 'training', 'documentation'] // Default tags
       });
     }
@@ -364,6 +358,24 @@ const AIKnowledgePage = () => {
         similarityThreshold: 0.7
       }
     });
+  };
+
+  const handleViewFile = async (file) => {
+    try {
+      setViewFileModal({ open: true, file, content: null });
+      const content = await kbService.getFileContent(file.id);
+      console.log('🔍 File content received:', content);
+      console.log('🔍 Content type:', typeof content);
+      console.log('🔍 Content.content:', content?.content);
+      setViewFileModal({ open: true, file, content });
+    } catch (error) {
+      console.error('Error fetching file content:', error);
+      showError('Failed to load file content');
+    }
+  };
+
+  const handleCloseViewFile = () => {
+    setViewFileModal({ open: false, file: null, content: null });
   };
 
 
@@ -412,8 +424,8 @@ const AIKnowledgePage = () => {
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary">Status</Typography>
-                  <Chip 
-                    label={vectorStoreStatus.status || 'Unknown'} 
+                  <Chip
+                    label={vectorStoreStatus.status || 'Unknown'}
                     color={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? 'success' : 'default'}
                   />
                 </Box>
@@ -489,7 +501,7 @@ const AIKnowledgePage = () => {
                 {fileSearchMutation.isLoading ? 'Searching...' : 'Search'}
               </Button>
             </Box>
-            
+
             {/* Search Results */}
             {fileSearchResults.length > 0 && (
               <Box>
@@ -535,7 +547,7 @@ const AIKnowledgePage = () => {
                     <TableCell>Tags</TableCell>
                     <TableCell>Uploaded At</TableCell>
                     <TableCell>Status</TableCell>
-                    <TableCell>Vector Store</TableCell>
+                    {/* <TableCell>Vector Store</TableCell> */}
                     <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
@@ -550,12 +562,18 @@ const AIKnowledgePage = () => {
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                          {(file.tags || []).map((tag, tagIndex) => (
-                            <Chip key={tagIndex} label={tag} size="small" variant="outlined" />
-                          ))}
+                          {file.tags && file.tags.length > 0 ? (
+                            file.tags.map((tag, tagIndex) => (
+                              <Chip key={tagIndex} label={tag} size="small" variant="outlined" />
+                            ))
+                          ) : (
+                            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                              No tags
+                            </Typography>
+                          )}
                         </Box>
                       </TableCell>
-                      <TableCell>{formatDateTime(new Date(file.created_at * 1000))}</TableCell>
+                      <TableCell sx={{ width: 150 }}>{formatDateTime(new Date(file.created_at * 1000)).slice(0,11)}</TableCell>
                       <TableCell>
                         <Chip
                           label={file.status || 'Active'}
@@ -563,22 +581,21 @@ const AIKnowledgePage = () => {
                           size="small"
                         />
                       </TableCell>
-                      <TableCell>
+                      {/* <TableCell>
                         <Chip
                           label={file.inVectorStore ? 'In Vector Store' : 'Not in Vector Store'}
                           color={file.inVectorStore ? 'success' : 'default'}
                           size="small"
                         />
-                      </TableCell>
+                      </TableCell> */}
                       <TableCell>
                         <IconButton
                           size="small"
-                          onClick={() => deleteFileMutation.mutate(file.id)}
-                          disabled={deleteFileMutation.isLoading}
-                          title="Delete file from OpenAI"
-                          color="error"
+                          onClick={() => handleViewFile(file)}
+                          title="View file details"
+                          color="primary"
                         >
-                          <Delete />
+                          <Visibility />
                         </IconButton>
                       </TableCell>
                     </TableRow>
@@ -826,7 +843,7 @@ const AIKnowledgePage = () => {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Configure confidence thresholds and uncertainty handling for knowledge base responses.
               </Typography>
-              
+
               <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
                 <Button
                   variant="contained"
@@ -896,7 +913,7 @@ const AIKnowledgePage = () => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Monitor the overall health and status of all system operations.
             </Typography>
-            
+
             {/* Vector Store Status */}
             <Box sx={{ mb: 3 }}>
               <Typography variant="subtitle1" gutterBottom>Vector Store Status</Typography>
@@ -910,8 +927,8 @@ const AIKnowledgePage = () => {
                 <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
                   <Box>
                     <Typography variant="subtitle2" color="text.secondary">Status</Typography>
-                    <Chip 
-                      label={vectorStoreStatus.status || 'Unknown'} 
+                    <Chip
+                      label={vectorStoreStatus.status || 'Unknown'}
                       color={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? 'success' : 'default'}
                     />
                   </Box>
@@ -975,8 +992,8 @@ const AIKnowledgePage = () => {
                 <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
                   <Box>
                     <Typography variant="subtitle2" color="text.secondary">Status</Typography>
-                    <Chip 
-                      label={reingestStatus.isRunning ? 'Running' : 'Idle'} 
+                    <Chip
+                      label={reingestStatus.isRunning ? 'Running' : 'Idle'}
                       color={reingestStatus.isRunning ? 'warning' : 'default'}
                     />
                   </Box>
@@ -1009,7 +1026,7 @@ const AIKnowledgePage = () => {
             <Typography variant="body2" color="text.secondary" paragraph>
               Monitor knowledge base content for changes and detect when files may be outdated.
             </Typography>
-            
+
             <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
               <Button
                 variant="contained"
@@ -1046,7 +1063,7 @@ const AIKnowledgePage = () => {
             <Typography variant="body2" color="text.secondary" paragraph>
               Re-process knowledge base files to update the vector store with latest content.
             </Typography>
-            
+
             <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
               <Button
                 variant="contained"
@@ -1083,7 +1100,7 @@ const AIKnowledgePage = () => {
             <Typography variant="body2" color="text.secondary" paragraph>
               Manage vector store migration, validation, and cleanup operations.
             </Typography>
-            
+
             {/* Migration Controls */}
             <Box sx={{ mb: 3 }}>
               <Typography variant="subtitle1" gutterBottom>Migration Controls</Typography>
@@ -1098,13 +1115,13 @@ const AIKnowledgePage = () => {
                         Progress: {migrationStatus.processed || 0} / {migrationStatus.total || 0}
                       </Typography>
                       <Box sx={{ flexGrow: 1, bgcolor: 'grey.200', borderRadius: 1, height: 8 }}>
-                        <Box 
-                          sx={{ 
-                            bgcolor: 'primary.main', 
-                            height: '100%', 
+                        <Box
+                          sx={{
+                            bgcolor: 'primary.main',
+                            height: '100%',
                             borderRadius: 1,
                             width: `${((migrationStatus.processed || 0) / (migrationStatus.total || 1)) * 100}%`
-                          }} 
+                          }}
                         />
                       </Box>
                     </Box>
@@ -1155,7 +1172,7 @@ const AIKnowledgePage = () => {
             <Typography variant="body2" color="text.secondary" paragraph>
               Test the knowledge base search functionality with various queries to ensure proper operation.
             </Typography>
-            
+
             <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
               <Button
                 variant="contained"
@@ -1211,7 +1228,7 @@ const AIKnowledgePage = () => {
                     </Typography>
                   </Box>
                 </Box>
-                
+
                 {testResults.testResults && testResults.testResults.length > 0 && (
                   <List>
                     {testResults.testResults.map((result, index) => (
@@ -1219,7 +1236,7 @@ const AIKnowledgePage = () => {
                         <ListItemText
                           primary={`Query: "${result.query}"`}
                           secondary={
-                            result.success ? 
+                            result.success ?
                               `✅ Success - File Search: ${result.fileSearchResults?.totalResults || 0}, DB: ${result.databaseResults?.totalResults || 0}` :
                               `❌ Failed - ${result.error}`
                           }
@@ -1240,7 +1257,7 @@ const AIKnowledgePage = () => {
             <Typography variant="body2" color="text.secondary" paragraph>
               Track which knowledge base files are used in calls and analyze usage patterns.
             </Typography>
-            
+
             <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
               <Button
                 variant="contained"
@@ -1306,7 +1323,7 @@ const AIKnowledgePage = () => {
             <Typography variant="body2" color="text.secondary" paragraph>
               Monitor system performance and search effectiveness metrics.
             </Typography>
-            
+
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 3 }}>
               <Box>
                 <Typography variant="subtitle2" color="text.secondary">Search Success Rate</Typography>
@@ -1332,6 +1349,137 @@ const AIKnowledgePage = () => {
           </Paper>
         </Box>
       )}
+
+      {/* View File Modal */}
+      <Dialog
+        open={viewFileModal.open}
+        onClose={handleCloseViewFile}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          File Details: {viewFileModal.file?.filename}
+        </DialogTitle>
+        <DialogContent>
+          {viewFileModal.content ? (
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                File Information
+              </Typography>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Filename:</strong> {viewFileModal.content.filename}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Size:</strong> {viewFileModal.content.bytes} bytes
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Status:</strong> {viewFileModal.content.status}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Purpose:</strong> {viewFileModal.content.purpose}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Created:</strong> {formatDateTime(new Date(viewFileModal.content.created_at * 1000))}
+                </Typography>
+              </Box>
+              
+              <Typography variant="h6" gutterBottom>
+                File Content
+              </Typography>
+              
+              {/* Content type indicator */}
+              {viewFileModal.content?.contentType && (
+                <Box sx={{ mb: 2 }}>
+                  <Chip
+                    label={`Content Type: ${viewFileModal.content.contentType.toUpperCase()}`}
+                    color="primary"
+                    size="small"
+                  />
+                </Box>
+              )}
+              
+              {/* Different content display based on type */}
+              {viewFileModal.content?.contentType === 'restricted' ? (
+                <Box
+                  sx={{
+                    bgcolor: 'warning.light',
+                    p: 2,
+                    borderRadius: 1,
+                    border: '1px solid',
+                    borderColor: 'warning.main'
+                  }}
+                >
+                  <Typography variant="h6" color="warning.dark" gutterBottom>
+                    ⚠️ File Access Restricted
+                  </Typography>
+                  <Typography variant="body2" color="warning.dark">
+                    This file cannot be downloaded due to OpenAI security restrictions.
+                  </Typography>
+                  <Box sx={{ mt: 2 }}>
+                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.875rem' }}>
+                      {viewFileModal.content?.content || 'No content available'}
+                    </pre>
+                  </Box>
+                </Box>
+              ) : viewFileModal.content?.contentType === 'image' ? (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    minHeight: 300,
+                    bgcolor: 'grey.100',
+                    borderRadius: 1,
+                    p: 2
+                  }}
+                >
+                  <img
+                    src={`data:image/jpeg;base64,${viewFileModal.content.content}`}
+                    alt={viewFileModal.content.filename}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '400px',
+                      objectFit: 'contain'
+                    }}
+                  />
+                </Box>
+              ) : (
+                <Box
+                  sx={{
+                    bgcolor: 'grey.100',
+                    p: 2,
+                    borderRadius: 1,
+                    maxHeight: 400,
+                    overflow: 'auto',
+                    fontFamily: viewFileModal.content?.contentType === 'pdf' ? 'monospace' : 'inherit',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  {viewFileModal.content?.contentType === 'pdf' ? (
+                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                      {viewFileModal.content?.content || 'No content available'}
+                    </pre>
+                  ) : (
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {viewFileModal.content?.content || 'No content available'}
+                    </div>
+                  )}
+                </Box>
+              )}
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <Typography>Loading file content...</Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseViewFile} color="primary">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
     </Container>
   );

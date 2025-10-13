@@ -18,6 +18,7 @@ authenticatedApiClient.interceptors.request.use(
     const token = localStorage.getItem('authToken');
     console.log('🔐 Frontend - Token from localStorage:', token ? 'Present' : 'Missing');
     console.log('🔐 Frontend - Request URL:', config.url);
+    console.log('🔐 Frontend - Base URL:', config.baseURL);
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;

@@ -73,7 +73,8 @@ class OpenAIFilesService {
         status: file.status,
         created_at: file.created_at,
         bytes: file.bytes,
-        inVectorStore: vectorStoreFileIds.has(file.id)
+        inVectorStore: vectorStoreFileIds.has(file.id),
+        tags: [] // Default empty tags - in a real implementation, you might store tags in a database
       }));
 
       console.log(`✅ Found ${enrichedFiles.length} files`);
@@ -172,6 +173,81 @@ class OpenAIFilesService {
     } catch (error) {
       console.error('Error fetching vector store status:', error);
       throw new Error(`Failed to fetch vector store status: ${error.message}`);
+    }
+  }
+
+  // Get file content for viewing (streaming approach)
+  async getFileContent(fileId) {
+    try {
+      console.log(`📄 Fetching content for file: ${fileId}`);
+      
+      // Get file details
+      const file = await this.openai.files.retrieve(fileId);
+      
+      // Check if file can be downloaded
+      if (file.purpose === 'assistants') {
+        return {
+          id: file.id,
+          filename: file.filename,
+          purpose: file.purpose,
+          status: file.status,
+          created_at: file.created_at,
+          bytes: file.bytes,
+          content: `⚠️ File Access Restricted\n\nThis file was uploaded with purpose "assistants" and cannot be downloaded directly due to OpenAI security restrictions.\n\nFile: ${file.filename}\nSize: ${file.bytes} bytes\nStatus: ${file.status}\nPurpose: ${file.purpose}\n\nTo view file content, you would need to:\n1. Re-upload the file with purpose "fine-tune"\n2. Or implement a different file storage solution\n3. Or use the file search functionality to find relevant content`,
+          contentType: 'restricted'
+        };
+      }
+      
+      // Download file content from OpenAI
+      const fileContent = await this.openai.files.content(fileId);
+      const buffer = Buffer.from(await fileContent.arrayBuffer());
+      
+      let extractedContent = '';
+      let contentType = 'text';
+      
+      // Process based on file type
+      if (file.filename.endsWith('.pdf')) {
+        console.log('📄 Processing PDF file...');
+        try {
+          // Dynamic import for CommonJS module
+          const pdfParse = await import('pdf-parse');
+          const pdfData = await pdfParse.default(buffer);
+          extractedContent = pdfData.text;
+          contentType = 'pdf';
+          console.log(`✅ PDF processed: ${extractedContent.length} characters extracted`);
+        } catch (pdfError) {
+          console.error('PDF parsing error:', pdfError);
+          extractedContent = `Error processing PDF: ${pdfError.message}\n\nFile: ${file.filename}\nSize: ${file.bytes} bytes`;
+        }
+      } else if (file.filename.endsWith('.txt') || file.filename.endsWith('.md') || file.filename.endsWith('.html')) {
+        console.log('📄 Processing text file...');
+        extractedContent = buffer.toString('utf-8');
+        contentType = 'text';
+        console.log(`✅ Text file processed: ${extractedContent.length} characters`);
+      } else if (file.filename.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+        console.log('📄 Processing image file...');
+        extractedContent = buffer.toString('base64');
+        contentType = 'image';
+        console.log(`✅ Image processed: ${extractedContent.length} characters (base64)`);
+      } else {
+        console.log('📄 Processing unknown file type...');
+        extractedContent = `File: ${file.filename}\nSize: ${file.bytes} bytes\nType: ${file.purpose}\n\nContent preview (first 1000 characters):\n${buffer.toString('utf-8').substring(0, 1000)}${buffer.length > 1000 ? '...' : ''}`;
+        contentType = 'unknown';
+      }
+      
+      return {
+        id: file.id,
+        filename: file.filename,
+        purpose: file.purpose,
+        status: file.status,
+        created_at: file.created_at,
+        bytes: file.bytes,
+        content: extractedContent,
+        contentType: contentType
+      };
+    } catch (error) {
+      console.error('Error fetching file content:', error);
+      throw new Error(`Failed to fetch file content: ${error.message}`);
     }
   }
 }
