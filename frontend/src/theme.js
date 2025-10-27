@@ -161,6 +161,32 @@ const getTheme = (mode = 'light') => {
           },
         },
       },
+      MuiTypography: {
+        styleOverrides: {
+          root: {
+            // Ensure typography inherits theme text color
+            color: 'inherit',
+          },
+          h1: {
+            color: isLight ? 'rgba(0, 0, 0, 0.87)' : '#ffffff',
+          },
+          h2: {
+            color: isLight ? 'rgba(0, 0, 0, 0.87)' : '#ffffff',
+          },
+          h3: {
+            color: isLight ? 'rgba(0, 0, 0, 0.87)' : '#ffffff',
+          },
+          h4: {
+            color: isLight ? 'rgba(0, 0, 0, 0.87)' : '#ffffff',
+          },
+          h5: {
+            color: isLight ? 'rgba(0, 0, 0, 0.87)' : '#ffffff',
+          },
+          h6: {
+            color: isLight ? 'rgba(0, 0, 0, 0.87)' : '#ffffff',
+          },
+        },
+      },
     },
   });
 };

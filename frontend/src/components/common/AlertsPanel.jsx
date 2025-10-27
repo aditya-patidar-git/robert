@@ -39,8 +39,8 @@ const AlertsPanel = ({ alerts, onDismiss }) => {
       {alerts.map((alert, index) => (
         <Collapse key={alert.id || index} in={!alert.dismissed}>
           <Alert
-            severity={alert.severity}
-            icon={getAlertIcon(alert.severity)}
+            severity={alert.level}
+            icon={getAlertIcon(alert.level)}
             action={
               onDismiss && (
                 <IconButton

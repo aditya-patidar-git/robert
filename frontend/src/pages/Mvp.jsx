@@ -1,6 +1,17 @@
 import { useState, useEffect } from "react";
-import { makeCall, getAllCalls, getRecordingUrl } from "../api/api";
+import authenticatedApiClient from "../api/authenticatedApi.js";
 import { useSocket } from "../hooks/useSocket";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+
+// API functions using unified client
+const makeCall = (toNumbers) =>
+  authenticatedApiClient.post("/api/outbound/make-call", { toNumbers });
+
+const getAllCalls = () =>
+  authenticatedApiClient.get("/api/outbound/get-all-calls");
+
+const getRecordingUrl = (callSid) => `${API_BASE}/api/outbound/recording/${callSid}`;
 
 function Home() {
     const { on, off, isConnected } = useSocket();

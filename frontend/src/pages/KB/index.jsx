@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Container,
@@ -94,114 +94,168 @@ const AIKnowledgePage = () => {
   const { data: kbFiles = [], isLoading: kbLoading, error: kbError } = useQuery({
     queryKey: ['kb-files'],
     queryFn: kbService.getAllFiles,
-    onSuccess: (data) => {
-      console.log('🔍 KB Page - Files loaded successfully:', data);
-    },
-    onError: (error) => {
-      console.error('🔍 KB Page - KB Files Error:', error);
+  });
+
+  // Handle KB files data
+  useEffect(() => {
+    if (kbFiles) {
+      console.log('🔍 KB Page - Files loaded successfully:', kbFiles);
+    }
+  }, [kbFiles]);
+
+  // Handle KB files errors
+  useEffect(() => {
+    if (kbError) {
+      console.error('🔍 KB Page - KB Files Error:', kbError);
       showError('Failed to load knowledge base files');
     }
-  });
+  }, [kbError, showError]);
 
   // Fetch prompts
   const { data: prompts = [], isLoading: promptsLoading, error: promptsError } = useQuery({
     queryKey: ['prompts'],
     queryFn: promptService.getAllPrompts,
-    onSuccess: (data) => {
-      if (Array.isArray(data) && data.length > 0) {
-        const prompt = data[0];
-        setValue('globalPrompt', prompt.content || '');
-        if (prompt.parameters) {
-          setValue('temperature', prompt.parameters.temperature || 0.7);
-          setValue('topP', prompt.parameters.topP || 0.9);
-          setValue('maxTokens', prompt.parameters.maxTokens || 150);
-          setValue('speechRate', prompt.parameters.speechRate || 1.0);
-          setValue('selectedModel', prompt.parameters.model || '');
-          setValue('selectedVoice', prompt.parameters.voice || '');
-        }
+  });
+
+  // Handle prompts data
+  useEffect(() => {
+    if (prompts && Array.isArray(prompts) && prompts.length > 0) {
+      const prompt = prompts[0];
+      setValue('globalPrompt', prompt.content || '');
+      if (prompt.parameters) {
+        setValue('temperature', prompt.parameters.temperature || 0.7);
+        setValue('topP', prompt.parameters.topP || 0.9);
+        setValue('maxTokens', prompt.parameters.maxTokens || 150);
+        setValue('speechRate', prompt.parameters.speechRate || 1.0);
+        setValue('selectedModel', prompt.parameters.model || '');
+        setValue('selectedVoice', prompt.parameters.voice || '');
       }
-    },
-    onError: (error) => {
-      console.error('Prompts Error:', error);
+    }
+  }, [prompts, setValue]);
+
+  // Handle prompts errors
+  useEffect(() => {
+    if (promptsError) {
+      console.error('Prompts Error:', promptsError);
       showError('Failed to load prompts');
     }
-  });
+  }, [promptsError, showError]);
 
   // Fetch AI models (discovered from OpenAI)
   const { data: models = [], error: modelsError } = useQuery({
     queryKey: ['ai-models'],
     queryFn: () => aiService.getModels(),
-    onError: (error) => {
-      console.error('Models Error:', error);
+  });
+
+  // Handle AI models errors
+  useEffect(() => {
+    if (modelsError) {
+      console.error('Models Error:', modelsError);
       showError('Failed to load AI models');
     }
-  });
+  }, [modelsError, showError]);
 
   // Fetch voices (discovered from OpenAI)
   const { data: voices = [], error: voicesError } = useQuery({
     queryKey: ['voices'],
     queryFn: () => voiceService.getVoices(),
-    onError: (error) => {
-      console.error('Voices Error:', error);
+  });
+
+  // Handle voices errors
+  useEffect(() => {
+    if (voicesError) {
+      console.error('Voices Error:', voicesError);
       showError('Failed to load voices');
     }
-  });
+  }, [voicesError, showError]);
 
   // Fetch vector store status - use the same working endpoint as Knowledge Base Management
   const { data: vectorStoreData, isLoading: vectorStoreLoading, error: vectorStoreError } = useQuery({
     queryKey: ['vector-store-status'],
     queryFn: vectorStoreService.getStatus,
-    onSuccess: (data) => {
-      console.log('Vector Store Status Data:', data);
-      setVectorStoreStatus(data);
-    },
-    onError: (error) => {
-      console.error('Vector Store Status Error:', error);
+  });
+
+  // Handle vector store status data
+  useEffect(() => {
+    if (vectorStoreData) {
+      console.log('Vector Store Status Data:', vectorStoreData);
+      setVectorStoreStatus(vectorStoreData);
+    }
+  }, [vectorStoreData]);
+
+  // Handle vector store status errors
+  useEffect(() => {
+    if (vectorStoreError) {
+      console.error('Vector Store Status Error:', vectorStoreError);
       showError('Failed to load vector store status');
     }
-  });
+  }, [vectorStoreError, showError]);
 
 
   // Fetch migration status
-  const { data: migrationData, isLoading: migrationLoading } = useQuery({
+  const { data: migrationData, isLoading: migrationLoading, error: migrationError } = useQuery({
     queryKey: ['migration-status'],
     queryFn: vectorStoreService.getMigrationStatus,
     refetchInterval: 5000, // Poll every 5 seconds when migration is running
-    onSuccess: (data) => {
-      setMigrationStatus(data);
-    },
-    onError: (error) => {
-      console.error('Migration Status Error:', error);
-    }
   });
+
+  // Handle migration status data
+  useEffect(() => {
+    if (migrationData) {
+      setMigrationStatus(migrationData);
+    }
+  }, [migrationData]);
+
+  // Handle migration status errors
+  useEffect(() => {
+    if (migrationError) {
+      console.error('Migration Status Error:', migrationError);
+    }
+  }, [migrationError]);
 
   // Fetch drift detection status
   const { data: driftStatusData, isLoading: driftLoading, error: driftError } = useQuery({
     queryKey: ['drift-status'],
     queryFn: driftService.getDriftStatus,
-    onSuccess: (data) => {
-      console.log('Drift Status Data:', data);
-      setDriftStatus(data);
-    },
-    onError: (error) => {
-      console.error('Drift Status Error:', error);
+  });
+
+  // Handle drift status data
+  useEffect(() => {
+    if (driftStatusData) {
+      console.log('Drift Status Data:', driftStatusData);
+      setDriftStatus(driftStatusData);
+    }
+  }, [driftStatusData]);
+
+  // Handle drift status errors
+  useEffect(() => {
+    if (driftError) {
+      console.error('Drift Status Error:', driftError);
       showError('Failed to load drift detection status');
     }
-  });
+  }, [driftError, showError]);
 
   // Fetch reingest status
   const { data: reingestStatusData, isLoading: reingestLoading, error: reingestError } = useQuery({
     queryKey: ['reingest-status'],
     queryFn: reingestService.getReingestStatus,
-    onSuccess: (data) => {
-      console.log('Reingest Status Data:', data);
-      setReingestStatus(data);
-    },
-    onError: (error) => {
-      console.error('Reingest Status Error:', error);
+  });
+
+  // Handle reingest status data
+  useEffect(() => {
+    if (reingestStatusData) {
+      console.log('Reingest Status Data:', reingestStatusData);
+      setReingestStatus(reingestStatusData);
+    }
+  }, [reingestStatusData]);
+
+  // Handle reingest status errors
+  useEffect(() => {
+    if (reingestError) {
+      console.error('Reingest Status Error:', reingestError);
       showError('Failed to load reingest status');
     }
-  });
+  }, [reingestError, showError]);
 
   // File upload mutation
   const uploadFileMutation = useMutation({
@@ -425,7 +479,7 @@ const AIKnowledgePage = () => {
                 <Box>
                   <Typography variant="subtitle2" color="text.secondary">Status</Typography>
                   <Chip
-                    label={vectorStoreStatus.status || 'Unknown'}
+                    label={vectorStoreStatus.status === 'completed' ? 'Active' : (vectorStoreStatus.status || 'Unknown')}
                     color={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? 'success' : 'default'}
                   />
                 </Box>
@@ -434,9 +488,9 @@ const AIKnowledgePage = () => {
                   <Typography variant="h6">{vectorStoreStatus.fileCount || 0}</Typography>
                 </Box>
                 <Box>
-                  <Typography variant="subtitle2" color="text.secondary">Vector Store ID</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {vectorStoreStatus.vectorStoreId || vectorStoreStatus.id || 'N/A'}
+                  <Typography variant="subtitle2" color="text.secondary">Vector Store Name</Typography>
+                  <Typography variant="body2">
+                    {vectorStoreStatus.name || 'N/A'}
                   </Typography>
                 </Box>
                 <Box>
@@ -928,7 +982,7 @@ const AIKnowledgePage = () => {
                   <Box>
                     <Typography variant="subtitle2" color="text.secondary">Status</Typography>
                     <Chip
-                      label={vectorStoreStatus.status || 'Unknown'}
+                      label={vectorStoreStatus.status === 'completed' ? 'Active' : (vectorStoreStatus.status || 'Unknown')}
                       color={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? 'success' : 'default'}
                     />
                   </Box>

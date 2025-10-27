@@ -46,7 +46,7 @@ const Dashboard = () => {
     {
       id: '2',
       timestamp: new Date(Date.now() - 600000).toISOString(),
-      level: 'warn',
+      level: 'warning',
       message: 'High memory usage detected',
       context: { memoryUsage: '85%', threshold: '80%' },
       service: 'robert-ai'
