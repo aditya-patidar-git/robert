@@ -25,6 +25,7 @@ import audioTelephonyRoutes from "./routes/audioTelephonyRoutes.js";
 import mcpToolsRoutes from "./routes/mcpToolsRoutes.js";
 import gdprRoutes from "./routes/gdprRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
+import itmBookingRoutes from "./routes/itmBookingRoutes.js";
 
 dotenv.config();
 
@@ -112,6 +113,9 @@ app.use("/api/gdpr", gdprRoutes);
 
 // Dashboard Routes
 app.use("/api/dashboard", dashboardRoutes);
+
+// ITM Booking Test Routes
+app.use("/api/itm-booking", itmBookingRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

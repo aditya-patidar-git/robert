@@ -57,6 +57,9 @@ out/
 # Optional: Ignore backend uploads/temp if any
 uploads/
 tmp/
+
+# Screenshots from automation tests
+screenshots/
 -e 
 # Environment files
 *.env

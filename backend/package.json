@@ -22,7 +22,7 @@
     "multer": "^1.4.5-lts.1",
     "openai": "^6.1.0",
     "pdf-parse": "^2.2.16",
-    "playwright": "^1.48.0",
+    "playwright": "^1.56.1",
     "socket.io": "^4.8.1",
     "twilio": "^5.10.0"
   }
