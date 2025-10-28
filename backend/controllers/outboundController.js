@@ -3,7 +3,7 @@ import axios from "axios";
 import CallRecord from "../models/CallRecord.js";
 import client from "../utils/twilioClient.js";
 import { getAIResponse, executeToolCall } from "../utils/ai.js";
-// import observabilityService from "../services/observabilityService.js";
+import observabilityService from "../services/observabilityService.js";
 import multilingualService from "../services/multilingualService.js";
 import gdprService from "../services/gdprService.js";
 import { io } from "../server.js";
@@ -44,6 +44,7 @@ export const makeCall = async (req, res) => {
 };
 
 // ✅ AI Intro (first agent message)
+// ✅ AI Intro (first agent message)
 export const aiIntro = async (req, res) => {
     const { CallSid } = req.body;
     if (!conversations[CallSid]) conversations[CallSid] = { transcript: [] };
@@ -60,11 +61,11 @@ export const aiIntro = async (req, res) => {
     const language = multilingualService.getCurrentLanguage();
     const greeting = multilingualService.getGreetingMessage(language);
     
-    const aiReply = await getAIResponse(
+    const aiResponse = await getAIResponse(
         `The user picked up the call. Start the conversation with: ${greeting}`
     );
     
-    conversations[CallSid].transcript.push({ role: "agent", text: aiReply });
+    conversations[CallSid].transcript.push({ role: "agent", text: aiResponse.content });
     conversations[CallSid].language = language;
 
     const twiml = new VoiceResponse();
@@ -84,75 +85,48 @@ export const aiIntro = async (req, res) => {
     };
 
     const gather = twiml.gather(gatherAttributes);
-    gather.say(aiReply); // Play AI greeting
+    gather.say(aiResponse.content); // Play AI greeting
 
     res.type("text/xml").send(twiml.toString());
 };
-
 // ✅ Handle user responses (AI-driven)
+// ✅ Handle user responses (AI-driven)
+// ✅ Handle user responses (AI-driven) - SIMPLIFIED VERSION
 export const handleResponse = async (req, res) => {
     const { callSid } = req.query;
     const userAnswer = req.body.SpeechResult || "";
 
+    console.log(`🔍 User said: "${userAnswer}"`);
+
     if (!conversations[callSid]) conversations[callSid] = { transcript: [] };
     
-    // Detect language from user input
-    const detectedLanguage = multilingualService.detectLanguage(userAnswer);
-    if (detectedLanguage !== conversations[callSid].language) {
-        multilingualService.switchLanguage(detectedLanguage);
-        conversations[callSid].language = detectedLanguage;
-    }
-    
+    // Add user response to transcript
     conversations[callSid].transcript.push({ role: "user", text: userAnswer });
 
-    // Start performance trace
-    const traceId = observabilityService.startTrace('ai_response', { callSid, userAnswer });
+    // Simple AI response (no complex processing)
+    let aiReply = "Thank you for your message. How can I help you further?";
 
     try {
-        // Generate AI reply with tool execution capability
+        // Generate AI reply
         const conversationText = conversations[callSid].transcript
             .map(t => `${t.role === "agent" ? "AI" : "User"}: ${t.text}`)
             .join("\n");
 
-        const callContext = {
-            callSid,
-            language: conversations[callSid].language,
-            userAnswer
-        };
-
-        const aiResponse = await getAIResponse(conversationText, null, callContext);
+        const aiResponse = await getAIResponse(conversationText, null, { callSid });
+        aiReply = aiResponse.content || "I understand. How else can I help?";
         
-        let aiReply = aiResponse.content;
-        
-        // Handle tool execution if required
-        if (aiResponse.requires_tool_execution && aiResponse.tool_calls) {
-            for (const toolCall of aiResponse.tool_calls) {
-                const toolResult = await executeToolCall(toolCall, callContext);
-                
-                if (toolResult.success) {
-                    // Add tool result to conversation context
-                    aiReply += ` [Tool result: ${JSON.stringify(toolResult.result)}]`;
-                } else {
-                    aiReply += ` [Tool error: ${toolResult.error}]`;
-                }
-            }
-        }
-        
+        // Add AI response to transcript
         conversations[callSid].transcript.push({ role: "agent", text: aiReply });
         
-        // Record successful AI response
-        observabilityService.incrementMetric('ai.successful_requests');
-        observabilityService.endTrace(traceId, { success: true });
+        console.log(`🤖 AI replied: "${aiReply}"`);
         
     } catch (error) {
-        observabilityService.error('AI response error', { callSid, error: error.message });
-        observabilityService.incrementMetric('ai.failed_requests');
-        observabilityService.endTrace(traceId, { success: false, error: error.message });
-        
-        aiReply = "I'm sorry, I'm having trouble understanding. Could you please repeat that?";
+        console.error("AI response error:", error);
+        aiReply = "I'm sorry, I didn't catch that. Could you please repeat?";
         conversations[callSid].transcript.push({ role: "agent", text: aiReply });
     }
 
+    // Generate TwiML response
     const twiml = new VoiceResponse();
 
     // Check if conversation should end
@@ -160,14 +134,14 @@ export const handleResponse = async (req, res) => {
         twiml.say(aiReply);
         twiml.hangup();
     } else {
-        // Prepare next gather for user input
+        // Continue conversation
         const language = conversations[callSid].language || 'en';
         const gatherAttributes = {
             input: ["speech"],
             language: multilingualService.getLanguageConfig(language).code,
             bargeIn: true,
             speechTimeout: "auto",
-            timeout: 3,
+            timeout: 5, // Increased timeout
             enhanced: true,
             hints: "website, app, pricing, feature, interested, follow-up",
             action: `${process.env.BASE_URL}/api/outbound/handle-response?callSid=${callSid}`,
@@ -177,12 +151,11 @@ export const handleResponse = async (req, res) => {
 
         const gather = twiml.gather(gatherAttributes);
         gather.say(aiReply);
-        twiml.pause({ length: 0.2 }); // Short pause for natural feel
     }
 
+    console.log(`📞 Sending TwiML: ${twiml.toString()}`);
     res.type("text/xml").send(twiml.toString());
 };
-
 // ✅ Call status with live updates
 export const callStatus = async (req, res) => {
     const { CallSid, CallStatus, From, To } = req.body;
@@ -222,14 +195,15 @@ export const recordingStatus = async (req, res) => {
                     .map(t => `${t.role === "agent" ? "Agent" : "User"}: ${t.text}`)
                     .join("\n");
 
-                summary = await getAIResponse(
-                    `Summarize the following sales call in 2-3 sentences. 
-                    Clearly mention the outcome (e.g., user interested, not interested, wants follow-up, unsure). 
-                    Keep it short and professional.
-
-                    Transcript:
-                    ${transcriptText}`
-                );
+                    const summaryResponse = await getAIResponse(
+                        `Summarize the following sales call in 2-3 sentences. 
+                        Clearly mention the outcome (e.g., user interested, not interested, wants follow-up, unsure). 
+                        Keep it short and professional.
+                    
+                        Transcript:
+                        ${transcriptText}`
+                    );
+                    summary = summaryResponse.content;
             } catch (err) {
                 console.error("Summary generation failed:", err.message);
             }
@@ -237,7 +211,7 @@ export const recordingStatus = async (req, res) => {
             // Mask PII in transcript for GDPR compliance
             const maskedTranscript = conversations[CallSid].transcript.map(entry => ({
                 ...entry,
-                text: gdprService.maskPII(entry.text, 'partial')
+                text: gdprService.maskPII(entry.text || '', 'partial')
             }));
 
             const rec = new CallRecord({

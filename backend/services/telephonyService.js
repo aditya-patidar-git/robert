@@ -3,7 +3,7 @@ import twilio from 'twilio';
 class TelephonyService {
   constructor() {
     this.client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_SID,
       process.env.TWILIO_AUTH_TOKEN
     );
   }
