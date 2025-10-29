@@ -3,9 +3,12 @@ import itmBookingService from '../services/itmBookingService.js';
 
 export const testITMBooking = async (req, res) => {
   let browser;
+  let context;
+  let page;
   
   try {
     console.log('🚀 Starting ITM booking demo...');
+    console.log('🔍 Controller: About to launch browser...');
     
     // Launch browser in visible mode
     browser = await chromium.launch({ 
@@ -14,17 +17,20 @@ export const testITMBooking = async (req, res) => {
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
     
-    const context = await browser.newContext({
+    console.log('🔍 Controller: Browser launched successfully');
+    
+    context = await browser.newContext({
       viewport: { width: 1280, height: 720 }
     });
     
-    const page = await context.newPage();
+    console.log('🔍 Controller: Context created successfully');
+    
+    page = await context.newPage();
+    
+    console.log('🔍 Controller: Page created successfully, calling service...');
     
     // Execute the full workflow
     const result = await itmBookingService.executeITMBookingDemo(page);
-    
-    // Close browser after completion
-    await browser.close();
     
     console.log('✅ ITM booking demo completed successfully');
     
@@ -38,15 +44,33 @@ export const testITMBooking = async (req, res) => {
     
   } catch (error) {
     console.error('❌ ITM booking demo failed:', error);
-    
-    if (browser) {
-      await browser.close();
-    }
+    console.error('❌ Error stack:', error.stack);
     
     res.status(500).json({
       success: false,
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
+    
+  } finally {
+    // Always close browser resources in finally block
+    console.log('🔍 Controller: Closing browser resources...');
+    try {
+      if (page) {
+        console.log('🔍 Controller: Closing page...');
+        await page.close();
+      }
+      if (context) {
+        console.log('🔍 Controller: Closing context...');
+        await context.close();
+      }
+      if (browser) {
+        console.log('🔍 Controller: Closing browser...');
+        await browser.close();
+      }
+      console.log('🔍 Controller: All browser resources closed');
+    } catch (closeError) {
+      console.error('Error closing browser resources:', closeError);
+    }
   }
 };

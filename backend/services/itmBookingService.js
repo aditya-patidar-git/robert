@@ -1,4 +1,3 @@
-import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 
@@ -27,6 +26,8 @@ class ITMBookingService {
 
     try {
       console.log('🚀 Starting ITM booking demo workflow...');
+      console.log('🔍 Service: Current page URL:', page.url());
+      console.log('🔍 Service: Page title:', await page.title());
 
       // STEP 1: Check availability and note details
       console.log('📅 Step 1: Checking availability...');
@@ -43,6 +44,7 @@ class ITMBookingService {
       // STEP 3-5: Find and verify existing client
       console.log('👤 Step 3-5: Finding and verifying client...');
       const clientEmail = process.env.CLIENT_EMAIL_ADDRESS;
+      console.log('🔍 Service: Using client email:', clientEmail);
       await this.findAndVerifyClient(page, clientEmail);
       screenshots.push(await this.takeScreenshot(page, 'step-3-5-client-found.png'));
       console.log('✅ Step 3-5 completed: Client verified');
@@ -65,6 +67,7 @@ class ITMBookingService {
       screenshots.push(await this.takeScreenshot(page, 'step-9-final-contact-page.png'));
       console.log('✅ Step 9 completed: Contact lookup done, waiting 10 seconds...');
 
+      console.log('🎉 Service: All steps completed successfully!');
       return {
         success: true,
         sessionDetails,
@@ -74,10 +77,11 @@ class ITMBookingService {
 
     } catch (error) {
       console.error('❌ ITM booking demo failed at step:', error.message);
-    screenshots.push(await this.takeScreenshot(page, 'error-state.png'));
-    
-    // STOP EXECUTION - don't continue
-    throw error;
+      console.error('❌ Service: Error stack:', error.stack);
+      screenshots.push(await this.takeScreenshot(page, 'error-state.png'));
+      
+      // STOP EXECUTION - don't continue
+      throw error;
     }
   }
 
@@ -200,61 +204,335 @@ async checkAvailabilityAndNoteDetails(page) {
     }
   }
 
-  // STEP 3-5: Find and verify existing client
+// STEP 3-5: Find and verify existing client
 async findAndVerifyClient(page, email) {
   try {
-    console.log('👤 Navigating to Contacts tab...');
+    console.log('👤 [STEP 3-5] Navigating to Contacts tab...');
     
     // Click CONTACTS tab using the specific selector
     const contactsTab = page.locator('h3.list-menu-item-heading:has-text("Contacts")');
     await contactsTab.click();
+    
+    // WAIT FOR PAGE TO FULLY LOAD - 8 seconds
+    console.log('⏳ [STEP 3-5] Waiting for Contacts page to fully load...');
+    await page.waitForTimeout(8000);
     await page.waitForLoadState('networkidle');
     
     // Take screenshot of contacts page
     await this.takeScreenshot(page, 'contacts-page-loaded.png');
     
-    console.log('🔍 Selecting Smart search...');
+    console.log('🔍 [STEP 3-5] Looking for Contacts iframe...');
     
-    // Select "Smart search" from dropdown
-    const searchDropdown = page.locator('select, [role="combobox"]').first();
-    await searchDropdown.selectOption({ label: 'Smart search' });
+    // CRITICAL: Wait for the iframe to be present and loaded
+    const iframe = page.frameLocator('#contactLookup_iframe');
     
-    // Enter email address in search field
-    console.log(`📧 Searching for client: ${email}`);
-    const searchField = page.locator('input[placeholder*="search"], input[type="search"], input[placeholder*="Search"]').first();
+    // Wait for the iframe to load completely
+    console.log('⏳ [STEP 3-5] Waiting for iframe to load completely...');
+    await page.waitForTimeout(5000);
+    
+    // Wait for the iframe content to be ready
+    await page.waitForFunction(() => {
+      const iframe = document.querySelector('#contactLookup_iframe');
+      return iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete';
+    }, { timeout: 15000 });
+    
+    console.log('✅ Iframe loaded, switching context...');
+    
+    // Debug: Check what's actually in the iframe
+    console.log('🔍 Debug: Checking iframe content...');
+    const iframeText = await iframe.locator('body').textContent();
+    console.log('🔍 Iframe content preview:', iframeText.substring(0, 200) + '...');
+    
+    // STEP 1: Look for the search dropdown/selector in the iframe
+    console.log('🔍 [STEP 3-5] Looking for search dropdown in iframe...');
+    
+    // Look for any dropdown or select element that might contain search options
+    const searchDropdown = iframe.locator('select, [role="combobox"], .dx-dropdowneditor').first();
+    
+    // Wait for the dropdown to be visible
+    await searchDropdown.waitFor({ state: 'visible', timeout: 10000 });
+    
+    console.log('✅ Found search dropdown, clicking to open options...');
+    
+    // Click on the dropdown to open the menu
+    await searchDropdown.click();
+    
+    // WAIT FOR DROPDOWN MENU TO APPEAR - 2 seconds
+    console.log('⏳ [STEP 3-5] Waiting for dropdown menu to appear...');
+    await page.waitForTimeout(2000);
+
+    await this.takeScreenshot(page, 'dropdown-menu-opened.png');
+
+    // STEP 2: Look for "Smart search" option and scroll up to make it clickable
+    console.log('🔍 [STEP 3-5] Looking for Smart search option in menu...');
+    
+    // First, try to find the Smart search option
+    const smartSearchOption = iframe.locator('text=Smart search').first();
+    
+    // Check if it's visible, if not, scroll up
+    const isSmartSearchVisible = await smartSearchOption.isVisible();
+    console.log(`🔍 Smart search visible: ${isSmartSearchVisible}`);
+    
+    if (!isSmartSearchVisible) {
+      console.log('🔍 Smart search not visible, scrolling up in dropdown...');
+      
+      // Scroll up in the dropdown menu to make Smart search visible
+      await page.keyboard.press('Home'); // Go to top of dropdown
+      await page.waitForTimeout(1000);
+      
+      // Alternative: try to scroll the dropdown container
+      const dropdownMenu = iframe.locator('[role="listbox"], .dx-dropdownlist, .dx-list').first();
+      if (await dropdownMenu.count() > 0) {
+        await dropdownMenu.evaluate(el => el.scrollTop = 0);
+        await page.waitForTimeout(1000);
+      }
+    }
+    
+    // Now try to find and click Smart search
+    await smartSearchOption.waitFor({ state: 'visible', timeout: 5000 });
+    console.log('✅ Smart search option is now visible, clicking...');
+    await smartSearchOption.click();
+    
+    // WAIT FOR SMART SEARCH TO BE APPLIED - 2 seconds
+    console.log('⏳ [STEP 3-5] Waiting for Smart search selection...');
+    await page.waitForTimeout(2000);
+
+    await this.takeScreenshot(page, 'smart-search-selected.png');
+    
+    // STEP 3: Look for the search input field
+    console.log('🔍 [STEP 3-5] Looking for search input field...');
+    const searchField = iframe.locator('input[placeholder*="search"], input[placeholder*="Search"], input[type="search"]').first();
+    
+    // Wait for the search field to be visible
+    await searchField.waitFor({ state: 'visible', timeout: 10000 });
+    
+    // STEP 4: Enter email address in search field
+    console.log(`📧 [STEP 3-5] Searching for client: ${email}`);
     await searchField.fill(email);
     
-    // Wait for search results
+    // NEW: Try multiple approaches to trigger the search
+    console.log('🔍 [STEP 3-5] Triggering search...');
+    
+    // Approach 1: Press Enter to trigger search
+    await searchField.press('Enter');
     await page.waitForTimeout(2000);
+    
+    // Approach 2: Look for and click search icon/button
+    console.log('🔍 [STEP 3-5] Looking for search icon/button...');
+    const searchButton = iframe.locator('button[type="submit"], .search-button, [aria-label*="search"], [title*="search"], .fa-search, .search-icon').first();
+    
+    if (await searchButton.count() > 0) {
+      console.log('✅ Found search button, clicking...');
+      await searchButton.click();
+      await page.waitForTimeout(2000);
+    } else {
+      console.log('❌ No search button found, trying alternative...');
+      
+      // Approach 3: Click elsewhere to remove focus and trigger search
+      console.log('🔍 [STEP 3-5] Clicking elsewhere to trigger search...');
+      await iframe.locator('body').click({ position: { x: 100, y: 100 } });
+      await page.waitForTimeout(2000);
+      
+      // Approach 4: Use Tab to move focus away
+      console.log('🔍 [STEP 3-5] Using Tab to move focus...');
+      await searchField.press('Tab');
+      await page.waitForTimeout(2000);
+    }
+    
+    // WAIT FOR SEARCH RESULTS - 5 seconds (increased)
+    console.log('⏳ [STEP 3-5] Waiting for search results...');
+    await page.waitForTimeout(5000);
     
     // Take screenshot after search
     await this.takeScreenshot(page, 'search-results.png');
     
-    // Click on found client (should be the first result)
-    console.log('👆 Clicking on found client...');
-    const clientResult = page.locator(`text=${email}`).first();
-    await clientResult.click();
-    await page.waitForLoadState('networkidle');
+    // STEP 5: Click on found client (should be the first result)
+console.log('👆 [STEP 3-5] Clicking on found client...');
+
+// Try to find and click the client
+let clientClicked = false;
+
+try {
+  // Approach 1: Look for visible text
+  const visibleClient = iframe.locator(`text=${email}`).filter({ hasText: email }).first();
+  if (await visibleClient.count() > 0 && await visibleClient.isVisible()) {
+    console.log('✅ Found visible client text');
+    await visibleClient.click();
+    clientClicked = true;
+  } else {
+    // Approach 2: Look for any element containing the email
+    const anyClient = iframe.locator(`*:has-text("${email}")`).first();
+    if (await anyClient.count() > 0) {
+      console.log('✅ Found client in any element');
+      await anyClient.click();
+      clientClicked = true;
+    } else {
+      // Approach 3: Look for clickable elements with email
+      const clickableClient = iframe.locator(`a:has-text("${email}"), button:has-text("${email}"), [role="button"]:has-text("${email}")`).first();
+      if (await clickableClient.count() > 0) {
+        console.log('✅ Found clickable client element');
+        await clickableClient.click();
+        clientClicked = true;
+      }
+    }
+  }
+} catch (clickError) {
+  console.log('❌ Failed to click client, but continuing to check if page navigation occurred...');
+}
+
+// CRITICAL: Check if we're already on the client details page BEFORE waiting
+console.log('🔍 [STEP 3-5] Checking if client details page is already loaded...');
+
+// Look for client name "Mr Robert Smith" or "Robert Smith"
+const clientNameVisible = await iframe.locator('text=Mr Robert Smith, text=Robert Smith').count() > 0;
+
+// Look for the email in the contact details section
+const clientEmailVisible = await iframe.locator(`text=${email}`).count() > 0;
+
+// Look for "First Names" and "Surname" fields which indicate we're on the client details page
+const firstNameField = await iframe.locator('text=First Names').count() > 0;
+const surnameField = await iframe.locator('text=Surname').count() > 0;
+
+// Look for "Contact e-mail" field
+const contactEmailField = await iframe.locator('text=Contact e-mail').count() > 0;
+
+if (clientNameVisible || clientEmailVisible || firstNameField || surnameField || contactEmailField) {
+  console.log('✅ [STEP 3-5] Client details page is already loaded - no need to wait for navigation');
+  
+  // Take screenshot of the already loaded page
+  await this.takeScreenshot(page, 'client-selected.png');
+  
+  // Extract and log the actual client details for verification
+  try {
+    const firstName = await iframe.locator('text=Robert').first().textContent();
+    const surname = await iframe.locator('text=Smith').first().textContent();
+    const contactEmail = await iframe.locator(`text=${email}`).first().textContent();
     
-    // Take screenshot after clicking client
-    await this.takeScreenshot(page, 'client-selected.png');
+    console.log(`📋 Client Details Found:`);
+    console.log(`   First Name: ${firstName}`);
+    console.log(`   Surname: ${surname}`);
+    console.log(`   Email: ${contactEmail}`);
+  } catch (extractError) {
+    console.log('⚠️ Could not extract specific client details, but page verification passed');
+  }
+  
+  console.log('✅ [STEP 3-5] Client found and selected - considering VERIFIED for demo');
+  
+  // EXIT THE FUNCTION - Step 3-5 is complete
+  return;
+}
+
+// Only wait for navigation if we're not already on the client details page
+if (clientClicked) {
+  console.log('⏳ [STEP 3-5] Waiting for client page to load...');
+  await page.waitForTimeout(4000);
+  await page.waitForLoadState('networkidle');
+  
+  // Take screenshot after clicking client
+  await this.takeScreenshot(page, 'client-selected.png');
+  
+  // Verify we're on the client details page
+  console.log('🔍 [STEP 3-5] Verifying client details page...');
+  
+  // Look for client name "Mr Robert Smith" or "Robert Smith"
+  const clientNameVisible = await iframe.locator('text=Mr Robert Smith, text=Robert Smith').count() > 0;
+  
+  // Look for the email in the contact details section
+  const clientEmailVisible = await iframe.locator(`text=${email}`).count() > 0;
+  
+  // Look for "First Names" and "Surname" fields which indicate we're on the client details page
+  const firstNameField = await iframe.locator('text=First Names').count() > 0;
+  const surnameField = await iframe.locator('text=Surname').count() > 0;
+  
+  // Look for "Contact e-mail" field
+  const contactEmailField = await iframe.locator('text=Contact e-mail').count() > 0;
+  
+  if (clientNameVisible || clientEmailVisible || firstNameField || surnameField || contactEmailField) {
+    console.log('✅ [STEP 3-5] Client details page loaded successfully - considering VERIFIED for demo');
+    console.log(`🔍 Verification details: name=${clientNameVisible}, email=${clientEmailVisible}, firstName=${firstNameField}, surname=${surnameField}, contactEmail=${contactEmailField}`);
     
-    console.log('✅ Client found and selected - considering VERIFIED for demo');
+    console.log('✅ [STEP 3-5] Client found and selected - considering VERIFIED for demo');
+    
+    // EXIT THE FUNCTION - Step 3-5 is complete
+    return;
+  } else {
+    console.log('❌ [STEP 3-5] Client details page verification failed');
+    throw new Error(`Could not verify client details page. Expected to find client name, email, or form fields.`);
+  }
+} else {
+  console.log('❌ [STEP 3-5] Could not click client and page navigation did not occur');
+  throw new Error(`Could not find or click client element with email: ${email}`);
+}
     
   } catch (error) {
-    console.error('Error in findAndVerifyClient:', error);
+    console.error('❌ [STEP 3-5] Client search failed:', error);
     await this.takeScreenshot(page, 'client-search-error.png');
-    throw new Error(`Failed to find client: ${error.message}`);
+    throw new Error(`[STEP 3-5] Failed to find client: ${error.message}`);
   }
 }
+
+
   // STEP 6-7: Navigate to Diaries and select session
   async navigateToDiariesAndSelectSession(page, sessionDetails) {
     try {
-      console.log('📅 Navigating to Diaries tab...');
+      console.log('📅 [STEP 6-7] Navigating to Diaries tab...');
       
-      // Click Diaries tab
-      const diariesTab = page.locator('a:has-text("Diaries"), button:has-text("Diaries"), [href*="diary"]').first();
+      // WAIT FOR PAGE TO BE READY - 3 seconds
+      console.log('⏳ [STEP 6-7] Waiting for page to be ready...');
+      await page.waitForTimeout(3000);
+      
+      // Debug: Check what's actually on the page
+      console.log('🔍 Debug: Checking page URL and title...');
+      const currentUrl = page.url();
+      const pageTitle = await page.title();
+      console.log(`Current URL: ${currentUrl}`);
+      console.log(`Page Title: ${pageTitle}`);
+      
+      // Click Diaries tab using the same approach as Contacts tab
+      console.log('🔍 [STEP 6-7] Looking for Diaries tab...');
+      
+      // Approach 1: Look for the specific Diaries tab using the same selector as Contacts
+      let diariesTab = null;
+      let found = false;
+      
+      try {
+        diariesTab = page.locator('h3.list-menu-item-heading:has-text("Diaries")');
+        const isVisible = await diariesTab.isVisible();
+        console.log(`Diaries tab found, visible: ${isVisible}`);
+        if (isVisible) {
+          found = true;
+          console.log('✅ Found visible Diaries tab');
+        }
+      } catch (e) {
+        console.log('❌ Diaries tab not found with h3 selector, trying alternatives...');
+      }
+      
+      // Approach 2: Look for any element with "Diaries" text
+      if (!found) {
+        console.log('🔍 Looking for any Diaries element...');
+        try {
+          diariesTab = page.locator('a:has-text("Diaries"), button:has-text("Diaries"), [href*="diary"], text=Diaries').first();
+          const isVisible = await diariesTab.isVisible();
+          console.log(`Alternative Diaries element found, visible: ${isVisible}`);
+          if (isVisible) {
+            found = true;
+            console.log('✅ Found alternative Diaries element');
+          }
+        } catch (e) {
+          console.log('❌ Alternative Diaries element not found');
+        }
+      }
+      
+      if (!found || !diariesTab) {
+        throw new Error('Could not find any visible Diaries tab element on the page');
+      }
+      
+      console.log('✅ Found Diaries tab, clicking...');
       await diariesTab.click();
+      
+      // WAIT FOR DIARIES PAGE TO FULLY LOAD - 5 seconds
+      console.log('⏳ [STEP 6-7] Waiting for Diaries page to fully load...');
+      await page.waitForTimeout(5000);
       await page.waitForLoadState('networkidle');
       
       // Take screenshot of diaries page
@@ -311,7 +589,7 @@ async findAndVerifyClient(page, email) {
       await this.takeScreenshot(page, 'date-location-selected.png');
       
       // Find and click on the ITM session
-      console.log(`🎯 Looking for ITM session at ${sessionDetails.time}...`);
+      console.log(`🎯 [STEP 6-7] Looking for ITM session at ${sessionDetails.time}...`);
       
       // Look for session frames containing ITM and the time
       const sessionFrame = page.locator('.session-frame, .booking-slot, .time-slot')
@@ -321,16 +599,24 @@ async findAndVerifyClient(page, email) {
       
       await sessionFrame.click();
       
+      // WAIT FOR SESSION CLICK TO REGISTER - 2 seconds
+      console.log('⏳ [STEP 6-7] Waiting for session click to register...');
+      await page.waitForTimeout(2000);
+      
       // Take screenshot after clicking session
       await this.takeScreenshot(page, 'session-clicked.png');
       
       // Click NEW BOOKING in popup
-      console.log('📝 Clicking NEW BOOKING...');
+      console.log('📝 [STEP 6-7] Clicking NEW BOOKING...');
       const newBookingButton = page.locator('button:has-text("NEW BOOKING"), button:has-text("New Booking")').first();
       await newBookingButton.click();
+      
+      // WAIT FOR BOOKING PAGE TO LOAD - 4 seconds
+      console.log('⏳ [STEP 6-7] Waiting for booking page to load...');
+      await page.waitForTimeout(4000);
       await page.waitForLoadState('networkidle');
       
-      console.log('✅ Session selected and NEW BOOKING clicked');
+      console.log('✅ [STEP 6-7] Session selected and NEW BOOKING clicked');
       
     } catch (error) {
       console.error('Error in navigateToDiariesAndSelectSession:', error);
@@ -342,7 +628,11 @@ async findAndVerifyClient(page, email) {
   // STEP 8: Select booking options
   async selectBookingOptions(page) {
     try {
-      console.log('⚙️ Selecting booking options...');
+      console.log('⚙️ [STEP 8] Selecting booking options...');
+      
+      // WAIT FOR PRICE PAGE TO LOAD - 3 seconds
+      console.log('⏳ [STEP 8] Waiting for price page to load...');
+      await page.waitForTimeout(3000);
       
       // Should see "1. Price" at top
       const priceHeader = page.locator('text=1. Price, text=Price').first();
@@ -352,12 +642,16 @@ async findAndVerifyClient(page, email) {
       await this.takeScreenshot(page, 'price-page-loaded.png');
       
       // Scroll to booking options
-      console.log('📜 Scrolling to booking options...');
+      console.log('📜 [STEP 8] Scrolling to booking options...');
       const bookingOptionsSection = page.locator('text=Booking options, text=Options').first();
       await bookingOptionsSection.scrollIntoViewIfNeeded();
       
+      // WAIT FOR OPTIONS TO BE VISIBLE - 2 seconds
+      console.log('⏳ [STEP 8] Waiting for booking options to be visible...');
+      await page.waitForTimeout(2000);
+      
       // Select first radio button (topmost option)
-      console.log('🚲 Selecting first bike option...');
+      console.log('🚲 [STEP 8] Selecting first bike option...');
       const firstBikeOption = page.locator('input[type="radio"]').first();
       await firstBikeOption.check();
       
@@ -365,12 +659,16 @@ async findAndVerifyClient(page, email) {
       await this.takeScreenshot(page, 'bike-option-selected.png');
       
       // Click NEXT
-      console.log('➡️ Clicking NEXT...');
+      console.log('➡️ [STEP 8] Clicking NEXT...');
       const nextButton = page.locator('button:has-text("NEXT"), button:has-text("Next"), input[value*="Next"]').first();
       await nextButton.click();
+      
+      // WAIT FOR NEXT PAGE TO LOAD - 4 seconds
+      console.log('⏳ [STEP 8] Waiting for next page to load...');
+      await page.waitForTimeout(4000);
       await page.waitForLoadState('networkidle');
       
-      console.log('✅ Booking options selected');
+      console.log('✅ [STEP 8] Booking options selected');
       
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);
@@ -382,7 +680,11 @@ async findAndVerifyClient(page, email) {
   // STEP 9: Lookup contact and wait
   async lookupContactAndWait(page, email) {
     try {
-      console.log('🔍 Looking up contact...');
+      console.log('🔍 [STEP 9] Looking up contact...');
+      
+      // WAIT FOR CONTACT PAGE TO LOAD - 3 seconds
+      console.log('⏳ [STEP 9] Waiting for contact page to load...');
+      await page.waitForTimeout(3000);
       
       // Should see "2. Contact" page with two options
       const contactHeader = page.locator('text=2. Contact, text=Contact').first();
@@ -392,34 +694,51 @@ async findAndVerifyClient(page, email) {
       await this.takeScreenshot(page, 'contact-page-loaded.png');
       
       // Click "Lookup contact" button
-      console.log('👆 Clicking Lookup contact...');
+      console.log('👆 [STEP 9] Clicking Lookup contact...');
       const lookupButton = page.locator('button:has-text("Lookup contact"), button:has-text("Lookup Contact")').first();
       await lookupButton.click();
+      
+      // WAIT FOR LOOKUP PAGE TO LOAD - 4 seconds
+      console.log('⏳ [STEP 9] Waiting for lookup page to load...');
+      await page.waitForTimeout(4000);
       await page.waitForLoadState('networkidle');
       
       // Click dropdown arrow next to Search field
-      console.log('🔽 Opening search dropdown...');
+      console.log('🔽 [STEP 9] Opening search dropdown...');
       const searchDropdown = page.locator('select, [role="combobox"]').first();
       await searchDropdown.click();
+      
+      // WAIT FOR DROPDOWN TO OPEN - 1 second
+      console.log('⏳ [STEP 9] Waiting for dropdown to open...');
+      await page.waitForTimeout(1000);
       
       // Select "Smart search"
       await searchDropdown.selectOption('Smart search');
       
+      // WAIT FOR SMART SEARCH TO APPLY - 1 second
+      console.log('⏳ [STEP 9] Waiting for Smart search to apply...');
+      await page.waitForTimeout(1000);
+      
       // Enter email in search field
-      console.log(`📧 Searching for: ${email}`);
+      console.log(`📧 [STEP 9] Searching for: ${email}`);
       const searchField = page.locator('input[placeholder*="search"], input[name*="search"]').first();
       await searchField.fill(email);
       
-      // Wait for results
-      await page.waitForTimeout(2000);
+      // WAIT FOR SEARCH RESULTS - 3 seconds
+      console.log('⏳ [STEP 9] Waiting for search results...');
+      await page.waitForTimeout(3000);
       
       // Take screenshot of search results
       await this.takeScreenshot(page, 'contact-search-results.png');
       
       // Click on the user
-      console.log('👆 Clicking on user...');
+      console.log('👆 [STEP 9] Clicking on user...');
       const userLink = page.locator(`text=${email}`).first();
       await userLink.click();
+      
+      // WAIT FOR USER PAGE TO LOAD - 4 seconds
+      console.log('⏳ [STEP 9] Waiting for user page to load...');
+      await page.waitForTimeout(4000);
       await page.waitForLoadState('networkidle');
       
       // Should now be on "3. Contact" page
@@ -430,10 +749,10 @@ async findAndVerifyClient(page, email) {
       await this.takeScreenshot(page, 'final-contact-page.png');
       
       // Wait for 10 seconds
-      console.log('⏰ Waiting 10 seconds before closing...');
+      console.log('⏰ [STEP 9] Waiting 10 seconds before closing...');
       await page.waitForTimeout(10000);
       
-      console.log('✅ Contact lookup completed and waited 10 seconds');
+      console.log('✅ [STEP 9] Contact lookup completed and waited 10 seconds');
       
     } catch (error) {
       console.error('Error in lookupContactAndWait:', error);

@@ -55,7 +55,13 @@ function Home() {
         setBookingTest({ loading: true, result: null, error: null });
         
         try {
-            const res = await authenticatedApiClient.post('/api/itm-booking/test-booking');
+            // Disable retries for this long-running operation
+            const res = await authenticatedApiClient.post('/api/itm-booking/test-booking', {}, {
+                timeout: 300000, // 5 minutes timeout
+                metadata: {
+                    disableRetries: true // Custom flag to disable retries
+                }
+            });
             setBookingTest({ 
                 loading: false, 
                 result: res.data, 
