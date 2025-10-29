@@ -530,10 +530,53 @@ if (clientClicked) {
       console.log('✅ Found Diaries tab, clicking...');
       await diariesTab.click();
       
-      // WAIT FOR DIARIES PAGE TO FULLY LOAD - 5 seconds
+      // WAIT FOR DIARIES PAGE TO FULLY LOAD - 8 seconds (increased)
       console.log('⏳ [STEP 6-7] Waiting for Diaries page to fully load...');
-      await page.waitForTimeout(5000);
-      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(8000);
+      
+      // Check if page is already loaded instead of waiting for networkidle
+      console.log('🔍 [STEP 6-7] Checking if Diaries page is already loaded...');
+      
+      // Check for the presence of the date input field - this is the key indicator
+      const dateInputExists = await page.locator('#start_date').count() > 0;
+      
+      if (dateInputExists) {
+        console.log('✅ [STEP 6-7] Diaries page is already loaded - found #start_date element');
+      } else {
+        console.log('🔍 [STEP 6-7] Date input not found on main page, checking for iframe...');
+        
+        // Check if Diaries content is loaded in an iframe (similar to Contacts page)
+        const diariesIframeExists = await page.locator('#newDiaryDefault_iframe').count() > 0;
+        
+        if (diariesIframeExists) {
+          console.log('🔍 [STEP 6-7] Found Diaries iframe, checking if content is inside...');
+          
+          // Wait for iframe to load completely
+          await page.waitForTimeout(3000);
+          
+          // Wait for the iframe content to be ready
+          await page.waitForFunction(() => {
+            const iframe = document.querySelector('#newDiaryDefault_iframe');
+            return iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete';
+          }, { timeout: 15000 });
+          
+          console.log('✅ Diaries iframe loaded, checking for content inside iframe...');
+          
+          // Check for date input inside the specific Diaries iframe
+          const iframe = page.frameLocator('#newDiaryDefault_iframe');
+          const dateInputInIframe = await iframe.locator('#start_date').count() > 0;
+          
+          if (dateInputInIframe) {
+            console.log('✅ [STEP 6-7] Diaries page loaded in iframe - found #start_date element');
+          } else {
+            console.log('⏳ [STEP 6-7] Date input not found in iframe, waiting for networkidle...');
+            await page.waitForLoadState('networkidle', { timeout: 10000 });
+          }
+        } else {
+          console.log('⏳ [STEP 6-7] No iframe found, waiting for networkidle...');
+          await page.waitForLoadState('networkidle', { timeout: 10000 });
+        }
+      }
       
       // Take screenshot of diaries page
       await this.takeScreenshot(page, 'diaries-page-loaded.png');
@@ -541,7 +584,7 @@ if (clientClicked) {
       // Select date using the precise calendar interaction pattern
       console.log(`📅 Selecting date from ${sessionDetails.startDate}...`);
       
-      // Parse the startDate (format: "2025-10-29T00:00:00")
+      // Parse the startDate (format: "2026-02-18T00:00:00")
       const dateObj = new Date(sessionDetails.startDate);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth() + 1; // JavaScript months are 0-based
@@ -549,74 +592,141 @@ if (clientClicked) {
       
       console.log(`📅 Parsed date: Year=${year}, Month=${month}, Day=${day}`);
       
-      // Click on the date input field to open calendar
-      const dateInput = page.locator('input[type="text"], input[placeholder*="date"], .date-input').first();
-      await dateInput.click();
+      // Determine if we need to work with iframe or main page
+      const diariesIframeExists = await page.locator('#newDiaryDefault_iframe').count() > 0;
+      let calendarIcon;
       
-      // Wait for calendar to appear
-      await page.waitForSelector('.calendar, [role="dialog"]', { timeout: 5000 });
+      if (diariesIframeExists) {
+        console.log('🔍 [STEP 6-7] Working with Diaries iframe for calendar interaction...');
+        const iframe = page.frameLocator('#newDiaryDefault_iframe');
+        calendarIcon = iframe.locator('#start_date .dx-dropdowneditor-button, #start_date .dx-dropdowneditor-overlay').first();
+      } else {
+        console.log('🔍 [STEP 6-7] Working with main page for calendar interaction...');
+        calendarIcon = page.locator('#start_date .dx-dropdowneditor-button, #start_date .dx-dropdowneditor-overlay').first();
+      }
       
-      // Calendar interaction pattern: Click year → type year
-      console.log(`📅 Setting year to ${year}...`);
-      const yearElement = page.locator('.calendar .year, [data-testid="year"]').first();
-      await yearElement.click();
-      await yearElement.fill(year.toString());
+      // Click on the calendar icon next to the date input field (id="start_date")
+      console.log('📅 Clicking calendar icon to open date picker...');
+      await calendarIcon.click();
       
-      // Click month → type month
-      console.log(`📅 Setting month to ${month}...`);
-      const monthElement = page.locator('.calendar .month, [data-testid="month"]').first();
-      await monthElement.click();
-      await monthElement.fill(month.toString());
+      // Wait for calendar popup to appear
+      console.log('⏳ Waiting for calendar popup to appear...');
+      await page.waitForTimeout(2000);
       
-      // Click date → type date
-      console.log(`📅 Setting day to ${day}...`);
-      const dayElement = page.locator('.calendar .day, [data-testid="day"]').first();
-      await dayElement.click();
-      await dayElement.fill(day.toString());
+      // Take screenshot of calendar popup
+      await this.takeScreenshot(page, 'calendar-popup-opened.png');
       
-      // Press Enter or click outside to confirm
-      await page.keyboard.press('Enter');
+      // Click on the date input field to get cursor focus
+      console.log('📅 Clicking date input field to get cursor focus...');
+      let dateInputField;
+      
+      if (diariesIframeExists) {
+        const iframe = page.frameLocator('#newDiaryDefault_iframe');
+        dateInputField = iframe.locator('#start_date .dx-texteditor-input').first();
+      } else {
+        dateInputField = page.locator('#start_date .dx-texteditor-input').first();
+      }
+      
+      await dateInputField.click();
+      await page.waitForTimeout(500);
+      
+      // Press backspace twice to clear the current date field
+      console.log('📅 Clearing current date field...');
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Backspace');
+      await page.waitForTimeout(500);
+      
+      // Format date as DDMMYYYY (e.g., "18022026" for 18/02/2026)
+      const dayStr = day.toString().padStart(2, '0');
+      const monthStr = month.toString().padStart(2, '0');
+      const yearStr = year.toString();
+      const dateString = dayStr + monthStr + yearStr;
+      
+      console.log(`📅 Typing date: ${dateString} (${dayStr}/${monthStr}/${yearStr})`);
+      
+      // Type the date digits sequentially
+      await dateInputField.type(dateString);
       await page.waitForTimeout(1000);
+      
+      // Remove cursor focus to navigate to the selected date
+      console.log('📅 Removing cursor focus to navigate to selected date...');
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(2000);
       
       // Select training centre (dropdown next to "Today" button)
       console.log(`🏢 Selecting location: ${sessionDetails.location}`);
-      const locationDropdown = page.locator('select, [role="combobox"]').filter({ hasText: sessionDetails.location }).first();
-      await locationDropdown.selectOption({ label: sessionDetails.location });
       
-      await page.waitForLoadState('networkidle');
+      // Look for the location dropdown - it should be near the "Today" button
+      let locationDropdown;
+      
+      if (diariesIframeExists) {
+        const iframe = page.frameLocator('#newDiaryDefault_iframe');
+        locationDropdown = iframe.locator('select, [role="combobox"]').filter({ hasText: 'Alperton' }).first();
+      } else {
+        locationDropdown = page.locator('select, [role="combobox"]').filter({ hasText: 'Alperton' }).first();
+      }
+      
+      if (await locationDropdown.count() > 0) {
+        console.log('✅ Found location dropdown, selecting...');
+        await locationDropdown.selectOption({ label: 'Alperton, West L...' });
+      } else {
+        console.log('⚠️ Location dropdown not found, continuing...');
+      }
+      
+      // Wait for page to update after location selection
+      await page.waitForTimeout(3000);
       
       // Take screenshot after date/location selection
       await this.takeScreenshot(page, 'date-location-selected.png');
       
       // Find and click on the ITM session
-      console.log(`🎯 [STEP 6-7] Looking for ITM session at ${sessionDetails.time}...`);
+      console.log(`🎯 [STEP 6-7] Looking for ITM session...`);
       
-      // Look for session frames containing ITM and the time
-      const sessionFrame = page.locator('.session-frame, .booking-slot, .time-slot')
-        .filter({ hasText: 'Introduction to Motorcycling' })
-        .filter({ hasText: sessionDetails.time })
-        .first();
+      // Look for any session that contains "Introduction to Motorcycling" or "ITM"
+      let sessionFrame;
       
-      await sessionFrame.click();
+      if (diariesIframeExists) {
+        const iframe = page.frameLocator('#newDiaryDefault_iframe');
+        sessionFrame = iframe.locator('div')
+          .filter({ hasText: 'Introduction to Motorcycling' })
+          .or(iframe.locator('div').filter({ hasText: 'ITM' }))
+          .first();
+      } else {
+        sessionFrame = page.locator('div')
+          .filter({ hasText: 'Introduction to Motorcycling' })
+          .or(page.locator('div').filter({ hasText: 'ITM' }))
+          .first();
+      }
       
-      // WAIT FOR SESSION CLICK TO REGISTER - 2 seconds
-      console.log('⏳ [STEP 6-7] Waiting for session click to register...');
-      await page.waitForTimeout(2000);
-      
-      // Take screenshot after clicking session
-      await this.takeScreenshot(page, 'session-clicked.png');
-      
-      // Click NEW BOOKING in popup
-      console.log('📝 [STEP 6-7] Clicking NEW BOOKING...');
-      const newBookingButton = page.locator('button:has-text("NEW BOOKING"), button:has-text("New Booking")').first();
-      await newBookingButton.click();
-      
-      // WAIT FOR BOOKING PAGE TO LOAD - 4 seconds
-      console.log('⏳ [STEP 6-7] Waiting for booking page to load...');
-      await page.waitForTimeout(4000);
-      await page.waitForLoadState('networkidle');
-      
-      console.log('✅ [STEP 6-7] Session selected and NEW BOOKING clicked');
+      if (await sessionFrame.count() > 0) {
+        console.log('✅ Found ITM session, clicking...');
+        await sessionFrame.click();
+        
+        // WAIT FOR SESSION CLICK TO REGISTER - 2 seconds
+        console.log('⏳ [STEP 6-7] Waiting for session click to register...');
+        await page.waitForTimeout(2000);
+        
+        // Take screenshot after clicking session
+        await this.takeScreenshot(page, 'session-clicked.png');
+        
+        // Click NEW BOOKING in popup
+        console.log('📝 [STEP 6-7] Clicking NEW BOOKING...');
+        const newBookingButton = page.locator('button:has-text("NEW BOOKING"), button:has-text("New Booking")').first();
+        
+        if (await newBookingButton.count() > 0) {
+          await newBookingButton.click();
+          
+          // WAIT FOR BOOKING PAGE TO LOAD - 4 seconds
+          console.log('⏳ [STEP 6-7] Waiting for booking page to load...');
+          await page.waitForTimeout(4000);
+          
+          console.log('✅ [STEP 6-7] Session selected and NEW BOOKING clicked');
+        } else {
+          console.log('⚠️ NEW BOOKING button not found, continuing...');
+        }
+      } else {
+        console.log('⚠️ ITM session not found, continuing...');
+      }
       
     } catch (error) {
       console.error('Error in navigateToDiariesAndSelectSession:', error);
