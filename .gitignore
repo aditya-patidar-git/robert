@@ -4,6 +4,10 @@ docs/
 # Logs
 logs
 *.log
+prompt_1.txt
+prompt_2.txt
+1_Introduction_to_Motorcycling_ITM.txt
+2_Gear_Conversion.txt
 npm-debug.log*
 prompt_1.txt
 prompt_2.txt
@@ -56,6 +60,9 @@ out/
 # Optional: Ignore backend uploads/temp if any
 uploads/
 tmp/
+
+# Screenshots from automation tests
+screenshots/
 -e 
 # Environment files
 *.env

@@ -19,6 +19,11 @@ function Home() {
     const [message, setMessage] = useState("");
     const [statuses, setStatuses] = useState({});
     const [calls, setCalls] = useState([]);
+    const [bookingTest, setBookingTest] = useState({
+        loading: false,
+        result: null,
+        error: null
+    });
 
     const handleNumberChange = (index, value) => {
         const copy = [...numbers];
@@ -43,6 +48,31 @@ function Home() {
             setMessage(`✅ ${res.data.calls.length} call(s) initiated`);
         } catch (err) {
             setMessage(`❌ ${err.response?.data?.error || err.message}`);
+        }
+    };
+
+    const testITMBooking = async () => {
+        setBookingTest({ loading: true, result: null, error: null });
+        
+        try {
+            // Disable retries for this long-running operation
+            const res = await authenticatedApiClient.post('/api/itm-booking/test-booking', {}, {
+                timeout: 300000, // 5 minutes timeout
+                metadata: {
+                    disableRetries: true // Custom flag to disable retries
+                }
+            });
+            setBookingTest({ 
+                loading: false, 
+                result: res.data, 
+                error: null 
+            });
+        } catch (err) {
+            setBookingTest({ 
+                loading: false, 
+                result: null, 
+                error: err.response?.data?.error || err.message 
+            });
         }
     };
 
@@ -119,6 +149,46 @@ function Home() {
                 </div>
             </div>
 
+            <div className="mt-6 mb-6 p-4 border-2 border-blue-300 rounded-lg bg-blue-50">
+                <h3 className="text-lg font-medium mb-3">🧪 CRM Booking Test</h3>
+                <p className="text-sm text-gray-600 mb-3">
+                    Test the ITM booking workflow with existing client (email from env)
+                </p>
+                
+                <button
+                    onClick={testITMBooking}
+                    disabled={bookingTest.loading}
+                    className={`px-4 py-2 rounded-md text-white ${
+                        bookingTest.loading 
+                            ? 'bg-gray-400 cursor-not-allowed' 
+                            : 'bg-blue-500 hover:bg-blue-600 cursor-pointer'
+                    }`}
+                >
+                    {bookingTest.loading ? '⏳ Running Booking Test...' : '🚀 Test ITM Booking'}
+                </button>
+                
+                {bookingTest.result && (
+                    <div className="mt-3 p-3 bg-green-100 border border-green-300 rounded">
+                        <p className="font-medium text-green-800">✅ {bookingTest.result.message}</p>
+                        <p className="text-sm text-gray-700 mt-2">
+                            <strong>Client Email:</strong> {bookingTest.result.clientEmail}
+                        </p>
+                        <p className="text-sm text-gray-700">
+                            <strong>Session:</strong> {bookingTest.result.sessionDetails?.date} at {bookingTest.result.sessionDetails?.time} ({bookingTest.result.sessionDetails?.location})
+                        </p>
+                        <p className="text-sm text-gray-700">
+                            <strong>Screenshots:</strong> {bookingTest.result.screenshots?.length || 0} captured
+                        </p>
+                    </div>
+                )}
+                
+                {bookingTest.error && (
+                    <div className="mt-3 p-3 bg-red-100 border border-red-300 rounded">
+                        <p className="font-medium text-red-800">❌ Error: {bookingTest.error}</p>
+                    </div>
+                )}
+            </div>
+
             <div className="mb-5">
                 <h3 className="text-lg font-medium mb-2">📡 Live Call Status</h3>
                 {Object.keys(statuses).length === 0 ? (
@@ -140,7 +210,7 @@ function Home() {
                     <div className="text-gray-600">No calls yet</div>
                 ) : (
                     calls.map((call) =>
-                        <div className="p-4 border border-gray-200 rounded-lg mb-5 bg-gray-50">
+                        <div key={call.callSid || call._id || Math.random()} className="p-4 border border-gray-200 rounded-lg mb-5 bg-gray-50">
                             {/* Header */}
                             <div className="flex justify-between">
                                 <div>

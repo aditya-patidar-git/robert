@@ -1,5 +1,5 @@
 import mcpToolsService from '../services/mcpToolsService.js';
-// import observabilityService from '../services/observabilityService.js';
+import observabilityService from '../services/observabilityService.js';
 
 // Get all MCP tools
 export const getAllTools = async (req, res) => {
