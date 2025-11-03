@@ -5,10 +5,13 @@ docs/
 logs
 *.log
 npm-debug.log*
+prompt_1.txt
+prompt_2.txt
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-
+1_Introduction_to_Motorcycling_ITM.txt
+2_Gear_Conversion.txt
 # Environment variables
 .env
 .env.local
