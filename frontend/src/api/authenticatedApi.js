@@ -111,7 +111,8 @@ authenticatedApiClient.interceptors.response.use(
     // Log error details
     if (import.meta.env.DEV) {
       const errorType = error.response ? `HTTP ${error.response.status}` : 'Network Error';
-      console.error(`❌ [${requestId}] Error: ${errorType} (attempt ${currentRetryCount + 1})`);
+      const retryStatus = config.metadata?.disableRetries ? ' (retries disabled)' : '';
+      console.error(`❌ [${requestId}] Error: ${errorType} (attempt ${currentRetryCount + 1})${retryStatus}`);
     }
 
     // Handle different error types
@@ -161,7 +162,7 @@ authenticatedApiClient.interceptors.response.use(
       }
       
       // Handle other HTTP errors
-      if (isRetryableError(error) && currentRetryCount < MAX_RETRY_ATTEMPTS) {
+      if (isRetryableError(error) && currentRetryCount < MAX_RETRY_ATTEMPTS && !config.metadata?.disableRetries) {
         const delay = getRetryDelay(currentRetryCount + 1);
         console.log(`🔄 [${requestId}] Retrying in ${delay}ms... (attempt ${currentRetryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
         
@@ -175,7 +176,7 @@ authenticatedApiClient.interceptors.response.use(
       }
     } else {
       // Handle network errors
-      if (currentRetryCount < MAX_RETRY_ATTEMPTS) {
+      if (currentRetryCount < MAX_RETRY_ATTEMPTS && !config.metadata?.disableRetries) {
         const delay = getRetryDelay(currentRetryCount + 1);
         console.log(`🔄 [${requestId}] Network error - retrying in ${delay}ms... (attempt ${currentRetryCount + 1}/${MAX_RETRY_ATTEMPTS})`);
         

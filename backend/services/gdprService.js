@@ -44,6 +44,12 @@ class GDPRService {
   }
 
   maskPII(text, maskType = 'partial') {
+    // Handle non-string inputs
+    if (typeof text !== 'string') {
+        console.warn('maskPII received non-string input:', typeof text, text);
+        return text || ''; // Return empty string if null/undefined, or original value
+    }
+    
     let maskedText = text;
     
     const patterns = {
@@ -67,7 +73,7 @@ class GDPRService {
     }
 
     return maskedText;
-  }
+}
 
   partialMask(text, type) {
     switch (type) {

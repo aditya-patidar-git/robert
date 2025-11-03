@@ -1,5 +1,5 @@
 import gdprService from '../services/gdprService.js';
-// import observabilityService from '../services/observabilityService.js';
+import observabilityService from '../services/observabilityService.js';
 
 // Create DSAR request
 export const createDSARRequest = async (req, res) => {

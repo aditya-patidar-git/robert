@@ -2,7 +2,7 @@ import EscalationLog from '../models/EscalationLog.js';
 import CallRecord from '../models/CallRecord.js';
 import twilio from 'twilio';
 
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 class EscalationService {
   constructor() {
