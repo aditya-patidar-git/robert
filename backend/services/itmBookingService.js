@@ -124,12 +124,14 @@ async checkAvailabilityAndNoteDetails(page) {
     await lastDataRow.waitFor({ state: 'visible' });
     
     // Extract details from columns based on actual table structure
+    // Column order: 0=date, 1=course, 2=location, 3=time, 4=price, 5=spaces button, 6=instructor
     const sessionDetails = {
       date: (await lastDataRow.locator('td').nth(0).textContent()).trim(),
       course: (await lastDataRow.locator('td').nth(1).textContent()).trim(),
-      time: (await lastDataRow.locator('td').nth(2).textContent()).trim(),
-      location: (await lastDataRow.locator('td').nth(3).textContent()).trim(),
-      instructor: (await lastDataRow.locator('td').nth(4).textContent()).trim(),
+      location: (await lastDataRow.locator('td').nth(2).textContent()).trim(), // Fixed: was incorrectly mapped to time
+      time: (await lastDataRow.locator('td').nth(3).textContent()).trim(), // Fixed: was incorrectly mapped to location
+      price: (await lastDataRow.locator('td').nth(4).textContent()).trim(), // Added: price field
+      instructor: (await lastDataRow.locator('td').nth(6).textContent()).trim().replace(/^Instructor:\s*/i, ''), // Fixed: column 5 is "Spaces" button, instructor is in column 6, remove "Instructor: " prefix
       // Extract precise date from data attribute for calendar selection
       startDate: await lastDataRow.getAttribute('data-start_date'),
       // Use the latest month/year we extracted
