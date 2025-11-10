@@ -1,0 +1,545 @@
+[
+  {
+    "id": "audit_1762769195798_32a96cdc",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAe070f3e9004ae71eee996c1b633114d6",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:06:35.798Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:06:35.799Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762769195890_125856dc",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAe070f3e9004ae71eee996c1b633114d6",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:06:35.890Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:06:35.890Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762769358137_f37e5041",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAcf79e0adeda40c59c2f06486a65b23de",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:09:18.137Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:09:18.137Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762769358144_7b9a9e02",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAcf79e0adeda40c59c2f06486a65b23de",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:09:18.144Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:09:18.144Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762769916756_185866f8",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA0f457c9b3ac2fb4d2f60322733a48868",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:18:36.756Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:18:36.756Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762769916758_00f3ffbb",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA0f457c9b3ac2fb4d2f60322733a48868",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:18:36.758Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:18:36.758Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771019462_d2a1e392",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA3278c307edabedf2c6e8c1fd5c1044fe",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:36:59.462Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:36:59.462Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771019465_1231781f",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA3278c307edabedf2c6e8c1fd5c1044fe",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:36:59.465Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:36:59.465Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771394373_87761b9c",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAee98135733da2df1f523bfc9ba1360d7",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:43:14.373Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:43:14.373Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771394377_280fc8f9",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAee98135733da2df1f523bfc9ba1360d7",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:43:14.377Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:43:14.377Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771455015_e4ef5bdc",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA22c53d4bb686857d38bf4b2194ae1940",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:44:15.015Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:44:15.015Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771455019_f77035f8",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA22c53d4bb686857d38bf4b2194ae1940",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:44:15.019Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:44:15.019Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771800538_f85263ba",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA5dc55101ad5dd1c359ee9c520b552cd7",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:50:00.538Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:50:00.538Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771800542_7b45e1f9",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA5dc55101ad5dd1c359ee9c520b552cd7",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:50:00.542Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:50:00.543Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771839202_09951996",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA42c3d5435132cce0979a39e9b28917ad",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:50:39.202Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:50:39.202Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771839213_90b51ff5",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA42c3d5435132cce0979a39e9b28917ad",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:50:39.213Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:50:39.213Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771897559_411eb320",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA34b907d16df12c724972af1d7ee88c57",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T10:51:37.559Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:51:37.559Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762771897561_cded5355",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA34b907d16df12c724972af1d7ee88c57",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T10:51:37.561Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T10:51:37.561Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762772756777_b8f4de67",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA9928b446a79735a2ce48db55df8933ef",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T11:05:56.777Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:05:56.777Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762772756780_d1b77dec",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA9928b446a79735a2ce48db55df8933ef",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T11:05:56.780Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:05:56.780Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762772775306_189b588c",
+    "eventType": "call_recorded",
+    "eventData": {
+      "callSid": "CA9928b446a79735a2ce48db55df8933ef",
+      "recordingUrl": "https://api.twilio.com/2010-04-01/Accounts/AC4a36f81e7bb84fe92cf4bb923d525a7a/Recordings/REa63b8b0e74a06cdf8e75071c936107bd",
+      "piiDetected": {
+        "phone": [],
+        "email": [],
+        "creditCard": [],
+        "postcode": [],
+        "nationalInsurance": [],
+        "drivingLicense": []
+      },
+      "language": "en"
+    },
+    "timestamp": "2025-11-10T11:06:15.306Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762772825435_4e2b04ad",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAdfb334e151c4f34c36c0a4c9ba26301d",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T11:07:05.435Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:07:05.435Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762772825438_8ddb6e76",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAdfb334e151c4f34c36c0a4c9ba26301d",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T11:07:05.438Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:07:05.438Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762772840960_08d29652",
+    "eventType": "call_recorded",
+    "eventData": {
+      "callSid": "CAdfb334e151c4f34c36c0a4c9ba26301d",
+      "recordingUrl": "https://api.twilio.com/2010-04-01/Accounts/AC4a36f81e7bb84fe92cf4bb923d525a7a/Recordings/RE3a4dbd41be8b039c0001a72b8f1e75c4",
+      "piiDetected": {
+        "phone": [],
+        "email": [],
+        "creditCard": [],
+        "postcode": [],
+        "nationalInsurance": [],
+        "drivingLicense": []
+      },
+      "language": "en"
+    },
+    "timestamp": "2025-11-10T11:07:20.960Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762772997969_a28c8b73",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAc3c4e74857b908ee965a6c2b3e78d370",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T11:09:57.968Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:09:57.969Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762772997976_70b7b2b7",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAc3c4e74857b908ee965a6c2b3e78d370",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T11:09:57.976Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:09:57.976Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762773026689_29e58ea8",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA3afc73276662bf9f2aaf9d670dfbd6eb",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T11:10:26.689Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:10:26.689Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762773026697_72f2dc12",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA3afc73276662bf9f2aaf9d670dfbd6eb",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T11:10:26.697Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:10:26.697Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762773316903_c4f6f1b4",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAd58836c17b118f807d8aa2f175e7b69d",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T11:15:16.903Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:15:16.903Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762773316906_dbb5a871",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAd58836c17b118f807d8aa2f175e7b69d",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T11:15:16.906Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:15:16.906Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762773393728_7ee80935",
+    "eventType": "call_recorded",
+    "eventData": {
+      "callSid": "CAd58836c17b118f807d8aa2f175e7b69d",
+      "recordingUrl": "https://api.twilio.com/2010-04-01/Accounts/AC4a36f81e7bb84fe92cf4bb923d525a7a/Recordings/REce9e61ba728f00bdf4e5cf188226e1cb",
+      "piiDetected": {
+        "phone": [],
+        "email": [],
+        "creditCard": [],
+        "postcode": [],
+        "nationalInsurance": [],
+        "drivingLicense": []
+      },
+      "language": "en"
+    },
+    "timestamp": "2025-11-10T11:16:33.728Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762775666112_ed0dd82c",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA7361535d3406c08f0dd4fa8ff3a9bdfc",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T11:54:26.112Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:54:26.112Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762775666115_6912ea46",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA7361535d3406c08f0dd4fa8ff3a9bdfc",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T11:54:26.115Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:54:26.115Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762775675638_1497afa9",
+    "eventType": "call_recorded",
+    "eventData": {
+      "callSid": "CA7361535d3406c08f0dd4fa8ff3a9bdfc",
+      "recordingUrl": "https://api.twilio.com/2010-04-01/Accounts/AC4a36f81e7bb84fe92cf4bb923d525a7a/Recordings/REbccc0fd3bb58e68bc49643a5bf09c355",
+      "piiDetected": {
+        "phone": [],
+        "email": [],
+        "creditCard": [],
+        "postcode": [],
+        "nationalInsurance": [],
+        "drivingLicense": []
+      },
+      "language": "en"
+    },
+    "timestamp": "2025-11-10T11:54:35.638Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762775721762_ec52abaa",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAa39719e9bbd451e56b097c139a02aef6",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-10T11:55:21.762Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:55:21.762Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762775721765_af4046bc",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAa39719e9bbd451e56b097c139a02aef6",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-10T11:55:21.765Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-10T11:55:21.765Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762775730654_e5fbfa6f",
+    "eventType": "call_recorded",
+    "eventData": {
+      "callSid": "CAa39719e9bbd451e56b097c139a02aef6",
+      "recordingUrl": "https://api.twilio.com/2010-04-01/Accounts/AC4a36f81e7bb84fe92cf4bb923d525a7a/Recordings/REb874204867035dbe945e932a4edf5fa2",
+      "piiDetected": {
+        "phone": [],
+        "email": [],
+        "creditCard": [],
+        "postcode": [],
+        "nationalInsurance": [],
+        "drivingLicense": []
+      },
+      "language": "en"
+    },
+    "timestamp": "2025-11-10T11:55:30.654Z",
+    "system": "robert-ai"
+  }
+]

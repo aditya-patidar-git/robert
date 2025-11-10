@@ -5,6 +5,8 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { WebSocketServer } from "ws";
+import { parse } from "url";
 import outboundRoutes from "./routes/outboundRoutes.js";
 import inboundRoutes from "./routes/inboundRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
@@ -116,6 +118,29 @@ app.use("/api/dashboard", dashboardRoutes);
 
 // ITM Booking Test Routes
 app.use("/api/itm-booking", itmBookingRoutes);
+
+// WebSocket upgrade handler for Twilio Media Streams
+// Socket.IO will handle its own upgrades automatically, so we only need to handle media-stream
+httpServer.on('upgrade', async (request, socket, head) => {
+    const { pathname, query } = parse(request.url, true);
+    
+    // Only handle media-stream upgrades here
+    // Socket.IO handles its own upgrades automatically via the Server instance
+    if (pathname === '/api/outbound/media-stream') {
+        // Import handler dynamically to avoid circular dependencies
+        const { handleMediaStreamConnection } = await import('./controllers/outboundController.js');
+        
+        // Create WebSocket server for this connection
+        const wss = new WebSocketServer({ noServer: true });
+        
+        wss.handleUpgrade(request, socket, head, (ws) => {
+            // Attach query params to request for handler
+            request.query = query;
+            handleMediaStreamConnection(ws, request);
+        });
+    }
+    // Don't destroy other upgrade requests - let Socket.IO handle them
+});
 
 // Start server
 const PORT = process.env.PORT || 5000;

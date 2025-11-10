@@ -6,7 +6,8 @@ import {
     callStatus,
     recordingStatus,
     getAllCalls,
-    proxyRecording
+    proxyRecording,
+    mediaStream
 } from "../controllers/outboundController.js";
 
 const router = express.Router();
@@ -18,5 +19,6 @@ router.post("/call-status", callStatus);
 router.post("/recording-status", recordingStatus);
 router.get("/get-all-calls", getAllCalls);
 router.get("/recording/:callSid", proxyRecording);
+router.get("/media-stream", mediaStream);
 
 export default router;
