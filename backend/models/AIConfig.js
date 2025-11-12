@@ -14,13 +14,13 @@ const AIConfigSchema = new mongoose.Schema({
   parameters: {
     temperature: { 
       type: Number, 
-      default: 0.7,
+      default: 0.4,
       min: 0,
       max: 1
     },
     topP: { 
       type: Number, 
-      default: 0.9,
+      default: 1.0,
       min: 0,
       max: 1
     },

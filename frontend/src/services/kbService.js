@@ -59,6 +59,26 @@ const kbService = {
   async getFileContent(fileId) {
     const response = await authenticatedApiClient.get(`/api/kb/files/${fileId}/content`);
     return response.data.content; // Return just the content object, not the full response
+  },
+
+  // Update file tags
+  async updateFileTags(fileId, tags) {
+    const response = await authenticatedApiClient.put(`/api/kb/files/${fileId}/tags`, {
+      tags: Array.isArray(tags) ? tags : []
+    });
+    return response.data.file;
+  },
+
+  // Re-ingest a single file
+  async reingestFile(fileId) {
+    const response = await authenticatedApiClient.post(`/api/kb/files/${fileId}/reingest`);
+    return response.data;
+  },
+
+  // Detect drift for a single file
+  async detectFileDrift(fileId) {
+    const response = await authenticatedApiClient.post(`/api/kb/files/${fileId}/detect-drift`);
+    return response.data.drift;
   }
 };
 

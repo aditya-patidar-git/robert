@@ -28,6 +28,7 @@ import mcpToolsRoutes from "./routes/mcpToolsRoutes.js";
 import gdprRoutes from "./routes/gdprRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import itmBookingRoutes from "./routes/itmBookingRoutes.js";
+import languageVoiceRoutes from "./routes/languageVoiceRoutes.js";
 
 dotenv.config();
 
@@ -89,6 +90,9 @@ app.use("/api/admin/ai", aiRoutes);
 
 // Voice Routes
 app.use("/api/admin/voice", voiceRoutes);
+
+// Language/Voice Mapping Routes
+app.use("/api/admin", languageVoiceRoutes);
 
 // Vector Store Routes
 app.use("/api/vector-store", vectorStoreRoutes);

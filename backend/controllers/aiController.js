@@ -35,8 +35,8 @@ export const getConfig = async (req, res) => {
         name: "default",
         globalPrompt: "You are Robert, a helpful AI assistant for Universal Motorcycle Training. Be polite, professional, and helpful.",
         parameters: {
-          temperature: 0.7,
-          topP: 0.9,
+          temperature: 0.4,
+          topP: 1.0,
           maxTokens: 150,
           speechRate: 1.0
         },
@@ -261,6 +261,61 @@ export const testPrompt = async (req, res) => {
     res.status(500).json({ 
       status: "error", 
       message: "Internal server error"  
+    });
+  }
+};
+
+// Get model parameters for a specific model
+export const getModelParameters = async (req, res) => {
+  try {
+    const { modelId } = req.query;
+    if (!modelId) {
+      return res.status(400).json({ 
+        status: "error", 
+        message: "modelId is required" 
+      });
+    }
+    const modelDiscoveryService = (await import('../services/modelDiscoveryService.js')).default;
+    
+    // Ensure models are discovered
+    if (modelDiscoveryService.isDiscoveryNeeded()) {
+      await modelDiscoveryService.discoverModels();
+    }
+    
+    const parameters = modelDiscoveryService.getModelParameters(modelId);
+    res.json({ status: "success", parameters });
+  } catch (err) {
+    console.error("Error getting model parameters:", err);
+    res.status(500).json({ 
+      status: "error", 
+      message: err.message || "Internal server error" 
+    });
+  }
+};
+
+// Get all model capabilities and discovery status
+export const getModelCapabilities = async (req, res) => {
+  try {
+    const modelDiscoveryService = (await import('../services/modelDiscoveryService.js')).default;
+    
+    // Ensure models are discovered
+    if (modelDiscoveryService.isDiscoveryNeeded()) {
+      await modelDiscoveryService.discoverModels();
+    }
+    
+    const capabilities = modelDiscoveryService.getModelCapabilities();
+    const discoveryStatus = modelDiscoveryService.getDiscoveryStatus();
+    
+    res.json({
+      status: "success",
+      capabilities,
+      discoveryStatus
+    });
+  } catch (error) {
+    console.error("Error getting model capabilities:", error);
+    res.status(500).json({
+      status: "error",
+      message: error.message || "Internal server error"
     });
   }
 };

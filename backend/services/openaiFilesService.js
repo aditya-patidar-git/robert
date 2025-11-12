@@ -65,17 +65,41 @@ class OpenAIFilesService {
       const vectorStoreFiles = await this.openai.vectorStores.files.list(this.vectorStoreId);
       const vectorStoreFileIds = new Set(vectorStoreFiles.data.map(f => f.id));
       
-      // Enrich files with vector store status
-      const enrichedFiles = files.data.map(file => ({
-        id: file.id,
-        filename: file.filename,
-        purpose: file.purpose,
-        status: file.status,
-        created_at: file.created_at,
-        bytes: file.bytes,
-        inVectorStore: vectorStoreFileIds.has(file.id),
-        tags: [] // Default empty tags - in a real implementation, you might store tags in a database
-      }));
+      // Get tags from KnowledgeBase model
+      const KnowledgeBase = (await import('../models/KnowledgeBase.js')).default;
+      const kbFiles = await KnowledgeBase.find({ openaiFileId: { $exists: true } });
+      const tagsMap = new Map();
+      const driftMap = new Map();
+      
+      kbFiles.forEach(kbFile => {
+        if (kbFile.openaiFileId) {
+          tagsMap.set(kbFile.openaiFileId, kbFile.tags || []);
+          driftMap.set(kbFile.openaiFileId, {
+            hasDrift: kbFile.hasDrift || false,
+            driftScore: kbFile.driftScore || 0,
+            lastIngested: kbFile.lastIngested,
+            status: kbFile.status
+          });
+        }
+      });
+      
+      // Enrich files with vector store status, tags, and drift info
+      const enrichedFiles = files.data.map(file => {
+        const metadata = driftMap.get(file.id) || {};
+        return {
+          id: file.id,
+          filename: file.filename,
+          purpose: file.purpose,
+          status: file.status || metadata.status || 'processed',
+          created_at: file.created_at,
+          bytes: file.bytes,
+          inVectorStore: vectorStoreFileIds.has(file.id),
+          tags: tagsMap.get(file.id) || [],
+          hasDrift: metadata.hasDrift || false,
+          driftScore: metadata.driftScore || 0,
+          lastIngested: metadata.lastIngested
+        };
+      });
 
       console.log(`✅ Found ${enrichedFiles.length} files`);
       return enrichedFiles;
@@ -248,6 +272,62 @@ class OpenAIFilesService {
     } catch (error) {
       console.error('Error fetching file content:', error);
       throw new Error(`Failed to fetch file content: ${error.message}`);
+    }
+  }
+
+  // Update file tags (stored in KnowledgeBase model)
+  async updateFileTags(fileId, tags) {
+    try {
+      console.log(`🏷️ Updating tags for file: ${fileId}`);
+      
+      const KnowledgeBase = (await import('../models/KnowledgeBase.js')).default;
+      
+      // Find or create KnowledgeBase entry for this OpenAI file
+      let kbFile = await KnowledgeBase.findOne({ openaiFileId: fileId });
+      
+      if (!kbFile) {
+        // Get file info from OpenAI to create a minimal KB entry
+        const file = await this.getFile(fileId);
+        
+        // Determine file type from filename
+        let fileType = 'text/plain';
+        if (file.filename.endsWith('.pdf')) {
+          fileType = 'application/pdf';
+        } else if (file.filename.endsWith('.html')) {
+          fileType = 'text/html';
+        } else if (file.filename.endsWith('.md')) {
+          fileType = 'text/markdown';
+        }
+        
+        // Create minimal KB entry for metadata storage
+        // Use placeholder values for required fields since this is metadata-only
+        kbFile = new KnowledgeBase({
+          title: file.filename,
+          filename: file.filename,
+          originalName: file.filename,
+          fileType: fileType,
+          fileSize: file.bytes || 0,
+          content: `[Metadata-only entry] File stored in OpenAI. File ID: ${fileId}`,
+          uploadPath: `openai://${fileId}`, // Placeholder path for OpenAI files
+          openaiFileId: fileId,
+          tags: tags,
+          status: 'Active'
+        });
+      } else {
+        // Update existing entry
+        kbFile.tags = tags;
+      }
+      
+      await kbFile.save();
+      
+      console.log(`✅ Tags updated for file: ${fileId}`);
+      return {
+        id: fileId,
+        tags: tags
+      };
+    } catch (error) {
+      console.error('Error updating file tags:', error);
+      throw new Error(`Failed to update file tags: ${error.message}`);
     }
   }
 }

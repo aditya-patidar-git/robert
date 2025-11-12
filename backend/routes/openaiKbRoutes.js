@@ -8,18 +8,29 @@ import {
   searchFiles,
   getVectorStoreStatus,
   getFileContent,
+  updateFileTags,
+  reingestFile,
+  detectFileDrift,
   upload
 } from "../controllers/openaiKbController.js";
 
 const router = express.Router();
 
 // OpenAI Files Routes
+// Static routes first
 router.get("/files", protect, getAllFiles);
-router.get("/files/:id", protect, getFile);
-router.get("/files/:id/content", protect, getFileContent);
 router.post("/files/upload", protect, upload.single('file'), uploadFile);
-router.delete("/files/:id", protect, deleteFile);
 router.post("/search", protect, searchFiles);
 router.get("/vector-store/status", protect, getVectorStoreStatus);
+
+// More specific routes with additional path segments (must come before generic :id routes)
+router.get("/files/:id/content", protect, getFileContent);
+router.put("/files/:id/tags", protect, updateFileTags);
+router.post("/files/:id/reingest", protect, reingestFile);
+router.post("/files/:id/detect-drift", protect, detectFileDrift);
+
+// Generic :id routes (must come last)
+router.get("/files/:id", protect, getFile);
+router.delete("/files/:id", protect, deleteFile);
 
 export default router;
