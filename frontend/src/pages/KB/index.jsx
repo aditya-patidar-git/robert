@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Container,
@@ -37,7 +37,6 @@ import {
   Refresh,
   PlayArrow,
   Description,
-  VolumeUp,
   Save,
   Undo,
   Visibility,
@@ -204,7 +203,6 @@ const AIKnowledgePage = () => {
     fetchAIConfig();
   }, [setValue]);
 
-
   // Handle prompts data
   useEffect(() => {
     if (prompts && Array.isArray(prompts) && prompts.length > 0) {
@@ -256,6 +254,63 @@ const AIKnowledgePage = () => {
       showError('Failed to load voices');
     }
   }, [voicesError, showError]);
+
+  // Get compatible voices for the selected model
+  const getCompatibleVoices = useCallback((modelId) => {
+    if (!modelId || !Array.isArray(voices) || !Array.isArray(models)) {
+      return voices || [];
+    }
+
+    // Find the selected model
+    const selectedModel = models.find(m => m.id === modelId);
+    if (!selectedModel) {
+      return voices || [];
+    }
+
+    // Check model capabilities
+    const modelSupportsRealtime = selectedModel.capabilities?.realtime || 
+                                   modelId.includes('realtime') || 
+                                   modelId.includes('gpt-realtime');
+    
+    const modelSupportsTTS = modelId.includes('tts') || 
+                             modelId.includes('tts-1');
+    
+    const modelSupportsAudio = selectedModel.capabilities?.audio || 
+                               modelSupportsRealtime || 
+                               modelSupportsTTS ||
+                               modelId.includes('whisper');
+
+    // Filter voices based on model type
+    if (modelSupportsRealtime) {
+      // Realtime models: show only voices with realtime capability
+      return voices.filter(voice => voice.capabilities?.realtime === true);
+    } else if (modelSupportsTTS) {
+      // TTS models: show all voices (TTS models generally support all voices)
+      return voices;
+    } else if (modelSupportsAudio) {
+      // Other audio models: show all voices
+      return voices;
+    } else {
+      // Non-audio models: no voices available
+      return [];
+    }
+  }, [voices, models]);
+
+  // Clear voice selection when model changes and current voice is incompatible
+  const selectedModelValue = watch('selectedModel');
+  const selectedVoiceValue = watch('selectedVoice');
+  
+  useEffect(() => {
+    if (selectedModelValue && selectedVoiceValue) {
+      const compatibleVoices = getCompatibleVoices(selectedModelValue);
+      const isCurrentVoiceCompatible = compatibleVoices.some(v => v.id === selectedVoiceValue);
+      
+      // If current voice is not compatible with new model, clear it
+      if (!isCurrentVoiceCompatible) {
+        setValue('selectedVoice', '');
+      }
+    }
+  }, [selectedModelValue, selectedVoiceValue, setValue, getCompatibleVoices]);
 
   // Fetch vector store status - use the same working endpoint as Knowledge Base Management
   const { data: vectorStoreData, isLoading: vectorStoreLoading, error: vectorStoreError } = useQuery({
@@ -379,16 +434,6 @@ const AIKnowledgePage = () => {
     onError: () => showError('Failed to save prompt')
   });
 
-  // Voice preview mutation
-  const previewVoiceMutation = useMutation({
-    mutationFn: ({ voiceId, text }) => voiceService.previewVoice(voiceId, text),
-    onSuccess: (audioBlob) => {
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audio.play();
-    },
-    onError: () => showError('Failed to preview voice')
-  });
 
   // Vector store migration mutation
   const startMigrationMutation = useMutation({
@@ -583,12 +628,6 @@ const AIKnowledgePage = () => {
     }
   };
 
-  const handleVoicePreview = (voiceId) => {
-    previewVoiceMutation.mutate({
-      voiceId,
-      text: 'Hello, this is a voice preview sample.'
-    });
-  };
 
   const handleFileSearch = () => {
     if (!fileSearchQuery.trim()) {
@@ -1044,25 +1083,44 @@ const AIKnowledgePage = () => {
                 <Controller
                   name="selectedVoice"
                   control={control}
-                  render={({ field }) => (
-                    <FormControl sx={{ minWidth: 200 }}>
-                      <InputLabel>Voice</InputLabel>
-                      <Select {...field} label="Voice">
-                        {(Array.isArray(voices) ? voices : []).map((voice) => (
-                          <MenuItem key={voice.id} value={voice.id}>
-                            {voice.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  )}
+                  render={({ field }) => {
+                    const selectedModel = watch('selectedModel');
+                    const compatibleVoices = getCompatibleVoices(selectedModel);
+                    
+                    return (
+                      <FormControl sx={{ minWidth: 200 }}>
+                        <InputLabel>Voice</InputLabel>
+                        <Select 
+                          {...field} 
+                          label="Voice"
+                          disabled={!selectedModel}
+                        >
+                          {compatibleVoices.length > 0 ? (
+                            compatibleVoices.map((voice) => (
+                              <MenuItem key={voice.id} value={voice.id}>
+                                {voice.name}
+                              </MenuItem>
+                            ))
+                          ) : (
+                            <MenuItem disabled>
+                              {selectedModel ? 'No compatible voices available' : 'Select a model first'}
+                            </MenuItem>
+                          )}
+                        </Select>
+                      </FormControl>
+                    );
+                  }}
                 />
 
                 <Button
                   variant="contained"
                   startIcon={<Save />}
                   onClick={handleSaveModelVoice}
-                  disabled={!watch('selectedModel') || !watch('selectedVoice')}
+                  disabled={
+                    !watch('selectedModel') || 
+                    !watch('selectedVoice') || 
+                    getCompatibleVoices(watch('selectedModel')).length === 0
+                  }
                 >
                   Save
                 </Button>
@@ -1132,30 +1190,6 @@ const AIKnowledgePage = () => {
                   </Box>
                 )}
               </Box>
-
-              {/* Voice Preview */}
-              <Typography variant="subtitle2" gutterBottom sx={{ mt: 3 }}>
-                Voice Samples
-              </Typography>
-              <List>
-                {(Array.isArray(voices) ? voices.slice(0, 3) : []).map((voice) => (
-                  <ListItem key={voice.id} divider>
-                    <ListItemIcon>
-                      <VolumeUp />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={voice.name}
-                      secondary={voice.description}
-                    />
-                    <IconButton
-                      onClick={() => handleVoicePreview(voice.id)}
-                      disabled={previewVoiceMutation.isLoading}
-                    >
-                      <PlayArrow />
-                    </IconButton>
-                  </ListItem>
-                ))}
-              </List>
             </Paper>
 
             {/* AI Parameters */}
