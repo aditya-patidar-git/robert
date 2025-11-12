@@ -1,5 +1,28 @@
 import AIConfig from "../models/AIConfig.js";
 
+// Helper function to migrate old string format to new object format
+const migrateFallbackChain = (fallbackChain, defaultVoiceId = 'ash') => {
+  if (!Array.isArray(fallbackChain)) {
+    return [];
+  }
+  
+  return fallbackChain.map(item => {
+    // If already in new format (object with modelId and voiceId), return as is
+    if (typeof item === 'object' && item !== null && item.modelId && item.voiceId) {
+      return item;
+    }
+    // If old format (string), convert to new format
+    if (typeof item === 'string') {
+      return {
+        modelId: item,
+        voiceId: defaultVoiceId
+      };
+    }
+    // Invalid format, skip
+    return null;
+  }).filter(item => item !== null);
+};
+
 // Get current AI configuration
 export const getConfig = async (req, res) => {
   try {
@@ -7,6 +30,7 @@ export const getConfig = async (req, res) => {
     
     if (!config) {
       // Create default configuration if none exists
+      const defaultVoiceId = 'ash';
       config = new AIConfig({
         name: "default",
         globalPrompt: "You are Robert, a helpful AI assistant for Universal Motorcycle Training. Be polite, professional, and helpful.",
@@ -19,10 +43,13 @@ export const getConfig = async (req, res) => {
         model: {
           id: "gpt-realtime",
           name: "GPT Realtime",
-          fallbackChain: ["gpt-realtime", "gpt-4o"]
+          fallbackChain: [
+            { modelId: "gpt-realtime", voiceId: defaultVoiceId },
+            { modelId: "gpt-4o", voiceId: defaultVoiceId }
+          ]
         },
         voice: {
-          id: "ash",
+          id: defaultVoiceId,
           name: "Ash",
           language: "en-US"
         },
@@ -33,6 +60,21 @@ export const getConfig = async (req, res) => {
         }
       });
       await config.save();
+    } else {
+      // Migrate old format to new format if needed
+      const currentVoiceId = config.voice?.id || 'ash';
+      const migratedChain = migrateFallbackChain(config.model.fallbackChain, currentVoiceId);
+      
+      // If migration occurred, update and save
+      if (migratedChain.length !== config.model.fallbackChain.length || 
+          config.model.fallbackChain.some((item, index) => {
+            if (typeof item === 'string') return true;
+            if (typeof item === 'object' && (!item.modelId || !item.voiceId)) return true;
+            return false;
+          })) {
+        config.model.fallbackChain = migratedChain;
+        await config.save();
+      }
     }
 
     res.json({
@@ -76,7 +118,33 @@ export const updateConfig = async (req, res) => {
     if (model) {
       if (model.id) config.model.id = model.id;
       if (model.name) config.model.name = model.name;
-      if (model.fallbackChain) config.model.fallbackChain = model.fallbackChain;
+      // Always save fallback chain (even if empty array) to ensure database persistence
+      if (model.fallbackChain !== undefined) {
+        if (Array.isArray(model.fallbackChain)) {
+          // Validate and normalize fallback chain format
+          const currentVoiceId = voice?.id || config.voice?.id || 'ash';
+          config.model.fallbackChain = model.fallbackChain.map(item => {
+            // If already in correct format, return as is
+            if (typeof item === 'object' && item !== null && item.modelId && item.voiceId) {
+              return {
+                modelId: item.modelId,
+                voiceId: item.voiceId
+              };
+            }
+            // If old string format, convert to new format
+            if (typeof item === 'string') {
+              return {
+                modelId: item,
+                voiceId: currentVoiceId
+              };
+            }
+            // Invalid format, skip
+            return null;
+          }).filter(item => item !== null);
+        } else {
+          config.model.fallbackChain = [];
+        }
+      }
     }
     if (voice) {
       if (voice.id) config.voice.id = voice.id;
@@ -127,6 +195,31 @@ export const getModels = async (req, res) => {
     });
   } catch (err) {
     console.error("Error fetching models:", err);
+    res.status(500).json({ 
+      status: "error", 
+      message: "Internal server error" 
+    });
+  }
+};
+
+// Get recommended fallback chain
+export const getRecommendedFallbackChain = async (req, res) => {
+  try {
+    const modelDiscoveryService = (await import('../services/modelDiscoveryService.js')).default;
+    
+    // Ensure models are discovered
+    if (modelDiscoveryService.isDiscoveryNeeded()) {
+      await modelDiscoveryService.discoverModels();
+    }
+    
+    const fallbackChain = modelDiscoveryService.buildFallbackChain('realtime');
+    
+    res.json({
+      status: "success",
+      fallbackChain
+    });
+  } catch (err) {
+    console.error("Error generating fallback chain:", err);
     res.status(500).json({ 
       status: "error", 
       message: "Internal server error" 

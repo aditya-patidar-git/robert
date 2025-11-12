@@ -258,7 +258,16 @@ class ModelDiscoveryService {
 
       // Get or create default AI config
       let config = await AIConfig.findOne({ isActive: true });
+      const defaultVoiceId = 'ash';
+      
       if (!config) {
+        // Convert model IDs to objects with voice
+        const fallbackChainModelIds = this.buildFallbackChain('realtime');
+        const fallbackChain = fallbackChainModelIds.map(modelId => ({
+          modelId,
+          voiceId: defaultVoiceId
+        }));
+        
         config = new AIConfig({
           name: 'default',
           globalPrompt: 'You are Robert, Universal Motorcycle Training\'s AI phone agent.',
@@ -271,10 +280,10 @@ class ModelDiscoveryService {
           model: {
             id: realtimeModels[0].id,
             name: realtimeModels[0].name,
-            fallbackChain: this.buildFallbackChain('realtime')
+            fallbackChain
           },
           voice: {
-            id: 'ash',
+            id: defaultVoiceId,
             name: 'Ash',
             language: 'en-US'
           },
@@ -286,7 +295,27 @@ class ModelDiscoveryService {
         });
       } else {
         // Update existing config with new model info
-        config.model.fallbackChain = this.buildFallbackChain('realtime');
+        // Convert model IDs to objects with voice, preserving existing voice IDs where possible
+        const fallbackChainModelIds = this.buildFallbackChain('realtime');
+        const currentVoiceId = config.voice?.id || defaultVoiceId;
+        
+        // Preserve existing voice assignments if model exists in both old and new chain
+        const existingChainMap = new Map();
+        if (Array.isArray(config.model.fallbackChain)) {
+          config.model.fallbackChain.forEach(item => {
+            const modelId = typeof item === 'string' ? item : item.modelId;
+            const voiceId = typeof item === 'string' ? currentVoiceId : item.voiceId;
+            if (modelId) {
+              existingChainMap.set(modelId, voiceId);
+            }
+          });
+        }
+        
+        config.model.fallbackChain = fallbackChainModelIds.map(modelId => ({
+          modelId,
+          voiceId: existingChainMap.get(modelId) || currentVoiceId
+        }));
+        
         if (!realtimeModels.find(m => m.id === config.model.id)) {
           config.model.id = realtimeModels[0].id;
           config.model.name = realtimeModels[0].name;

@@ -5,6 +5,7 @@ import {
   getConfig,
   updateConfig,
   getModels,
+  getRecommendedFallbackChain,
   testPrompt
 } from "../controllers/aiController.js";
 
@@ -18,6 +19,7 @@ router.use(authorizeRoles("owner", "admin"));
 router.get("/config", getConfig);
 router.put("/config", updateConfig);
 router.get("/models", getModels);
+router.get("/models/recommended", getRecommendedFallbackChain);
 router.post("/test", testPrompt);
 
 export default router;

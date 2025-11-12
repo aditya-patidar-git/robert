@@ -48,8 +48,15 @@ const AIConfigSchema = new mongoose.Schema({
       required: true,
       default: "GPT Realtime"
     },
-    fallbackChain: [{ 
-      type: String 
+    fallbackChain: [{
+      modelId: {
+        type: String,
+        required: true
+      },
+      voiceId: {
+        type: String,
+        required: true
+      }
     }]
   },
   voice: {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Container,
@@ -40,11 +40,31 @@ import {
   VolumeUp,
   Save,
   Undo,
-  Visibility
+  Visibility,
+  ArrowForward,
+  Delete,
+  DragIndicator
 } from '@mui/icons-material';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useForm, Controller } from 'react-hook-form';
 import { useToast } from '../../components/common/ToastProvider';
 import { formatDateTime } from '../../utils/formatters';
+import authenticatedApiClient from '../../api/authenticatedApi';
 import kbService from '../../services/kbService';
 import promptService from '../../services/promptService';
 import aiService from '../../services/aiService';
@@ -75,8 +95,19 @@ const AIKnowledgePage = () => {
   const [provenanceData, setProvenanceData] = useState(null);
   const [uncertaintyConfig, setUncertaintyConfig] = useState(null);
   
+  // Fallback chain state
+  const [fallbackChain, setFallbackChain] = useState([]);
+  
   // View file modal state
   const [viewFileModal, setViewFileModal] = useState({ open: false, file: null, content: null });
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const { control, handleSubmit, setValue, watch } = useForm({
     defaultValues: {
@@ -116,6 +147,63 @@ const AIKnowledgePage = () => {
     queryKey: ['prompts'],
     queryFn: promptService.getAllPrompts,
   });
+
+  // Fetch AI config to get fallback chain
+  useEffect(() => {
+    const fetchAIConfig = async () => {
+      try {
+        const config = await aiService.getConfig();
+        if (config?.model?.id) {
+          setValue('selectedModel', config.model.id);
+          // Ensure primary model is first in fallback chain
+          // Handle both old format (strings) and new format (objects with {modelId, voiceId})
+          const currentVoiceId = config?.voice?.id || 'ash';
+          if (config?.model?.fallbackChain && config.model.fallbackChain.length > 0) {
+            let chain = [...config.model.fallbackChain];
+            // Normalize to objects: handle both old format (strings) and new format (objects)
+            chain = chain.map(item => {
+              if (typeof item === 'string') {
+                return { modelId: item, voiceId: currentVoiceId };
+              }
+              // If object, ensure it has both modelId and voiceId
+              if (item && typeof item === 'object' && item.modelId) {
+                return {
+                  modelId: item.modelId,
+                  voiceId: item.voiceId || currentVoiceId
+                };
+              }
+              return null;
+            }).filter(item => item !== null);
+            
+            // Remove primary model if it exists elsewhere
+            chain = chain.filter(item => item.modelId !== config.model.id);
+            // Add primary model as first with current voice
+            chain = [{ modelId: config.model.id, voiceId: currentVoiceId }, ...chain];
+            setFallbackChain(chain);
+          } else {
+            // If no fallback chain, create one with just the primary model
+            setFallbackChain([{ modelId: config.model.id, voiceId: currentVoiceId }]);
+          }
+        }
+        if (config?.voice?.id) {
+          setValue('selectedVoice', config.voice.id);
+        }
+        if (config?.globalPrompt) {
+          setValue('globalPrompt', config.globalPrompt);
+        }
+        if (config?.parameters) {
+          setValue('temperature', config.parameters.temperature || 0.7);
+          setValue('topP', config.parameters.topP || 0.9);
+          setValue('maxTokens', config.parameters.maxTokens || 150);
+          setValue('speechRate', config.parameters.speechRate || 1.0);
+        }
+      } catch (error) {
+        console.error('Error fetching AI config:', error);
+      }
+    };
+    fetchAIConfig();
+  }, [setValue]);
+
 
   // Handle prompts data
   useEffect(() => {
@@ -377,19 +465,122 @@ const AIKnowledgePage = () => {
   };
 
 
-  const handleSavePrompt = (data) => {
-    savePromptMutation.mutate({
-      title: "Global System Prompt",
-      content: data.globalPrompt,
-      parameters: {
-        temperature: data.temperature,
-        topP: data.topP,
-        maxTokens: data.maxTokens,
-        speechRate: data.speechRate,
-        model: data.selectedModel,
-        voice: data.selectedVoice
+  const handleSavePrompt = async (data) => {
+    // Ensure primary model is first in fallback chain
+    let finalFallbackChain = [...fallbackChain];
+    if (data.selectedModel) {
+      // Remove primary model from chain if it exists elsewhere (check both string and object formats)
+      finalFallbackChain = finalFallbackChain.filter(item => {
+        const itemModelId = typeof item === 'string' ? item : item.modelId;
+        return itemModelId !== data.selectedModel;
+      });
+      // Add primary model as first in chain with current voice
+      finalFallbackChain = [{ modelId: data.selectedModel, voiceId: data.selectedVoice }, ...finalFallbackChain];
+    }
+    
+    // Normalize fallback chain to ensure all items are objects with modelId and voiceId
+    const normalizedFallbackChain = finalFallbackChain.map(item => {
+      if (typeof item === 'string') {
+        // Convert old string format to new object format
+        return {
+          modelId: item,
+          voiceId: data.selectedVoice || 'ash'
+        };
       }
-    });
+      // Ensure object has both modelId and voiceId
+      if (item && item.modelId && item.voiceId) {
+        return {
+          modelId: item.modelId,
+          voiceId: item.voiceId
+        };
+      }
+      return null;
+    }).filter(item => item !== null);
+    
+    // Save using aiService to include fallback chain with full objects
+    try {
+      await aiService.updateConfig({
+        globalPrompt: data.globalPrompt,
+        parameters: {
+          temperature: data.temperature,
+          topP: data.topP,
+          maxTokens: data.maxTokens,
+          speechRate: data.speechRate
+        },
+        model: {
+          id: data.selectedModel,
+          name: models.find(m => m.id === data.selectedModel)?.name || 'Unknown',
+          // Save full objects with modelId and voiceId
+          fallbackChain: normalizedFallbackChain.length > 0 ? normalizedFallbackChain : (data.selectedModel ? [{ modelId: data.selectedModel, voiceId: data.selectedVoice }] : [])
+        },
+        voice: {
+          id: data.selectedVoice,
+          name: voices.find(v => v.id === data.selectedVoice)?.name || 'Unknown'
+        }
+      });
+      showSuccess('All configurations saved successfully');
+      queryClient.invalidateQueries(['prompts']);
+      // Update local fallback chain state (keep objects with voice info)
+      setFallbackChain(normalizedFallbackChain);
+    } catch (error) {
+      showError('Failed to save AI configuration');
+    }
+  };
+
+  // Cancel handler to revert all changes to saved database state
+  const handleCancelConfig = async () => {
+    try {
+      const config = await aiService.getConfig();
+      
+      // Reset all form values to saved state
+      if (config?.globalPrompt) {
+        setValue('globalPrompt', config.globalPrompt);
+      }
+      if (config?.parameters) {
+        setValue('temperature', config.parameters.temperature || 0.7);
+        setValue('topP', config.parameters.topP || 0.9);
+        setValue('maxTokens', config.parameters.maxTokens || 150);
+        setValue('speechRate', config.parameters.speechRate || 1.0);
+      }
+      if (config?.model?.id) {
+        setValue('selectedModel', config.model.id);
+        // Reset fallback chain to saved state (handle both old and new formats)
+        const currentVoiceId = config?.voice?.id || 'ash';
+        if (config?.model?.fallbackChain && config.model.fallbackChain.length > 0) {
+          let chain = [...config.model.fallbackChain];
+          // Normalize to objects: handle both old format (strings) and new format (objects)
+          chain = chain.map(item => {
+            if (typeof item === 'string') {
+              return { modelId: item, voiceId: currentVoiceId };
+            }
+            // If object, ensure it has both modelId and voiceId
+            if (item && typeof item === 'object' && item.modelId) {
+              return {
+                modelId: item.modelId,
+                voiceId: item.voiceId || currentVoiceId
+              };
+            }
+            return null;
+          }).filter(item => item !== null);
+          
+          // Remove primary model if it exists elsewhere
+          chain = chain.filter(item => item.modelId !== config.model.id);
+          // Add primary model as first with current voice
+          chain = [{ modelId: config.model.id, voiceId: currentVoiceId }, ...chain];
+          setFallbackChain(chain);
+        } else if (config.model.id) {
+          setFallbackChain([{ modelId: config.model.id, voiceId: currentVoiceId }]);
+        }
+      }
+      if (config?.voice?.id) {
+        setValue('selectedVoice', config.voice.id);
+      }
+      
+      showSuccess('Configuration reverted to saved state');
+    } catch (error) {
+      console.error('Error reverting configuration:', error);
+      showError('Failed to revert configuration');
+    }
   };
 
   const handleVoicePreview = (voiceId) => {
@@ -412,6 +603,140 @@ const AIKnowledgePage = () => {
         similarityThreshold: 0.7
       }
     });
+  };
+
+  // Fallback chain handlers
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    
+    if (over && active.id !== over.id) {
+      setFallbackChain((items) => {
+        const oldIndex = items.findIndex(item => {
+          const itemId = typeof item === 'string' ? item : item.modelId;
+          return itemId === active.id;
+        });
+        const newIndex = items.findIndex(item => {
+          const itemId = typeof item === 'string' ? item : item.modelId;
+          return itemId === over.id;
+        });
+        if (oldIndex === -1 || newIndex === -1) return items;
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const handleRemoveFromFallbackChain = (index) => {
+    const newChain = fallbackChain.filter((_, i) => i !== index);
+    setFallbackChain(newChain);
+  };
+
+  // Save model/voice selection and add model to fallback chain (UI only)
+  const handleSaveModelVoice = () => {
+    const selectedModel = watch('selectedModel');
+    const selectedVoice = watch('selectedVoice');
+
+    // Check that both model and voice are selected
+    if (!selectedModel || !selectedVoice) {
+      showError('Please select both a model and a voice');
+      return;
+    }
+
+    // Check if the exact model+voice combination already exists in fallback chain
+    const exists = fallbackChain.some(item => {
+      const itemModelId = typeof item === 'string' ? item : item.modelId;
+      const itemVoiceId = typeof item === 'string' ? undefined : item.voiceId;
+      return itemModelId === selectedModel && itemVoiceId === selectedVoice;
+    });
+
+    if (exists) {
+      showError('This model and voice combination is already in the fallback chain');
+      return;
+    }
+
+    // Add selected model+voice to the END of fallback chain
+    setFallbackChain([...fallbackChain, { modelId: selectedModel, voiceId: selectedVoice }]);
+    showSuccess('Model and voice added to fallback chain');
+  };
+
+  // Sortable item component
+  const SortableItem = ({ id, index }) => {
+    // Extract modelId from object or use id directly (for backward compatibility)
+    const chainItem = fallbackChain[index];
+    const modelId = typeof chainItem === 'string' ? chainItem : chainItem?.modelId || id;
+    const voiceId = typeof chainItem === 'string' ? undefined : chainItem?.voiceId;
+    
+    const model = models.find(m => m.id === modelId);
+    const voice = voices.find(v => v.id === voiceId);
+    
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging
+    } = useSortable({ id: modelId });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1
+    };
+
+    return (
+      <Paper
+        ref={setNodeRef}
+        style={style}
+        sx={{
+          p: 2,
+          mb: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          bgcolor: isDragging ? 'action.selected' : 'background.paper',
+          border: index === 0 ? '2px solid' : '1px solid',
+          borderColor: index === 0 ? 'primary.main' : 'divider',
+          boxShadow: isDragging ? 3 : 1
+        }}
+      >
+        <Box
+          {...attributes}
+          {...listeners}
+          sx={{ cursor: 'grab', display: 'flex', alignItems: 'center' }}
+        >
+          <DragIndicator color="action" />
+        </Box>
+        
+        <Chip
+          label={index === 0 ? 'Primary' : `Fallback ${index}`}
+          color={index === 0 ? 'primary' : 'default'}
+          size="small"
+        />
+        
+        <Box sx={{ flexGrow: 1 }}>
+          <Typography variant="body1" fontWeight="medium">
+            {model?.name || modelId}
+          </Typography>
+          {model && (
+            <Typography variant="caption" color="text.secondary">
+              {model.capabilities?.realtime ? 'Realtime' : 'Standard'} • 
+              Context: {model.context_limit || 'N/A'} tokens
+              {voice && ` • Voice: ${voice.name}`}
+            </Typography>
+          )}
+        </Box>
+
+        {index > 0 && (
+          <IconButton
+            size="small"
+            onClick={() => handleRemoveFromFallbackChain(index)}
+            color="error"
+          >
+            <Delete />
+          </IconButton>
+        )}
+      </Paper>
+    );
   };
 
   const handleViewFile = async (file) => {
@@ -687,64 +1012,25 @@ const AIKnowledgePage = () => {
                   />
                 )}
               />
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  startIcon={<Save />}
-                  disabled={savePromptMutation.isLoading}
-                >
-                  Save Prompt
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<Undo />}
-                  onClick={() => {
-                    if (prompts.length > 0) {
-                      const prompt = prompts[0];
-                      setValue('globalPrompt', prompt.content || '');
-                      if (prompt.parameters) {
-                        setValue('temperature', prompt.parameters.temperature || 0.7);
-                        setValue('topP', prompt.parameters.topP || 0.9);
-                        setValue('maxTokens', prompt.parameters.maxTokens || 150);
-                        setValue('speechRate', prompt.parameters.speechRate || 1.0);
-                        setValue('selectedModel', prompt.parameters.model || '');
-                        setValue('selectedVoice', prompt.parameters.voice || '');
-                      }
-                      showSuccess('Prompt rolled back to saved version');
-                    } else {
-                      setValue('globalPrompt', '');
-                      setValue('temperature', 0.7);
-                      setValue('topP', 0.9);
-                      setValue('maxTokens', 150);
-                      setValue('speechRate', 1.0);
-                      setValue('selectedModel', '');
-                      setValue('selectedVoice', '');
-                      showSuccess('Prompt cleared');
-                    }
-                  }}
-                >
-                  Rollback
-                </Button>
-              </Box>
             </Paper>
 
-            {/* Model & Voice Selection */}
+            {/* Model & Voice Selection with Fallback Chain */}
             <Paper sx={{ p: 3, mb: 3 }}>
               <Typography variant="h6" gutterBottom>
                 Model & Voice Configuration
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Select the AI model and voice for Robert. Default voice is "Ash" as specified in documentation.
+                Select the primary AI model and configure fallback chain. The system will automatically use the next model in the chain if the primary model fails.
               </Typography>
-              <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
+              
+              <Box sx={{ display: 'flex', gap: 3, mb: 3, alignItems: 'center' }}>
                 <Controller
                   name="selectedModel"
                   control={control}
                   render={({ field }) => (
                     <FormControl sx={{ minWidth: 200 }}>
-                      <InputLabel>AI Model</InputLabel>
-                      <Select {...field} label="AI Model">
+                      <InputLabel>Primary AI Model</InputLabel>
+                      <Select {...field} label="Primary AI Model">
                         {(Array.isArray(models) ? models : []).map((model) => (
                           <MenuItem key={model.id} value={model.id}>
                             {model.name}
@@ -771,10 +1057,84 @@ const AIKnowledgePage = () => {
                     </FormControl>
                   )}
                 />
+
+                <Button
+                  variant="contained"
+                  startIcon={<Save />}
+                  onClick={handleSaveModelVoice}
+                  disabled={!watch('selectedModel') || !watch('selectedVoice')}
+                >
+                  Save
+                </Button>
+              </Box>
+
+              {/* Fallback Chain Configuration */}
+              <Box sx={{ mt: 4 }}>
+                <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                  Model Fallback Chain
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Configure the order of models to use if the primary model is unavailable. Models are tried in sequence from top to bottom.
+                </Typography>
+
+                {fallbackChain.length === 0 ? (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    No fallback chain configured. Add models below to create a fallback sequence.
+                  </Alert>
+                ) : (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={fallbackChain.map(item => typeof item === 'string' ? item : item.modelId)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <Box sx={{ mb: 2 }}>
+                        {fallbackChain.map((item, index) => {
+                          const modelId = typeof item === 'string' ? item : item.modelId;
+                          return <SortableItem key={`${modelId}-${index}`} id={modelId} index={index} />;
+                        })}
+                      </Box>
+                    </SortableContext>
+                  </DndContext>
+                )}
+
+                {/* Visual Chain Representation */}
+                {fallbackChain.length > 0 && (
+                  <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                    <Typography variant="caption" color="text.secondary" gutterBottom>
+                      Fallback Sequence:
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      {fallbackChain.map((item, index) => {
+                        const modelId = typeof item === 'string' ? item : item.modelId;
+                        const voiceId = typeof item === 'string' ? undefined : item.voiceId;
+                        const model = models.find(m => m.id === modelId);
+                        const voice = voices.find(v => v.id === voiceId);
+                        const label = model?.name || modelId;
+                        const voiceLabel = voice ? ` (${voice.name})` : '';
+                        return (
+                          <React.Fragment key={`${modelId}-${index}`}>
+                            <Chip
+                              label={label + voiceLabel}
+                              size="small"
+                              color={index === 0 ? 'primary' : 'default'}
+                            />
+                            {index < fallbackChain.length - 1 && (
+                              <ArrowForward fontSize="small" color="action" />
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
               </Box>
 
               {/* Voice Preview */}
-              <Typography variant="subtitle2" gutterBottom>
+              <Typography variant="subtitle2" gutterBottom sx={{ mt: 3 }}>
                 Voice Samples
               </Typography>
               <List>
@@ -952,6 +1312,24 @@ const AIKnowledgePage = () => {
                 </Box>
               )}
             </Paper>
+
+            {/* Unified Save/Cancel Buttons */}
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 4, mb: 2 }}>
+              <Button
+                variant="outlined"
+                startIcon={<Undo />}
+                onClick={handleCancelConfig}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                startIcon={<Save />}
+              >
+                Save Config
+              </Button>
+            </Box>
           </Box>
         </form>
       )}
