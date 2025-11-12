@@ -13,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "@google/genai": "^1.20.0",
+    "@openai/realtime-api-beta": "github:openai/openai-realtime-api-beta",
     "argon2": "^0.44.0",
     "axios": "^1.7.7",
     "cors": "^2.8.5",
@@ -24,6 +25,7 @@
     "pdf-parse": "^2.2.16",
     "playwright": "^1.56.1",
     "socket.io": "^4.8.1",
-    "twilio": "^5.10.0"
+    "twilio": "^5.10.0",
+    "ws": "^8.18.0"
   }
 }

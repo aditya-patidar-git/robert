@@ -54,19 +54,25 @@ class DriftDetectionService {
       // Simulate drift based on file age and content changes
       const hasDrift = daysSinceUpdate > 30 || this.simulateContentChange(file);
       
+      // Generate drift score once to ensure consistency
+      const driftScore = hasDrift ? Math.random() * 0.5 + 0.3 : 0;
+      
       if (hasDrift) {
-        // Update file with drift flag
-        await KnowledgeBase.findByIdAndUpdate(file._id, {
-          hasDrift: true,
-          driftScore: Math.random() * 0.5 + 0.3, // Simulate drift score
-          lastDriftCheck: new Date()
-        });
+        // Only update database if file has a valid _id (exists in database)
+        // Files without database entries will be handled by the controller
+        if (file._id) {
+          await KnowledgeBase.findByIdAndUpdate(file._id, {
+            hasDrift: true,
+            driftScore: driftScore,
+            lastDriftCheck: new Date()
+          });
+        }
 
         return {
           fileId: file._id,
           fileName: file.title,
           hasDrift: true,
-          driftScore: Math.random() * 0.5 + 0.3,
+          driftScore: driftScore,
           lastUpdated: file.updatedAt,
           daysSinceUpdate: Math.floor(daysSinceUpdate),
           reason: daysSinceUpdate > 30 ? 'Content may be outdated' : 'Content structure changed'

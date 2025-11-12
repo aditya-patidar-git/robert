@@ -1,4 +1,28 @@
 import AIConfig from "../models/AIConfig.js";
+import PromptVersion from "../models/PromptVersion.js";
+
+// Helper function to migrate old string format to new object format
+const migrateFallbackChain = (fallbackChain, defaultVoiceId = 'ash') => {
+  if (!Array.isArray(fallbackChain)) {
+    return [];
+  }
+  
+  return fallbackChain.map(item => {
+    // If already in new format (object with modelId and voiceId), return as is
+    if (typeof item === 'object' && item !== null && item.modelId && item.voiceId) {
+      return item;
+    }
+    // If old format (string), convert to new format
+    if (typeof item === 'string') {
+      return {
+        modelId: item,
+        voiceId: defaultVoiceId
+      };
+    }
+    // Invalid format, skip
+    return null;
+  }).filter(item => item !== null);
+};
 
 // Get current AI configuration
 export const getConfig = async (req, res) => {
@@ -7,22 +31,26 @@ export const getConfig = async (req, res) => {
     
     if (!config) {
       // Create default configuration if none exists
+      const defaultVoiceId = 'ash';
       config = new AIConfig({
         name: "default",
         globalPrompt: "You are Robert, a helpful AI assistant for Universal Motorcycle Training. Be polite, professional, and helpful.",
         parameters: {
-          temperature: 0.7,
-          topP: 0.9,
+          temperature: 0.4,
+          topP: 1.0,
           maxTokens: 150,
           speechRate: 1.0
         },
         model: {
           id: "gpt-realtime",
           name: "GPT Realtime",
-          fallbackChain: ["gpt-realtime", "gpt-4o"]
+          fallbackChain: [
+            { modelId: "gpt-realtime", voiceId: defaultVoiceId },
+            { modelId: "gpt-4o", voiceId: defaultVoiceId }
+          ]
         },
         voice: {
-          id: "ash",
+          id: defaultVoiceId,
           name: "Ash",
           language: "en-US"
         },
@@ -33,6 +61,21 @@ export const getConfig = async (req, res) => {
         }
       });
       await config.save();
+    } else {
+      // Migrate old format to new format if needed
+      const currentVoiceId = config.voice?.id || 'ash';
+      const migratedChain = migrateFallbackChain(config.model.fallbackChain, currentVoiceId);
+      
+      // If migration occurred, update and save
+      if (migratedChain.length !== config.model.fallbackChain.length || 
+          config.model.fallbackChain.some((item, index) => {
+            if (typeof item === 'string') return true;
+            if (typeof item === 'object' && (!item.modelId || !item.voiceId)) return true;
+            return false;
+          })) {
+        config.model.fallbackChain = migratedChain;
+        await config.save();
+      }
     }
 
     res.json({
@@ -65,8 +108,55 @@ export const updateConfig = async (req, res) => {
       config = new AIConfig();
     }
 
-    // Update fields
-    if (globalPrompt !== undefined) config.globalPrompt = globalPrompt;
+    // Handle prompt versioning if globalPrompt is being updated
+    if (globalPrompt !== undefined && globalPrompt !== null) {
+      const currentPrompt = config.globalPrompt || '';
+      const newPrompt = globalPrompt.trim();
+      const currentPromptTrimmed = currentPrompt.trim();
+      
+      // Only create version if prompt actually changed
+      if (newPrompt !== currentPromptTrimmed) {
+        try {
+          // Get the highest version number for this promptId
+          const promptId = 'global';
+          const latestVersion = await PromptVersion.findOne({ promptId })
+            .sort({ version: -1 })
+            .select('version');
+          
+          const nextVersion = latestVersion ? latestVersion.version + 1 : 1;
+          
+          // Mark all previous versions as inactive
+          await PromptVersion.updateMany(
+            { promptId, isActive: true },
+            { isActive: false }
+          );
+          
+          // Create new version entry
+          const newVersion = new PromptVersion({
+            promptId,
+            version: nextVersion,
+            content: newPrompt,
+            previousContent: currentPromptTrimmed,
+            createdBy: req.user?.id || req.user?.username || 'admin',
+            changeReason: req.body.changeReason || '',
+            isActive: true,
+            metadata: {
+              parameters: parameters || config.parameters || {},
+              model: model || config.model || {},
+              voice: voice || config.voice || {}
+            }
+          });
+          
+          await newVersion.save();
+        } catch (versionError) {
+          console.error('Error creating prompt version:', versionError);
+          // Continue with update even if versioning fails
+        }
+      }
+      
+      // Update the prompt in config
+      config.globalPrompt = newPrompt;
+    }
     if (parameters) {
       if (parameters.temperature !== undefined) config.parameters.temperature = parameters.temperature;
       if (parameters.topP !== undefined) config.parameters.topP = parameters.topP;
@@ -76,7 +166,33 @@ export const updateConfig = async (req, res) => {
     if (model) {
       if (model.id) config.model.id = model.id;
       if (model.name) config.model.name = model.name;
-      if (model.fallbackChain) config.model.fallbackChain = model.fallbackChain;
+      // Always save fallback chain (even if empty array) to ensure database persistence
+      if (model.fallbackChain !== undefined) {
+        if (Array.isArray(model.fallbackChain)) {
+          // Validate and normalize fallback chain format
+          const currentVoiceId = voice?.id || config.voice?.id || 'ash';
+          config.model.fallbackChain = model.fallbackChain.map(item => {
+            // If already in correct format, return as is
+            if (typeof item === 'object' && item !== null && item.modelId && item.voiceId) {
+              return {
+                modelId: item.modelId,
+                voiceId: item.voiceId
+              };
+            }
+            // If old string format, convert to new format
+            if (typeof item === 'string') {
+              return {
+                modelId: item,
+                voiceId: currentVoiceId
+              };
+            }
+            // Invalid format, skip
+            return null;
+          }).filter(item => item !== null);
+        } else {
+          config.model.fallbackChain = [];
+        }
+      }
     }
     if (voice) {
       if (voice.id) config.voice.id = voice.id;
@@ -134,6 +250,31 @@ export const getModels = async (req, res) => {
   }
 };
 
+// Get recommended fallback chain
+export const getRecommendedFallbackChain = async (req, res) => {
+  try {
+    const modelDiscoveryService = (await import('../services/modelDiscoveryService.js')).default;
+    
+    // Ensure models are discovered
+    if (modelDiscoveryService.isDiscoveryNeeded()) {
+      await modelDiscoveryService.discoverModels();
+    }
+    
+    const fallbackChain = modelDiscoveryService.buildFallbackChain('realtime');
+    
+    res.json({
+      status: "success",
+      fallbackChain
+    });
+  } catch (err) {
+    console.error("Error generating fallback chain:", err);
+    res.status(500).json({ 
+      status: "error", 
+      message: "Internal server error" 
+    });
+  }
+};
+
 // Test AI prompt
 export const testPrompt = async (req, res) => {
   try {
@@ -168,6 +309,61 @@ export const testPrompt = async (req, res) => {
     res.status(500).json({ 
       status: "error", 
       message: "Internal server error"  
+    });
+  }
+};
+
+// Get model parameters for a specific model
+export const getModelParameters = async (req, res) => {
+  try {
+    const { modelId } = req.query;
+    if (!modelId) {
+      return res.status(400).json({ 
+        status: "error", 
+        message: "modelId is required" 
+      });
+    }
+    const modelDiscoveryService = (await import('../services/modelDiscoveryService.js')).default;
+    
+    // Ensure models are discovered
+    if (modelDiscoveryService.isDiscoveryNeeded()) {
+      await modelDiscoveryService.discoverModels();
+    }
+    
+    const parameters = modelDiscoveryService.getModelParameters(modelId);
+    res.json({ status: "success", parameters });
+  } catch (err) {
+    console.error("Error getting model parameters:", err);
+    res.status(500).json({ 
+      status: "error", 
+      message: err.message || "Internal server error" 
+    });
+  }
+};
+
+// Get all model capabilities and discovery status
+export const getModelCapabilities = async (req, res) => {
+  try {
+    const modelDiscoveryService = (await import('../services/modelDiscoveryService.js')).default;
+    
+    // Ensure models are discovered
+    if (modelDiscoveryService.isDiscoveryNeeded()) {
+      await modelDiscoveryService.discoverModels();
+    }
+    
+    const capabilities = modelDiscoveryService.getModelCapabilities();
+    const discoveryStatus = modelDiscoveryService.getDiscoveryStatus();
+    
+    res.json({
+      status: "success",
+      capabilities,
+      discoveryStatus
+    });
+  } catch (error) {
+    console.error("Error getting model capabilities:", error);
+    res.status(500).json({
+      status: "error",
+      message: error.message || "Internal server error"
     });
   }
 };

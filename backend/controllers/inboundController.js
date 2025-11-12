@@ -59,8 +59,22 @@ export const handleResponse = async (req, res) => {
         .map(t => `${t.role === "agent" ? "AI" : "User"}: ${t.text}`)
         .join("\n");
 
-    const aiReply = await getAIResponse(conversationText);
+    // Prepare call context for flow detection
+    const callContext = {
+        callSid,
+        transcript: inboundConversations[callSid].transcript,
+        from: inboundConversations[callSid].from,
+        to: inboundConversations[callSid].to
+    };
+
+    const aiResponse = await getAIResponse(conversationText, null, callContext);
+    const aiReply = aiResponse.content || aiResponse;
     inboundConversations[callSid].transcript.push({ role: "agent", text: aiReply });
+    
+    // Store detected flow type in conversation context
+    if (aiResponse.flowType) {
+        inboundConversations[callSid].flowType = aiResponse.flowType;
+    }
 
     const twiml = new VoiceResponse();
 

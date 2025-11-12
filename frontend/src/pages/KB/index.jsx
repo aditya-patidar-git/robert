@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Container,
@@ -30,21 +30,50 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon
+  ListItemIcon,
+  Tooltip,
+  Switch,
+  FormControlLabel,
+  Card,
+  CardContent,
+  LinearProgress
 } from '@mui/material';
 import {
   CloudUpload,
   Refresh,
   PlayArrow,
+  Stop,
   Description,
-  VolumeUp,
   Save,
   Undo,
-  Visibility
+  Visibility,
+  ArrowForward,
+  Delete,
+  DragIndicator,
+  Edit,
+  Warning,
+  CheckCircle
 } from '@mui/icons-material';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useForm, Controller } from 'react-hook-form';
 import { useToast } from '../../components/common/ToastProvider';
 import { formatDateTime } from '../../utils/formatters';
+import authenticatedApiClient from '../../api/authenticatedApi';
 import kbService from '../../services/kbService';
 import promptService from '../../services/promptService';
 import aiService from '../../services/aiService';
@@ -56,6 +85,10 @@ import reingestService from '../../services/reingestService';
 import testRetrievalService from '../../services/testRetrievalService';
 import provenanceService from '../../services/provenanceService';
 import uncertaintyGateService from '../../services/uncertaintyGateService';
+import languageVoiceService from '../../services/languageVoiceService';
+import mcpToolsService from '../../services/mcpToolsService';
+import promptVersionService from '../../services/promptVersionService';
+import flowParameterService from '../../services/flowParameterService';
 
 const AIKnowledgePage = () => {
   const { showSuccess, showError } = useToast();
@@ -67,6 +100,15 @@ const AIKnowledgePage = () => {
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [fileSearchResults, setFileSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  
+  // Tag management state
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [editTagsDialog, setEditTagsDialog] = useState({ open: false, file: null, tags: [] });
+  const [reingestingFiles, setReingestingFiles] = useState(new Set());
+  const [detectingDrift, setDetectingDrift] = useState(new Set());
+  
+  // Predefined tag options
+  const tagOptions = ['policy', 'courses', 'pricing', 'T&Cs', 'training', 'documentation', 'procedures', 'forms'];
 
   // Phase 3: Advanced Features State
   const [driftStatus, setDriftStatus] = useState(null);
@@ -75,18 +117,56 @@ const AIKnowledgePage = () => {
   const [provenanceData, setProvenanceData] = useState(null);
   const [uncertaintyConfig, setUncertaintyConfig] = useState(null);
   
+  // Fallback chain state
+  const [fallbackChain, setFallbackChain] = useState([]);
+  
+  // Model parameters state
+  const [modelParameters, setModelParameters] = useState(null);
+  
+  // Language/Voice mapping state
+  const [languageMappings, setLanguageMappings] = useState([]);
+  const [previewingVoice, setPreviewingVoice] = useState(null);
+  const [mcpTools, setMcpTools] = useState([]);
+  const [editingDomains, setEditingDomains] = useState({}); // { toolName: [domains] }
+  const [newDomainInputs, setNewDomainInputs] = useState({}); // { toolName: '' }
+  const [rateLimitValues, setRateLimitValues] = useState({}); // { toolName: limit }
+  const [promptVersions, setPromptVersions] = useState([]);
+  const [currentVersion, setCurrentVersion] = useState(null);
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [rollbackDialogOpen, setRollbackDialogOpen] = useState(false);
+  const [selectedVersions, setSelectedVersions] = useState({ version1: null, version2: null });
+  const [rollbackVersion, setRollbackVersion] = useState(null);
+  const [rollbackReason, setRollbackReason] = useState('');
+  
+  // Flow parameter state
+  const [flowOverrides, setFlowOverrides] = useState({});
+  const [editingFlowType, setEditingFlowType] = useState(null);
+  const [editingFlowParams, setEditingFlowParams] = useState({});
+  const [flowDetectionTest, setFlowDetectionTest] = useState({ text: '', result: null });
+  
   // View file modal state
   const [viewFileModal, setViewFileModal] = useState({ open: false, file: null, content: null });
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const { control, handleSubmit, setValue, watch } = useForm({
     defaultValues: {
       globalPrompt: '',
-      temperature: 0.7,
-      topP: 0.9,
+      temperature: 0.4,
+      topP: 1.0,
       maxTokens: 150,
       speechRate: 1.0,
       selectedModel: '',
-      selectedVoice: ''
+      selectedVoice: '',
+      uncertaintyGateEnabled: true,
+      uncertaintyGateThreshold: 0.8,
+      uncertaintyGateMinSources: 1
     }
   });
 
@@ -117,14 +197,158 @@ const AIKnowledgePage = () => {
     queryFn: promptService.getAllPrompts,
   });
 
+  // Fetch model capabilities
+  const { data: capabilitiesData, isLoading: capabilitiesLoading } = useQuery({
+    queryKey: ['model-capabilities'],
+    queryFn: aiService.getModelCapabilities,
+    refetchInterval: 300000 // Refetch every 5 minutes
+  });
+
+  // Fetch language/voice mappings
+  const { data: fetchedMappings = [], isLoading: mappingsLoading } = useQuery({
+    queryKey: ['language-voice-mappings'],
+    queryFn: languageVoiceService.getLanguageMappings
+  });
+
+  // Fetch MCP tools
+  const { data: fetchedMcpTools = [], isLoading: mcpToolsLoading, refetch: refetchMcpTools } = useQuery({
+    queryKey: ['mcp-tools'],
+    queryFn: mcpToolsService.getAllTools
+  });
+
+  // Fetch prompt versions
+  const { data: fetchedVersions = [], isLoading: versionsLoading, refetch: refetchVersions } = useQuery({
+    queryKey: ['prompt-versions'],
+    queryFn: () => promptVersionService.getPromptVersions('global')
+  });
+
+  // Fetch current version
+  const { data: fetchedCurrentVersion, refetch: refetchCurrentVersion } = useQuery({
+    queryKey: ['prompt-current-version'],
+    queryFn: () => promptVersionService.getCurrentVersion('global'),
+    enabled: false // Only fetch when needed
+  });
+
+  // Fetch flow parameter overrides
+  const { data: fetchedFlowOverrides = [], isLoading: flowOverridesLoading, refetch: refetchFlowOverrides } = useQuery({
+    queryKey: ['flow-parameters'],
+    queryFn: flowParameterService.getFlowParameters
+  });
+
+  // Update local state when mappings are fetched
+  useEffect(() => {
+    if (fetchedMappings && fetchedMappings.length > 0) {
+      setLanguageMappings(fetchedMappings);
+    }
+  }, [fetchedMappings]);
+
+  // Update local state when MCP tools are fetched
+  useEffect(() => {
+    if (fetchedMcpTools && fetchedMcpTools.length > 0) {
+      setMcpTools(fetchedMcpTools);
+      // Initialize editing domains state
+      const domainsState = {};
+      const rateLimitState = {};
+      fetchedMcpTools.forEach(tool => {
+        domainsState[tool.name] = [...(tool.domains || [])];
+        rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
+      });
+      setEditingDomains(domainsState);
+      setRateLimitValues(rateLimitState);
+    }
+  }, [fetchedMcpTools]);
+
+  // Update local state when prompt versions are fetched
+  useEffect(() => {
+    if (fetchedVersions && fetchedVersions.length > 0) {
+      setPromptVersions(fetchedVersions);
+      const activeVersion = fetchedVersions.find(v => v.isActive);
+      if (activeVersion) {
+        setCurrentVersion(activeVersion);
+      }
+    }
+  }, [fetchedVersions]);
+
+  // Update local state when flow overrides are fetched
+  useEffect(() => {
+    if (fetchedFlowOverrides && fetchedFlowOverrides.length > 0) {
+      const overridesMap = {};
+      fetchedFlowOverrides.forEach(override => {
+        overridesMap[override.flowType] = override;
+      });
+      setFlowOverrides(overridesMap);
+    }
+  }, [fetchedFlowOverrides]);
+
+  // Fetch AI config to get fallback chain
+  useEffect(() => {
+    const fetchAIConfig = async () => {
+      try {
+        const config = await aiService.getConfig();
+        if (config?.model?.id) {
+          setValue('selectedModel', config.model.id);
+          // Ensure primary model is first in fallback chain
+          // Handle both old format (strings) and new format (objects with {modelId, voiceId})
+          const currentVoiceId = config?.voice?.id || 'ash';
+          if (config?.model?.fallbackChain && config.model.fallbackChain.length > 0) {
+            let chain = [...config.model.fallbackChain];
+            // Normalize to objects: handle both old format (strings) and new format (objects)
+            chain = chain.map(item => {
+              if (typeof item === 'string') {
+                return { modelId: item, voiceId: currentVoiceId };
+              }
+              // If object, ensure it has both modelId and voiceId
+              if (item && typeof item === 'object' && item.modelId) {
+                return {
+                  modelId: item.modelId,
+                  voiceId: item.voiceId || currentVoiceId
+                };
+              }
+              return null;
+            }).filter(item => item !== null);
+            
+            // Remove primary model if it exists elsewhere
+            chain = chain.filter(item => item.modelId !== config.model.id);
+            // Add primary model as first with current voice
+            chain = [{ modelId: config.model.id, voiceId: currentVoiceId }, ...chain];
+            setFallbackChain(chain);
+          } else {
+            // If no fallback chain, create one with just the primary model
+            setFallbackChain([{ modelId: config.model.id, voiceId: currentVoiceId }]);
+          }
+        }
+        if (config?.voice?.id) {
+          setValue('selectedVoice', config.voice.id);
+        }
+        if (config?.globalPrompt) {
+          setValue('globalPrompt', config.globalPrompt);
+        }
+        if (config?.parameters) {
+          setValue('temperature', config.parameters.temperature || 0.4);
+          setValue('topP', config.parameters.topP || 1.0);
+          setValue('maxTokens', config.parameters.maxTokens || 150);
+          setValue('speechRate', config.parameters.speechRate || 1.0);
+        }
+        if (config?.uncertaintyGate) {
+          setValue('uncertaintyGateEnabled', config.uncertaintyGate.enabled !== undefined ? config.uncertaintyGate.enabled : true);
+          setValue('uncertaintyGateThreshold', config.uncertaintyGate.confidenceThreshold || 0.8);
+          setValue('uncertaintyGateMinSources', config.uncertaintyGate.minSources || 1);
+        }
+      } catch (error) {
+        console.error('Error fetching AI config:', error);
+      }
+    };
+    fetchAIConfig();
+  }, [setValue]);
+
   // Handle prompts data
   useEffect(() => {
     if (prompts && Array.isArray(prompts) && prompts.length > 0) {
       const prompt = prompts[0];
       setValue('globalPrompt', prompt.content || '');
       if (prompt.parameters) {
-        setValue('temperature', prompt.parameters.temperature || 0.7);
-        setValue('topP', prompt.parameters.topP || 0.9);
+        setValue('temperature', prompt.parameters.temperature || 0.4);
+        setValue('topP', prompt.parameters.topP || 1.0);
         setValue('maxTokens', prompt.parameters.maxTokens || 150);
         setValue('speechRate', prompt.parameters.speechRate || 1.0);
         setValue('selectedModel', prompt.parameters.model || '');
@@ -155,6 +379,21 @@ const AIKnowledgePage = () => {
     }
   }, [modelsError, showError]);
 
+  // Fetch model parameters when model selection changes
+  useEffect(() => {
+    const selectedModel = watch('selectedModel');
+    if (selectedModel) {
+      aiService.getModelParameters(selectedModel)
+        .then(params => setModelParameters(params))
+        .catch(err => {
+          console.error('Error fetching model parameters:', err);
+          setModelParameters(null); // Fallback to defaults
+        });
+    } else {
+      setModelParameters(null);
+    }
+  }, [watch('selectedModel')]);
+
   // Fetch voices (discovered from OpenAI)
   const { data: voices = [], error: voicesError } = useQuery({
     queryKey: ['voices'],
@@ -168,6 +407,63 @@ const AIKnowledgePage = () => {
       showError('Failed to load voices');
     }
   }, [voicesError, showError]);
+
+  // Get compatible voices for the selected model
+  const getCompatibleVoices = useCallback((modelId) => {
+    if (!modelId || !Array.isArray(voices) || !Array.isArray(models)) {
+      return voices || [];
+    }
+
+    // Find the selected model
+    const selectedModel = models.find(m => m.id === modelId);
+    if (!selectedModel) {
+      return voices || [];
+    }
+
+    // Check model capabilities
+    const modelSupportsRealtime = selectedModel.capabilities?.realtime || 
+                                   modelId.includes('realtime') || 
+                                   modelId.includes('gpt-realtime');
+    
+    const modelSupportsTTS = modelId.includes('tts') || 
+                             modelId.includes('tts-1');
+    
+    const modelSupportsAudio = selectedModel.capabilities?.audio || 
+                               modelSupportsRealtime || 
+                               modelSupportsTTS ||
+                               modelId.includes('whisper');
+
+    // Filter voices based on model type
+    if (modelSupportsRealtime) {
+      // Realtime models: show only voices with realtime capability
+      return voices.filter(voice => voice.capabilities?.realtime === true);
+    } else if (modelSupportsTTS) {
+      // TTS models: show all voices (TTS models generally support all voices)
+      return voices;
+    } else if (modelSupportsAudio) {
+      // Other audio models: show all voices
+      return voices;
+    } else {
+      // Non-audio models: no voices available
+      return [];
+    }
+  }, [voices, models]);
+
+  // Clear voice selection when model changes and current voice is incompatible
+  const selectedModelValue = watch('selectedModel');
+  const selectedVoiceValue = watch('selectedVoice');
+  
+  useEffect(() => {
+    if (selectedModelValue && selectedVoiceValue) {
+      const compatibleVoices = getCompatibleVoices(selectedModelValue);
+      const isCurrentVoiceCompatible = compatibleVoices.some(v => v.id === selectedVoiceValue);
+      
+      // If current voice is not compatible with new model, clear it
+      if (!isCurrentVoiceCompatible) {
+        setValue('selectedVoice', '');
+      }
+    }
+  }, [selectedModelValue, selectedVoiceValue, setValue, getCompatibleVoices]);
 
   // Fetch vector store status - use the same working endpoint as Knowledge Base Management
   const { data: vectorStoreData, isLoading: vectorStoreLoading, error: vectorStoreError } = useQuery({
@@ -263,8 +559,44 @@ const AIKnowledgePage = () => {
     onSuccess: () => {
       showSuccess('File uploaded successfully to OpenAI');
       queryClient.invalidateQueries(['kb-files']);
+      setSelectedTags([]);
     },
     onError: () => showError('Failed to upload file to OpenAI')
+  });
+
+  // Update tags mutation
+  const updateTagsMutation = useMutation({
+    mutationFn: ({ fileId, tags }) => kbService.updateFileTags(fileId, tags),
+    onSuccess: () => {
+      showSuccess('Tags updated successfully');
+      queryClient.invalidateQueries(['kb-files']);
+      setEditTagsDialog({ open: false, file: null, tags: [] });
+    },
+    onError: () => showError('Failed to update tags')
+  });
+
+  // Re-ingest file mutation
+  const reingestFileMutation = useMutation({
+    mutationFn: (fileId) => kbService.reingestFile(fileId),
+    onSuccess: () => {
+      showSuccess('File re-ingested successfully');
+      queryClient.invalidateQueries(['kb-files']);
+    },
+    onError: () => showError('Failed to re-ingest file')
+  });
+
+  // Detect drift mutation
+  const detectDriftMutation = useMutation({
+    mutationFn: (fileId) => kbService.detectFileDrift(fileId),
+    onSuccess: (drift) => {
+      if (drift.hasDrift) {
+        showError(`Drift detected: ${drift.reason || 'Content may be outdated'}`);
+      } else {
+        showSuccess('No drift detected');
+      }
+      queryClient.invalidateQueries(['kb-files']);
+    },
+    onError: () => showError('Failed to detect drift')
   });
 
   // Save prompt mutation
@@ -281,8 +613,8 @@ const AIKnowledgePage = () => {
       queryClient.invalidateQueries(['prompts']);
       // Clear the form after successful save
       setValue('globalPrompt', '');
-      setValue('temperature', 0.7);
-      setValue('topP', 0.9);
+      setValue('temperature', 0.4);
+      setValue('topP', 1.0);
       setValue('maxTokens', 150);
       setValue('speechRate', 1.0);
       setValue('selectedModel', '');
@@ -291,16 +623,6 @@ const AIKnowledgePage = () => {
     onError: () => showError('Failed to save prompt')
   });
 
-  // Voice preview mutation
-  const previewVoiceMutation = useMutation({
-    mutationFn: ({ voiceId, text }) => voiceService.previewVoice(voiceId, text),
-    onSuccess: (audioBlob) => {
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audio.play();
-    },
-    onError: () => showError('Failed to preview voice')
-  });
 
   // Vector store migration mutation
   const startMigrationMutation = useMutation({
@@ -371,33 +693,345 @@ const AIKnowledgePage = () => {
 
       uploadFileMutation.mutate({
         file,
-        tags: ['policy', 'training', 'documentation'] // Default tags
+        tags: selectedTags.length > 0 ? selectedTags : []
       });
+      
+      // Reset selected tags after upload
+      setSelectedTags([]);
+      // Reset file input
+      event.target.value = '';
     }
   };
 
 
-  const handleSavePrompt = (data) => {
-    savePromptMutation.mutate({
-      title: "Global System Prompt",
-      content: data.globalPrompt,
-      parameters: {
-        temperature: data.temperature,
-        topP: data.topP,
-        maxTokens: data.maxTokens,
-        speechRate: data.speechRate,
-        model: data.selectedModel,
-        voice: data.selectedVoice
+  const handleSavePrompt = async (data) => {
+    // Ensure primary model is first in fallback chain
+    let finalFallbackChain = [...fallbackChain];
+    if (data.selectedModel) {
+      // Remove primary model from chain if it exists elsewhere (check both string and object formats)
+      finalFallbackChain = finalFallbackChain.filter(item => {
+        const itemModelId = typeof item === 'string' ? item : item.modelId;
+        return itemModelId !== data.selectedModel;
+      });
+      // Add primary model as first in chain with current voice
+      finalFallbackChain = [{ modelId: data.selectedModel, voiceId: data.selectedVoice }, ...finalFallbackChain];
+    }
+    
+    // Normalize fallback chain to ensure all items are objects with modelId and voiceId
+    const normalizedFallbackChain = finalFallbackChain.map(item => {
+      if (typeof item === 'string') {
+        // Convert old string format to new object format
+        return {
+          modelId: item,
+          voiceId: data.selectedVoice || 'ash'
+        };
       }
-    });
+      // Ensure object has both modelId and voiceId
+      if (item && item.modelId && item.voiceId) {
+        return {
+          modelId: item.modelId,
+          voiceId: item.voiceId
+        };
+      }
+      return null;
+    }).filter(item => item !== null);
+    
+    // Save using aiService to include fallback chain with full objects
+    try {
+      await aiService.updateConfig({
+        globalPrompt: data.globalPrompt,
+        parameters: {
+          temperature: data.temperature,
+          topP: data.topP,
+          maxTokens: data.maxTokens,
+          speechRate: data.speechRate
+        },
+        model: {
+          id: data.selectedModel,
+          name: models.find(m => m.id === data.selectedModel)?.name || 'Unknown',
+          // Save full objects with modelId and voiceId
+          fallbackChain: normalizedFallbackChain.length > 0 ? normalizedFallbackChain : (data.selectedModel ? [{ modelId: data.selectedModel, voiceId: data.selectedVoice }] : [])
+        },
+        voice: {
+          id: data.selectedVoice,
+          name: voices.find(v => v.id === data.selectedVoice)?.name || 'Unknown'
+        },
+        uncertaintyGate: {
+          enabled: data.uncertaintyGateEnabled,
+          confidenceThreshold: data.uncertaintyGateThreshold,
+          minSources: data.uncertaintyGateMinSources
+        }
+      });
+      showSuccess('All configurations saved successfully');
+      queryClient.invalidateQueries(['prompts']);
+      queryClient.invalidateQueries(['prompt-versions']);
+      queryClient.invalidateQueries(['prompt-current-version']);
+      refetchVersions();
+      // Update local fallback chain state (keep objects with voice info)
+      setFallbackChain(normalizedFallbackChain);
+    } catch (error) {
+      showError('Failed to save AI configuration');
+    }
   };
 
-  const handleVoicePreview = (voiceId) => {
-    previewVoiceMutation.mutate({
-      voiceId,
-      text: 'Hello, this is a voice preview sample.'
-    });
+  // Handle language/voice mapping update
+  const handleLanguageMappingChange = (languageCode, field, value) => {
+    setLanguageMappings(prev => 
+      prev.map(mapping => 
+        mapping.languageCode === languageCode 
+          ? { ...mapping, [field]: value }
+          : mapping
+      )
+    );
   };
+
+  // Handle voice preview
+  const handleVoicePreview = async (voiceId, languageCode) => {
+    try {
+      setPreviewingVoice({ voiceId, languageCode });
+      const sampleText = `Hello, this is a voice preview for ${languageCode}.`;
+      await voiceService.previewVoice(voiceId, sampleText);
+      showSuccess('Voice preview generated');
+    } catch (error) {
+      showError('Failed to preview voice');
+    } finally {
+      setPreviewingVoice(null);
+    }
+  };
+
+  // Save language/voice mappings
+  const handleSaveLanguageMappings = async () => {
+    try {
+      const mappingsToSave = languageMappings.map(mapping => ({
+        languageCode: mapping.languageCode,
+        voiceId: mapping.voiceId,
+        voiceName: mapping.voiceName,
+        isActive: mapping.isActive
+      }));
+      
+      await languageVoiceService.bulkUpdateLanguageMappings(mappingsToSave);
+      showSuccess('Language/voice mappings saved successfully');
+      queryClient.invalidateQueries(['language-voice-mappings']);
+    } catch (error) {
+      showError('Failed to save language/voice mappings');
+    }
+  };
+
+  // MCP Tools Handlers
+  const handleToggleTool = async (toolName, enabled) => {
+    try {
+      if (enabled) {
+        await mcpToolsService.enableTool(toolName);
+      } else {
+        await mcpToolsService.disableTool(toolName);
+      }
+      showSuccess(`Tool ${toolName} ${enabled ? 'enabled' : 'disabled'}`);
+      queryClient.invalidateQueries(['mcp-tools']);
+    } catch (error) {
+      showError(`Failed to ${enabled ? 'enable' : 'disable'} tool ${toolName}`);
+    }
+  };
+
+  const handleUpdateRateLimit = async (toolName, newLimit) => {
+    try {
+      if (newLimit < 1 || newLimit > 1000) {
+        showError('Rate limit must be between 1 and 1000');
+        return;
+      }
+      await mcpToolsService.updateRateLimit(toolName, newLimit);
+      showSuccess(`Rate limit updated for ${toolName}`);
+      queryClient.invalidateQueries(['mcp-tools']);
+    } catch (error) {
+      showError(`Failed to update rate limit for ${toolName}`);
+    }
+  };
+
+  const handleAddDomain = useCallback((toolName, domain) => {
+    if (!domain || domain.trim() === '') {
+      showError('Domain cannot be empty');
+      return;
+    }
+    
+    // Basic domain validation
+    const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    if (!domainRegex.test(domain.trim())) {
+      showError('Invalid domain format');
+      return;
+    }
+
+    setEditingDomains(prev => {
+      const currentDomains = prev[toolName] || [];
+      if (currentDomains.includes(domain.trim())) {
+        showError('Domain already exists');
+        return prev;
+      }
+      const updatedDomains = [...currentDomains, domain.trim()];
+      return { ...prev, [toolName]: updatedDomains };
+    });
+    setNewDomainInputs(prev => ({ ...prev, [toolName]: '' }));
+  }, [showError]);
+
+  const handleRemoveDomain = useCallback((toolName, domainToRemove) => {
+    setEditingDomains(prev => {
+      const currentDomains = prev[toolName] || [];
+      const updatedDomains = currentDomains.filter(d => d !== domainToRemove);
+      return { ...prev, [toolName]: updatedDomains };
+    });
+  }, []);
+
+  const handleSaveDomains = async (toolName) => {
+    try {
+      const domains = editingDomains[toolName] || [];
+      await mcpToolsService.updateDomainAllowlist(toolName, domains);
+      showSuccess(`Domain allowlist updated for ${toolName}`);
+      queryClient.invalidateQueries(['mcp-tools']);
+    } catch (error) {
+      showError(`Failed to update domain allowlist for ${toolName}`);
+    }
+  };
+
+  // Prompt Version Handlers
+  const handleViewVersion = (version) => {
+    // Compare the selected version with the current active version
+    const current = promptVersions.find(v => v.isActive);
+    if (current) {
+      // If viewing the active version, show it compared with itself
+      // Otherwise, compare with current active version
+      if (version.isActive) {
+        setSelectedVersions({ version1: version, version2: version });
+      } else {
+        setSelectedVersions({ version1: current, version2: version });
+      }
+    } else {
+      // No active version found, just show the selected version
+      setSelectedVersions({ version1: version, version2: version });
+    }
+    setCompareDialogOpen(true);
+  };
+
+  const handleCompareVersions = (version1, version2) => {
+    setSelectedVersions({ version1, version2 });
+    setCompareDialogOpen(true);
+  };
+
+  const handleRollbackClick = (version) => {
+    setRollbackVersion(version);
+    setRollbackReason('');
+    setRollbackDialogOpen(true);
+  };
+
+  const handleRollbackConfirm = async () => {
+    try {
+      const result = await promptVersionService.rollbackToVersion(
+        rollbackVersion._id,
+        rollbackReason || `Rollback to version ${rollbackVersion.version}`
+      );
+      showSuccess(`Rolled back to version ${rollbackVersion.version}. New version ${result.version.version} created.`);
+      
+      // Update the form field with the rolled-back content
+      setValue('globalPrompt', result.promptContent || rollbackVersion.content);
+      
+      // Also fetch the updated config to ensure everything is in sync
+      const config = await aiService.getConfig();
+      if (config?.globalPrompt) {
+        setValue('globalPrompt', config.globalPrompt);
+      }
+      
+      setRollbackDialogOpen(false);
+      setRollbackVersion(null);
+      setRollbackReason('');
+      queryClient.invalidateQueries(['prompt-versions']);
+      queryClient.invalidateQueries(['prompt-current-version']);
+      queryClient.invalidateQueries(['ai-config']);
+      refetchVersions();
+      refetchCurrentVersion();
+    } catch (error) {
+      showError('Failed to rollback version');
+    }
+  };
+
+  // Flow Parameter Handlers
+  const handleSaveFlowOverride = async (flowType, overrideData) => {
+    try {
+      await flowParameterService.createOrUpdateFlowOverride(flowType, overrideData);
+      showSuccess(`Flow parameter override for ${flowType} saved successfully`);
+      setEditingFlowType(null);
+      refetchFlowOverrides();
+      queryClient.invalidateQueries(['flow-parameters']);
+    } catch (error) {
+      showError(`Failed to save flow parameter override for ${flowType}`);
+    }
+  };
+
+  const handleTestFlowDetection = async () => {
+    try {
+      const result = await flowParameterService.detectFlowType(flowDetectionTest.text);
+      setFlowDetectionTest({ ...flowDetectionTest, result });
+    } catch (error) {
+      showError('Failed to test flow detection');
+    }
+  };
+
+  const handleCancelConfig = async () => {
+    try {
+      const config = await aiService.getConfig();
+      
+      // Reset all form values to saved state
+      if (config?.globalPrompt) {
+        setValue('globalPrompt', config.globalPrompt);
+      }
+      if (config?.parameters) {
+        setValue('temperature', config.parameters.temperature || 0.4);
+        setValue('topP', config.parameters.topP || 1.0);
+        setValue('maxTokens', config.parameters.maxTokens || 150);
+        setValue('speechRate', config.parameters.speechRate || 1.0);
+      }
+      if (config?.uncertaintyGate) {
+        setValue('uncertaintyGateEnabled', config.uncertaintyGate.enabled !== undefined ? config.uncertaintyGate.enabled : true);
+        setValue('uncertaintyGateThreshold', config.uncertaintyGate.confidenceThreshold || 0.8);
+        setValue('uncertaintyGateMinSources', config.uncertaintyGate.minSources || 1);
+      }
+      if (config?.model?.id) {
+        setValue('selectedModel', config.model.id);
+        // Reset fallback chain to saved state (handle both old and new formats)
+        const currentVoiceId = config?.voice?.id || 'ash';
+        if (config?.model?.fallbackChain && config.model.fallbackChain.length > 0) {
+          let chain = [...config.model.fallbackChain];
+          // Normalize to objects: handle both old format (strings) and new format (objects)
+          chain = chain.map(item => {
+            if (typeof item === 'string') {
+              return { modelId: item, voiceId: currentVoiceId };
+            }
+            // If object, ensure it has both modelId and voiceId
+            if (item && typeof item === 'object' && item.modelId) {
+              return {
+                modelId: item.modelId,
+                voiceId: item.voiceId || currentVoiceId
+              };
+            }
+            return null;
+          }).filter(item => item !== null);
+          
+          // Remove primary model if it exists elsewhere
+          chain = chain.filter(item => item.modelId !== config.model.id);
+          // Add primary model as first with current voice
+          chain = [{ modelId: config.model.id, voiceId: currentVoiceId }, ...chain];
+          setFallbackChain(chain);
+        } else if (config.model.id) {
+          setFallbackChain([{ modelId: config.model.id, voiceId: currentVoiceId }]);
+        }
+      }
+      if (config?.voice?.id) {
+        setValue('selectedVoice', config.voice.id);
+      }
+      
+      showSuccess('Configuration reverted to saved state');
+    } catch (error) {
+      console.error('Error reverting configuration:', error);
+      showError('Failed to revert configuration');
+    }
+  };
+
 
   const handleFileSearch = () => {
     if (!fileSearchQuery.trim()) {
@@ -412,6 +1046,196 @@ const AIKnowledgePage = () => {
         similarityThreshold: 0.7
       }
     });
+  };
+
+  // Fallback chain handlers
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    
+    if (over && active.id !== over.id) {
+      setFallbackChain((items) => {
+        const oldIndex = items.findIndex(item => {
+          const itemId = typeof item === 'string' ? item : item.modelId;
+          return itemId === active.id;
+        });
+        const newIndex = items.findIndex(item => {
+          const itemId = typeof item === 'string' ? item : item.modelId;
+          return itemId === over.id;
+        });
+        if (oldIndex === -1 || newIndex === -1) return items;
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const handleRemoveFromFallbackChain = (index) => {
+    const newChain = fallbackChain.filter((_, i) => i !== index);
+    setFallbackChain(newChain);
+  };
+
+  // Save model/voice selection and add model to fallback chain (UI only)
+  const handleSaveModelVoice = () => {
+    const selectedModel = watch('selectedModel');
+    const selectedVoice = watch('selectedVoice');
+
+    // Check that both model and voice are selected
+    if (!selectedModel || !selectedVoice) {
+      showError('Please select both a model and a voice');
+      return;
+    }
+
+    // Check if the exact model+voice combination already exists in fallback chain
+    const exists = fallbackChain.some(item => {
+      const itemModelId = typeof item === 'string' ? item : item.modelId;
+      const itemVoiceId = typeof item === 'string' ? undefined : item.voiceId;
+      return itemModelId === selectedModel && itemVoiceId === selectedVoice;
+    });
+
+    if (exists) {
+      showError('This model and voice combination is already in the fallback chain');
+      return;
+    }
+
+    // Add selected model+voice to the END of fallback chain
+    setFallbackChain([...fallbackChain, { modelId: selectedModel, voiceId: selectedVoice }]);
+    showSuccess('Model and voice added to fallback chain');
+  };
+
+  // Sortable item component
+  const SortableItem = ({ id, index }) => {
+    // Extract modelId from object or use id directly (for backward compatibility)
+    const chainItem = fallbackChain[index];
+    const modelId = typeof chainItem === 'string' ? chainItem : chainItem?.modelId || id;
+    const voiceId = typeof chainItem === 'string' ? undefined : chainItem?.voiceId;
+    
+    const model = models.find(m => m.id === modelId);
+    const voice = voices.find(v => v.id === voiceId);
+    
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging
+    } = useSortable({ id: modelId });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1
+    };
+
+    return (
+      <Paper
+        ref={setNodeRef}
+        style={style}
+        sx={{
+          p: 2,
+          mb: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          bgcolor: isDragging ? 'action.selected' : 'background.paper',
+          border: index === 0 ? '2px solid' : '1px solid',
+          borderColor: index === 0 ? 'primary.main' : 'divider',
+          boxShadow: isDragging ? 3 : 1
+        }}
+      >
+        <Box
+          {...attributes}
+          {...listeners}
+          sx={{ cursor: 'grab', display: 'flex', alignItems: 'center' }}
+        >
+          <DragIndicator color="action" />
+        </Box>
+        
+        <Chip
+          label={index === 0 ? 'Primary' : `Fallback ${index}`}
+          color={index === 0 ? 'primary' : 'default'}
+          size="small"
+        />
+        
+        <Box sx={{ flexGrow: 1 }}>
+          <Typography variant="body1" fontWeight="medium">
+            {model?.name || modelId}
+          </Typography>
+          {model && (
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                {model.capabilities?.realtime ? 'Realtime' : 'Standard'} • 
+                Context: {model.contextLimit || model.context_limit || 'N/A'} tokens
+                {voice && ` • Voice: ${voice.name}`}
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
+                {model.supportsTools && (
+                  <Chip 
+                    label="Tools" 
+                    size="small" 
+                    color="success" 
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: '0.65rem' }}
+                  />
+                )}
+                {model.supportsAudio && (
+                  <Chip 
+                    label="Audio" 
+                    size="small" 
+                    color="success" 
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: '0.65rem' }}
+                  />
+                )}
+                {model.capabilities?.fileSearch && (
+                  <Chip 
+                    label="File Search" 
+                    size="small" 
+                    color="success" 
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: '0.65rem' }}
+                  />
+                )}
+                {model.rateLimits && (
+                  <Tooltip 
+                    title={`Rate Limits: ${model.rateLimits.requestsPerMinute} req/min, ${model.rateLimits.tokensPerMinute?.toLocaleString() || 'N/A'} tokens/min`}
+                    arrow
+                  >
+                    <Chip 
+                      label={`${model.rateLimits.requestsPerMinute} req/min`} 
+                      size="small" 
+                      variant="outlined"
+                      sx={{ height: 20, fontSize: '0.65rem' }}
+                    />
+                  </Tooltip>
+                )}
+              </Box>
+              {model.knownLimitations && model.knownLimitations.length > 0 && (
+                <Alert severity="warning" sx={{ mt: 1, py: 0.5 }}>
+                  <Typography variant="caption">
+                    {model.knownLimitations.join(', ')}
+                  </Typography>
+                </Alert>
+              )}
+            </Box>
+          )}
+          {!model && (
+            <Typography variant="caption" color="text.secondary">
+              Model details not available
+            </Typography>
+          )}
+        </Box>
+
+        {index > 0 && (
+          <IconButton
+            size="small"
+            onClick={() => handleRemoveFromFallbackChain(index)}
+            color="error"
+          >
+            <Delete />
+          </IconButton>
+        )}
+      </Paper>
+    );
   };
 
   const handleViewFile = async (file) => {
@@ -430,6 +1254,56 @@ const AIKnowledgePage = () => {
 
   const handleCloseViewFile = () => {
     setViewFileModal({ open: false, file: null, content: null });
+  };
+
+  const handleOpenEditTags = (file) => {
+    setEditTagsDialog({
+      open: true,
+      file: file,
+      tags: file.tags || []
+    });
+  };
+
+  const handleCloseEditTags = () => {
+    setEditTagsDialog({ open: false, file: null, tags: [] });
+  };
+
+  const handleSaveTags = () => {
+    if (!editTagsDialog.file) return;
+    updateTagsMutation.mutate({
+      fileId: editTagsDialog.file.id,
+      tags: editTagsDialog.tags
+    });
+  };
+
+  const handleReingestFile = async (file) => {
+    if (reingestingFiles.has(file.id)) return;
+    
+    setReingestingFiles(prev => new Set(prev).add(file.id));
+    try {
+      await reingestFileMutation.mutateAsync(file.id);
+    } finally {
+      setReingestingFiles(prev => {
+        const next = new Set(prev);
+        next.delete(file.id);
+        return next;
+      });
+    }
+  };
+
+  const handleDetectDrift = async (file) => {
+    if (detectingDrift.has(file.id)) return;
+    
+    setDetectingDrift(prev => new Set(prev).add(file.id));
+    try {
+      await detectDriftMutation.mutateAsync(file.id);
+    } finally {
+      setDetectingDrift(prev => {
+        const next = new Set(prev);
+        next.delete(file.id);
+        return next;
+      });
+    }
   };
 
 
@@ -513,6 +1387,50 @@ const AIKnowledgePage = () => {
             <Alert severity="info" sx={{ mb: 2 }}>
               Supported formats: PDF, TXT, MD, HTML, DOC, DOCX (Max 25MB per file). Files are uploaded to OpenAI and added to the vector store.
             </Alert>
+            
+            {/* Tag Selection */}
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Select Tags (optional)
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+                {tagOptions.map((tag) => (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    onClick={() => {
+                      setSelectedTags(prev => 
+                        prev.includes(tag) 
+                          ? prev.filter(t => t !== tag)
+                          : [...prev, tag]
+                      );
+                    }}
+                    color={selectedTags.includes(tag) ? 'primary' : 'default'}
+                    variant={selectedTags.includes(tag) ? 'filled' : 'outlined'}
+                    sx={{ cursor: 'pointer' }}
+                  />
+                ))}
+              </Box>
+              {selectedTags.length > 0 && (
+                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Selected:
+                  </Typography>
+                  {selectedTags.map((tag) => (
+                    <Chip
+                      key={tag}
+                      label={tag}
+                      size="small"
+                      onDelete={() => {
+                        setSelectedTags(prev => prev.filter(t => t !== tag));
+                      }}
+                      color="primary"
+                    />
+                  ))}
+                </Box>
+              )}
+            </Box>
+
             <Button
               variant="contained"
               component="label"
@@ -523,7 +1441,7 @@ const AIKnowledgePage = () => {
               <input
                 type="file"
                 hidden
-                accept=".pdf,.html,.md,.txt"
+                accept=".pdf,.html,.md,.txt,.doc,.docx"
                 onChange={handleFileUpload}
               />
             </Button>
@@ -601,7 +1519,7 @@ const AIKnowledgePage = () => {
                     <TableCell>Tags</TableCell>
                     <TableCell>Uploaded At</TableCell>
                     <TableCell>Status</TableCell>
-                    {/* <TableCell>Vector Store</TableCell> */}
+                    <TableCell>Drift</TableCell>
                     <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
@@ -635,22 +1553,63 @@ const AIKnowledgePage = () => {
                           size="small"
                         />
                       </TableCell>
-                      {/* <TableCell>
-                        <Chip
-                          label={file.inVectorStore ? 'In Vector Store' : 'Not in Vector Store'}
-                          color={file.inVectorStore ? 'success' : 'default'}
-                          size="small"
-                        />
-                      </TableCell> */}
                       <TableCell>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleViewFile(file)}
-                          title="View file details"
-                          color="primary"
-                        >
-                          <Visibility />
-                        </IconButton>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {file.hasDrift ? (
+                            <Chip
+                              icon={<Warning />}
+                              label="Drift Detected"
+                              color="warning"
+                              size="small"
+                              title={`Drift Score: ${(file.driftScore * 100).toFixed(1)}%`}
+                            />
+                          ) : (
+                            <Chip
+                              icon={<CheckCircle />}
+                              label="No Drift"
+                              color="success"
+                              size="small"
+                            />
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleViewFile(file)}
+                            title="View file details"
+                            color="primary"
+                          >
+                            <Visibility />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleOpenEditTags(file)}
+                            title="Edit tags"
+                            color="primary"
+                          >
+                            <Edit />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleReingestFile(file)}
+                            title="Re-ingest file"
+                            color="secondary"
+                            disabled={reingestingFiles.has(file.id) || reingestFileMutation.isLoading}
+                          >
+                            <Refresh />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleDetectDrift(file)}
+                            title="Detect drift"
+                            color={file.hasDrift ? 'warning' : 'default'}
+                            disabled={detectingDrift.has(file.id) || detectDriftMutation.isLoading}
+                          >
+                            <Warning />
+                          </IconButton>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -667,9 +1626,24 @@ const AIKnowledgePage = () => {
           <Box>
             {/* Global Prompt Editor */}
             <Paper sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Global System Prompt for "Robert"
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  Global System Prompt for "Robert"
+                </Typography>
+                {currentVersion && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Chip 
+                      label={`Version ${currentVersion.version}`} 
+                      color="primary" 
+                      size="small"
+                      variant="outlined"
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Last modified by {currentVersion.createdBy} on {formatDateTime(currentVersion.createdAt)}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Configure the global system prompt that defines Robert's behavior, personality, and capabilities.
               </Typography>
@@ -687,64 +1661,430 @@ const AIKnowledgePage = () => {
                   />
                 )}
               />
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  startIcon={<Save />}
-                  disabled={savePromptMutation.isLoading}
-                >
-                  Save Prompt
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<Undo />}
-                  onClick={() => {
-                    if (prompts.length > 0) {
-                      const prompt = prompts[0];
-                      setValue('globalPrompt', prompt.content || '');
-                      if (prompt.parameters) {
-                        setValue('temperature', prompt.parameters.temperature || 0.7);
-                        setValue('topP', prompt.parameters.topP || 0.9);
-                        setValue('maxTokens', prompt.parameters.maxTokens || 150);
-                        setValue('speechRate', prompt.parameters.speechRate || 1.0);
-                        setValue('selectedModel', prompt.parameters.model || '');
-                        setValue('selectedVoice', prompt.parameters.voice || '');
-                      }
-                      showSuccess('Prompt rolled back to saved version');
-                    } else {
-                      setValue('globalPrompt', '');
-                      setValue('temperature', 0.7);
-                      setValue('topP', 0.9);
-                      setValue('maxTokens', 150);
-                      setValue('speechRate', 1.0);
-                      setValue('selectedModel', '');
-                      setValue('selectedVoice', '');
-                      showSuccess('Prompt cleared');
-                    }
-                  }}
-                >
-                  Rollback
-                </Button>
-              </Box>
             </Paper>
 
-            {/* Model & Voice Selection */}
+            {/* Prompt Version History */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  Prompt Version History
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => refetchVersions()}
+                  disabled={versionsLoading}
+                >
+                  Refresh
+                </Button>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                View all versions of the global prompt, compare changes, and rollback to previous versions if needed.
+              </Typography>
+
+              {versionsLoading ? (
+                <LinearProgress sx={{ mb: 2 }} />
+              ) : promptVersions.length === 0 ? (
+                <Alert severity="info">
+                  No version history found. Versions will be created automatically when you save changes to the prompt.
+                </Alert>
+              ) : (
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Version</strong></TableCell>
+                        <TableCell><strong>Date</strong></TableCell>
+                        <TableCell><strong>Author</strong></TableCell>
+                        <TableCell><strong>Change Reason</strong></TableCell>
+                        <TableCell><strong>Preview</strong></TableCell>
+                        <TableCell align="center"><strong>Actions</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {promptVersions.map((version) => (
+                        <TableRow 
+                          key={version._id}
+                          sx={{
+                            bgcolor: version.isActive ? 'action.selected' : 'transparent',
+                            '&:hover': { bgcolor: 'action.hover' }
+                          }}
+                        >
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2" fontWeight={version.isActive ? "bold" : "medium"}>
+                                v{version.version}
+                              </Typography>
+                              {version.isActive && (
+                                <Chip label="Active" size="small" color="primary" />
+                              )}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {formatDateTime(version.createdAt)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {version.createdBy || 'admin'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {version.changeReason || '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Tooltip title={version.content}>
+                              <Typography 
+                                variant="body2" 
+                                color="text.secondary"
+                                sx={{ 
+                                  maxWidth: 300, 
+                                  overflow: 'hidden', 
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {version.content.substring(0, 100)}
+                                {version.content.length > 100 ? '...' : ''}
+                              </Typography>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                              <Tooltip title="View full version">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleViewVersion(version)}
+                                >
+                                  <Visibility fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              {!version.isActive && (
+                                <>
+                                  <Tooltip title="Compare with current">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => {
+                                        const current = promptVersions.find(v => v.isActive);
+                                        if (current) {
+                                          handleCompareVersions(current, version);
+                                        }
+                                      }}
+                                    >
+                                      <Edit fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Rollback to this version">
+                                    <IconButton
+                                      size="small"
+                                      color="warning"
+                                      onClick={() => handleRollbackClick(version)}
+                                    >
+                                      <ArrowForward fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              )}
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Paper>
+
+            {/* Per-Flow Parameter Overrides */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Per-Flow Parameter Overrides
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Configure different AI parameters for different conversation flow types. These overrides will be applied when the system detects the corresponding flow type.
+                  </Typography>
+                </Box>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => refetchFlowOverrides()}
+                >
+                  Refresh
+                </Button>
+              </Box>
+
+              {flowOverridesLoading ? (
+                <LinearProgress />
+              ) : (
+                <Box>
+                  {/* Flow Type Cards */}
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 2, mb: 3 }}>
+                    {['information', 'booking', 'complaint', 'human_transfer'].map((flowType) => {
+                      const override = flowOverrides[flowType];
+                      const defaults = {
+                        information: { temperature: 0.3, topP: 1.0, maxTokens: 200 },
+                        booking: { temperature: 0.4, topP: 1.0, maxTokens: 150 },
+                        complaint: { temperature: 0.5, topP: 1.0, maxTokens: 200 },
+                        human_transfer: { temperature: 0.3, topP: 1.0, maxTokens: 100 }
+                      };
+                      const defaultParams = defaults[flowType];
+                      const isEditing = editingFlowType === flowType;
+                      const currentParams = override?.parameters || defaultParams;
+                      const currentEnabled = override?.enabled ?? false;
+                      const currentPriority = override?.priority ?? 0;
+
+                      return (
+                        <Card key={flowType} variant="outlined">
+                          <CardContent>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                              <Typography variant="subtitle1" fontWeight="bold" textTransform="capitalize">
+                                {flowType.replace('_', ' ')}
+                              </Typography>
+                              <FormControlLabel
+                                control={
+                                  <Switch
+                                    checked={isEditing ? (editingFlowParams[flowType]?.enabled ?? currentEnabled) : currentEnabled}
+                                    onChange={(e) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        enabled: e.target.checked
+                                      }
+                                    })}
+                                    disabled={!isEditing}
+                                  />
+                                }
+                                label="Enabled"
+                              />
+                            </Box>
+
+                            {isEditing ? (
+                              <Box>
+                                <Box sx={{ mb: 2 }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Temperature
+                                  </Typography>
+                                  <Slider
+                                    value={editingFlowParams[flowType]?.parameters?.temperature ?? currentParams.temperature}
+                                    onChange={(e, val) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        parameters: {
+                                          ...(editingFlowParams[flowType]?.parameters || currentParams),
+                                          temperature: val
+                                        }
+                                      }
+                                    })}
+                                    min={0}
+                                    max={2}
+                                    step={0.1}
+                                    marks={[{ value: defaultParams.temperature, label: 'Default' }]}
+                                  />
+                                  <Typography variant="caption" color="text.secondary">
+                                    {(editingFlowParams[flowType]?.parameters?.temperature ?? currentParams.temperature).toFixed(1)}
+                                  </Typography>
+                                </Box>
+
+                                <Box sx={{ mb: 2 }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Top-P
+                                  </Typography>
+                                  <Slider
+                                    value={editingFlowParams[flowType]?.parameters?.topP ?? currentParams.topP}
+                                    onChange={(e, val) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        parameters: {
+                                          ...(editingFlowParams[flowType]?.parameters || currentParams),
+                                          topP: val
+                                        }
+                                      }
+                                    })}
+                                    min={0}
+                                    max={1}
+                                    step={0.1}
+                                    marks={[{ value: defaultParams.topP, label: 'Default' }]}
+                                  />
+                                  <Typography variant="caption" color="text.secondary">
+                                    {(editingFlowParams[flowType]?.parameters?.topP ?? currentParams.topP).toFixed(1)}
+                                  </Typography>
+                                </Box>
+
+                                <Box sx={{ mb: 2 }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Max Tokens
+                                  </Typography>
+                                  <TextField
+                                    type="number"
+                                    value={editingFlowParams[flowType]?.parameters?.maxTokens ?? currentParams.maxTokens}
+                                    onChange={(e) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        parameters: {
+                                          ...(editingFlowParams[flowType]?.parameters || currentParams),
+                                          maxTokens: parseInt(e.target.value) || 0
+                                        }
+                                      }
+                                    })}
+                                    size="small"
+                                    fullWidth
+                                    inputProps={{ min: 1 }}
+                                  />
+                                </Box>
+
+                                <Box sx={{ mb: 2 }}>
+                                  <TextField
+                                    label="Priority"
+                                    type="number"
+                                    value={editingFlowParams[flowType]?.priority ?? currentPriority}
+                                    onChange={(e) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        priority: parseInt(e.target.value) || 0
+                                      }
+                                    })}
+                                    size="small"
+                                    fullWidth
+                                    helperText="Higher priority overrides take precedence"
+                                  />
+                                </Box>
+
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    startIcon={<Save />}
+                                    onClick={() => {
+                                      const editData = editingFlowParams[flowType];
+                                      handleSaveFlowOverride(flowType, {
+                                        enabled: editData?.enabled ?? currentEnabled,
+                                        parameters: editData?.parameters || currentParams,
+                                        priority: editData?.priority ?? currentPriority
+                                      });
+                                      setEditingFlowParams({ ...editingFlowParams, [flowType]: undefined });
+                                    }}
+                                  >
+                                    Save
+                                  </Button>
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={() => {
+                                      setEditingFlowType(null);
+                                      setEditingFlowParams({ ...editingFlowParams, [flowType]: undefined });
+                                    }}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </Box>
+                              </Box>
+                            ) : (
+                              <Box>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                  Temperature: {override?.parameters?.temperature?.toFixed(1) || defaultParams.temperature.toFixed(1)}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                  Top-P: {override?.parameters?.topP?.toFixed(1) || defaultParams.topP.toFixed(1)}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                  Max Tokens: {override?.parameters?.maxTokens || defaultParams.maxTokens}
+                                </Typography>
+                                {override?.priority !== undefined && (
+                                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                    Priority: {override.priority}
+                                  </Typography>
+                                )}
+                                <Button
+                                  variant="outlined"
+                                  size="small"
+                                  startIcon={<Edit />}
+                                  onClick={() => {
+                                    setEditingFlowType(flowType);
+                                    setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        enabled: currentEnabled,
+                                        parameters: { ...currentParams },
+                                        priority: currentPriority
+                                      }
+                                    });
+                                  }}
+                                  sx={{ mt: 1 }}
+                                  fullWidth
+                                >
+                                  {override ? 'Edit' : 'Configure'}
+                                </Button>
+                              </Box>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </Box>
+
+                  {/* Flow Detection Test */}
+                  <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Test Flow Detection
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Enter text to test which flow type would be detected
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                      <TextField
+                        fullWidth
+                        placeholder="Enter conversation text..."
+                        value={flowDetectionTest.text}
+                        onChange={(e) => setFlowDetectionTest({ ...flowDetectionTest, text: e.target.value })}
+                        size="small"
+                      />
+                      <Button
+                        variant="contained"
+                        onClick={handleTestFlowDetection}
+                        disabled={!flowDetectionTest.text}
+                      >
+                        Test
+                      </Button>
+                    </Box>
+                    {flowDetectionTest.result && (
+                      <Alert severity="info">
+                        Detected Flow: <strong>{flowDetectionTest.result.detectedFlow}</strong>
+                        {' '}(Intent: {flowDetectionTest.result.intent})
+                      </Alert>
+                    )}
+                  </Box>
+                </Box>
+              )}
+            </Paper>
+
+            {/* Model & Voice Selection with Fallback Chain */}
             <Paper sx={{ p: 3, mb: 3 }}>
               <Typography variant="h6" gutterBottom>
                 Model & Voice Configuration
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Select the AI model and voice for Robert. Default voice is "Ash" as specified in documentation.
+                Select the primary AI model and configure fallback chain. The system will automatically use the next model in the chain if the primary model fails.
               </Typography>
-              <Box sx={{ display: 'flex', gap: 3, mb: 3 }}>
+              
+              <Box sx={{ display: 'flex', gap: 3, mb: 3, alignItems: 'center' }}>
                 <Controller
                   name="selectedModel"
                   control={control}
                   render={({ field }) => (
                     <FormControl sx={{ minWidth: 200 }}>
-                      <InputLabel>AI Model</InputLabel>
-                      <Select {...field} label="AI Model">
+                      <InputLabel>Primary AI Model</InputLabel>
+                      <Select {...field} label="Primary AI Model">
                         {(Array.isArray(models) ? models : []).map((model) => (
                           <MenuItem key={model.id} value={model.id}>
                             {model.name}
@@ -758,44 +2098,152 @@ const AIKnowledgePage = () => {
                 <Controller
                   name="selectedVoice"
                   control={control}
-                  render={({ field }) => (
-                    <FormControl sx={{ minWidth: 200 }}>
-                      <InputLabel>Voice</InputLabel>
-                      <Select {...field} label="Voice">
-                        {(Array.isArray(voices) ? voices : []).map((voice) => (
-                          <MenuItem key={voice.id} value={voice.id}>
-                            {voice.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  )}
+                  render={({ field }) => {
+                    const selectedModel = watch('selectedModel');
+                    const compatibleVoices = getCompatibleVoices(selectedModel);
+                    
+                    return (
+                      <FormControl sx={{ minWidth: 200 }}>
+                        <InputLabel>Voice</InputLabel>
+                        <Select 
+                          {...field} 
+                          label="Voice"
+                          disabled={!selectedModel}
+                        >
+                          {compatibleVoices.length > 0 ? (
+                            compatibleVoices.map((voice) => (
+                              <MenuItem key={voice.id} value={voice.id}>
+                                {voice.name}
+                              </MenuItem>
+                            ))
+                          ) : (
+                            <MenuItem disabled>
+                              {selectedModel ? 'No compatible voices available' : 'Select a model first'}
+                            </MenuItem>
+                          )}
+                        </Select>
+                      </FormControl>
+                    );
+                  }}
                 />
+
+                <Button
+                  variant="contained"
+                  startIcon={<Save />}
+                  onClick={handleSaveModelVoice}
+                  disabled={
+                    !watch('selectedModel') || 
+                    !watch('selectedVoice') || 
+                    getCompatibleVoices(watch('selectedModel')).length === 0
+                  }
+                >
+                  Save
+                </Button>
               </Box>
 
-              {/* Voice Preview */}
-              <Typography variant="subtitle2" gutterBottom>
-                Voice Samples
-              </Typography>
-              <List>
-                {(Array.isArray(voices) ? voices.slice(0, 3) : []).map((voice) => (
-                  <ListItem key={voice.id} divider>
-                    <ListItemIcon>
-                      <VolumeUp />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={voice.name}
-                      secondary={voice.description}
-                    />
-                    <IconButton
-                      onClick={() => handleVoicePreview(voice.id)}
-                      disabled={previewVoiceMutation.isLoading}
+              {/* Fallback Chain Configuration */}
+              <Box sx={{ mt: 4 }}>
+                <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                  Model Fallback Chain
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Configure the order of models to use if the primary model is unavailable. Models are tried in sequence from top to bottom.
+                </Typography>
+
+                {fallbackChain.length === 0 ? (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    No fallback chain configured. Add models below to create a fallback sequence.
+                  </Alert>
+                ) : (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={fallbackChain.map(item => typeof item === 'string' ? item : item.modelId)}
+                      strategy={verticalListSortingStrategy}
                     >
-                      <PlayArrow />
-                    </IconButton>
-                  </ListItem>
-                ))}
-              </List>
+                      <Box sx={{ mb: 2 }}>
+                        {fallbackChain.map((item, index) => {
+                          const modelId = typeof item === 'string' ? item : item.modelId;
+                          return <SortableItem key={`${modelId}-${index}`} id={modelId} index={index} />;
+                        })}
+                      </Box>
+                    </SortableContext>
+                  </DndContext>
+                )}
+
+                {/* Visual Chain Representation */}
+                {fallbackChain.length > 0 && (
+                  <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                    <Typography variant="caption" color="text.secondary" gutterBottom>
+                      Fallback Sequence:
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      {fallbackChain.map((item, index) => {
+                        const modelId = typeof item === 'string' ? item : item.modelId;
+                        const voiceId = typeof item === 'string' ? undefined : item.voiceId;
+                        const model = models.find(m => m.id === modelId);
+                        const voice = voices.find(v => v.id === voiceId);
+                        const label = model?.name || modelId;
+                        const voiceLabel = voice ? ` (${voice.name})` : '';
+                        
+                        // Build tooltip content with capability details
+                        const tooltipContent = model ? (
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 'bold' }}>
+                              {model.name}
+                            </Typography>
+                            <Typography variant="caption" display="block">
+                              Context: {model.contextLimit || model.context_limit || 'N/A'} tokens
+                            </Typography>
+                            <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                              Capabilities: {[
+                                model.supportsTools && 'Tools',
+                                model.supportsAudio && 'Audio',
+                                model.capabilities?.fileSearch && 'File Search',
+                                model.capabilities?.realtime && 'Realtime'
+                              ].filter(Boolean).join(', ') || 'None'}
+                            </Typography>
+                            {model.rateLimits && (
+                              <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                                Rate: {model.rateLimits.requestsPerMinute} req/min, {model.rateLimits.tokensPerMinute?.toLocaleString() || 'N/A'} tokens/min
+                              </Typography>
+                            )}
+                            {model.knownLimitations && model.knownLimitations.length > 0 && (
+                              <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'warning.main' }}>
+                                Limitations: {model.knownLimitations.join(', ')}
+                              </Typography>
+                            )}
+                          </Box>
+                        ) : `Model: ${modelId}`;
+                        
+                        return (
+                          <React.Fragment key={`${modelId}-${index}`}>
+                            <Tooltip title={tooltipContent} arrow placement="top">
+                              <Chip
+                                label={label + voiceLabel}
+                                size="small"
+                                color={index === 0 ? 'primary' : 'default'}
+                                sx={{
+                                  cursor: 'help',
+                                  '&:hover': {
+                                    opacity: 0.8
+                                  }
+                                }}
+                              />
+                            </Tooltip>
+                            {index < fallbackChain.length - 1 && (
+                              <ArrowForward fontSize="small" color="action" />
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
+              </Box>
             </Paper>
 
             {/* AI Parameters */}
@@ -806,70 +2254,146 @@ const AIKnowledgePage = () => {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Configure AI behavior parameters including temperature, top_p, max tokens, and speech rate.
               </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3 }}>
-                <Box>
+              {modelParameters && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Model-specific parameter ranges loaded. Context limit: {modelParameters.context_limit?.toLocaleString() || 'N/A'} tokens.
+                </Alert>
+              )}
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, alignItems: 'flex-start' }}>
+                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Temperature: {watch('temperature')}
+                    {modelParameters?.temperature?.default && (
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                        Recommended: {modelParameters.temperature.default}
+                      </Typography>
+                    )}
                   </Typography>
                   <Controller
                     name="temperature"
                     control={control}
-                    render={({ field }) => (
-                      <Slider
-                        {...field}
-                        min={0}
-                        max={1}
-                        step={0.1}
-                        marks
-                        valueLabelDisplay="auto"
-                      />
-                    )}
+                    render={({ field }) => {
+                      const tempParams = modelParameters?.temperature || { min: 0, max: 1, step: 0.1 };
+                      return (
+                        <>
+                          <Slider
+                            {...field}
+                            value={field.value ?? 0.4}
+                            min={tempParams.min}
+                            max={tempParams.max}
+                            step={tempParams.step}
+                            marks
+                            valueLabelDisplay="auto"
+                          />
+                          {modelParameters?.temperature && (field.value < modelParameters.temperature.min || field.value > modelParameters.temperature.max) && (
+                            <Alert severity="warning" sx={{ mt: 1 }}>
+                              Value outside recommended range ({modelParameters.temperature.min} - {modelParameters.temperature.max})
+                            </Alert>
+                          )}
+                        </>
+                      );
+                    }}
                   />
                 </Box>
 
-                <Box>
+                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Top-P: {watch('topP')}
+                    {modelParameters?.top_p?.default && (
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                        Recommended: {modelParameters.top_p.default}
+                      </Typography>
+                    )}
                   </Typography>
                   <Controller
                     name="topP"
                     control={control}
-                    render={({ field }) => (
-                      <Slider
-                        {...field}
-                        min={0}
-                        max={1}
-                        step={0.1}
-                        marks
-                        valueLabelDisplay="auto"
-                      />
-                    )}
+                    render={({ field }) => {
+                      const topPParams = modelParameters?.top_p || { min: 0, max: 1, step: 0.1 };
+                      return (
+                        <>
+                          <Slider
+                            {...field}
+                            value={field.value ?? 1.0}
+                            min={topPParams.min}
+                            max={topPParams.max}
+                            step={topPParams.step}
+                            marks
+                            valueLabelDisplay="auto"
+                          />
+                          {modelParameters?.top_p && (field.value < modelParameters.top_p.min || field.value > modelParameters.top_p.max) && (
+                            <Alert severity="warning" sx={{ mt: 1 }}>
+                              Value outside recommended range ({modelParameters.top_p.min} - {modelParameters.top_p.max})
+                            </Alert>
+                          )}
+                        </>
+                      );
+                    }}
                   />
                 </Box>
 
-                <Box>
+                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="subtitle2" gutterBottom>
-                    Max Tokens: {watch('maxTokens')}
+                    Max Tokens
+                    {modelParameters?.max_tokens?.default && (
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                        Recommended: {modelParameters.max_tokens.default} (Max: {modelParameters.max_tokens.max?.toLocaleString() || 'N/A'})
+                      </Typography>
+                    )}
                   </Typography>
                   <Controller
                     name="maxTokens"
                     control={control}
-                    render={({ field }) => (
-                      <Slider
-                        {...field}
-                        min={50}
-                        max={500}
-                        step={10}
-                        marks
-                        valueLabelDisplay="auto"
-                      />
-                    )}
+                    render={({ field }) => {
+                      const maxTokensParams = modelParameters?.max_tokens || { min: 50, max: 500, step: 10 };
+                      const maxValue = Math.min(maxTokensParams.max, 5000);
+                      return (
+                        <>
+                          <TextField
+                            {...field}
+                            type="number"
+                            value={field.value ?? 150}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value, 10) || 0;
+                              field.onChange(value);
+                            }}
+                            inputProps={{
+                              min: maxTokensParams.min,
+                              max: maxValue,
+                              step: maxTokensParams.step,
+                              style: { 
+                                textAlign: 'center',
+                                padding: '8px'
+                              }
+                            }}
+                            sx={{ 
+                              mt: 0,
+                              '& .MuiOutlinedInput-root': {
+                                height: '40px',
+                                padding: '0 8px'
+                              }
+                            }}
+                            size="small"
+                            variant="outlined"
+                            fullWidth
+                          />
+                          {modelParameters?.max_tokens && field.value > modelParameters.max_tokens.max && (
+                            <Alert severity="warning" sx={{ mt: 1 }}>
+                              Value exceeds model's maximum of {modelParameters.max_tokens.max.toLocaleString()} tokens
+                            </Alert>
+                          )}
+                        </>
+                      );
+                    }}
                   />
                 </Box>
 
-                <Box>
+                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="subtitle2" gutterBottom>
                     Speech Rate: {watch('speechRate')}
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, visibility: 'hidden' }}>
+                      &nbsp;
+                    </Typography>
                   </Typography>
                   <Controller
                     name="speechRate"
@@ -877,6 +2401,7 @@ const AIKnowledgePage = () => {
                     render={({ field }) => (
                       <Slider
                         {...field}
+                        value={field.value ?? 1.0}
                         min={0.5}
                         max={2.0}
                         step={0.1}
@@ -898,60 +2423,589 @@ const AIKnowledgePage = () => {
                 Configure confidence thresholds and uncertainty handling for knowledge base responses.
               </Typography>
 
-              <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-                <Button
-                  variant="contained"
-                  onClick={async () => {
-                    try {
-                      const result = await uncertaintyGateService.getConfiguration();
-                      setUncertaintyConfig(result);
-                      showSuccess('Uncertainty gate configuration loaded');
-                    } catch (error) {
-                      showError('Failed to load uncertainty gate configuration');
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, alignItems: 'flex-start' }}>
+                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+                  <FormControlLabel
+                    control={
+                      <Controller
+                        name="uncertaintyGateEnabled"
+                        control={control}
+                        render={({ field }) => (
+                          <Switch
+                            {...field}
+                            checked={field.value ?? true}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                          />
+                        )}
+                      />
                     }
-                  }}
-                >
-                  Load Configuration
-                </Button>
+                    label="Enable Uncertainty Gate"
+                  />
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                    When enabled, the system will validate knowledge base responses against confidence thresholds.
+                  </Typography>
+                </Box>
+
+                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Confidence Threshold: {watch('uncertaintyGateThreshold')}
+                  </Typography>
+                  <Controller
+                    name="uncertaintyGateThreshold"
+                    control={control}
+                    render={({ field }) => (
+                      <>
+                        <Slider
+                          {...field}
+                          value={field.value ?? 0.8}
+                          min={0}
+                          max={1}
+                          step={0.1}
+                          marks
+                          valueLabelDisplay="auto"
+                        />
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                          Minimum confidence score required for knowledge base responses (0.0 - 1.0)
+                        </Typography>
+                      </>
+                    )}
+                  />
+                </Box>
+
+                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Minimum Sources: {watch('uncertaintyGateMinSources')}
+                  </Typography>
+                  <Controller
+                    name="uncertaintyGateMinSources"
+                    control={control}
+                    render={({ field }) => (
+                      <>
+                        <Slider
+                          {...field}
+                          value={field.value ?? 1}
+                          min={1}
+                          max={10}
+                          step={1}
+                          marks
+                          valueLabelDisplay="auto"
+                        />
+                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                          Minimum number of knowledge base sources required for a valid response
+                        </Typography>
+                      </>
+                    )}
+                  />
+                </Box>
+              </Box>
+            </Paper>
+
+            {/* Model Capability Registry - Simplified View */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  Active Model Capabilities
+                </Typography>
                 <Button
                   variant="outlined"
-                  onClick={async () => {
-                    try {
-                      const result = await uncertaintyGateService.updateConfiguration({
-                        defaultThreshold: 0.8,
-                        minPassages: 2,
-                        maxUncertaintyAttempts: 3
-                      });
-                      showSuccess('Uncertainty gate configuration updated');
-                    } catch (error) {
-                      showError('Failed to update uncertainty gate configuration');
-                    }
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => {
+                    queryClient.invalidateQueries(['model-capabilities']);
                   }}
                 >
-                  Update Configuration
+                  Refresh
                 </Button>
               </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                View capabilities for your primary model and fallback chain models.
+              </Typography>
 
-              {uncertaintyConfig && (
-                <Box>
-                  <Typography variant="subtitle1" gutterBottom>Current Configuration</Typography>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
-                    <Box>
-                      <Typography variant="subtitle2" color="text.secondary">Default Threshold</Typography>
-                      <Typography variant="h6">{uncertaintyConfig.config?.defaultThreshold || 0.7}</Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="subtitle2" color="text.secondary">Min Passages</Typography>
-                      <Typography variant="h6">{uncertaintyConfig.config?.minPassages || 2}</Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="subtitle2" color="text.secondary">Max Attempts</Typography>
-                      <Typography variant="h6">{uncertaintyConfig.config?.maxUncertaintyAttempts || 3}</Typography>
-                    </Box>
-                  </Box>
-                </Box>
+              {capabilitiesLoading ? (
+                <LinearProgress sx={{ mb: 2 }} />
+              ) : (() => {
+                const selectedModel = watch('selectedModel');
+                const allCapabilities = capabilitiesData?.capabilities || [];
+                
+                // Get primary model and fallback chain models
+                const primaryModelId = selectedModel;
+                const fallbackModelIds = fallbackChain.map(item => 
+                  typeof item === 'string' ? item : item.modelId
+                ).filter(id => id && id !== primaryModelId);
+                
+                // Filter capabilities to only show active models
+                const activeModels = allCapabilities.filter(model => 
+                  model.id === primaryModelId || fallbackModelIds.includes(model.id)
+                );
+                
+                if (activeModels.length === 0) {
+                  return (
+                    <Alert severity="info">
+                      No active models selected. Please select a primary model in the Model Selection section above.
+                    </Alert>
+                  );
+                }
+                
+                return (
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell><strong>Model Name</strong></TableCell>
+                          <TableCell align="right"><strong>Context Limit</strong></TableCell>
+                          <TableCell align="center"><strong>Tools</strong></TableCell>
+                          <TableCell align="center"><strong>Audio</strong></TableCell>
+                          <TableCell align="center"><strong>File Search</strong></TableCell>
+                          <TableCell align="center"><strong>Details</strong></TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {activeModels.map((model, index) => {
+                          const isPrimary = model.id === primaryModelId;
+                          return (
+                            <TableRow 
+                              key={model.id}
+                              sx={{ 
+                                bgcolor: isPrimary ? 'action.selected' : 'transparent',
+                                '&:hover': { bgcolor: 'action.hover' }
+                              }}
+                            >
+                              <TableCell>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Typography variant="body2" fontWeight={isPrimary ? "bold" : "medium"}>
+                                    {model.name || model.id}
+                                  </Typography>
+                                  {isPrimary && (
+                                    <Chip 
+                                      label="Primary" 
+                                      size="small" 
+                                      color="primary"
+                                      variant="outlined"
+                                    />
+                                  )}
+                                  {!isPrimary && index === 1 && (
+                                    <Chip 
+                                      label="Fallback" 
+                                      size="small" 
+                                      color="default"
+                                      variant="outlined"
+                                    />
+                                  )}
+                                </Box>
+                              </TableCell>
+                              <TableCell align="right">
+                                {model.contextLimit 
+                                  ? model.contextLimit.toLocaleString() 
+                                  : 'N/A'}
+                              </TableCell>
+                              <TableCell align="center">
+                                <Chip 
+                                  label={model.supportsTools ? 'Yes' : 'No'} 
+                                  color={model.supportsTools ? 'success' : 'default'}
+                                  size="small"
+                                />
+                              </TableCell>
+                              <TableCell align="center">
+                                <Chip 
+                                  label={model.supportsAudio ? 'Yes' : 'No'} 
+                                  color={model.supportsAudio ? 'success' : 'default'}
+                                  size="small"
+                                />
+                              </TableCell>
+                              <TableCell align="center">
+                                <Chip 
+                                  label={model.capabilities?.fileSearch ? 'Yes' : 'No'} 
+                                  color={model.capabilities?.fileSearch ? 'success' : 'default'}
+                                  size="small"
+                                />
+                              </TableCell>
+                              <TableCell align="center">
+                                <Tooltip 
+                                  title={
+                                    <Box>
+                                      <Typography variant="caption" display="block" fontWeight="bold">
+                                        Additional Details:
+                                      </Typography>
+                                      {model.defaultTemperature && (
+                                        <Typography variant="caption" display="block">
+                                          Default Temp: {model.defaultTemperature}
+                                        </Typography>
+                                      )}
+                                      {model.defaultTopP && (
+                                        <Typography variant="caption" display="block">
+                                          Default Top-P: {model.defaultTopP}
+                                        </Typography>
+                                      )}
+                                      {model.rateLimits && (
+                                        <>
+                                          <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                                            Rate Limits:
+                                          </Typography>
+                                          <Typography variant="caption" display="block">
+                                            • {model.rateLimits.requestsPerMinute || 'N/A'} req/min
+                                          </Typography>
+                                          <Typography variant="caption" display="block">
+                                            • {model.rateLimits.tokensPerMinute?.toLocaleString() || 'N/A'} tokens/min
+                                          </Typography>
+                                        </>
+                                      )}
+                                      {model.knownLimitations && model.knownLimitations.length > 0 && (
+                                        <>
+                                          <Typography variant="caption" display="block" sx={{ mt: 0.5 }} fontWeight="bold">
+                                            Limitations:
+                                          </Typography>
+                                          {model.knownLimitations.map((limitation, idx) => (
+                                            <Typography key={idx} variant="caption" display="block">
+                                              • {limitation}
+                                            </Typography>
+                                          ))}
+                                        </>
+                                      )}
+                                    </Box>
+                                  }
+                                >
+                                  <IconButton size="small">
+                                    <Visibility fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                );
+              })()}
+            </Paper>
+
+            {/* Language/Voice Mapping Configuration */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  Language/Voice Mapping Configuration
+                </Typography>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<Save />}
+                  onClick={handleSaveLanguageMappings}
+                  disabled={mappingsLoading}
+                >
+                  Save Mappings
+                </Button>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Configure voice selection for each supported language. Preview voices before saving.
+              </Typography>
+
+              {mappingsLoading ? (
+                <LinearProgress sx={{ mb: 2 }} />
+              ) : languageMappings.length === 0 ? (
+                <Alert severity="info">
+                  No language mappings found. Default mappings will be created on first load.
+                </Alert>
+              ) : (
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Language</strong></TableCell>
+                        <TableCell><strong>Locale Code</strong></TableCell>
+                        <TableCell><strong>Voice</strong></TableCell>
+                        <TableCell align="center"><strong>Preview</strong></TableCell>
+                        <TableCell align="center"><strong>Status</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {languageMappings.map((mapping) => {
+                        // Filter voices by language/locale if possible
+                        const compatibleVoices = voices.filter(voice => {
+                          if (!voice.language) return true;
+                          // Try to match locale code
+                          return voice.language.toLowerCase().includes(mapping.localeCode.toLowerCase().split('-')[0]);
+                        });
+                        
+                        return (
+                          <TableRow key={mapping.languageCode}>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight="medium">
+                                {mapping.languageName}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2" color="text.secondary">
+                                {mapping.localeCode}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <FormControl size="small" fullWidth>
+                                <Select
+                                  value={mapping.voiceId || ''}
+                                  onChange={(e) => {
+                                    const selectedVoice = voices.find(v => v.id === e.target.value);
+                                    handleLanguageMappingChange(
+                                      mapping.languageCode,
+                                      'voiceId',
+                                      e.target.value
+                                    );
+                                    if (selectedVoice) {
+                                      handleLanguageMappingChange(
+                                        mapping.languageCode,
+                                        'voiceName',
+                                        selectedVoice.name
+                                      );
+                                    }
+                                  }}
+                                  displayEmpty
+                                >
+                                  <MenuItem value="" disabled>
+                                    Select Voice
+                                  </MenuItem>
+                                  {(compatibleVoices.length > 0 ? compatibleVoices : voices).map((voice) => (
+                                    <MenuItem key={voice.id} value={voice.id}>
+                                      {voice.name} ({voice.language || 'N/A'})
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            </TableCell>
+                            <TableCell align="center">
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => handleVoicePreview(mapping.voiceId, mapping.languageCode)}
+                                disabled={!mapping.voiceId || (previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode)}
+                              >
+                                {previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode ? (
+                                  <Stop />
+                                ) : (
+                                  <PlayArrow />
+                                )}
+                              </IconButton>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Switch
+                                checked={mapping.isActive !== false}
+                                onChange={(e) => handleLanguageMappingChange(
+                                  mapping.languageCode,
+                                  'isActive',
+                                  e.target.checked
+                                )}
+                                size="small"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
               )}
             </Paper>
+
+            {/* MCP Tools Configuration */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  MCP Tools Configuration
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => refetchMcpTools()}
+                  disabled={mcpToolsLoading}
+                >
+                  Refresh
+                </Button>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Configure MCP (Model Context Protocol) tools including enable/disable status, rate limits, and domain allowlists.
+              </Typography>
+
+              {mcpToolsLoading ? (
+                <LinearProgress sx={{ mb: 2 }} />
+              ) : mcpTools.length === 0 ? (
+                <Alert severity="info">
+                  No MCP tools found. Tools will be discovered on system startup.
+                </Alert>
+              ) : (
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Tool</strong></TableCell>
+                        <TableCell><strong>Description</strong></TableCell>
+                        <TableCell align="center"><strong>Enabled</strong></TableCell>
+                        <TableCell><strong>Rate Limit</strong></TableCell>
+                        <TableCell><strong>Domain Allowlist</strong></TableCell>
+                        <TableCell><strong>Usage Stats</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {mcpTools.map((tool) => {
+                        const toolDomains = editingDomains[tool.name] || tool.domains || [];
+                        const newDomainInput = newDomainInputs[tool.name] || '';
+                        const rateLimitValue = rateLimitValues[tool.name] ?? tool.rateLimit?.limit ?? 100;
+                        
+                        return (
+                          <TableRow key={tool.name}>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight="medium" fontFamily="monospace">
+                                {tool.name}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Tooltip title={tool.description || 'No description available'}>
+                                <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {tool.description || 'N/A'}
+                                </Typography>
+                              </Tooltip>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Switch
+                                checked={tool.enabled}
+                                onChange={(e) => handleToggleTool(tool.name, e.target.checked)}
+                                size="small"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TextField
+                                  type="number"
+                                  value={rateLimitValue}
+                                  onChange={(e) => {
+                                    const value = parseInt(e.target.value, 10);
+                                    if (!isNaN(value)) {
+                                      setRateLimitValues(prev => ({ ...prev, [tool.name]: value }));
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const value = parseInt(e.target.value, 10);
+                                    if (!isNaN(value) && value !== tool.rateLimit?.limit) {
+                                      handleUpdateRateLimit(tool.name, value);
+                                    }
+                                  }}
+                                  inputProps={{
+                                    min: 1,
+                                    max: 1000,
+                                    style: { textAlign: 'center', width: '80px' }
+                                  }}
+                                  size="small"
+                                  sx={{ width: '100px' }}
+                                />
+                                <Typography variant="caption" color="text.secondary">
+                                  /min
+                                </Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ minWidth: 250 }}>
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+                                  {toolDomains.length > 0 ? (
+                                    toolDomains.map((domain, idx) => (
+                                      <Chip
+                                        key={idx}
+                                        label={domain}
+                                        size="small"
+                                        onDelete={() => handleRemoveDomain(tool.name, domain)}
+                                        color="primary"
+                                        variant="outlined"
+                                      />
+                                    ))
+                                  ) : (
+                                    <Typography variant="caption" color="text.secondary" fontStyle="italic">
+                                      All domains allowed
+                                    </Typography>
+                                  )}
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                  <TextField
+                                    placeholder="Add domain"
+                                    value={newDomainInput}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      setNewDomainInputs(prev => {
+                                        // Only update if value actually changed to prevent unnecessary re-renders
+                                        if (prev[tool.name] === value) return prev;
+                                        return { ...prev, [tool.name]: value };
+                                      });
+                                    }}
+                                    onKeyPress={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleAddDomain(tool.name, newDomainInput);
+                                      }
+                                    }}
+                                    size="small"
+                                    sx={{ flex: 1 }}
+                                  />
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => handleAddDomain(tool.name, newDomainInput)}
+                                    disabled={!newDomainInput.trim()}
+                                  >
+                                    Add
+                                  </Button>
+                                  {(() => {
+                                    const originalDomains = tool.domains || [];
+                                    const hasChanges = toolDomains.length !== originalDomains.length || 
+                                      toolDomains.some((domain, idx) => domain !== (originalDomains[idx] || ''));
+                                    return hasChanges ? (
+                                      <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => handleSaveDomains(tool.name)}
+                                      >
+                                        Save
+                                      </Button>
+                                    ) : null;
+                                  })()}
+                                </Box>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box>
+                                <Typography variant="caption" display="block">
+                                  Used: {tool.usageCount || 0} times
+                                </Typography>
+                                <Typography variant="caption" display="block" color="text.secondary">
+                                  {tool.lastUsed ? formatDateTime(tool.lastUsed) : 'Never'}
+                                </Typography>
+                                {tool.rateLimit && (
+                                  <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                                    Current: {tool.rateLimit.current}/{tool.rateLimit.limit}
+                                  </Typography>
+                                )}
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Paper>
+
+            {/* Unified Save/Cancel Buttons */}
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 4, mb: 2 }}>
+              <Button
+                variant="outlined"
+                startIcon={<Undo />}
+                onClick={handleCancelConfig}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                startIcon={<Save />}
+              >
+                Save Config
+              </Button>
+            </Box>
           </Box>
         </form>
       )}
@@ -1403,6 +3457,206 @@ const AIKnowledgePage = () => {
           </Paper>
         </Box>
       )}
+
+      {/* Edit Tags Dialog */}
+      <Dialog
+        open={editTagsDialog.open}
+        onClose={handleCloseEditTags}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Edit Tags: {editTagsDialog.file?.filename}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Select tags for this file. Tags help categorize and search files.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+            {tagOptions.map((tag) => (
+              <Chip
+                key={tag}
+                label={tag}
+                onClick={() => {
+                  setEditTagsDialog(prev => ({
+                    ...prev,
+                    tags: prev.tags.includes(tag)
+                      ? prev.tags.filter(t => t !== tag)
+                      : [...prev.tags, tag]
+                  }));
+                }}
+                color={editTagsDialog.tags.includes(tag) ? 'primary' : 'default'}
+                variant={editTagsDialog.tags.includes(tag) ? 'filled' : 'outlined'}
+                sx={{ cursor: 'pointer' }}
+              />
+            ))}
+          </Box>
+          {editTagsDialog.tags.length > 0 && (
+            <Box>
+              <Typography variant="subtitle2" gutterBottom>
+                Selected Tags:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                {editTagsDialog.tags.map((tag) => (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    size="small"
+                    onDelete={() => {
+                      setEditTagsDialog(prev => ({
+                        ...prev,
+                        tags: prev.tags.filter(t => t !== tag)
+                      }));
+                    }}
+                    color="primary"
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseEditTags}>Cancel</Button>
+          <Button
+            onClick={handleSaveTags}
+            variant="contained"
+            disabled={updateTagsMutation.isLoading}
+          >
+            Save Tags
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Version Comparison Dialog */}
+      <Dialog
+        open={compareDialogOpen}
+        onClose={() => setCompareDialogOpen(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>
+          Compare Prompt Versions
+        </DialogTitle>
+        <DialogContent>
+          {selectedVersions.version1 && selectedVersions.version2 && (
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 2 }}>
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="subtitle1" fontWeight="bold">
+                    Version {selectedVersions.version1.version}
+                    {selectedVersions.version1.isActive && (
+                      <Chip label="Active" size="small" color="primary" sx={{ ml: 1 }} />
+                    )}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  By {selectedVersions.version1.createdBy} on {formatDateTime(selectedVersions.version1.createdAt)}
+                </Typography>
+                <TextField
+                  multiline
+                  rows={15}
+                  fullWidth
+                  value={selectedVersions.version1.content}
+                  InputProps={{ readOnly: true }}
+                  sx={{ mt: 2 }}
+                />
+              </Box>
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="subtitle1" fontWeight="bold">
+                    Version {selectedVersions.version2.version}
+                    {selectedVersions.version2.isActive && (
+                      <Chip label="Active" size="small" color="primary" sx={{ ml: 1 }} />
+                    )}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  By {selectedVersions.version2.createdBy} on {formatDateTime(selectedVersions.version2.createdAt)}
+                </Typography>
+                <TextField
+                  multiline
+                  rows={15}
+                  fullWidth
+                  value={selectedVersions.version2.content}
+                  InputProps={{ readOnly: true }}
+                  sx={{ mt: 2 }}
+                />
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompareDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Rollback Confirmation Dialog */}
+      <Dialog
+        open={rollbackDialogOpen}
+        onClose={() => setRollbackDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Rollback to Version {rollbackVersion?.version}
+        </DialogTitle>
+        <DialogContent>
+          {rollbackVersion && (
+            <>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                This will create a new version with the content from version {rollbackVersion.version}. 
+                The current prompt will be overwritten.
+              </Alert>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Version Details:
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Created by: {rollbackVersion.createdBy}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Date: {formatDateTime(rollbackVersion.createdAt)}
+                </Typography>
+                {rollbackVersion.changeReason && (
+                  <Typography variant="body2" color="text.secondary">
+                    Reason: {rollbackVersion.changeReason}
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Prompt Content:
+                </Typography>
+                <TextField
+                  multiline
+                  rows={8}
+                  fullWidth
+                  value={rollbackVersion.content}
+                  InputProps={{ readOnly: true }}
+                />
+              </Box>
+              <TextField
+                label="Rollback Reason (Optional)"
+                multiline
+                rows={2}
+                fullWidth
+                value={rollbackReason}
+                onChange={(e) => setRollbackReason(e.target.value)}
+                placeholder="Enter reason for rollback..."
+                sx={{ mt: 2 }}
+              />
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRollbackDialogOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={handleRollbackConfirm} 
+            variant="contained" 
+            color="warning"
+          >
+            Confirm Rollback
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* View File Modal */}
       <Dialog

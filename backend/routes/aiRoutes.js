@@ -5,7 +5,10 @@ import {
   getConfig,
   updateConfig,
   getModels,
-  testPrompt
+  getRecommendedFallbackChain,
+  testPrompt,
+  getModelParameters,
+  getModelCapabilities
 } from "../controllers/aiController.js";
 
 const router = express.Router();
@@ -18,6 +21,9 @@ router.use(authorizeRoles("owner", "admin"));
 router.get("/config", getConfig);
 router.put("/config", updateConfig);
 router.get("/models", getModels);
+router.get("/models/recommended", getRecommendedFallbackChain);
+router.get("/models/parameters", getModelParameters);
+router.get("/models/capabilities", getModelCapabilities);
 router.post("/test", testPrompt);
 
 export default router;

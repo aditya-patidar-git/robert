@@ -35,8 +35,8 @@ class ModelDiscoveryService {
         supportsTools: this.supportsTools(model.id),
         supportsAudio: this.supportsAudio(model.id),
         supportsRealtime: this.supportsRealtime(model.id),
-        defaultTemperature: 0.7,
-        defaultTopP: 0.9,
+        defaultTemperature: 0.4,
+        defaultTopP: 1.0,
         rateLimits: this.getRateLimits(model.id),
         knownLimitations: this.getKnownLimitations(model.id)
       }));
@@ -224,24 +224,24 @@ class ModelDiscoveryService {
 
     return {
       temperature: {
-        default: model.default_temperature,
+        default: model.defaultTemperature || 0.4,
         min: 0,
         max: 2,
         step: 0.1
       },
       top_p: {
-        default: model.default_top_p,
+        default: model.defaultTopP || 1.0,
         min: 0,
         max: 1,
         step: 0.1
       },
       max_tokens: {
-        default: Math.min(150, Math.floor(model.context_limit * 0.1)),
+        default: Math.min(150, Math.floor((model.contextLimit || 128000) * 0.1)),
         min: 1,
-        max: model.context_limit,
+        max: model.contextLimit || 128000,
         step: 1
       },
-      context_limit: model.context_limit
+      context_limit: model.contextLimit || 128000
     };
   }
 
@@ -258,7 +258,16 @@ class ModelDiscoveryService {
 
       // Get or create default AI config
       let config = await AIConfig.findOne({ isActive: true });
+      const defaultVoiceId = 'ash';
+      
       if (!config) {
+        // Convert model IDs to objects with voice
+        const fallbackChainModelIds = this.buildFallbackChain('realtime');
+        const fallbackChain = fallbackChainModelIds.map(modelId => ({
+          modelId,
+          voiceId: defaultVoiceId
+        }));
+        
         config = new AIConfig({
           name: 'default',
           globalPrompt: 'You are Robert, Universal Motorcycle Training\'s AI phone agent.',
@@ -271,10 +280,10 @@ class ModelDiscoveryService {
           model: {
             id: realtimeModels[0].id,
             name: realtimeModels[0].name,
-            fallbackChain: this.buildFallbackChain('realtime')
+            fallbackChain
           },
           voice: {
-            id: 'ash',
+            id: defaultVoiceId,
             name: 'Ash',
             language: 'en-US'
           },
@@ -286,7 +295,27 @@ class ModelDiscoveryService {
         });
       } else {
         // Update existing config with new model info
-        config.model.fallbackChain = this.buildFallbackChain('realtime');
+        // Convert model IDs to objects with voice, preserving existing voice IDs where possible
+        const fallbackChainModelIds = this.buildFallbackChain('realtime');
+        const currentVoiceId = config.voice?.id || defaultVoiceId;
+        
+        // Preserve existing voice assignments if model exists in both old and new chain
+        const existingChainMap = new Map();
+        if (Array.isArray(config.model.fallbackChain)) {
+          config.model.fallbackChain.forEach(item => {
+            const modelId = typeof item === 'string' ? item : item.modelId;
+            const voiceId = typeof item === 'string' ? currentVoiceId : item.voiceId;
+            if (modelId) {
+              existingChainMap.set(modelId, voiceId);
+            }
+          });
+        }
+        
+        config.model.fallbackChain = fallbackChainModelIds.map(modelId => ({
+          modelId,
+          voiceId: existingChainMap.get(modelId) || currentVoiceId
+        }));
+        
         if (!realtimeModels.find(m => m.id === config.model.id)) {
           config.model.id = realtimeModels[0].id;
           config.model.name = realtimeModels[0].name;
@@ -354,8 +383,8 @@ class ModelDiscoveryService {
         supportsTools: true,
         supportsAudio: false,
         supportsRealtime: false,
-        defaultTemperature: 0.7,
-        defaultTopP: 0.9,
+        defaultTemperature: 0.4,
+        defaultTopP: 1.0,
         rateLimits: {
           requestsPerMinute: 500,
           tokensPerMinute: 150000,
@@ -378,8 +407,8 @@ class ModelDiscoveryService {
         supportsTools: true,
         supportsAudio: false,
         supportsRealtime: false,
-        defaultTemperature: 0.7,
-        defaultTopP: 0.9,
+        defaultTemperature: 0.4,
+        defaultTopP: 1.0,
         rateLimits: {
           requestsPerMinute: 500,
           tokensPerMinute: 150000,
@@ -402,8 +431,8 @@ class ModelDiscoveryService {
         supportsTools: true,
         supportsAudio: true,
         supportsRealtime: true,
-        defaultTemperature: 0.7,
-        defaultTopP: 0.9,
+        defaultTemperature: 0.4,
+        defaultTopP: 1.0,
         rateLimits: {
           requestsPerMinute: 500,
           tokensPerMinute: 150000,
