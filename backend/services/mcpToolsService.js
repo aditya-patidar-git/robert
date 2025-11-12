@@ -362,9 +362,26 @@ class MCPToolsService {
   }
 
   getAllTools() {
-    return Array.from(this.tools.keys()).map(toolName => 
-      this.getToolStatus(toolName)
-    );
+    return Array.from(this.tools.keys()).map(toolName => {
+      const tool = this.tools.get(toolName);
+      const rateLimit = this.rateLimits.get(toolName);
+      const domains = this.domainAllowlists.get(toolName) || [];
+      
+      return {
+        name: tool.name,
+        description: tool.description || '',
+        enabled: tool.enabled,
+        usageCount: tool.usageCount,
+        lastUsed: tool.lastUsed,
+        rateLimit: {
+          current: rateLimit.requests,
+          limit: rateLimit.limit,
+          windowStart: rateLimit.windowStart
+        },
+        domains: domains,
+        maxTime: tool.maxTime || null
+      };
+    });
   }
 
   enableTool(toolName) {

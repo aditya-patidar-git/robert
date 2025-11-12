@@ -4,11 +4,15 @@ docs/
 # Logs
 logs
 index.js
+.cursor
 *.log
 prompt_1.txt
 prompt_2.txt
 1_Introduction_to_Motorcycling_ITM.txt
+.IMPLEMENTATION-SUMMARY.md
 2_Gear_Conversion.txt
+USER-ROLE-REMOVAL-SUMMARY.md
+USERS-TAB-OWNER-ONLY-SUMMARY.md
 npm-debug.log*
 prompt_1.txt
 prompt_2.txt

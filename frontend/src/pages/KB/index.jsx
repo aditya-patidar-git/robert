@@ -86,6 +86,9 @@ import testRetrievalService from '../../services/testRetrievalService';
 import provenanceService from '../../services/provenanceService';
 import uncertaintyGateService from '../../services/uncertaintyGateService';
 import languageVoiceService from '../../services/languageVoiceService';
+import mcpToolsService from '../../services/mcpToolsService';
+import promptVersionService from '../../services/promptVersionService';
+import flowParameterService from '../../services/flowParameterService';
 
 const AIKnowledgePage = () => {
   const { showSuccess, showError } = useToast();
@@ -123,6 +126,23 @@ const AIKnowledgePage = () => {
   // Language/Voice mapping state
   const [languageMappings, setLanguageMappings] = useState([]);
   const [previewingVoice, setPreviewingVoice] = useState(null);
+  const [mcpTools, setMcpTools] = useState([]);
+  const [editingDomains, setEditingDomains] = useState({}); // { toolName: [domains] }
+  const [newDomainInputs, setNewDomainInputs] = useState({}); // { toolName: '' }
+  const [rateLimitValues, setRateLimitValues] = useState({}); // { toolName: limit }
+  const [promptVersions, setPromptVersions] = useState([]);
+  const [currentVersion, setCurrentVersion] = useState(null);
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [rollbackDialogOpen, setRollbackDialogOpen] = useState(false);
+  const [selectedVersions, setSelectedVersions] = useState({ version1: null, version2: null });
+  const [rollbackVersion, setRollbackVersion] = useState(null);
+  const [rollbackReason, setRollbackReason] = useState('');
+  
+  // Flow parameter state
+  const [flowOverrides, setFlowOverrides] = useState({});
+  const [editingFlowType, setEditingFlowType] = useState(null);
+  const [editingFlowParams, setEditingFlowParams] = useState({});
+  const [flowDetectionTest, setFlowDetectionTest] = useState({ text: '', result: null });
   
   // View file modal state
   const [viewFileModal, setViewFileModal] = useState({ open: false, file: null, content: null });
@@ -190,12 +210,75 @@ const AIKnowledgePage = () => {
     queryFn: languageVoiceService.getLanguageMappings
   });
 
+  // Fetch MCP tools
+  const { data: fetchedMcpTools = [], isLoading: mcpToolsLoading, refetch: refetchMcpTools } = useQuery({
+    queryKey: ['mcp-tools'],
+    queryFn: mcpToolsService.getAllTools
+  });
+
+  // Fetch prompt versions
+  const { data: fetchedVersions = [], isLoading: versionsLoading, refetch: refetchVersions } = useQuery({
+    queryKey: ['prompt-versions'],
+    queryFn: () => promptVersionService.getPromptVersions('global')
+  });
+
+  // Fetch current version
+  const { data: fetchedCurrentVersion, refetch: refetchCurrentVersion } = useQuery({
+    queryKey: ['prompt-current-version'],
+    queryFn: () => promptVersionService.getCurrentVersion('global'),
+    enabled: false // Only fetch when needed
+  });
+
+  // Fetch flow parameter overrides
+  const { data: fetchedFlowOverrides = [], isLoading: flowOverridesLoading, refetch: refetchFlowOverrides } = useQuery({
+    queryKey: ['flow-parameters'],
+    queryFn: flowParameterService.getFlowParameters
+  });
+
   // Update local state when mappings are fetched
   useEffect(() => {
     if (fetchedMappings && fetchedMappings.length > 0) {
       setLanguageMappings(fetchedMappings);
     }
   }, [fetchedMappings]);
+
+  // Update local state when MCP tools are fetched
+  useEffect(() => {
+    if (fetchedMcpTools && fetchedMcpTools.length > 0) {
+      setMcpTools(fetchedMcpTools);
+      // Initialize editing domains state
+      const domainsState = {};
+      const rateLimitState = {};
+      fetchedMcpTools.forEach(tool => {
+        domainsState[tool.name] = [...(tool.domains || [])];
+        rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
+      });
+      setEditingDomains(domainsState);
+      setRateLimitValues(rateLimitState);
+    }
+  }, [fetchedMcpTools]);
+
+  // Update local state when prompt versions are fetched
+  useEffect(() => {
+    if (fetchedVersions && fetchedVersions.length > 0) {
+      setPromptVersions(fetchedVersions);
+      const activeVersion = fetchedVersions.find(v => v.isActive);
+      if (activeVersion) {
+        setCurrentVersion(activeVersion);
+      }
+    }
+  }, [fetchedVersions]);
+
+  // Update local state when flow overrides are fetched
+  useEffect(() => {
+    if (fetchedFlowOverrides && fetchedFlowOverrides.length > 0) {
+      const overridesMap = {};
+      fetchedFlowOverrides.forEach(override => {
+        overridesMap[override.flowType] = override;
+      });
+      setFlowOverrides(overridesMap);
+    }
+  }, [fetchedFlowOverrides]);
 
   // Fetch AI config to get fallback chain
   useEffect(() => {
@@ -681,6 +764,9 @@ const AIKnowledgePage = () => {
       });
       showSuccess('All configurations saved successfully');
       queryClient.invalidateQueries(['prompts']);
+      queryClient.invalidateQueries(['prompt-versions']);
+      queryClient.invalidateQueries(['prompt-current-version']);
+      refetchVersions();
       // Update local fallback chain state (keep objects with voice info)
       setFallbackChain(normalizedFallbackChain);
     } catch (error) {
@@ -728,6 +814,161 @@ const AIKnowledgePage = () => {
       queryClient.invalidateQueries(['language-voice-mappings']);
     } catch (error) {
       showError('Failed to save language/voice mappings');
+    }
+  };
+
+  // MCP Tools Handlers
+  const handleToggleTool = async (toolName, enabled) => {
+    try {
+      if (enabled) {
+        await mcpToolsService.enableTool(toolName);
+      } else {
+        await mcpToolsService.disableTool(toolName);
+      }
+      showSuccess(`Tool ${toolName} ${enabled ? 'enabled' : 'disabled'}`);
+      queryClient.invalidateQueries(['mcp-tools']);
+    } catch (error) {
+      showError(`Failed to ${enabled ? 'enable' : 'disable'} tool ${toolName}`);
+    }
+  };
+
+  const handleUpdateRateLimit = async (toolName, newLimit) => {
+    try {
+      if (newLimit < 1 || newLimit > 1000) {
+        showError('Rate limit must be between 1 and 1000');
+        return;
+      }
+      await mcpToolsService.updateRateLimit(toolName, newLimit);
+      showSuccess(`Rate limit updated for ${toolName}`);
+      queryClient.invalidateQueries(['mcp-tools']);
+    } catch (error) {
+      showError(`Failed to update rate limit for ${toolName}`);
+    }
+  };
+
+  const handleAddDomain = useCallback((toolName, domain) => {
+    if (!domain || domain.trim() === '') {
+      showError('Domain cannot be empty');
+      return;
+    }
+    
+    // Basic domain validation
+    const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    if (!domainRegex.test(domain.trim())) {
+      showError('Invalid domain format');
+      return;
+    }
+
+    setEditingDomains(prev => {
+      const currentDomains = prev[toolName] || [];
+      if (currentDomains.includes(domain.trim())) {
+        showError('Domain already exists');
+        return prev;
+      }
+      const updatedDomains = [...currentDomains, domain.trim()];
+      return { ...prev, [toolName]: updatedDomains };
+    });
+    setNewDomainInputs(prev => ({ ...prev, [toolName]: '' }));
+  }, [showError]);
+
+  const handleRemoveDomain = useCallback((toolName, domainToRemove) => {
+    setEditingDomains(prev => {
+      const currentDomains = prev[toolName] || [];
+      const updatedDomains = currentDomains.filter(d => d !== domainToRemove);
+      return { ...prev, [toolName]: updatedDomains };
+    });
+  }, []);
+
+  const handleSaveDomains = async (toolName) => {
+    try {
+      const domains = editingDomains[toolName] || [];
+      await mcpToolsService.updateDomainAllowlist(toolName, domains);
+      showSuccess(`Domain allowlist updated for ${toolName}`);
+      queryClient.invalidateQueries(['mcp-tools']);
+    } catch (error) {
+      showError(`Failed to update domain allowlist for ${toolName}`);
+    }
+  };
+
+  // Prompt Version Handlers
+  const handleViewVersion = (version) => {
+    // Compare the selected version with the current active version
+    const current = promptVersions.find(v => v.isActive);
+    if (current) {
+      // If viewing the active version, show it compared with itself
+      // Otherwise, compare with current active version
+      if (version.isActive) {
+        setSelectedVersions({ version1: version, version2: version });
+      } else {
+        setSelectedVersions({ version1: current, version2: version });
+      }
+    } else {
+      // No active version found, just show the selected version
+      setSelectedVersions({ version1: version, version2: version });
+    }
+    setCompareDialogOpen(true);
+  };
+
+  const handleCompareVersions = (version1, version2) => {
+    setSelectedVersions({ version1, version2 });
+    setCompareDialogOpen(true);
+  };
+
+  const handleRollbackClick = (version) => {
+    setRollbackVersion(version);
+    setRollbackReason('');
+    setRollbackDialogOpen(true);
+  };
+
+  const handleRollbackConfirm = async () => {
+    try {
+      const result = await promptVersionService.rollbackToVersion(
+        rollbackVersion._id,
+        rollbackReason || `Rollback to version ${rollbackVersion.version}`
+      );
+      showSuccess(`Rolled back to version ${rollbackVersion.version}. New version ${result.version.version} created.`);
+      
+      // Update the form field with the rolled-back content
+      setValue('globalPrompt', result.promptContent || rollbackVersion.content);
+      
+      // Also fetch the updated config to ensure everything is in sync
+      const config = await aiService.getConfig();
+      if (config?.globalPrompt) {
+        setValue('globalPrompt', config.globalPrompt);
+      }
+      
+      setRollbackDialogOpen(false);
+      setRollbackVersion(null);
+      setRollbackReason('');
+      queryClient.invalidateQueries(['prompt-versions']);
+      queryClient.invalidateQueries(['prompt-current-version']);
+      queryClient.invalidateQueries(['ai-config']);
+      refetchVersions();
+      refetchCurrentVersion();
+    } catch (error) {
+      showError('Failed to rollback version');
+    }
+  };
+
+  // Flow Parameter Handlers
+  const handleSaveFlowOverride = async (flowType, overrideData) => {
+    try {
+      await flowParameterService.createOrUpdateFlowOverride(flowType, overrideData);
+      showSuccess(`Flow parameter override for ${flowType} saved successfully`);
+      setEditingFlowType(null);
+      refetchFlowOverrides();
+      queryClient.invalidateQueries(['flow-parameters']);
+    } catch (error) {
+      showError(`Failed to save flow parameter override for ${flowType}`);
+    }
+  };
+
+  const handleTestFlowDetection = async () => {
+    try {
+      const result = await flowParameterService.detectFlowType(flowDetectionTest.text);
+      setFlowDetectionTest({ ...flowDetectionTest, result });
+    } catch (error) {
+      showError('Failed to test flow detection');
     }
   };
 
@@ -1385,9 +1626,24 @@ const AIKnowledgePage = () => {
           <Box>
             {/* Global Prompt Editor */}
             <Paper sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Global System Prompt for "Robert"
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  Global System Prompt for "Robert"
+                </Typography>
+                {currentVersion && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Chip 
+                      label={`Version ${currentVersion.version}`} 
+                      color="primary" 
+                      size="small"
+                      variant="outlined"
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Last modified by {currentVersion.createdBy} on {formatDateTime(currentVersion.createdAt)}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Configure the global system prompt that defines Robert's behavior, personality, and capabilities.
               </Typography>
@@ -1405,6 +1661,411 @@ const AIKnowledgePage = () => {
                   />
                 )}
               />
+            </Paper>
+
+            {/* Prompt Version History */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  Prompt Version History
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => refetchVersions()}
+                  disabled={versionsLoading}
+                >
+                  Refresh
+                </Button>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                View all versions of the global prompt, compare changes, and rollback to previous versions if needed.
+              </Typography>
+
+              {versionsLoading ? (
+                <LinearProgress sx={{ mb: 2 }} />
+              ) : promptVersions.length === 0 ? (
+                <Alert severity="info">
+                  No version history found. Versions will be created automatically when you save changes to the prompt.
+                </Alert>
+              ) : (
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Version</strong></TableCell>
+                        <TableCell><strong>Date</strong></TableCell>
+                        <TableCell><strong>Author</strong></TableCell>
+                        <TableCell><strong>Change Reason</strong></TableCell>
+                        <TableCell><strong>Preview</strong></TableCell>
+                        <TableCell align="center"><strong>Actions</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {promptVersions.map((version) => (
+                        <TableRow 
+                          key={version._id}
+                          sx={{
+                            bgcolor: version.isActive ? 'action.selected' : 'transparent',
+                            '&:hover': { bgcolor: 'action.hover' }
+                          }}
+                        >
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2" fontWeight={version.isActive ? "bold" : "medium"}>
+                                v{version.version}
+                              </Typography>
+                              {version.isActive && (
+                                <Chip label="Active" size="small" color="primary" />
+                              )}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {formatDateTime(version.createdAt)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {version.createdBy || 'admin'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {version.changeReason || '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Tooltip title={version.content}>
+                              <Typography 
+                                variant="body2" 
+                                color="text.secondary"
+                                sx={{ 
+                                  maxWidth: 300, 
+                                  overflow: 'hidden', 
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {version.content.substring(0, 100)}
+                                {version.content.length > 100 ? '...' : ''}
+                              </Typography>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                              <Tooltip title="View full version">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleViewVersion(version)}
+                                >
+                                  <Visibility fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              {!version.isActive && (
+                                <>
+                                  <Tooltip title="Compare with current">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => {
+                                        const current = promptVersions.find(v => v.isActive);
+                                        if (current) {
+                                          handleCompareVersions(current, version);
+                                        }
+                                      }}
+                                    >
+                                      <Edit fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Rollback to this version">
+                                    <IconButton
+                                      size="small"
+                                      color="warning"
+                                      onClick={() => handleRollbackClick(version)}
+                                    >
+                                      <ArrowForward fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </>
+                              )}
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Paper>
+
+            {/* Per-Flow Parameter Overrides */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Per-Flow Parameter Overrides
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Configure different AI parameters for different conversation flow types. These overrides will be applied when the system detects the corresponding flow type.
+                  </Typography>
+                </Box>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => refetchFlowOverrides()}
+                >
+                  Refresh
+                </Button>
+              </Box>
+
+              {flowOverridesLoading ? (
+                <LinearProgress />
+              ) : (
+                <Box>
+                  {/* Flow Type Cards */}
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 2, mb: 3 }}>
+                    {['information', 'booking', 'complaint', 'human_transfer'].map((flowType) => {
+                      const override = flowOverrides[flowType];
+                      const defaults = {
+                        information: { temperature: 0.3, topP: 1.0, maxTokens: 200 },
+                        booking: { temperature: 0.4, topP: 1.0, maxTokens: 150 },
+                        complaint: { temperature: 0.5, topP: 1.0, maxTokens: 200 },
+                        human_transfer: { temperature: 0.3, topP: 1.0, maxTokens: 100 }
+                      };
+                      const defaultParams = defaults[flowType];
+                      const isEditing = editingFlowType === flowType;
+                      const currentParams = override?.parameters || defaultParams;
+                      const currentEnabled = override?.enabled ?? false;
+                      const currentPriority = override?.priority ?? 0;
+
+                      return (
+                        <Card key={flowType} variant="outlined">
+                          <CardContent>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                              <Typography variant="subtitle1" fontWeight="bold" textTransform="capitalize">
+                                {flowType.replace('_', ' ')}
+                              </Typography>
+                              <FormControlLabel
+                                control={
+                                  <Switch
+                                    checked={isEditing ? (editingFlowParams[flowType]?.enabled ?? currentEnabled) : currentEnabled}
+                                    onChange={(e) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        enabled: e.target.checked
+                                      }
+                                    })}
+                                    disabled={!isEditing}
+                                  />
+                                }
+                                label="Enabled"
+                              />
+                            </Box>
+
+                            {isEditing ? (
+                              <Box>
+                                <Box sx={{ mb: 2 }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Temperature
+                                  </Typography>
+                                  <Slider
+                                    value={editingFlowParams[flowType]?.parameters?.temperature ?? currentParams.temperature}
+                                    onChange={(e, val) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        parameters: {
+                                          ...(editingFlowParams[flowType]?.parameters || currentParams),
+                                          temperature: val
+                                        }
+                                      }
+                                    })}
+                                    min={0}
+                                    max={2}
+                                    step={0.1}
+                                    marks={[{ value: defaultParams.temperature, label: 'Default' }]}
+                                  />
+                                  <Typography variant="caption" color="text.secondary">
+                                    {(editingFlowParams[flowType]?.parameters?.temperature ?? currentParams.temperature).toFixed(1)}
+                                  </Typography>
+                                </Box>
+
+                                <Box sx={{ mb: 2 }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Top-P
+                                  </Typography>
+                                  <Slider
+                                    value={editingFlowParams[flowType]?.parameters?.topP ?? currentParams.topP}
+                                    onChange={(e, val) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        parameters: {
+                                          ...(editingFlowParams[flowType]?.parameters || currentParams),
+                                          topP: val
+                                        }
+                                      }
+                                    })}
+                                    min={0}
+                                    max={1}
+                                    step={0.1}
+                                    marks={[{ value: defaultParams.topP, label: 'Default' }]}
+                                  />
+                                  <Typography variant="caption" color="text.secondary">
+                                    {(editingFlowParams[flowType]?.parameters?.topP ?? currentParams.topP).toFixed(1)}
+                                  </Typography>
+                                </Box>
+
+                                <Box sx={{ mb: 2 }}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Max Tokens
+                                  </Typography>
+                                  <TextField
+                                    type="number"
+                                    value={editingFlowParams[flowType]?.parameters?.maxTokens ?? currentParams.maxTokens}
+                                    onChange={(e) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        parameters: {
+                                          ...(editingFlowParams[flowType]?.parameters || currentParams),
+                                          maxTokens: parseInt(e.target.value) || 0
+                                        }
+                                      }
+                                    })}
+                                    size="small"
+                                    fullWidth
+                                    inputProps={{ min: 1 }}
+                                  />
+                                </Box>
+
+                                <Box sx={{ mb: 2 }}>
+                                  <TextField
+                                    label="Priority"
+                                    type="number"
+                                    value={editingFlowParams[flowType]?.priority ?? currentPriority}
+                                    onChange={(e) => setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        ...editingFlowParams[flowType],
+                                        priority: parseInt(e.target.value) || 0
+                                      }
+                                    })}
+                                    size="small"
+                                    fullWidth
+                                    helperText="Higher priority overrides take precedence"
+                                  />
+                                </Box>
+
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    startIcon={<Save />}
+                                    onClick={() => {
+                                      const editData = editingFlowParams[flowType];
+                                      handleSaveFlowOverride(flowType, {
+                                        enabled: editData?.enabled ?? currentEnabled,
+                                        parameters: editData?.parameters || currentParams,
+                                        priority: editData?.priority ?? currentPriority
+                                      });
+                                      setEditingFlowParams({ ...editingFlowParams, [flowType]: undefined });
+                                    }}
+                                  >
+                                    Save
+                                  </Button>
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={() => {
+                                      setEditingFlowType(null);
+                                      setEditingFlowParams({ ...editingFlowParams, [flowType]: undefined });
+                                    }}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </Box>
+                              </Box>
+                            ) : (
+                              <Box>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                  Temperature: {override?.parameters?.temperature?.toFixed(1) || defaultParams.temperature.toFixed(1)}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                  Top-P: {override?.parameters?.topP?.toFixed(1) || defaultParams.topP.toFixed(1)}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                  Max Tokens: {override?.parameters?.maxTokens || defaultParams.maxTokens}
+                                </Typography>
+                                {override?.priority !== undefined && (
+                                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                    Priority: {override.priority}
+                                  </Typography>
+                                )}
+                                <Button
+                                  variant="outlined"
+                                  size="small"
+                                  startIcon={<Edit />}
+                                  onClick={() => {
+                                    setEditingFlowType(flowType);
+                                    setEditingFlowParams({
+                                      ...editingFlowParams,
+                                      [flowType]: {
+                                        enabled: currentEnabled,
+                                        parameters: { ...currentParams },
+                                        priority: currentPriority
+                                      }
+                                    });
+                                  }}
+                                  sx={{ mt: 1 }}
+                                  fullWidth
+                                >
+                                  {override ? 'Edit' : 'Configure'}
+                                </Button>
+                              </Box>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </Box>
+
+                  {/* Flow Detection Test */}
+                  <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Test Flow Detection
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Enter text to test which flow type would be detected
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                      <TextField
+                        fullWidth
+                        placeholder="Enter conversation text..."
+                        value={flowDetectionTest.text}
+                        onChange={(e) => setFlowDetectionTest({ ...flowDetectionTest, text: e.target.value })}
+                        size="small"
+                      />
+                      <Button
+                        variant="contained"
+                        onClick={handleTestFlowDetection}
+                        disabled={!flowDetectionTest.text}
+                      >
+                        Test
+                      </Button>
+                    </Box>
+                    {flowDetectionTest.result && (
+                      <Alert severity="info">
+                        Detected Flow: <strong>{flowDetectionTest.result.detectedFlow}</strong>
+                        {' '}(Intent: {flowDetectionTest.result.intent})
+                      </Alert>
+                    )}
+                  </Box>
+                </Box>
+              )}
             </Paper>
 
             {/* Model & Voice Selection with Fallback Chain */}
@@ -2143,6 +2804,191 @@ const AIKnowledgePage = () => {
               )}
             </Paper>
 
+            {/* MCP Tools Configuration */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  MCP Tools Configuration
+                </Typography>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => refetchMcpTools()}
+                  disabled={mcpToolsLoading}
+                >
+                  Refresh
+                </Button>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                Configure MCP (Model Context Protocol) tools including enable/disable status, rate limits, and domain allowlists.
+              </Typography>
+
+              {mcpToolsLoading ? (
+                <LinearProgress sx={{ mb: 2 }} />
+              ) : mcpTools.length === 0 ? (
+                <Alert severity="info">
+                  No MCP tools found. Tools will be discovered on system startup.
+                </Alert>
+              ) : (
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell><strong>Tool</strong></TableCell>
+                        <TableCell><strong>Description</strong></TableCell>
+                        <TableCell align="center"><strong>Enabled</strong></TableCell>
+                        <TableCell><strong>Rate Limit</strong></TableCell>
+                        <TableCell><strong>Domain Allowlist</strong></TableCell>
+                        <TableCell><strong>Usage Stats</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {mcpTools.map((tool) => {
+                        const toolDomains = editingDomains[tool.name] || tool.domains || [];
+                        const newDomainInput = newDomainInputs[tool.name] || '';
+                        const rateLimitValue = rateLimitValues[tool.name] ?? tool.rateLimit?.limit ?? 100;
+                        
+                        return (
+                          <TableRow key={tool.name}>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight="medium" fontFamily="monospace">
+                                {tool.name}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Tooltip title={tool.description || 'No description available'}>
+                                <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {tool.description || 'N/A'}
+                                </Typography>
+                              </Tooltip>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Switch
+                                checked={tool.enabled}
+                                onChange={(e) => handleToggleTool(tool.name, e.target.checked)}
+                                size="small"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TextField
+                                  type="number"
+                                  value={rateLimitValue}
+                                  onChange={(e) => {
+                                    const value = parseInt(e.target.value, 10);
+                                    if (!isNaN(value)) {
+                                      setRateLimitValues(prev => ({ ...prev, [tool.name]: value }));
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const value = parseInt(e.target.value, 10);
+                                    if (!isNaN(value) && value !== tool.rateLimit?.limit) {
+                                      handleUpdateRateLimit(tool.name, value);
+                                    }
+                                  }}
+                                  inputProps={{
+                                    min: 1,
+                                    max: 1000,
+                                    style: { textAlign: 'center', width: '80px' }
+                                  }}
+                                  size="small"
+                                  sx={{ width: '100px' }}
+                                />
+                                <Typography variant="caption" color="text.secondary">
+                                  /min
+                                </Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ minWidth: 250 }}>
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+                                  {toolDomains.length > 0 ? (
+                                    toolDomains.map((domain, idx) => (
+                                      <Chip
+                                        key={idx}
+                                        label={domain}
+                                        size="small"
+                                        onDelete={() => handleRemoveDomain(tool.name, domain)}
+                                        color="primary"
+                                        variant="outlined"
+                                      />
+                                    ))
+                                  ) : (
+                                    <Typography variant="caption" color="text.secondary" fontStyle="italic">
+                                      All domains allowed
+                                    </Typography>
+                                  )}
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                  <TextField
+                                    placeholder="Add domain"
+                                    value={newDomainInput}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      setNewDomainInputs(prev => {
+                                        // Only update if value actually changed to prevent unnecessary re-renders
+                                        if (prev[tool.name] === value) return prev;
+                                        return { ...prev, [tool.name]: value };
+                                      });
+                                    }}
+                                    onKeyPress={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleAddDomain(tool.name, newDomainInput);
+                                      }
+                                    }}
+                                    size="small"
+                                    sx={{ flex: 1 }}
+                                  />
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => handleAddDomain(tool.name, newDomainInput)}
+                                    disabled={!newDomainInput.trim()}
+                                  >
+                                    Add
+                                  </Button>
+                                  {(() => {
+                                    const originalDomains = tool.domains || [];
+                                    const hasChanges = toolDomains.length !== originalDomains.length || 
+                                      toolDomains.some((domain, idx) => domain !== (originalDomains[idx] || ''));
+                                    return hasChanges ? (
+                                      <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => handleSaveDomains(tool.name)}
+                                      >
+                                        Save
+                                      </Button>
+                                    ) : null;
+                                  })()}
+                                </Box>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box>
+                                <Typography variant="caption" display="block">
+                                  Used: {tool.usageCount || 0} times
+                                </Typography>
+                                <Typography variant="caption" display="block" color="text.secondary">
+                                  {tool.lastUsed ? formatDateTime(tool.lastUsed) : 'Never'}
+                                </Typography>
+                                {tool.rateLimit && (
+                                  <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                                    Current: {tool.rateLimit.current}/{tool.rateLimit.limit}
+                                  </Typography>
+                                )}
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Paper>
+
             {/* Unified Save/Cancel Buttons */}
             <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 4, mb: 2 }}>
               <Button
@@ -2675,6 +3521,139 @@ const AIKnowledgePage = () => {
             disabled={updateTagsMutation.isLoading}
           >
             Save Tags
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Version Comparison Dialog */}
+      <Dialog
+        open={compareDialogOpen}
+        onClose={() => setCompareDialogOpen(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>
+          Compare Prompt Versions
+        </DialogTitle>
+        <DialogContent>
+          {selectedVersions.version1 && selectedVersions.version2 && (
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 2 }}>
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="subtitle1" fontWeight="bold">
+                    Version {selectedVersions.version1.version}
+                    {selectedVersions.version1.isActive && (
+                      <Chip label="Active" size="small" color="primary" sx={{ ml: 1 }} />
+                    )}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  By {selectedVersions.version1.createdBy} on {formatDateTime(selectedVersions.version1.createdAt)}
+                </Typography>
+                <TextField
+                  multiline
+                  rows={15}
+                  fullWidth
+                  value={selectedVersions.version1.content}
+                  InputProps={{ readOnly: true }}
+                  sx={{ mt: 2 }}
+                />
+              </Box>
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="subtitle1" fontWeight="bold">
+                    Version {selectedVersions.version2.version}
+                    {selectedVersions.version2.isActive && (
+                      <Chip label="Active" size="small" color="primary" sx={{ ml: 1 }} />
+                    )}
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  By {selectedVersions.version2.createdBy} on {formatDateTime(selectedVersions.version2.createdAt)}
+                </Typography>
+                <TextField
+                  multiline
+                  rows={15}
+                  fullWidth
+                  value={selectedVersions.version2.content}
+                  InputProps={{ readOnly: true }}
+                  sx={{ mt: 2 }}
+                />
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompareDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Rollback Confirmation Dialog */}
+      <Dialog
+        open={rollbackDialogOpen}
+        onClose={() => setRollbackDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Rollback to Version {rollbackVersion?.version}
+        </DialogTitle>
+        <DialogContent>
+          {rollbackVersion && (
+            <>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                This will create a new version with the content from version {rollbackVersion.version}. 
+                The current prompt will be overwritten.
+              </Alert>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Version Details:
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Created by: {rollbackVersion.createdBy}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Date: {formatDateTime(rollbackVersion.createdAt)}
+                </Typography>
+                {rollbackVersion.changeReason && (
+                  <Typography variant="body2" color="text.secondary">
+                    Reason: {rollbackVersion.changeReason}
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Prompt Content:
+                </Typography>
+                <TextField
+                  multiline
+                  rows={8}
+                  fullWidth
+                  value={rollbackVersion.content}
+                  InputProps={{ readOnly: true }}
+                />
+              </Box>
+              <TextField
+                label="Rollback Reason (Optional)"
+                multiline
+                rows={2}
+                fullWidth
+                value={rollbackReason}
+                onChange={(e) => setRollbackReason(e.target.value)}
+                placeholder="Enter reason for rollback..."
+                sx={{ mt: 2 }}
+              />
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRollbackDialogOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={handleRollbackConfirm} 
+            variant="contained" 
+            color="warning"
+          >
+            Confirm Rollback
           </Button>
         </DialogActions>
       </Dialog>

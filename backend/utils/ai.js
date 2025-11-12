@@ -126,6 +126,31 @@ const TOOLS = [
 
 export const getAIResponse = async (conversationText, tools = null, callContext = {}) => {
     try {
+        // Import services for flow detection and parameter management
+        const flowDetectionService = (await import('../services/flowDetectionService.js')).default;
+        const flowParameterService = (await import('../services/flowParameterService.js')).default;
+        const AIConfig = (await import('../models/AIConfig.js')).default;
+
+        // Get global AI config
+        let globalConfig = await AIConfig.findOne({ isActive: true });
+        if (!globalConfig) {
+            // Fallback to defaults if no config exists
+            globalConfig = {
+                parameters: { temperature: 0.4, topP: 1.0, maxTokens: 150 },
+                model: { id: 'gpt-4o', name: 'GPT-4o' }
+            };
+        }
+
+        // Detect flow type if not provided
+        let flowType = callContext.flowType;
+        if (!flowType) {
+            const transcript = callContext.transcript || [];
+            flowType = flowDetectionService.detectFlow(conversationText, transcript, callContext);
+        }
+
+        // Get effective parameters (flow-specific or global)
+        const effectiveParams = await flowParameterService.getEffectiveParameters(flowType, globalConfig);
+
         const messages = [
             {
                 role: "system",
@@ -138,13 +163,13 @@ export const getAIResponse = async (conversationText, tools = null, callContext 
         ];
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: effectiveParams.model,
             messages: messages,
             tools: tools || TOOLS,
             tool_choice: "auto",
-            temperature: 0.4,
-            top_p: 1.0,
-            max_tokens: 150
+            temperature: effectiveParams.temperature,
+            top_p: effectiveParams.top_p,
+            max_tokens: effectiveParams.max_tokens
         });
 
         const message = response.choices[0].message;
@@ -154,13 +179,15 @@ export const getAIResponse = async (conversationText, tools = null, callContext 
             return {
                 content: message.content,
                 tool_calls: message.tool_calls,
-                requires_tool_execution: true
+                requires_tool_execution: true,
+                flowType: flowType
             };
         }
 
         return {
             content: message.content || "Sorry, I didn't understand that.",
-            requires_tool_execution: false
+            requires_tool_execution: false,
+            flowType: flowType
         };
     } catch (err) {
         console.error("AI error:", err.message);

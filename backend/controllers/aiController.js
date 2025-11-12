@@ -1,4 +1,5 @@
 import AIConfig from "../models/AIConfig.js";
+import PromptVersion from "../models/PromptVersion.js";
 
 // Helper function to migrate old string format to new object format
 const migrateFallbackChain = (fallbackChain, defaultVoiceId = 'ash') => {
@@ -107,8 +108,55 @@ export const updateConfig = async (req, res) => {
       config = new AIConfig();
     }
 
-    // Update fields
-    if (globalPrompt !== undefined) config.globalPrompt = globalPrompt;
+    // Handle prompt versioning if globalPrompt is being updated
+    if (globalPrompt !== undefined && globalPrompt !== null) {
+      const currentPrompt = config.globalPrompt || '';
+      const newPrompt = globalPrompt.trim();
+      const currentPromptTrimmed = currentPrompt.trim();
+      
+      // Only create version if prompt actually changed
+      if (newPrompt !== currentPromptTrimmed) {
+        try {
+          // Get the highest version number for this promptId
+          const promptId = 'global';
+          const latestVersion = await PromptVersion.findOne({ promptId })
+            .sort({ version: -1 })
+            .select('version');
+          
+          const nextVersion = latestVersion ? latestVersion.version + 1 : 1;
+          
+          // Mark all previous versions as inactive
+          await PromptVersion.updateMany(
+            { promptId, isActive: true },
+            { isActive: false }
+          );
+          
+          // Create new version entry
+          const newVersion = new PromptVersion({
+            promptId,
+            version: nextVersion,
+            content: newPrompt,
+            previousContent: currentPromptTrimmed,
+            createdBy: req.user?.id || req.user?.username || 'admin',
+            changeReason: req.body.changeReason || '',
+            isActive: true,
+            metadata: {
+              parameters: parameters || config.parameters || {},
+              model: model || config.model || {},
+              voice: voice || config.voice || {}
+            }
+          });
+          
+          await newVersion.save();
+        } catch (versionError) {
+          console.error('Error creating prompt version:', versionError);
+          // Continue with update even if versioning fails
+        }
+      }
+      
+      // Update the prompt in config
+      config.globalPrompt = newPrompt;
+    }
     if (parameters) {
       if (parameters.temperature !== undefined) config.parameters.temperature = parameters.temperature;
       if (parameters.topP !== undefined) config.parameters.topP = parameters.topP;
