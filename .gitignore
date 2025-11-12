@@ -3,6 +3,7 @@ node_modules/
 docs/
 # Logs
 logs
+index.js
 *.log
 prompt_1.txt
 prompt_2.txt

@@ -1,0 +1,217 @@
+[
+  {
+    "id": "audit_1762858976543_bf6faa26",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA4d80db66824457991466a64be7029326",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-11T11:02:56.542Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:02:56.543Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762858976562_2046cecf",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA4d80db66824457991466a64be7029326",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-11T11:02:56.562Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:02:56.562Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762859245332_81268c64",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAa7b9f8494d9863ee90a8585c9f3633cb",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-11T11:07:25.331Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:07:25.332Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762859245334_2c4495ef",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAa7b9f8494d9863ee90a8585c9f3633cb",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-11T11:07:25.334Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:07:25.334Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762859548798_1f8a35c3",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAec59fc5a06bfccbf6df6b35741cadc48",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-11T11:12:28.798Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:12:28.799Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762859548809_7dbd69ee",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAec59fc5a06bfccbf6df6b35741cadc48",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-11T11:12:28.809Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:12:28.809Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762859953102_08006ada",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAb73109bac6f22f94f8d942403095b1fc",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-11T11:19:13.102Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:19:13.102Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762859953104_870c4b1a",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CAb73109bac6f22f94f8d942403095b1fc",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-11T11:19:13.104Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:19:13.104Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762859978089_be69ca9a",
+    "eventType": "call_recorded",
+    "eventData": {
+      "callSid": "CAb73109bac6f22f94f8d942403095b1fc",
+      "recordingUrl": "https://api.twilio.com/2010-04-01/Accounts/AC4a36f81e7bb84fe92cf4bb923d525a7a/Recordings/REc7c588f3814c44ebe9cae43f97435a4c",
+      "piiDetected": {
+        "phone": [],
+        "email": [],
+        "creditCard": [],
+        "postcode": [],
+        "nationalInsurance": [],
+        "drivingLicense": []
+      },
+      "language": "en"
+    },
+    "timestamp": "2025-11-11T11:19:38.089Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762861533621_3b33f3d0",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA0e1302a1a0f6fe836ec807dfbeeb2beb",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-11T11:45:33.621Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:45:33.621Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762861533624_4ed25e68",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA0e1302a1a0f6fe836ec807dfbeeb2beb",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-11T11:45:33.624Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:45:33.624Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762861585185_51b7f1da",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA37178d5bf97a1b55b40e30ca87030d4a",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-11T11:46:25.185Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:46:25.185Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762861585188_124df036",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA37178d5bf97a1b55b40e30ca87030d4a",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-11T11:46:25.188Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:46:25.188Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762861775028_4c455646",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA26eb85eec6c9fa203d4d7c6dac229387",
+      "consentType": "recording",
+      "granted": true,
+      "timestamp": "2025-11-11T11:49:35.027Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:49:35.028Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1762861775031_b55973a5",
+    "eventType": "consent_recorded",
+    "eventData": {
+      "callSid": "CA26eb85eec6c9fa203d4d7c6dac229387",
+      "consentType": "processing",
+      "granted": true,
+      "timestamp": "2025-11-11T11:49:35.031Z",
+      "ipAddress": "system",
+      "userAgent": "robert-ai-system"
+    },
+    "timestamp": "2025-11-11T11:49:35.032Z",
+    "system": "robert-ai"
+  }
+]

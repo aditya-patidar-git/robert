@@ -8,6 +8,7 @@ import multilingualService from "../services/multilingualService.js";
 import gdprService from "../services/gdprService.js";
 import { io } from "../server.js";
 import { WebSocketServer, WebSocket } from "ws";
+import { spawn } from "child_process";
 
 const conversations = {}; // in-memory storage
 const realtimeClients = {}; // Store active Realtime API connections
@@ -80,25 +81,28 @@ export const makeCall = async (req, res) => {
     try {
         const results = [];
         for (const to of toNumbers) {
+            console.log(`📞 Initiating call: to=${to}, from=${process.env.TWILIO_NUMBER}`);
+            
             const call = await client.calls.create({
                 to,
                 from: process.env.TWILIO_NUMBER,
                 url: `${process.env.BASE_URL}/api/outbound/ai-intro`,
                 statusCallback: `${process.env.BASE_URL}/api/outbound/call-status`,
-                statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+                statusCallbackEvent: ["initiated", "ringing", "answered", "completed", "no-answer", "busy", "failed"],
                 statusCallbackMethod: "POST",
                 record: true,
                 recordingStatusCallback: `${process.env.BASE_URL}/api/outbound/recording-status`,
                 recordingStatusCallbackMethod: "POST",
             });
 
-            conversations[call.sid] = { transcript: [] }; // array now
+            console.log(`✅ Call created: SID=${call.sid}, Status=${call.status}, To=${call.to}`);
+            conversations[call.sid] = { transcript: [] };
             results.push({ callSid: call.sid, to });
         }
 
         return res.json({ success: true, calls: results });
     } catch (err) {
-        console.error("make-call error:", err);
+        console.error("❌ make-call error:", err);
         return res.status(500).json({ error: err.message });
     }
 };
@@ -174,6 +178,7 @@ export const handleMediaStreamConnection = (ws, req) => {
     let openaiReady = false;
     let setupComplete = false;
     let isClosed = false; // Prevent multiple cleanup calls
+    let accepting = true; // gate for enqueues to avoid races after cleanup
     
     // Safety limits
     const MAX_CALL_DURATION_MS = 3600000; // 1 hour max
@@ -186,10 +191,201 @@ export const handleMediaStreamConnection = (ws, req) => {
     let startTimeout = null;
     let durationTimer = null;
     
+    // ── Twilio frame pacing and buffering (μ-law at 8 kHz; 20ms = 160 bytes) ─────────
+    const FRAME_BYTES = 160;
+    class ByteQueue {
+        constructor(maxBytes) {
+            this.chunks = [];
+            this.total = 0;
+            this.maxBytes = maxBytes;
+        }
+        push(buf) {
+            if (!buf || buf.length === 0) return;
+            this.chunks.push(buf);
+            this.total += buf.length;
+            // Drop oldest when over capacity to remain real-time
+            while (this.total > this.maxBytes && this.chunks.length > 0) {
+                const dropped = this.chunks.shift();
+                this.total -= dropped.length;
+            }
+        }
+        shiftN(n) {
+            if (this.total < n) return null;
+            const out = Buffer.allocUnsafe(n);
+            let copied = 0;
+            while (copied < n) {
+                const chunk = this.chunks[0];
+                const toCopy = Math.min(chunk.length, n - copied);
+                chunk.copy(out, copied, 0, toCopy);
+                copied += toCopy;
+                if (toCopy === chunk.length) {
+                    this.chunks.shift();
+                } else {
+                    this.chunks[0] = chunk.slice(toCopy);
+                }
+            }
+            this.total -= n;
+            return out;
+        }
+        clear() {
+            this.chunks = [];
+            this.total = 0;
+        }
+    }
+    const ulawQueue = new ByteQueue(6400); // ~80ms-160ms of audio buffering
+    let pacer = null;
+    let lastSendTs = Date.now();
+    const startPacer = () => {
+        if (pacer) return;
+        let idleLogTs = 0;
+        let conditionFailCount = 0;
+        let lastDiagnosticLog = 0;
+        
+        const tick = () => {
+            if (isClosed || !accepting) {
+                if (Date.now() - lastDiagnosticLog > 2000) {
+                    console.log(`🛑 Pacer stopped: isClosed=${isClosed}, accepting=${accepting}`);
+                    lastDiagnosticLog = Date.now();
+                }
+                pacer = setTimeout(tick, 20);
+                return;
+            }
+            
+            // ✅ DIAGNOSTIC: Check each condition separately and log failures
+            const now = Date.now();
+            let conditionFailed = false;
+            let failureReason = '';
+            
+            if (!ws) {
+                conditionFailed = true;
+                failureReason = 'ws is null';
+            } else if (ws.readyState !== WebSocket.OPEN) {
+                conditionFailed = true;
+                failureReason = `ws.readyState=${ws.readyState} (need OPEN=1)`;
+            } else if (!streamSid) {
+                conditionFailed = true;
+                failureReason = 'streamSid is missing';
+            }
+            
+            if (conditionFailed) {
+                conditionFailCount++;
+                // Log every 1 second to avoid spam
+                if (now - lastDiagnosticLog > 1000) {
+                    console.log(`⚠️ Pacer blocked (${conditionFailCount} times): ${failureReason}`);
+                    lastDiagnosticLog = now;
+                }
+                pacer = setTimeout(tick, 20);
+                return;
+            }
+            
+            // Condition passed - reset counter and proceed
+            if (conditionFailCount > 0) {
+                console.log(`✅ Pacer condition now OK (was blocked ${conditionFailCount} times)`);
+                conditionFailCount = 0;
+            }
+            
+            const elapsed = now - lastSendTs;
+            if (elapsed >= 20) {
+                const frame = ulawQueue.shiftN(FRAME_BYTES);
+                if (frame) {
+                    try {
+                        const payload = {
+                            event: 'media',
+                            streamSid,
+                            track: 'outbound',
+                            media: { payload: frame.toString('base64') }
+                        };
+                        ws.send(JSON.stringify(payload));
+                        console.log(`📤 SENT OUTBOUND FRAME ${frame.length}B to Twilio`);
+                    } catch (err) {
+                        console.error(`❌ Failed to send frame: ${err.message || err}`);
+                    }
+                } else {
+                    if (now - idleLogTs > 200) {
+                        console.log(`⏳ Pacer idle, queue=${ulawQueue.total}B`);
+                        idleLogTs = now;
+                    }
+                }
+                lastSendTs = now;
+            }
+            pacer = setTimeout(tick, Math.max(0, 20 - (Date.now() - lastSendTs)));
+        };
+        pacer = setTimeout(tick, 20);
+        console.log('🚀 Pacer started');
+    };
+    
+    // ── ffmpeg resamplers per call ───────────────────────────────────────────────────
+    // OpenAI (PCM16 24k) → ffmpeg downsample → PCM16 8k → μ-law → Twilio
+    // Twilio (μ-law 8k) → PCM16 8k → ffmpeg upsample → PCM16 24k → OpenAI
+    let downFfmpeg = null;
+    let upFfmpeg = null;
+    const startDownsampler = () => {
+        if (downFfmpeg) return;
+        downFfmpeg = spawn('ffmpeg', [
+            '-f', 's16le',
+            '-ar', '24000',
+            '-ac', '1',
+            '-i', 'pipe:0',
+            '-f', 's16le',
+            '-ar', '8000',
+            '-ac', '1',
+            'pipe:1'
+        ]);
+        console.log(`🎛️ Downsampler ffmpeg started (24k→8k), pid=${downFfmpeg.pid}`);
+        downFfmpeg.stdout.on('data', (chunk) => {
+            if (isClosed || !accepting) return;
+            // chunk is PCM16 8k mono
+            const base64Pcm8k = chunk.toString('base64');
+            const mulawBase64 = convertPcm16ToMulaw(base64Pcm8k);
+            const pushed = Buffer.from(mulawBase64, 'base64');
+            ulawQueue.push(pushed);
+            console.log(`➕ Downsampled PCM8k chunk ${pushed.length}B enqueued, queue=${ulawQueue.total}B`);
+            
+            // ✅ DIAGNOSTIC: Log state when pacer is triggered
+            if (!pacer) {
+                console.log(`🎯 Triggering pacer: ws=${!!ws}, ws.readyState=${ws?.readyState}, streamSid=${!!streamSid}`);
+            }
+            
+            startPacer();
+        });
+        downFfmpeg.on('close', () => { downFfmpeg = null; });
+        downFfmpeg.on('error', (err) => { console.error('❌ ffmpeg downsampler error:', err?.message || err); });
+    };
+    const startUpsampler = () => {
+        if (upFfmpeg) return;
+        upFfmpeg = spawn('ffmpeg', [
+            '-f', 's16le',
+            '-ar', '8000',
+            '-ac', '1',
+            '-i', 'pipe:0',
+            '-f', 's16le',
+            '-ar', '24000',
+            '-ac', '1',
+            'pipe:1'
+        ]);
+        console.log(`🎛️ Upsampler ffmpeg started (8k→24k), pid=${upFfmpeg.pid}`);
+        upFfmpeg.stdout.on('data', (chunk) => {
+            if (isClosed || !accepting) return;
+            // chunk is PCM16 24k mono
+            const base64Pcm24k = chunk.toString('base64');
+            if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                try {
+                    openaiWs.send(JSON.stringify({
+                        type: 'input_audio_buffer.append',
+                        audio: base64Pcm24k
+                    }));
+                } catch (_) { /* ignore */ }
+            }
+        });
+        upFfmpeg.on('close', () => { upFfmpeg = null; });
+        upFfmpeg.on('error', (err) => { console.error('❌ ffmpeg upsampler error:', err?.message || err); });
+    };
+    
     // Cleanup function - call only once with proper resource cleanup
     const cleanup = (reason = 'unknown') => {
         if (isClosed) return;
         isClosed = true;
+        accepting = false;
         
         console.log(`🧹 Cleaning up call ${callSid} - reason: ${reason}`);
         
@@ -230,6 +426,10 @@ export const handleMediaStreamConnection = (ws, req) => {
         // STEP 4: Clear timers and references
         if (durationTimer) clearTimeout(durationTimer);
         if (startTimeout) clearTimeout(startTimeout);
+        if (pacer) { clearTimeout(pacer); pacer = null; }
+        ulawQueue.clear();
+        try { if (downFfmpeg) downFfmpeg.kill('SIGKILL'); } catch (_) {}
+        try { if (upFfmpeg) upFfmpeg.kill('SIGKILL'); } catch (_) {}
         
         if (callSid) {
             delete realtimeClients[callSid];
@@ -263,7 +463,54 @@ export const handleMediaStreamConnection = (ws, req) => {
                 }
                 
                 console.log(`📞 Start event received - callSid: ${callSid}, streamSid: ${streamSid}`);
+                console.log(`🔍 WebSocket state check: ws=${!!ws}, ws.readyState=${ws?.readyState}, streamSid=${!!streamSid}`);
                 callStartTime = Date.now();
+                
+                // Optional: test tone path to validate Twilio outbound playback
+                if (process.env.TWILIO_TEST_TONE === '1') {
+                    console.log('🎼 Sending 1kHz test tone to Twilio (8kHz μ-law, 20ms frames)');
+                    const sampleRate = 8000;
+                    const durationMs = 2000;
+                    const totalSamples = Math.floor(sampleRate * durationMs / 1000);
+                    const pcm = Buffer.alloc(totalSamples * 2);
+                    const freq = 1000;
+                    const amplitude = 0.6;
+                    for (let i = 0; i < totalSamples; i++) {
+                        const t = i / sampleRate;
+                        const s = Math.max(-1, Math.min(1, Math.sin(2 * Math.PI * freq * t))) * amplitude;
+                        const s16 = Math.max(-32768, Math.min(32767, Math.round(s * 32767)));
+                        pcm.writeInt16LE(s16, i * 2);
+                    }
+                    // PCM16 8k → μ-law
+                    const ulaw = Buffer.from(convertPcm16ToMulaw(pcm.toString('base64')), 'base64');
+                    // Send as 160-byte frames every ~20ms
+                    let offset = 0;
+                    const BYTES_PER_20MS = 160;
+                    const sendFrame = () => {
+                        if (isClosed || !(ws && ws.readyState === WebSocket.OPEN)) return;
+                        if (offset >= ulaw.length) {
+                            console.log('🎼 Test tone finished');
+                            return;
+                        }
+                        const end = Math.min(offset + BYTES_PER_20MS, ulaw.length);
+                        const frame = ulaw.slice(offset, end);
+                        ws.send(JSON.stringify({
+                            event: 'media',
+                            streamSid,
+                            track: 'outbound',
+                            media: { payload: frame.toString('base64') }
+                        }));
+                        console.log(`📤 SENT TEST TONE FRAME ${frame.length}B`);
+                        offset = end;
+                        setTimeout(sendFrame, 20);
+                    };
+                    sendFrame();
+                    // Do not set up OpenAI in test mode
+                    ws.removeListener('message', messageHandler);
+                    clearTimeout(startTimeout); // ✅ Clear the timeout since we got the start event
+                    setupComplete = true; // ✅ Mark as complete to prevent timeout
+                    return;
+                }
                 
                 // Remove this handler and set up OpenAI
                 ws.removeListener('message', messageHandler);
@@ -431,8 +678,8 @@ export const handleMediaStreamConnection = (ws, req) => {
                                         Keep responses concise and natural.`,
                                         voice: 'alloy',
                                         temperature: 0.6, // Use minimum allowed value
-                                        input_audio_format: 'pcmu',
-                                        output_audio_format: 'pcmu',
+                                        input_audio_format: 'pcm16',
+                                        output_audio_format: 'pcm16',
                                         turn_detection: {
                                             type: 'server_vad',
                                             threshold: 0.5,
@@ -502,14 +749,13 @@ export const handleMediaStreamConnection = (ws, req) => {
                         
                         if (ws.readyState === WebSocket.OPEN && streamSid && !isClosed) {
                             try {
-                                // ✅ CRITICAL: Convert PCM16 to μ-law before sending to Twilio
-                                // const mulawAudio = convertPcm16ToMulaw(event.delta);
-                                
-                                ws.send(JSON.stringify({
-                                    event: 'media',
-                                    streamSid: streamSid,
-                                    media: { payload: event.delta }
-                                }));
+                                // Start downsampler if needed; write PCM16 24k (base64) as raw bytes
+                                startDownsampler();
+                                const pcm24kBuf = Buffer.from(event.delta, 'base64');
+                                // Gate by accepting to avoid writes after cleanup
+                                if (accepting && downFfmpeg?.stdin?.writable) {
+                                    downFfmpeg.stdin.write(pcm24kBuf);
+                                }
                             } catch (err) {
                                 errorCount++;
                                 console.error('❌ Error sending audio to Twilio:', err);
@@ -579,13 +825,13 @@ export const handleMediaStreamConnection = (ws, req) => {
                         
                         if (openaiWs && openaiWs.readyState === WebSocket.OPEN && !isClosed) {
                             try {
-                                // ✅ CRITICAL: Convert μ-law to PCM16 before sending to OpenAI
-                                // const pcm16Audio = convertMulawToPcm16(json.media.payload);
-                                
-                                openaiWs.send(JSON.stringify({
-                                    type: 'input_audio_buffer.append',
-                                    audio: json.media.payload
-                                }));
+                                // ✅ μ-law (8k) → PCM16 8k → upsample to 24k via ffmpeg → send to OpenAI
+                                startUpsampler();
+                                const base64Pcm8k = convertMulawToPcm16(json.media.payload);
+                                const pcm8kBuf = Buffer.from(base64Pcm8k, 'base64');
+                                if (accepting && upFfmpeg?.stdin?.writable) {
+                                    upFfmpeg.stdin.write(pcm8kBuf);
+                                }
                             } catch (err) {
                                 errorCount++;
                                 console.error('❌ Error sending audio to OpenAI:', err);
