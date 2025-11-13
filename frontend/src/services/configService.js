@@ -17,8 +17,46 @@ const configService = {
     return response.data;
   },
 
-  async getAudioMetrics() {
-    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/config/audio/metrics');
+  async getAudioMetrics(timeRange = '24h') {
+    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/config/audio/metrics', {
+      params: { timeRange }
+    });
+    return response.data;
+  },
+
+  async getHistoricalAudioMetrics(timeRange = '24h', dataPoints = 20) {
+    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/config/audio/metrics/historical', {
+      params: { timeRange, dataPoints }
+    });
+    return response.data;
+  },
+
+  async getRecentCallsWithQuality(limit = 50, qualityFilter = null) {
+    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/config/audio/metrics/recent-calls', {
+      params: { limit, qualityFilter }
+    });
+    return response.data;
+  },
+
+  async getModelParameterRanges(modelId) {
+    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/config/audio/model-ranges', {
+      params: { modelId }
+    });
+    return response.data;
+  },
+
+  async getNumberProfile(phoneNumber) {
+    const response = await authenticatedApiClient.get(`/api/admin/audio-telephony/config/audio/number-profile/${encodeURIComponent(phoneNumber)}`);
+    return response.data;
+  },
+
+  async saveNumberProfile(phoneNumber, profileData) {
+    const response = await authenticatedApiClient.put(`/api/admin/audio-telephony/config/audio/number-profile/${encodeURIComponent(phoneNumber)}`, profileData);
+    return response.data;
+  },
+
+  async deleteNumberProfile(phoneNumber) {
+    const response = await authenticatedApiClient.delete(`/api/admin/audio-telephony/config/audio/number-profile/${encodeURIComponent(phoneNumber)}`);
     return response.data;
   },
 

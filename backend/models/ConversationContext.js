@@ -103,5 +103,5 @@ ConversationContextSchema.index({ callSid: 1 });
 ConversationContextSchema.index({ createdAt: -1 });
 ConversationContextSchema.index({ modelId: 1 });
 
-export default mongoose.model("ConversationContext", ConversationContextSchema);
+export default mongoose.models.ConversationContext || mongoose.model("ConversationContext", ConversationContextSchema);
 

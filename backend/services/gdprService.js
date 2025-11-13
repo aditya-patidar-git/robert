@@ -271,6 +271,38 @@ class GDPRService {
     return mockAuditLogs;
   }
 
+  async getDSARRequests(filters = {}) {
+    // In a real implementation, this would query a DSAR database
+    // For now, return mock data that would come from audit logs or a DSAR collection
+    const mockDSARRequests = [
+      {
+        id: 'dsar_001',
+        requestorEmail: 'user@example.com',
+        requestorName: 'John Doe',
+        requestType: 'export',
+        status: 'completed',
+        createdAt: new Date().toISOString(),
+        requestedData: ['transcripts', 'recordings', 'metadata']
+      },
+      {
+        id: 'dsar_002',
+        requestorEmail: 'customer@company.com',
+        requestorName: 'Jane Smith',
+        requestType: 'delete',
+        status: 'pending',
+        createdAt: new Date(Date.now() - 86400000).toISOString(),
+        requestedData: ['all']
+      }
+    ];
+
+    // Filter by email if provided
+    if (filters.email) {
+      return mockDSARRequests.filter(req => req.requestorEmail === filters.email);
+    }
+
+    return mockDSARRequests;
+  }
+
   // Privacy Impact Assessment
   async generatePrivacyImpactAssessment(processingActivity) {
     const pia = {

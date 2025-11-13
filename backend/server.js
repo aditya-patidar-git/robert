@@ -23,15 +23,18 @@ import testRetrievalRoutes from "./routes/testRetrievalRoutes.js";
 import provenanceRoutes from "./routes/provenanceRoutes.js";
 import uncertaintyGateRoutes from "./routes/uncertaintyGateRoutes.js";
 import transcriptRoutes from "./routes/transcriptRoutes.js";
+import complaintRoutes from "./routes/complaintRoutes.js";
 import audioTelephonyRoutes from "./routes/audioTelephonyRoutes.js";
 import mcpToolsRoutes from "./routes/mcpToolsRoutes.js";
 import gdprRoutes from "./routes/gdprRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import itmBookingRoutes from "./routes/itmBookingRoutes.js";
 import languageVoiceRoutes from "./routes/languageVoiceRoutes.js";
+import privacyConfigRoutes from "./routes/privacyConfigRoutes.js";
 import promptVersionRoutes from "./routes/promptVersionRoutes.js";
 import flowParameterRoutes from "./routes/flowParameterRoutes.js";
 import tokenManagementRoutes from "./routes/tokenManagementRoutes.js";
+import observabilityRoutes from "./routes/observabilityRoutes.js";
 
 dotenv.config();
 
@@ -113,9 +116,13 @@ app.use("/api/test-retrieval", testRetrievalRoutes);
 app.use("/api/provenance", provenanceRoutes);
 app.use("/api/uncertainty-gate", uncertaintyGateRoutes);
 app.use("/api/transcripts", transcriptRoutes);
+app.use("/api/complaints", complaintRoutes);
 
 // Audio & Telephony Routes
 app.use("/api/admin/audio-telephony", audioTelephonyRoutes);
+
+// Privacy Configuration Routes
+app.use("/api/admin", privacyConfigRoutes);
 
 // MCP Tools Routes
 app.use("/api/mcp-tools", mcpToolsRoutes);
@@ -125,6 +132,9 @@ app.use("/api/gdpr", gdprRoutes);
 
 // Dashboard Routes
 app.use("/api/dashboard", dashboardRoutes);
+
+// Observability Routes
+app.use("/api/observability", observabilityRoutes);
 
 // ITM Booking Test Routes
 app.use("/api/itm-booking", itmBookingRoutes);

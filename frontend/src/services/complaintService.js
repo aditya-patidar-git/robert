@@ -36,6 +36,14 @@ const complaintService = {
     return response.data;
   },
 
+  // Update complaint priority
+  async updateComplaintPriority(complaintId, priority) {
+    const response = await authenticatedApiClient.patch(`/api/complaints/${complaintId}/priority`, {
+      priority
+    });
+    return response.data;
+  },
+
   // Get complaint statistics
   async getComplaintStats() {
     const response = await authenticatedApiClient.get('/api/complaints/stats');
