@@ -104,7 +104,20 @@ const TranscriptsComplaintsPage = () => {
 
   const { data: transcriptData } = useQuery({
     queryKey: ['transcripts', user?.id, filters],
-    queryFn: () => transcriptService.getAllTranscripts(filters)
+    queryFn: async () => {
+      const response = await transcriptService.getAllTranscripts(filters);
+      // Handle normalized response
+      if (response.success && response.data) {
+        // If data is the full object with transcripts and pagination
+        if (response.data.transcripts && response.data.pagination) {
+          return response.data;
+        }
+        // If data is just the transcripts array, return as-is (backward compat)
+        return { transcripts: response.data, pagination: null };
+      }
+      // Fallback for error or old format
+      return response.data || response;
+    }
   });
 
   const transcripts = transcriptData?.transcripts || [];
@@ -113,7 +126,20 @@ const TranscriptsComplaintsPage = () => {
   // Complaints query
   const { data: complaintData, isLoading: isLoadingComplaints } = useQuery({
     queryKey: ['complaints', complaintFilters],
-    queryFn: () => complaintService.getAllComplaints(complaintFilters),
+    queryFn: async () => {
+      const response = await complaintService.getAllComplaints(complaintFilters);
+      // Handle normalized response
+      if (response.success && response.data) {
+        // If data is the full object with complaints and pagination
+        if (response.data.complaints && response.data.pagination) {
+          return response.data;
+        }
+        // If data is just the complaints array, return as-is (backward compat)
+        return { complaints: response.data, pagination: null };
+      }
+      // Fallback for error or old format
+      return response.data || response;
+    },
     enabled: currentTab === 1
   });
 
@@ -143,7 +169,20 @@ const TranscriptsComplaintsPage = () => {
   // Query for full transcript details
   const { data: fullTranscriptData, isLoading: isLoadingTranscript } = useQuery({
     queryKey: ['transcript', selectedTranscript?._id || selectedTranscript?.id],
-    queryFn: () => transcriptService.getTranscript(selectedTranscript?._id || selectedTranscript?.id),
+    queryFn: async () => {
+      const response = await transcriptService.getTranscript(selectedTranscript?._id || selectedTranscript?.id);
+      // Handle normalized response
+      if (response.success && response.data) {
+        // If data is the full object with transcript, escalations, complaints, provenance
+        if (response.data.transcript || response.data.escalations || response.data.complaints || response.data.provenance) {
+          return response.data;
+        }
+        // If data is just the transcript object, wrap it
+        return { transcript: response.data, escalations: [], complaints: [], provenance: [] };
+      }
+      // Fallback for error or old format
+      return response.data || response;
+    },
     enabled: !!selectedTranscript && transcriptDialog && !!(selectedTranscript?._id || selectedTranscript?.id)
   });
 

@@ -1,7 +1,7 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/rbacMiddleware.js";
-import { getUsers, createUser, approveUser, blockUser, excludeUser, deleteUser } from "../controllers/userController.js";
+import { getUsers, createUser, updateUser, approveUser, blockUser, excludeUser, deleteUser } from "../controllers/userController.js";
 import { addPrompt, getPrompts, updatePrompt } from "../controllers/promptController.js";
 
 const router = express.Router();
@@ -13,6 +13,7 @@ router.use(authorizeRoles("owner", "admin"));
 // Users
 router.get("/users", getUsers);
 router.post("/users", createUser);
+router.put("/users/:id", updateUser);
 router.patch("/users/:id/approve", approveUser);
 router.patch("/users/:id/block", blockUser);
 router.patch("/users/:id/exclude", excludeUser);

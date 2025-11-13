@@ -82,7 +82,7 @@ const PrivacyPage = () => {
   // Fetch privacy configuration
   const { data: privacyConfig, isLoading: configLoading } = useQuery({
     queryKey: ['privacy-config'],
-    queryFn: configService.getPrivacyConfig,
+    queryFn: () => configService.getPrivacyConfig(),
     onSuccess: (data) => {
       if (data) {
         Object.keys(data).forEach(key => {

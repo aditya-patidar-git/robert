@@ -1,121 +1,181 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const privacyService = {
-  // Create DSAR request
-  async createDSARRequest(requestData) {
-    const response = await authenticatedApiClient.post('/api/gdpr/dsar', requestData);
-    return response.data;
-  },
-
-  // Get all DSAR requests
-  async getAllDSARRequests(filters = {}) {
-    const response = await authenticatedApiClient.get('/api/gdpr/dsar', {
-      params: filters
+/**
+ * Privacy Service
+ * Handles GDPR compliance, DSAR requests, data retention, and privacy management
+ * @extends BaseService
+ */
+class PrivacyService extends BaseService {
+  constructor() {
+    super('/api/gdpr', {
+      dataPath: null,
+      normalizeResponse: true
     });
-    return response.data;
-  },
+  }
 
-  // Update DSAR request status
+  /**
+   * Create DSAR (Data Subject Access Request) request
+   * @param {Object} requestData - DSAR request data
+   * @returns {Promise<Object>} Created DSAR request
+   */
+  async createDSARRequest(requestData) {
+    return this.post('/dsar', requestData);
+  }
+
+  /**
+   * Get all DSAR requests
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Array<Object>>} Array of DSAR requests
+   */
+  async getAllDSARRequests(filters = {}) {
+    return this.get('/dsar', filters);
+  }
+
+  /**
+   * Update DSAR request status
+   * @param {string} requestId - Request ID
+   * @param {string} status - New status
+   * @returns {Promise<Object>} Updated request
+   */
   async updateDSARRequest(requestId, status) {
-    const response = await authenticatedApiClient.patch(`/api/gdpr/dsar/${requestId}`, { status });
-    return response.data;
-  },
+    return this.patch(`/dsar/${requestId}`, { status });
+  }
 
-  // Process DSAR request
+  /**
+   * Process DSAR request
+   * @param {string} dsarId - DSAR ID
+   * @param {string} action - Action to perform
+   * @param {string} adminUser - Admin user processing the request
+   * @returns {Promise<Object>} Processing result
+   */
   async processDSARRequest(dsarId, action, adminUser) {
-    const response = await authenticatedApiClient.post(`/api/gdpr/dsar/${dsarId}/process`, {
+    return this.post(`/dsar/${dsarId}/process`, {
       action,
       adminUser
     });
-    return response.data;
-  },
+  }
 
-  // Export user data
+  /**
+   * Export user data
+   * @param {string} userId - User ID
+   * @param {Array<string>} dataTypes - Data types to export (default: ['transcripts', 'recordings', 'metadata'])
+   * @returns {Promise<Blob>} Exported data (Blob)
+   */
   async exportUserData(userId, dataTypes = ['transcripts', 'recordings', 'metadata']) {
-    const response = await authenticatedApiClient.post(`/api/gdpr/export/${userId}`, {
-      dataTypes
-    }, {
-      responseType: 'blob'
+    const response = await this.post(`/export/${userId}`, { dataTypes }, {
+      responseType: 'blob',
+      normalizeResponse: false // Don't normalize blob responses
     });
     return response.data;
-  },
+  }
 
-  // Delete user data
+  /**
+   * Delete user data
+   * @param {string} userId - User ID
+   * @param {Array<string>} dataTypes - Data types to delete (default: ['all'])
+   * @returns {Promise<Object>} Deletion result
+   */
   async deleteUserData(userId, dataTypes = ['all']) {
-    const response = await authenticatedApiClient.delete(`/api/gdpr/delete/${userId}`, {
+    return this.delete(`/delete/${userId}`, {
       data: { dataTypes }
     });
-    return response.data;
-  },
+  }
 
-  // Get privacy audit logs
+  /**
+   * Get privacy audit logs
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Array<Object>>} Array of audit log entries
+   */
   async getAuditLogs(filters = {}) {
-    const response = await authenticatedApiClient.get('/api/gdpr/audit-logs', {
-      params: filters
-    });
-    return response.data;
-  },
+    return this.get('/audit-logs', filters);
+  }
 
-  // Check retention policies
+  /**
+   * Check retention policies
+   * @returns {Promise<Object>} Retention policies status
+   */
   async checkRetentionPolicies() {
-    const response = await authenticatedApiClient.get('/api/gdpr/retention-policies');
-    return response.data;
-  },
+    return this.get('/retention-policies');
+  }
 
-  // Cleanup expired data
+  /**
+   * Cleanup expired data
+   * @returns {Promise<Object>} Cleanup result
+   */
   async cleanupExpiredData() {
-    const response = await authenticatedApiClient.post('/api/gdpr/cleanup-expired');
-    return response.data;
-  },
+    return this.post('/cleanup-expired');
+  }
 
-  // Generate compliance report
+  /**
+   * Generate compliance report
+   * @param {string} period - Report period (default: 'monthly')
+   * @returns {Promise<Object>} Compliance report
+   */
   async generateComplianceReport(period = 'monthly') {
-    const response = await authenticatedApiClient.get('/api/gdpr/compliance-report', {
-      params: { period }
-    });
-    return response.data;
-  },
+    return this.get('/compliance-report', { period });
+  }
 
-  // Generate Privacy Impact Assessment
+  /**
+   * Generate Privacy Impact Assessment
+   * @param {Object} processingActivity - Processing activity data
+   * @returns {Promise<Object>} Privacy Impact Assessment
+   */
   async generatePrivacyImpactAssessment(processingActivity) {
-    const response = await authenticatedApiClient.post('/api/gdpr/privacy-impact-assessment', {
+    return this.post('/privacy-impact-assessment', {
       processingActivity
     });
-    return response.data;
-  },
+  }
 
-  // Report data breach
+  /**
+   * Report data breach
+   * @param {Object} breachData - Breach data
+   * @returns {Promise<Object>} Breach report result
+   */
   async reportDataBreach(breachData) {
-    const response = await authenticatedApiClient.post('/api/gdpr/data-breach', {
+    return this.post('/data-breach', {
       breachData
     });
-    return response.data;
-  },
+  }
 
-  // Mask PII
+  /**
+   * Mask PII (Personally Identifiable Information)
+   * @param {string} text - Text to mask
+   * @param {string} maskType - Mask type ('partial' or 'full', default: 'partial')
+   * @returns {Promise<Object>} Masked text
+   */
   async maskPII(text, maskType = 'partial') {
-    const response = await authenticatedApiClient.post('/api/gdpr/mask-pii', {
+    return this.post('/mask-pii', {
       text,
       maskType
     });
-    return response.data;
-  },
+  }
 
-  // Record consent
+  /**
+   * Record consent
+   * @param {string} callSid - Call SID
+   * @param {string} consentType - Consent type
+   * @param {boolean} granted - Whether consent was granted
+   * @returns {Promise<Object>} Consent record
+   */
   async recordConsent(callSid, consentType, granted) {
-    const response = await authenticatedApiClient.post('/api/gdpr/consent', {
+    return this.post('/consent', {
       callSid,
       consentType,
       granted
     });
-    return response.data;
-  },
-
-  // Check consent
-  async checkConsent(callSid, consentType) {
-    const response = await authenticatedApiClient.get(`/api/gdpr/consent/${callSid}/${consentType}`);
-    return response.data;
   }
-};
 
+  /**
+   * Check consent
+   * @param {string} callSid - Call SID
+   * @param {string} consentType - Consent type
+   * @returns {Promise<Object>} Consent status
+   */
+  async checkConsent(callSid, consentType) {
+    return this.get(`/consent/${callSid}/${consentType}`);
+  }
+}
+
+// Export singleton instance
+const privacyService = new PrivacyService();
 export default privacyService;

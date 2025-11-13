@@ -20,9 +20,65 @@ const authenticatedApiClient = axios.create({
 // Track retry attempts for each request
 const retryCounts = new Map();
 
+// Performance metrics tracking
+const performanceMetrics = {
+  requests: [],
+  errors: [],
+  getAverageResponseTime: () => {
+    if (performanceMetrics.requests.length === 0) return 0;
+    const total = performanceMetrics.requests.reduce((sum, req) => sum + req.duration, 0);
+    return Math.round(total / performanceMetrics.requests.length);
+  },
+  getErrorRate: () => {
+    const total = performanceMetrics.requests.length + performanceMetrics.errors.length;
+    if (total === 0) return 0;
+    return ((performanceMetrics.errors.length / total) * 100).toFixed(2);
+  },
+  clear: () => {
+    performanceMetrics.requests = [];
+    performanceMetrics.errors = [];
+  }
+};
+
 // Generate unique request ID for tracing
 const generateRequestId = () => {
   return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
+/**
+ * Structured logging utility
+ * @param {string} level - Log level (info, error, warn, debug)
+ * @param {string} message - Log message
+ * @param {Object} metadata - Additional metadata
+ */
+const structuredLog = (level, message, metadata = {}) => {
+  const logEntry = {
+    level,
+    message,
+    timestamp: new Date().toISOString(),
+    ...metadata
+  };
+
+  if (import.meta.env.DEV) {
+    const emoji = {
+      info: 'ℹ️',
+      error: '❌',
+      warn: '⚠️',
+      debug: '🔍',
+      success: '✅'
+    }[level] || '📝';
+    
+    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](
+      `${emoji} [${metadata.requestId || 'N/A'}] ${message}`,
+      Object.keys(metadata).length > 1 ? metadata : ''
+    );
+  }
+
+  // In production, send to logging service
+  if (import.meta.env.PROD && level === 'error') {
+    // TODO: Send to error tracking service
+    // errorTrackingService.log(logEntry);
+  }
 };
 
 // Calculate exponential backoff delay
@@ -59,11 +115,13 @@ authenticatedApiClient.interceptors.request.use(
     // Get token from localStorage
     const token = localStorage.getItem('authToken');
     
-    // Log request details (only in development)
-    if (import.meta.env.DEV) {
-      console.log(`🔐 [${requestId}] Request: ${config.method?.toUpperCase()} ${config.url}`);
-      console.log(`🔐 [${requestId}] Token: ${token ? 'Present' : 'Missing'}`);
-    }
+    // Structured logging
+    structuredLog('info', `Request: ${config.method?.toUpperCase()} ${config.url}`, {
+      requestId,
+      method: config.method?.toUpperCase(),
+      url: config.url,
+      hasToken: !!token
+    });
     
     // Add auth token if available (works for both public and protected routes)
     if (token) {
@@ -81,12 +139,34 @@ authenticatedApiClient.interceptors.request.use(
 // Response interceptor with retry logic and error handling
 authenticatedApiClient.interceptors.response.use(
   (response) => {
-    // Log response time for monitoring
+    // Calculate response time
+    let duration = 0;
     if (response.config.metadata) {
-      const duration = Date.now() - response.config.metadata.startTime;
-      if (import.meta.env.DEV) {
-        console.log(`✅ [${response.config.metadata.requestId}] Response: ${response.status} (${duration}ms)`);
+      duration = Date.now() - response.config.metadata.startTime;
+      
+      // Track performance metrics
+      performanceMetrics.requests.push({
+        requestId: response.config.metadata.requestId,
+        method: response.config.method,
+        url: response.config.url,
+        status: response.status,
+        duration,
+        timestamp: new Date().toISOString()
+      });
+
+      // Keep only last 100 requests for metrics
+      if (performanceMetrics.requests.length > 100) {
+        performanceMetrics.requests.shift();
       }
+
+      // Structured logging
+      structuredLog('success', `Response: ${response.status} (${duration}ms)`, {
+        requestId: response.config.metadata.requestId,
+        status: response.status,
+        duration,
+        method: response.config.method,
+        url: response.config.url
+      });
     }
     
     // Clear retry count on successful response
@@ -108,12 +188,36 @@ authenticatedApiClient.interceptors.response.use(
     // Get current retry count
     const currentRetryCount = retryCounts.get(requestId) || 0;
     
-    // Log error details
-    if (import.meta.env.DEV) {
-      const errorType = error.response ? `HTTP ${error.response.status}` : 'Network Error';
-      const retryStatus = config.metadata?.disableRetries ? ' (retries disabled)' : '';
-      console.error(`❌ [${requestId}] Error: ${errorType} (attempt ${currentRetryCount + 1})${retryStatus}`);
+    // Track error metrics
+    const errorType = error.response ? `HTTP ${error.response.status}` : 'Network Error';
+    const duration = config.metadata?.startTime ? Date.now() - config.metadata.startTime : 0;
+    
+    performanceMetrics.errors.push({
+      requestId,
+      method: config?.method,
+      url: config?.url,
+      errorType,
+      status: error.response?.status,
+      duration,
+      attempt: currentRetryCount + 1,
+      timestamp: new Date().toISOString()
+    });
+
+    // Keep only last 50 errors for metrics
+    if (performanceMetrics.errors.length > 50) {
+      performanceMetrics.errors.shift();
     }
+
+    // Structured error logging
+    structuredLog('error', `Error: ${errorType} (attempt ${currentRetryCount + 1})`, {
+      requestId,
+      errorType,
+      status: error.response?.status,
+      attempt: currentRetryCount + 1,
+      retriesDisabled: config.metadata?.disableRetries || false,
+      url: config?.url,
+      method: config?.method
+    });
 
     // Handle different error types
     if (error.response) {
@@ -215,5 +319,20 @@ authenticatedApiClient.createCancelToken = () => {
 
 // Add utility method to check if error is due to cancellation
 authenticatedApiClient.isCancel = axios.isCancel;
+
+// Export performance metrics
+authenticatedApiClient.getMetrics = () => ({
+  averageResponseTime: performanceMetrics.getAverageResponseTime(),
+  errorRate: performanceMetrics.getErrorRate(),
+  totalRequests: performanceMetrics.requests.length,
+  totalErrors: performanceMetrics.errors.length,
+  recentRequests: performanceMetrics.requests.slice(-10),
+  recentErrors: performanceMetrics.errors.slice(-10)
+});
+
+// Clear metrics utility
+authenticatedApiClient.clearMetrics = () => {
+  performanceMetrics.clear();
+};
 
 export default authenticatedApiClient;

@@ -53,6 +53,31 @@ export const excludeUser = async (req, res) => {
     res.json(user);
 };
 
+// PUT /admin/users/:id
+export const updateUser = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const { email, username, role, status, password } = req.body;
+
+        // Update fields if provided
+        if (email !== undefined) user.email = email;
+        if (username !== undefined) user.username = username;
+        if (role !== undefined) user.role = role;
+        if (status !== undefined) user.status = status;
+        if (password !== undefined) {
+            user.passwordHash = await hashPassword(password);
+        }
+
+        await user.save();
+        res.json(user);
+    } catch (error) {
+        console.error("Error updating user:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
 // DELETE /admin/users/:id
 export const deleteUser = async (req, res) => {
     const { hard } = req.query;

@@ -118,9 +118,21 @@ import provenanceService from '../../services/provenanceService';
 import uncertaintyGateService from '../../services/uncertaintyGateService';
 import languageVoiceService from '../../services/languageVoiceService';
 import mcpToolsService from '../../services/mcpToolsService';
+import ModelCapabilityRegistry from '../../components/config/ModelCapabilityRegistry';
+import MCPToolsConfig from '../../components/config/MCPToolsConfig';
+import LanguageVoiceMapping from '../../components/config/LanguageVoiceMapping';
+import ModelVoiceSelection from '../../components/config/ModelVoiceSelection';
+import ModelParameters from '../../components/config/ModelParameters';
 import promptVersionService from '../../services/promptVersionService';
 import flowParameterService from '../../services/flowParameterService';
 import tokenManagementService from '../../services/tokenManagementService';
+import { useModelCapabilities } from '../../hooks/useModelCapabilities';
+import { useAIModels } from '../../hooks/useAIModels';
+import { useMCPTools } from '../../hooks/useMCPTools';
+import { useLanguageVoiceMappings } from '../../hooks/useLanguageVoiceMappings';
+import { useModelVoiceCompatibility } from '../../hooks/useModelVoiceCompatibility';
+import { useFallbackChain } from '../../hooks/useFallbackChain';
+import { getCompatibleVoices } from '../../utils/modelCompatibility';
 
 const AIKnowledgePage = () => {
   const { showSuccess, showError } = useToast();
@@ -150,16 +162,8 @@ const AIKnowledgePage = () => {
   const [uncertaintyConfig, setUncertaintyConfig] = useState(null);
   const [analyticsTimeRange, setAnalyticsTimeRange] = useState('7d');
   
-  // Fallback chain state
-  const [fallbackChain, setFallbackChain] = useState([]);
-  
   // Model parameters state
   const [modelParameters, setModelParameters] = useState(null);
-  
-  // Language/Voice mapping state
-  const [languageMappings, setLanguageMappings] = useState([]);
-  const [previewingVoice, setPreviewingVoice] = useState(null);
-  const [mcpTools, setMcpTools] = useState([]);
   const [editingDomains, setEditingDomains] = useState({}); // { toolName: [domains] }
   const [newDomainInputs, setNewDomainInputs] = useState({}); // { toolName: '' }
   const [rateLimitValues, setRateLimitValues] = useState({}); // { toolName: limit }
@@ -215,7 +219,7 @@ const AIKnowledgePage = () => {
   // Fetch knowledge base files from OpenAI
   const { data: kbFiles = [], isLoading: kbLoading, error: kbError } = useQuery({
     queryKey: ['kb-files'],
-    queryFn: kbService.getAllFiles,
+    queryFn: () => kbService.getAllFiles(),
   });
 
   // Handle KB files data
@@ -236,27 +240,13 @@ const AIKnowledgePage = () => {
   // Fetch prompts
   const { data: prompts = [], isLoading: promptsLoading, error: promptsError } = useQuery({
     queryKey: ['prompts'],
-    queryFn: promptService.getAllPrompts,
+    queryFn: () => promptService.getAllPrompts(),
   });
 
-  // Fetch model capabilities
-  const { data: capabilitiesData, isLoading: capabilitiesLoading } = useQuery({
-    queryKey: ['model-capabilities'],
-    queryFn: aiService.getModelCapabilities,
-    refetchInterval: 300000 // Refetch every 5 minutes
-  });
-
-  // Fetch language/voice mappings
-  const { data: fetchedMappings = [], isLoading: mappingsLoading } = useQuery({
-    queryKey: ['language-voice-mappings'],
-    queryFn: languageVoiceService.getLanguageMappings
-  });
-
-  // Fetch MCP tools
-  const { data: fetchedMcpTools = [], isLoading: mcpToolsLoading, refetch: refetchMcpTools } = useQuery({
-    queryKey: ['mcp-tools'],
-    queryFn: mcpToolsService.getAllTools
-  });
+  // Use custom hooks for data fetching
+  const { isLoading: capabilitiesLoading } = useModelCapabilities();
+  const { mappings: languageMappings, isLoading: mappingsLoading, saveMappings: saveLanguageMappings } = useLanguageVoiceMappings();
+  const { tools: mcpTools, isLoading: mcpToolsLoading, refetch: refetchMcpTools } = useMCPTools();
 
   // Fetch prompt versions
   const { data: fetchedVersions = [], isLoading: versionsLoading, refetch: refetchVersions } = useQuery({
@@ -274,31 +264,23 @@ const AIKnowledgePage = () => {
   // Fetch flow parameter overrides
   const { data: fetchedFlowOverrides = [], isLoading: flowOverridesLoading, refetch: refetchFlowOverrides } = useQuery({
     queryKey: ['flow-parameters'],
-    queryFn: flowParameterService.getFlowParameters
+    queryFn: () => flowParameterService.getFlowParameters()
   });
-
-  // Update local state when mappings are fetched
-  useEffect(() => {
-    if (fetchedMappings && fetchedMappings.length > 0) {
-      setLanguageMappings(fetchedMappings);
-    }
-  }, [fetchedMappings]);
 
   // Update local state when MCP tools are fetched
   useEffect(() => {
-    if (fetchedMcpTools && fetchedMcpTools.length > 0) {
-      setMcpTools(fetchedMcpTools);
+    if (mcpTools && mcpTools.length > 0) {
       // Initialize editing domains state
       const domainsState = {};
       const rateLimitState = {};
-      fetchedMcpTools.forEach(tool => {
+      mcpTools.forEach(tool => {
         domainsState[tool.name] = [...(tool.domains || [])];
         rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
       });
       setEditingDomains(domainsState);
       setRateLimitValues(rateLimitState);
     }
-  }, [fetchedMcpTools]);
+  }, [mcpTools]);
 
   // Update local state when prompt versions are fetched
   useEffect(() => {
@@ -353,10 +335,11 @@ const AIKnowledgePage = () => {
             chain = chain.filter(item => item.modelId !== config.model.id);
             // Add primary model as first with current voice
             chain = [{ modelId: config.model.id, voiceId: currentVoiceId }, ...chain];
-            setFallbackChain(chain);
+            // Note: setFallbackChain will be available after hook initialization
+            setTimeout(() => setFallbackChain(chain), 0);
           } else {
             // If no fallback chain, create one with just the primary model
-            setFallbackChain([{ modelId: config.model.id, voiceId: currentVoiceId }]);
+            setTimeout(() => setFallbackChain([{ modelId: config.model.id, voiceId: currentVoiceId }]), 0);
           }
         }
         if (config?.voice?.id) {
@@ -407,12 +390,9 @@ const AIKnowledgePage = () => {
     }
   }, [promptsError, showError]);
 
-  // Fetch AI models (discovered from OpenAI)
-  const { data: models = [], error: modelsError } = useQuery({
-    queryKey: ['ai-models'],
-    queryFn: () => aiService.getModels(),
-  });
-
+  // Use custom hooks for models and voices
+  const { models, error: modelsError } = useAIModels();
+  
   // Handle AI models errors
   useEffect(() => {
     if (modelsError) {
@@ -436,81 +416,18 @@ const AIKnowledgePage = () => {
     }
   }, [watch('selectedModel')]);
 
-  // Fetch voices (discovered from OpenAI)
-  const { data: voices = [], error: voicesError } = useQuery({
-    queryKey: ['voices'],
-    queryFn: () => voiceService.getVoices(),
-  });
+  // Use model/voice compatibility hook
+  const selectedModelId = watch('selectedModel');
+  const selectedVoiceId = watch('selectedVoice');
+  const { voices, compatibleVoices, getCompatibleVoices: getCompatibleVoicesForModel } = useModelVoiceCompatibility(selectedModelId, selectedVoiceId, setValue);
 
-  // Handle voices errors
-  useEffect(() => {
-    if (voicesError) {
-      console.error('Voices Error:', voicesError);
-      showError('Failed to load voices');
-    }
-  }, [voicesError, showError]);
-
-  // Get compatible voices for the selected model
-  const getCompatibleVoices = useCallback((modelId) => {
-    if (!modelId || !Array.isArray(voices) || !Array.isArray(models)) {
-      return voices || [];
-    }
-
-    // Find the selected model
-    const selectedModel = models.find(m => m.id === modelId);
-    if (!selectedModel) {
-      return voices || [];
-    }
-
-    // Check model capabilities
-    const modelSupportsRealtime = selectedModel.capabilities?.realtime || 
-                                   modelId.includes('realtime') || 
-                                   modelId.includes('gpt-realtime');
-    
-    const modelSupportsTTS = modelId.includes('tts') || 
-                             modelId.includes('tts-1');
-    
-    const modelSupportsAudio = selectedModel.capabilities?.audio || 
-                               modelSupportsRealtime || 
-                               modelSupportsTTS ||
-                               modelId.includes('whisper');
-
-    // Filter voices based on model type
-    if (modelSupportsRealtime) {
-      // Realtime models: show only voices with realtime capability
-      return voices.filter(voice => voice.capabilities?.realtime === true);
-    } else if (modelSupportsTTS) {
-      // TTS models: show all voices (TTS models generally support all voices)
-      return voices;
-    } else if (modelSupportsAudio) {
-      // Other audio models: show all voices
-      return voices;
-    } else {
-      // Non-audio models: no voices available
-      return [];
-    }
-  }, [voices, models]);
-
-  // Clear voice selection when model changes and current voice is incompatible
-  const selectedModelValue = watch('selectedModel');
-  const selectedVoiceValue = watch('selectedVoice');
-  
-  useEffect(() => {
-    if (selectedModelValue && selectedVoiceValue) {
-      const compatibleVoices = getCompatibleVoices(selectedModelValue);
-      const isCurrentVoiceCompatible = compatibleVoices.some(v => v.id === selectedVoiceValue);
-      
-      // If current voice is not compatible with new model, clear it
-      if (!isCurrentVoiceCompatible) {
-        setValue('selectedVoice', '');
-      }
-    }
-  }, [selectedModelValue, selectedVoiceValue, setValue, getCompatibleVoices]);
+  // Use fallback chain hook (handles drag/drop and removal)
+  const { fallbackChain, setFallbackChain, handleDragEnd: handleFallbackChainDragEnd, removeFromChain, addToChain } = useFallbackChain([], selectedModelId);
 
   // Fetch vector store status - use the same working endpoint as Knowledge Base Management
   const { data: vectorStoreData, isLoading: vectorStoreLoading, error: vectorStoreError } = useQuery({
     queryKey: ['vector-store-status'],
-    queryFn: vectorStoreService.getStatus,
+    queryFn: () => vectorStoreService.getStatus(),
   });
 
   // Handle vector store status data
@@ -533,7 +450,7 @@ const AIKnowledgePage = () => {
   // Fetch migration status
   const { data: migrationData, isLoading: migrationLoading, error: migrationError } = useQuery({
     queryKey: ['migration-status'],
-    queryFn: vectorStoreService.getMigrationStatus,
+    queryFn: () => vectorStoreService.getMigrationStatus(),
     refetchInterval: 5000, // Poll every 5 seconds when migration is running
   });
 
@@ -554,7 +471,7 @@ const AIKnowledgePage = () => {
   // Fetch drift detection status
   const { data: driftStatusData, isLoading: driftLoading, error: driftError } = useQuery({
     queryKey: ['drift-status'],
-    queryFn: driftService.getDriftStatus,
+    queryFn: () => driftService.getDriftStatus(),
   });
 
   // Handle drift status data
@@ -576,7 +493,7 @@ const AIKnowledgePage = () => {
   // Fetch reingest status
   const { data: reingestStatusData, isLoading: reingestLoading, error: reingestError } = useQuery({
     queryKey: ['reingest-status'],
-    queryFn: reingestService.getReingestStatus,
+    queryFn: () => reingestService.getReingestStatus(),
   });
 
   // Handle reingest status data
@@ -1090,57 +1007,18 @@ const AIKnowledgePage = () => {
     });
   };
 
-  // Fallback chain handlers
-  const handleDragEnd = (event) => {
-    const { active, over } = event;
-    
-    if (over && active.id !== over.id) {
-      setFallbackChain((items) => {
-        const oldIndex = items.findIndex(item => {
-          const itemId = typeof item === 'string' ? item : item.modelId;
-          return itemId === active.id;
-        });
-        const newIndex = items.findIndex(item => {
-          const itemId = typeof item === 'string' ? item : item.modelId;
-          return itemId === over.id;
-        });
-        if (oldIndex === -1 || newIndex === -1) return items;
-        return arrayMove(items, oldIndex, newIndex);
-      });
-    }
-  };
-
-  const handleRemoveFromFallbackChain = (index) => {
-    const newChain = fallbackChain.filter((_, i) => i !== index);
-    setFallbackChain(newChain);
-  };
+  // Fallback chain handlers (using hook methods)
+  const handleDragEnd = handleFallbackChainDragEnd;
+  
+  const handleRemoveFromFallbackChain = removeFromChain;
 
   // Save model/voice selection and add model to fallback chain (UI only)
   const handleSaveModelVoice = () => {
     const selectedModel = watch('selectedModel');
     const selectedVoice = watch('selectedVoice');
 
-    // Check that both model and voice are selected
-    if (!selectedModel || !selectedVoice) {
-      showError('Please select both a model and a voice');
-      return;
-    }
-
-    // Check if the exact model+voice combination already exists in fallback chain
-    const exists = fallbackChain.some(item => {
-      const itemModelId = typeof item === 'string' ? item : item.modelId;
-      const itemVoiceId = typeof item === 'string' ? undefined : item.voiceId;
-      return itemModelId === selectedModel && itemVoiceId === selectedVoice;
-    });
-
-    if (exists) {
-      showError('This model and voice combination is already in the fallback chain');
-      return;
-    }
-
-    // Add selected model+voice to the END of fallback chain
-    setFallbackChain([...fallbackChain, { modelId: selectedModel, voiceId: selectedVoice }]);
-    showSuccess('Model and voice added to fallback chain');
+    // Use hook's addToChain method which handles validation and adding to chain
+    addToChain(selectedModel, selectedVoice);
   };
 
   // Sortable item component
@@ -2136,350 +2014,17 @@ const AIKnowledgePage = () => {
             </Paper>
 
             {/* Model & Voice Selection with Fallback Chain */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Model & Voice Configuration
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Select the primary AI model and configure fallback chain. The system will automatically use the next model in the chain if the primary model fails.
-              </Typography>
-              
-              <Box sx={{ display: 'flex', gap: 3, mb: 3, alignItems: 'center' }}>
-                <Controller
-                  name="selectedModel"
+            <ModelVoiceSelection 
                   control={control}
-                  render={({ field }) => (
-                    <FormControl sx={{ minWidth: 200 }}>
-                      <InputLabel>Primary AI Model</InputLabel>
-                      <Select {...field} label="Primary AI Model">
-                        {(Array.isArray(models) ? models : []).map((model) => (
-                          <MenuItem key={model.id} value={model.id}>
-                            {model.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  )}
-                />
-
-                <Controller
-                  name="selectedVoice"
-                  control={control}
-                  render={({ field }) => {
-                    const selectedModel = watch('selectedModel');
-                    const compatibleVoices = getCompatibleVoices(selectedModel);
-                    
-                    return (
-                      <FormControl sx={{ minWidth: 200 }}>
-                        <InputLabel>Voice</InputLabel>
-                        <Select 
-                          {...field} 
-                          label="Voice"
-                          disabled={!selectedModel}
-                        >
-                          {compatibleVoices.length > 0 ? (
-                            compatibleVoices.map((voice) => (
-                              <MenuItem key={voice.id} value={voice.id}>
-                                {voice.name}
-                              </MenuItem>
-                            ))
-                          ) : (
-                            <MenuItem disabled>
-                              {selectedModel ? 'No compatible voices available' : 'Select a model first'}
-                            </MenuItem>
-                          )}
-                        </Select>
-                      </FormControl>
-                    );
-                  }}
-                />
-
-                <Button
-                  variant="contained"
-                  startIcon={<Save />}
-                  onClick={handleSaveModelVoice}
-                  disabled={
-                    !watch('selectedModel') || 
-                    !watch('selectedVoice') || 
-                    getCompatibleVoices(watch('selectedModel')).length === 0
-                  }
-                >
-                  Save
-                </Button>
-              </Box>
-
-              {/* Fallback Chain Configuration */}
-              <Box sx={{ mt: 4 }}>
-                <Typography variant="subtitle1" gutterBottom fontWeight="bold">
-                  Model Fallback Chain
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Configure the order of models to use if the primary model is unavailable. Models are tried in sequence from top to bottom.
-                </Typography>
-
-                {fallbackChain.length === 0 ? (
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    No fallback chain configured. Add models below to create a fallback sequence.
-                  </Alert>
-                ) : (
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <SortableContext
-                      items={fallbackChain.map(item => typeof item === 'string' ? item : item.modelId)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <Box sx={{ mb: 2 }}>
-                        {fallbackChain.map((item, index) => {
-                          const modelId = typeof item === 'string' ? item : item.modelId;
-                          return <SortableItem key={`${modelId}-${index}`} id={modelId} index={index} />;
-                        })}
-                      </Box>
-                    </SortableContext>
-                  </DndContext>
-                )}
-
-                {/* Visual Chain Representation */}
-                {fallbackChain.length > 0 && (
-                  <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-                    <Typography variant="caption" color="text.secondary" gutterBottom>
-                      Fallback Sequence:
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                      {fallbackChain.map((item, index) => {
-                        const modelId = typeof item === 'string' ? item : item.modelId;
-                        const voiceId = typeof item === 'string' ? undefined : item.voiceId;
-                        const model = models.find(m => m.id === modelId);
-                        const voice = voices.find(v => v.id === voiceId);
-                        const label = model?.name || modelId;
-                        const voiceLabel = voice ? ` (${voice.name})` : '';
-                        
-                        // Build tooltip content with capability details
-                        const tooltipContent = model ? (
-                          <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 'bold' }}>
-                              {model.name}
-                            </Typography>
-                            <Typography variant="caption" display="block">
-                              Context: {model.contextLimit || model.context_limit || 'N/A'} tokens
-                            </Typography>
-                            <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                              Capabilities: {[
-                                model.supportsTools && 'Tools',
-                                model.supportsAudio && 'Audio',
-                                model.capabilities?.fileSearch && 'File Search',
-                                model.capabilities?.realtime && 'Realtime'
-                              ].filter(Boolean).join(', ') || 'None'}
-                            </Typography>
-                            {model.rateLimits && (
-                              <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                                Rate: {model.rateLimits.requestsPerMinute} req/min, {model.rateLimits.tokensPerMinute?.toLocaleString() || 'N/A'} tokens/min
-                              </Typography>
-                            )}
-                            {model.knownLimitations && model.knownLimitations.length > 0 && (
-                              <Typography variant="caption" display="block" sx={{ mt: 0.5, color: 'warning.main' }}>
-                                Limitations: {model.knownLimitations.join(', ')}
-                              </Typography>
-                            )}
-                          </Box>
-                        ) : `Model: ${modelId}`;
-                        
-                        return (
-                          <React.Fragment key={`${modelId}-${index}`}>
-                            <Tooltip title={tooltipContent} arrow placement="top">
-                              <Chip
-                                label={label + voiceLabel}
-                                size="small"
-                                color={index === 0 ? 'primary' : 'default'}
-                                sx={{
-                                  cursor: 'help',
-                                  '&:hover': {
-                                    opacity: 0.8
-                                  }
-                                }}
-                              />
-                            </Tooltip>
-                            {index < fallbackChain.length - 1 && (
-                              <ArrowForward fontSize="small" color="action" />
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </Box>
-                  </Box>
-                )}
-              </Box>
-            </Paper>
+              watch={watch}
+              fallbackChain={fallbackChain}
+              setFallbackChain={setFallbackChain}
+              showFallbackChain={true}
+              showDefaultVoice={false}
+            />
 
             {/* AI Parameters */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                AI Parameters
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Configure AI behavior parameters including temperature, top_p, max tokens, and speech rate.
-              </Typography>
-              {modelParameters && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  Model-specific parameter ranges loaded. Context limit: {modelParameters.context_limit?.toLocaleString() || 'N/A'} tokens.
-                </Alert>
-              )}
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3, alignItems: 'flex-start' }}>
-                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Temperature: {watch('temperature')}
-                    {modelParameters?.temperature?.default && (
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                        Recommended: {modelParameters.temperature.default}
-                      </Typography>
-                    )}
-                  </Typography>
-                  <Controller
-                    name="temperature"
-                    control={control}
-                    render={({ field }) => {
-                      const tempParams = modelParameters?.temperature || { min: 0, max: 1, step: 0.1 };
-                      return (
-                        <>
-                          <Slider
-                            {...field}
-                            value={field.value ?? 0.4}
-                            min={tempParams.min}
-                            max={tempParams.max}
-                            step={tempParams.step}
-                            marks
-                            valueLabelDisplay="auto"
-                          />
-                          {modelParameters?.temperature && (field.value < modelParameters.temperature.min || field.value > modelParameters.temperature.max) && (
-                            <Alert severity="warning" sx={{ mt: 1 }}>
-                              Value outside recommended range ({modelParameters.temperature.min} - {modelParameters.temperature.max})
-                            </Alert>
-                          )}
-                        </>
-                      );
-                    }}
-                  />
-                </Box>
-
-                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Top-P: {watch('topP')}
-                    {modelParameters?.top_p?.default && (
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                        Recommended: {modelParameters.top_p.default}
-                      </Typography>
-                    )}
-                  </Typography>
-                  <Controller
-                    name="topP"
-                    control={control}
-                    render={({ field }) => {
-                      const topPParams = modelParameters?.top_p || { min: 0, max: 1, step: 0.1 };
-                      return (
-                        <>
-                          <Slider
-                            {...field}
-                            value={field.value ?? 1.0}
-                            min={topPParams.min}
-                            max={topPParams.max}
-                            step={topPParams.step}
-                            marks
-                            valueLabelDisplay="auto"
-                          />
-                          {modelParameters?.top_p && (field.value < modelParameters.top_p.min || field.value > modelParameters.top_p.max) && (
-                            <Alert severity="warning" sx={{ mt: 1 }}>
-                              Value outside recommended range ({modelParameters.top_p.min} - {modelParameters.top_p.max})
-                            </Alert>
-                          )}
-                        </>
-                      );
-                    }}
-                  />
-                </Box>
-
-                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Max Tokens
-                    {modelParameters?.max_tokens?.default && (
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                        Recommended: {modelParameters.max_tokens.default} (Max: {modelParameters.max_tokens.max?.toLocaleString() || 'N/A'})
-                      </Typography>
-                    )}
-                  </Typography>
-                  <Controller
-                    name="maxTokens"
-                    control={control}
-                    render={({ field }) => {
-                      const maxTokensParams = modelParameters?.max_tokens || { min: 50, max: 500, step: 10 };
-                      const maxValue = Math.min(maxTokensParams.max, 5000);
-                      return (
-                        <>
-                          <TextField
-                            {...field}
-                            type="number"
-                            value={field.value ?? 150}
-                            onChange={(e) => {
-                              const value = parseInt(e.target.value, 10) || 0;
-                              field.onChange(value);
-                            }}
-                            inputProps={{
-                              min: maxTokensParams.min,
-                              max: maxValue,
-                              step: maxTokensParams.step,
-                              style: { 
-                                textAlign: 'center',
-                                padding: '8px'
-                              }
-                            }}
-                            sx={{ 
-                              mt: 0,
-                              '& .MuiOutlinedInput-root': {
-                                height: '40px',
-                                padding: '0 8px'
-                              }
-                            }}
-                            size="small"
-                            variant="outlined"
-                            fullWidth
-                          />
-                          {modelParameters?.max_tokens && field.value > modelParameters.max_tokens.max && (
-                            <Alert severity="warning" sx={{ mt: 1 }}>
-                              Value exceeds model's maximum of {modelParameters.max_tokens.max.toLocaleString()} tokens
-                            </Alert>
-                          )}
-                        </>
-                      );
-                    }}
-                  />
-                </Box>
-
-                <Box sx={{ minHeight: '140px', display: 'flex', flexDirection: 'column' }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Speech Rate: {watch('speechRate')}
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, visibility: 'hidden' }}>
-                      &nbsp;
-                    </Typography>
-                  </Typography>
-                  <Controller
-                    name="speechRate"
-                    control={control}
-                    render={({ field }) => (
-                      <Slider
-                        {...field}
-                        value={field.value ?? 1.0}
-                        min={0.5}
-                        max={2.0}
-                        step={0.1}
-                        marks
-                        valueLabelDisplay="auto"
-                      />
-                    )}
-                  />
-                </Box>
-              </Box>
-            </Paper>
+            <ModelParameters control={control} watch={watch} modelId={watch('selectedModel')} />
 
             {/* Uncertainty Gate Configuration */}
             <Paper sx={{ p: 3 }}>
@@ -2568,493 +2113,17 @@ const AIKnowledgePage = () => {
             </Paper>
 
             {/* Model Capability Registry - Simplified View */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" gutterBottom>
-                  Active Model Capabilities
-                </Typography>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<Refresh />}
-                  onClick={() => {
-                    queryClient.invalidateQueries(['model-capabilities']);
-                  }}
-                >
-                  Refresh
-                </Button>
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                View capabilities for your primary model and fallback chain models.
-              </Typography>
-
-              {capabilitiesLoading ? (
-                <LinearProgress sx={{ mb: 2 }} />
-              ) : (() => {
-                const selectedModel = watch('selectedModel');
-                const allCapabilities = capabilitiesData?.capabilities || [];
-                
-                // Get primary model and fallback chain models
-                const primaryModelId = selectedModel;
-                const fallbackModelIds = fallbackChain.map(item => 
-                  typeof item === 'string' ? item : item.modelId
-                ).filter(id => id && id !== primaryModelId);
-                
-                // Filter capabilities to only show active models
-                const activeModels = allCapabilities.filter(model => 
-                  model.id === primaryModelId || fallbackModelIds.includes(model.id)
-                );
-                
-                if (activeModels.length === 0) {
-                  return (
-                    <Alert severity="info">
-                      No active models selected. Please select a primary model in the Model Selection section above.
-                    </Alert>
-                  );
-                }
-                
-                return (
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell><strong>Model Name</strong></TableCell>
-                          <TableCell align="right"><strong>Context Limit</strong></TableCell>
-                          <TableCell align="center"><strong>Tools</strong></TableCell>
-                          <TableCell align="center"><strong>Audio</strong></TableCell>
-                          <TableCell align="center"><strong>File Search</strong></TableCell>
-                          <TableCell align="center"><strong>Details</strong></TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {activeModels.map((model, index) => {
-                          const isPrimary = model.id === primaryModelId;
-                          return (
-                            <TableRow 
-                              key={model.id}
-                              sx={{ 
-                                bgcolor: isPrimary ? 'action.selected' : 'transparent',
-                                '&:hover': { bgcolor: 'action.hover' }
-                              }}
-                            >
-                              <TableCell>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Typography variant="body2" fontWeight={isPrimary ? "bold" : "medium"}>
-                                    {model.name || model.id}
-                                  </Typography>
-                                  {isPrimary && (
-                                    <Chip 
-                                      label="Primary" 
-                                      size="small" 
-                                      color="primary"
-                                      variant="outlined"
-                                    />
-                                  )}
-                                  {!isPrimary && index === 1 && (
-                                    <Chip 
-                                      label="Fallback" 
-                                      size="small" 
-                                      color="default"
-                                      variant="outlined"
-                                    />
-                                  )}
-                                </Box>
-                              </TableCell>
-                              <TableCell align="right">
-                                {model.contextLimit 
-                                  ? model.contextLimit.toLocaleString() 
-                                  : 'N/A'}
-                              </TableCell>
-                              <TableCell align="center">
-                                <Chip 
-                                  label={model.supportsTools ? 'Yes' : 'No'} 
-                                  color={model.supportsTools ? 'success' : 'default'}
-                                  size="small"
-                                />
-                              </TableCell>
-                              <TableCell align="center">
-                                <Chip 
-                                  label={model.supportsAudio ? 'Yes' : 'No'} 
-                                  color={model.supportsAudio ? 'success' : 'default'}
-                                  size="small"
-                                />
-                              </TableCell>
-                              <TableCell align="center">
-                                <Chip 
-                                  label={model.capabilities?.fileSearch ? 'Yes' : 'No'} 
-                                  color={model.capabilities?.fileSearch ? 'success' : 'default'}
-                                  size="small"
-                                />
-                              </TableCell>
-                              <TableCell align="center">
-                                <Tooltip 
-                                  title={
-                                    <Box>
-                                      <Typography variant="caption" display="block" fontWeight="bold">
-                                        Additional Details:
-                                      </Typography>
-                                      {model.defaultTemperature && (
-                                        <Typography variant="caption" display="block">
-                                          Default Temp: {model.defaultTemperature}
-                                        </Typography>
-                                      )}
-                                      {model.defaultTopP && (
-                                        <Typography variant="caption" display="block">
-                                          Default Top-P: {model.defaultTopP}
-                                        </Typography>
-                                      )}
-                                      {model.rateLimits && (
-                                        <>
-                                          <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                                            Rate Limits:
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            • {model.rateLimits.requestsPerMinute || 'N/A'} req/min
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            • {model.rateLimits.tokensPerMinute?.toLocaleString() || 'N/A'} tokens/min
-                                          </Typography>
-                                        </>
-                                      )}
-                                      {model.knownLimitations && model.knownLimitations.length > 0 && (
-                                        <>
-                                          <Typography variant="caption" display="block" sx={{ mt: 0.5 }} fontWeight="bold">
-                                            Limitations:
-                                          </Typography>
-                                          {model.knownLimitations.map((limitation, idx) => (
-                                            <Typography key={idx} variant="caption" display="block">
-                                              • {limitation}
-                                            </Typography>
-                                          ))}
-                                        </>
-                                      )}
-                                    </Box>
-                                  }
-                                >
-                                  <IconButton size="small">
-                                    <Visibility fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                );
-              })()}
-            </Paper>
+            <ModelCapabilityRegistry 
+              mode="simplified" 
+              selectedModelId={watch('selectedModel')} 
+              fallbackChain={fallbackChain} 
+            />
 
             {/* Language/Voice Mapping Configuration */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" gutterBottom>
-                  Language/Voice Mapping Configuration
-                </Typography>
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<Save />}
-                  onClick={handleSaveLanguageMappings}
-                  disabled={mappingsLoading}
-                >
-                  Save Mappings
-                </Button>
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Configure voice selection for each supported language. Preview voices before saving.
-              </Typography>
-
-              {mappingsLoading ? (
-                <LinearProgress sx={{ mb: 2 }} />
-              ) : languageMappings.length === 0 ? (
-                <Alert severity="info">
-                  No language mappings found. Default mappings will be created on first load.
-                </Alert>
-              ) : (
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Language</strong></TableCell>
-                        <TableCell><strong>Locale Code</strong></TableCell>
-                        <TableCell><strong>Voice</strong></TableCell>
-                        <TableCell align="center"><strong>Preview</strong></TableCell>
-                        <TableCell align="center"><strong>Status</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {languageMappings.map((mapping) => {
-                        // Filter voices by language/locale if possible
-                        const compatibleVoices = voices.filter(voice => {
-                          if (!voice.language) return true;
-                          // Try to match locale code
-                          return voice.language.toLowerCase().includes(mapping.localeCode.toLowerCase().split('-')[0]);
-                        });
-                        
-                        return (
-                          <TableRow key={mapping.languageCode}>
-                            <TableCell>
-                              <Typography variant="body2" fontWeight="medium">
-                                {mapping.languageName}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <Typography variant="body2" color="text.secondary">
-                                {mapping.localeCode}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <FormControl size="small" fullWidth>
-                                <Select
-                                  value={mapping.voiceId || ''}
-                                  onChange={(e) => {
-                                    const selectedVoice = voices.find(v => v.id === e.target.value);
-                                    handleLanguageMappingChange(
-                                      mapping.languageCode,
-                                      'voiceId',
-                                      e.target.value
-                                    );
-                                    if (selectedVoice) {
-                                      handleLanguageMappingChange(
-                                        mapping.languageCode,
-                                        'voiceName',
-                                        selectedVoice.name
-                                      );
-                                    }
-                                  }}
-                                  displayEmpty
-                                >
-                                  <MenuItem value="" disabled>
-                                    Select Voice
-                                  </MenuItem>
-                                  {(compatibleVoices.length > 0 ? compatibleVoices : voices).map((voice) => (
-                                    <MenuItem key={voice.id} value={voice.id}>
-                                      {voice.name} ({voice.language || 'N/A'})
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
-                            </TableCell>
-                            <TableCell align="center">
-                              <IconButton
-                                size="small"
-                                color="primary"
-                                onClick={() => handleVoicePreview(mapping.voiceId, mapping.languageCode)}
-                                disabled={!mapping.voiceId || (previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode)}
-                              >
-                                {previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode ? (
-                                  <Stop />
-                                ) : (
-                                  <PlayArrow />
-                                )}
-                              </IconButton>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Switch
-                                checked={mapping.isActive !== false}
-                                onChange={(e) => handleLanguageMappingChange(
-                                  mapping.languageCode,
-                                  'isActive',
-                                  e.target.checked
-                                )}
-                                size="small"
-                              />
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </Paper>
+            <LanguageVoiceMapping />
 
             {/* MCP Tools Configuration */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" gutterBottom>
-                  MCP Tools Configuration
-                </Typography>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<Refresh />}
-                  onClick={() => refetchMcpTools()}
-                  disabled={mcpToolsLoading}
-                >
-                  Refresh
-                </Button>
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Configure MCP (Model Context Protocol) tools including enable/disable status, rate limits, and domain allowlists.
-              </Typography>
-
-              {mcpToolsLoading ? (
-                <LinearProgress sx={{ mb: 2 }} />
-              ) : mcpTools.length === 0 ? (
-                <Alert severity="info">
-                  No MCP tools found. Tools will be discovered on system startup.
-                </Alert>
-              ) : (
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Tool</strong></TableCell>
-                        <TableCell><strong>Description</strong></TableCell>
-                        <TableCell align="center"><strong>Enabled</strong></TableCell>
-                        <TableCell><strong>Rate Limit</strong></TableCell>
-                        <TableCell><strong>Domain Allowlist</strong></TableCell>
-                        <TableCell><strong>Usage Stats</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {mcpTools.map((tool) => {
-                        const toolDomains = editingDomains[tool.name] || tool.domains || [];
-                        const newDomainInput = newDomainInputs[tool.name] || '';
-                        const rateLimitValue = rateLimitValues[tool.name] ?? tool.rateLimit?.limit ?? 100;
-                        
-                        return (
-                          <TableRow key={tool.name}>
-                            <TableCell>
-                              <Typography variant="body2" fontWeight="medium" fontFamily="monospace">
-                                {tool.name}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <Tooltip title={tool.description || 'No description available'}>
-                                <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {tool.description || 'N/A'}
-                                </Typography>
-                              </Tooltip>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Switch
-                                checked={tool.enabled}
-                                onChange={(e) => handleToggleTool(tool.name, e.target.checked)}
-                                size="small"
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <TextField
-                                  type="number"
-                                  value={rateLimitValue}
-                                  onChange={(e) => {
-                                    const value = parseInt(e.target.value, 10);
-                                    if (!isNaN(value)) {
-                                      setRateLimitValues(prev => ({ ...prev, [tool.name]: value }));
-                                    }
-                                  }}
-                                  onBlur={(e) => {
-                                    const value = parseInt(e.target.value, 10);
-                                    if (!isNaN(value) && value !== tool.rateLimit?.limit) {
-                                      handleUpdateRateLimit(tool.name, value);
-                                    }
-                                  }}
-                                  inputProps={{
-                                    min: 1,
-                                    max: 1000,
-                                    style: { textAlign: 'center', width: '80px' }
-                                  }}
-                                  size="small"
-                                  sx={{ width: '100px' }}
-                                />
-                                <Typography variant="caption" color="text.secondary">
-                                  /min
-                                </Typography>
-                              </Box>
-                            </TableCell>
-                            <TableCell>
-                              <Box sx={{ minWidth: 250 }}>
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                                  {toolDomains.length > 0 ? (
-                                    toolDomains.map((domain, idx) => (
-                                      <Chip
-                                        key={idx}
-                                        label={domain}
-                                        size="small"
-                                        onDelete={() => handleRemoveDomain(tool.name, domain)}
-                                        color="primary"
-                                        variant="outlined"
-                                      />
-                                    ))
-                                  ) : (
-                                    <Typography variant="caption" color="text.secondary" fontStyle="italic">
-                                      All domains allowed
-                                    </Typography>
-                                  )}
-                                </Box>
-                                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                  <TextField
-                                    placeholder="Add domain"
-                                    value={newDomainInput}
-                                    onChange={(e) => {
-                                      const value = e.target.value;
-                                      setNewDomainInputs(prev => {
-                                        // Only update if value actually changed to prevent unnecessary re-renders
-                                        if (prev[tool.name] === value) return prev;
-                                        return { ...prev, [tool.name]: value };
-                                      });
-                                    }}
-                                    onKeyPress={(e) => {
-                                      if (e.key === 'Enter') {
-                                        handleAddDomain(tool.name, newDomainInput);
-                                      }
-                                    }}
-                                    size="small"
-                                    sx={{ flex: 1 }}
-                                  />
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => handleAddDomain(tool.name, newDomainInput)}
-                                    disabled={!newDomainInput.trim()}
-                                  >
-                                    Add
-                                  </Button>
-                                  {(() => {
-                                    const originalDomains = tool.domains || [];
-                                    const hasChanges = toolDomains.length !== originalDomains.length || 
-                                      toolDomains.some((domain, idx) => domain !== (originalDomains[idx] || ''));
-                                    return hasChanges ? (
-                                      <Button
-                                        size="small"
-                                        variant="contained"
-                                        onClick={() => handleSaveDomains(tool.name)}
-                                      >
-                                        Save
-                                      </Button>
-                                    ) : null;
-                                  })()}
-                                </Box>
-                              </Box>
-                            </TableCell>
-                            <TableCell>
-                              <Box>
-                                <Typography variant="caption" display="block">
-                                  Used: {tool.usageCount || 0} times
-                                </Typography>
-                                <Typography variant="caption" display="block" color="text.secondary">
-                                  {tool.lastUsed ? formatDateTime(tool.lastUsed) : 'Never'}
-                                </Typography>
-                                {tool.rateLimit && (
-                                  <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
-                                    Current: {tool.rateLimit.current}/{tool.rateLimit.limit}
-                                  </Typography>
-                                )}
-                              </Box>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </Paper>
+            <MCPToolsConfig showSystemControls={false} />
 
             {/* Unified Save/Cancel Buttons */}
             <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 4, mb: 2 }}>

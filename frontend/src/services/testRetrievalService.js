@@ -1,35 +1,66 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const testRetrievalService = {
-  async testRetrieval(options = {}) {
-    const response = await authenticatedApiClient.post('/api/test-retrieval/test', options);
-    return response.data;
-  },
-
-  async testSpecificQuery(query, options = {}) {
-    const response = await authenticatedApiClient.post('/api/test-retrieval/query', { query, ...options });
-    return response.data;
-  },
-
-  async getTestQueries() {
-    const response = await authenticatedApiClient.get('/api/test-retrieval/queries');
-    return response.data;
-  },
-
-  async addTestQuery(query) {
-    const response = await authenticatedApiClient.post('/api/test-retrieval/queries', { query });
-    return response.data;
-  },
-
-  async removeTestQuery(query) {
-    const response = await authenticatedApiClient.delete('/api/test-retrieval/queries', { data: { query } });
-    return response.data;
+/**
+ * Test Retrieval Service
+ * Handles retrieval testing and query management
+ * @extends BaseService
+ */
+class TestRetrievalService extends BaseService {
+  constructor() {
+    super('/api/test-retrieval', {
+      dataPath: null,
+      normalizeResponse: true
+    });
   }
-};
 
+  /**
+   * Test retrieval
+   * @param {Object} options - Test options
+   * @returns {Promise<Object>} Test result
+   */
+  async testRetrieval(options = {}) {
+    return this.post('/test', options);
+  }
+
+  /**
+   * Test specific query
+   * @param {string} query - Query to test
+   * @param {Object} options - Test options
+   * @returns {Promise<Object>} Test result
+   */
+  async testSpecificQuery(query, options = {}) {
+    return this.post('/query', { query, ...options });
+  }
+
+  /**
+   * Get test queries
+   * @returns {Promise<Array<string>>} Array of test queries
+   */
+  async getTestQueries() {
+    return this.get('/queries');
+  }
+
+  /**
+   * Add test query
+   * @param {string} query - Query to add
+   * @returns {Promise<Object>} Add result
+   */
+  async addTestQuery(query) {
+    return this.post('/queries', { query });
+  }
+
+  /**
+   * Remove test query
+   * @param {string} query - Query to remove
+   * @returns {Promise<Object>} Remove result
+   */
+  async removeTestQuery(query) {
+    return this.delete('/queries', {
+      data: { query }
+    });
+  }
+}
+
+// Export singleton instance
+const testRetrievalService = new TestRetrievalService();
 export default testRetrievalService;
-
-
-
-
-

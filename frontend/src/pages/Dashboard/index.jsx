@@ -81,17 +81,18 @@ const Dashboard = () => {
 
         const dashboardData = await dashboardService.getDashboardAnalytics();
 
-        if (dashboardData.success) {
+        if (dashboardData.success && dashboardData.data) {
+          const data = dashboardData.data;
           // Update metrics
           setMetrics({
-            totalCalls: dashboardData.metrics.totalCalls,
-            activeCalls: dashboardData.metrics.activeCalls,
-            bookings: dashboardData.metrics.totalBookings,
-            users: dashboardData.metrics.totalUsers
+            totalCalls: data.metrics?.totalCalls || 0,
+            activeCalls: data.metrics?.activeCalls || 0,
+            bookings: data.metrics?.totalBookings || 0,
+            users: data.metrics?.totalUsers || 0
           });
 
           // Update active calls
-          setActiveCalls(dashboardData.liveCalls || []);
+          setActiveCalls(data.liveCalls || []);
 
         } else {
           console.error('❌ Dashboard API returned error:', dashboardData.error);
@@ -170,17 +171,18 @@ const Dashboard = () => {
 
       const dashboardData = await dashboardService.getDashboardAnalytics();
 
-      if (dashboardData.success) {
+      if (dashboardData.success && dashboardData.data) {
+        const data = dashboardData.data;
         // Update metrics
         setMetrics({
-          totalCalls: dashboardData.metrics.totalCalls,
-          activeCalls: dashboardData.metrics.activeCalls,
-          bookings: dashboardData.metrics.totalBookings,
-          users: dashboardData.metrics.totalUsers
+          totalCalls: data.metrics?.totalCalls || 0,
+          activeCalls: data.metrics?.activeCalls || 0,
+          bookings: data.metrics?.totalBookings || 0,
+          users: data.metrics?.totalUsers || 0
         });
 
         // Update active calls
-        setActiveCalls(dashboardData.liveCalls || []);
+        setActiveCalls(data.liveCalls || []);
 
         showSuccess('Dashboard refreshed successfully');
       } else {
