@@ -1,18 +1,27 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const dashboardService = {
-  // Get comprehensive dashboard analytics
+/**
+ * Dashboard Service
+ * Handles dashboard analytics and metrics
+ * @extends BaseService
+ */
+class DashboardService extends BaseService {
+  constructor() {
+    super('/api/dashboard', {
+      dataPath: null,
+      normalizeResponse: true
+    });
+  }
+
+  /**
+   * Get comprehensive dashboard analytics
+   * @returns {Promise<Object>} Dashboard analytics data
+   */
   async getDashboardAnalytics() {
-    try {
-      console.log('🔄 Fetching dashboard analytics...');
-      const response = await authenticatedApiClient.get('/api/dashboard/analytics');
-      // console.log('✅ Dashboard analytics received:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error('❌ Error fetching dashboard analytics:', error);
-      throw error;
-    }
-  },
-};
+    return this.get('/analytics');
+  }
+}
 
+// Export singleton instance
+const dashboardService = new DashboardService();
 export default dashboardService;

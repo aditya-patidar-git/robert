@@ -1,35 +1,68 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const promptService = {
-  // Get all prompts
-  async getAllPrompts() {
-    const response = await authenticatedApiClient.get('/api/admin/prompt');
-    return response.data.prompts || [];
-  },
-
-  // Create new prompt
-  async createPrompt(promptData) {
-    const response = await authenticatedApiClient.post('/api/admin/prompt', promptData);
-    return response.data.prompt;
-  },
-
-  // Update prompt
-  async updatePrompt(promptId, promptData) {
-    const response = await authenticatedApiClient.put(`/api/admin/prompt/${promptId}`, promptData);
-    return response.data.prompt;
-  },
-
-  // Delete prompt
-  async deletePrompt(promptId) {
-    const response = await authenticatedApiClient.delete(`/api/admin/prompt/${promptId}`);
-    return response.data;
-  },
-
-  // Get prompt by ID
-  async getPrompt(promptId) {
-    const response = await authenticatedApiClient.get(`/api/admin/prompt/${promptId}`);
-    return response.data.prompt;
+/**
+ * Prompt Service
+ * Handles prompt management
+ * @extends BaseService
+ */
+class PromptService extends BaseService {
+  constructor() {
+    super('/api/admin/prompt', {
+      dataPath: 'prompts',
+      normalizeResponse: true
+    });
   }
-};
 
+  /**
+   * Get all prompts
+   * @returns {Promise<Array<Object>>} Array of prompt objects
+   */
+  async getAllPrompts() {
+    const response = await this.get('');
+    return response.data?.prompts || response.data || [];
+  }
+
+  /**
+   * Create new prompt
+   * @param {Object} promptData - Prompt data
+   * @returns {Promise<Object>} Created prompt
+   */
+  async createPrompt(promptData) {
+    const response = await this.post('', promptData);
+    return response.data?.prompt || response.data;
+  }
+
+  /**
+   * Update prompt
+   * @param {string} promptId - Prompt ID
+   * @param {Object} promptData - Updated prompt data
+   * @returns {Promise<Object>} Updated prompt
+   */
+  async updatePrompt(promptId, promptData) {
+    const response = await this.put(`/${promptId}`, promptData);
+    return response.data?.prompt || response.data;
+  }
+
+  /**
+   * Delete prompt
+   * @param {string} promptId - Prompt ID
+   * @returns {Promise<Object>} Deletion result
+   */
+  async deletePrompt(promptId) {
+    return this.delete(`/${promptId}`);
+  }
+
+  /**
+   * Get prompt by ID
+   * @param {string} promptId - Prompt ID
+   * @returns {Promise<Object>} Prompt object
+   */
+  async getPrompt(promptId) {
+    const response = await this.get(`/${promptId}`);
+    return response.data?.prompt || response.data;
+  }
+}
+
+// Export singleton instance
+const promptService = new PromptService();
 export default promptService;

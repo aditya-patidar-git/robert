@@ -1,21 +1,38 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const auditService = {
-  // Get audit logs
-  async getLogs(filters = {}) {
-    const response = await authenticatedApiClient.get('/api/admin/audit', {
-      params: filters
+/**
+ * Audit Service
+ * Handles audit log retrieval
+ * @extends BaseService
+ */
+class AuditService extends BaseService {
+  constructor() {
+    super('/api/admin/audit', {
+      dataPath: null,
+      normalizeResponse: true
     });
-    return response.data;
-  },
-
-  // Get user-specific audit logs
-  async getUserLogs(userId, filters = {}) {
-    const response = await authenticatedApiClient.get(`/api/admin/audit/user/${userId}`, {
-      params: filters
-    });
-    return response.data;
   }
-};
 
+  /**
+   * Get audit logs
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Array<Object>>} Array of audit log entries
+   */
+  async getLogs(filters = {}) {
+    return this.get('', filters);
+  }
+
+  /**
+   * Get user-specific audit logs
+   * @param {string} userId - User ID
+   * @param {Object} filters - Filter parameters
+   * @returns {Promise<Array<Object>>} Array of audit log entries
+   */
+  async getUserLogs(userId, filters = {}) {
+    return this.get(`/user/${userId}`, filters);
+  }
+}
+
+// Export singleton instance
+const auditService = new AuditService();
 export default auditService;

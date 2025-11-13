@@ -1,43 +1,73 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const flowParameterService = {
-  // Get all flow parameter overrides
+/**
+ * Flow Parameter Service
+ * Handles flow parameter overrides for different conversation flows
+ * @extends BaseService
+ */
+class FlowParameterService extends BaseService {
+  constructor() {
+    super('/api/admin/ai/flow-parameters', {
+      dataPath: 'overrides',
+      normalizeResponse: true
+    });
+  }
+
+  /**
+   * Get all flow parameter overrides
+   * @returns {Promise<Array<Object>>} Array of override objects
+   */
   async getFlowParameters() {
-    const response = await authenticatedApiClient.get('/api/admin/ai/flow-parameters');
-    return response.data.overrides || [];
-  },
+    const response = await this.get('');
+    return response.data?.overrides || response.data || [];
+  }
 
-  // Get specific flow parameter override
+  /**
+   * Get specific flow parameter override
+   * @param {string} flowType - Flow type
+   * @returns {Promise<Object>} Override object
+   */
   async getFlowParameter(flowType) {
-    const response = await authenticatedApiClient.get(`/api/admin/ai/flow-parameters/${flowType}`);
-    return response.data.override;
-  },
+    const response = await this.get(`/${flowType}`);
+    return response.data?.override || response.data;
+  }
 
-  // Create or update flow parameter override
+  /**
+   * Create or update flow parameter override
+   * @param {string} flowType - Flow type
+   * @param {Object} overrideData - Override data
+   * @returns {Promise<Object>} Created/updated override
+   */
   async createOrUpdateFlowOverride(flowType, overrideData) {
-    const response = await authenticatedApiClient.put(
-      `/api/admin/ai/flow-parameters/${flowType}`,
-      overrideData
-    );
-    return response.data.override;
-  },
+    const response = await this.put(`/${flowType}`, overrideData);
+    return response.data?.override || response.data;
+  }
 
-  // Delete flow parameter override
+  /**
+   * Delete flow parameter override
+   * @param {string} flowType - Flow type
+   * @returns {Promise<Object>} Deletion result
+   */
   async deleteFlowOverride(flowType) {
-    const response = await authenticatedApiClient.delete(`/api/admin/ai/flow-parameters/${flowType}`);
-    return response.data;
-  },
+    return this.delete(`/${flowType}`);
+  }
 
-  // Detect flow type from text (for testing)
+  /**
+   * Detect flow type from text (for testing)
+   * @param {string} text - Text to analyze
+   * @param {Array<Object>} transcript - Conversation transcript
+   * @param {Object} callContext - Call context
+   * @returns {Promise<Object>} Detection result
+   */
   async detectFlowType(text, transcript = [], callContext = {}) {
-    const response = await authenticatedApiClient.post('/api/admin/ai/flow-parameters/detect', {
+    return this.post('/detect', {
       text,
       transcript,
       callContext
     });
-    return response.data;
   }
-};
+}
 
+// Export singleton instance
+const flowParameterService = new FlowParameterService();
 export default flowParameterService;
-

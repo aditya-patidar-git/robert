@@ -1,80 +1,108 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const voiceService = {
-  // Get all available voices
+/**
+ * Voice Service
+ * Handles voice discovery, preview, and configuration
+ * @extends BaseService
+ */
+class VoiceService extends BaseService {
+  constructor() {
+    super('/api/admin/audio-telephony/voices', {
+      dataPath: 'voices',
+      normalizeResponse: true
+    });
+  }
+
+  /**
+   * Get all available voices
+   * @param {string|null} language - Optional language filter
+   * @param {boolean} forceRefresh - Force refresh from API
+   * @returns {Promise<Array<Object>>} Array of voice objects
+   */
   async getVoices(language = null, forceRefresh = false) {
     const params = {};
     if (language) params.language = language;
     if (forceRefresh) params.forceRefresh = true;
     
-    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/voices', { params });
-    const data = response.data;
+    const response = await this.get('', params);
     
-    // Handle the response structure from backend
-    if (data.status === 'success' && data.voices) {
-      return data.voices;
+    // Handle different response structures
+    if (response.data?.status === 'success' && response.data?.voices) {
+      return response.data.voices;
     }
     
-    // Fallback to original structure if response format is different
-    return data.voices || data || [];
-  },
+    return response.data?.voices || response.data || [];
+  }
 
-  // Get specific voice by ID
+  /**
+   * Get specific voice by ID
+   * @param {string} voiceId - Voice ID
+   * @returns {Promise<Object>} Voice object
+   */
   async getVoice(voiceId) {
-    const response = await authenticatedApiClient.get(`/api/admin/audio-telephony/voices/${voiceId}`);
-    const data = response.data;
+    const response = await this.get(`/${voiceId}`);
     
-    // Handle the response structure from backend
-    if (data.status === 'success' && data.voice) {
-      return data.voice;
+    // Handle different response structures
+    if (response.data?.status === 'success' && response.data?.voice) {
+      return response.data.voice;
     }
     
-    // Fallback to original structure if response format is different
-    return data.voice || data;
-  },
+    return response.data?.voice || response.data;
+  }
 
-  // Preview voice with custom text
+  /**
+   * Preview voice with custom text
+   * @param {string} voiceId - Voice ID
+   * @param {string} text - Text to preview
+   * @returns {Promise<Object>} Preview result
+   */
   async previewVoice(voiceId, text) {
-    const response = await authenticatedApiClient.post('/api/admin/audio-telephony/voices/preview', {
+    const response = await this.post('/preview', {
       voiceId,
       text
     });
-    const data = response.data;
     
-    // Handle the response structure from backend
-    if (data.status === 'success' && data.preview) {
-      return data.preview;
+    // Handle different response structures
+    if (response.data?.status === 'success' && response.data?.preview) {
+      return response.data.preview;
     }
     
-    // Fallback to original structure if response format is different
-    return data.preview || data;
-  },
-
-  // Set default voice
-  async setDefaultVoice(voiceId) {
-    const response = await authenticatedApiClient.patch(`/api/admin/audio-telephony/voices/${voiceId}/default`);
-    const data = response.data;
-    
-    // Handle the response structure from backend
-    if (data.status === 'success' && data.voice) {
-      return data.voice;
-    }
-    
-    // Fallback to original structure if response format is different
-    return data.voice || data;
-  },
-
-  // Get voice discovery status
-  async getDiscoveryStatus() {
-    const response = await authenticatedApiClient.get('/api/admin/audio-telephony/voices/discovery-status');
-    return response.data;
-  },
-
-  // Force voice discovery refresh
-  async refreshVoices() {
-    const response = await authenticatedApiClient.post('/api/admin/audio-telephony/voices/refresh');
-    return response.data;
+    return response.data?.preview || response.data;
   }
-};
 
+  /**
+   * Set default voice
+   * @param {string} voiceId - Voice ID
+   * @returns {Promise<Object>} Updated voice object
+   */
+  async setDefaultVoice(voiceId) {
+    const response = await this.patch(`/${voiceId}/default`);
+    
+    // Handle different response structures
+    if (response.data?.status === 'success' && response.data?.voice) {
+      return response.data.voice;
+    }
+    
+    return response.data?.voice || response.data;
+  }
+
+  /**
+   * Get voice discovery status
+   * @returns {Promise<Object>} Discovery status
+   */
+  async getDiscoveryStatus() {
+    return this.get('/discovery-status');
+  }
+
+  /**
+   * Force voice discovery refresh
+   * @returns {Promise<Object>} Refresh result
+   */
+  async refreshVoices() {
+    return this.post('/refresh');
+  }
+}
+
+// Export singleton instance
+const voiceService = new VoiceService();
 export default voiceService;

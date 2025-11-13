@@ -1,56 +1,92 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const systemService = {
-  // Get system configuration
+/**
+ * System Service
+ * Handles system configuration, MCP tools, models, and backups
+ * @extends BaseService
+ */
+class SystemService extends BaseService {
+  constructor() {
+    super('/api/system', {
+      dataPath: null,
+      normalizeResponse: true
+    });
+  }
+
+  /**
+   * Get system configuration
+   * @returns {Promise<Object>} System configuration
+   */
   async getSystemConfig() {
-    const response = await authenticatedApiClient.get('/api/system/config');
-    return response.data;
-  },
+    return this.get('/config');
+  }
 
-  // Update system configuration
+  /**
+   * Update system configuration
+   * @param {Object} configData - Configuration data
+   * @returns {Promise<Object>} Updated configuration
+   */
   async updateSystemConfig(configData) {
-    const response = await authenticatedApiClient.put('/api/system/config', configData);
-    return response.data;
-  },
+    return this.put('/config', configData);
+  }
 
-  // Get MCP tools
+  /**
+   * Get MCP tools
+   * @returns {Promise<Object>} MCP tools data
+   */
   async getMCPTools() {
-    const response = await authenticatedApiClient.get('/api/system/mcp-tools');
-    return response.data;
-  },
+    return this.get('/mcp-tools');
+  }
 
-  // Execute MCP tool
+  /**
+   * Execute MCP tool
+   * @param {string} toolName - Tool name
+   * @param {Object} parameters - Tool parameters
+   * @returns {Promise<Object>} Execution result
+   */
   async executeMCPTool(toolName, parameters) {
-    const response = await authenticatedApiClient.post('/api/system/mcp-tools/execute', {
+    return this.post('/mcp-tools/execute', {
       tool: toolName,
       parameters
     });
-    return response.data;
-  },
-
-  // Get available models
-  async getAvailableModels() {
-    const response = await authenticatedApiClient.get('/api/system/models');
-    return response.data;
-  },
-
-  // Update model configuration
-  async updateModelConfig(modelId, config) {
-    const response = await authenticatedApiClient.put(`/api/system/models/${modelId}`, config);
-    return response.data;
-  },
-
-  // System backup
-  async createBackup() {
-    const response = await authenticatedApiClient.post('/api/system/backup');
-    return response.data;
-  },
-
-  // System restore
-  async restoreBackup(backupId) {
-    const response = await authenticatedApiClient.post(`/api/system/restore/${backupId}`);
-    return response.data;
   }
-};
 
+  /**
+   * Get available models
+   * @returns {Promise<Object>} Available models
+   */
+  async getAvailableModels() {
+    return this.get('/models');
+  }
+
+  /**
+   * Update model configuration
+   * @param {string} modelId - Model ID
+   * @param {Object} config - Model configuration
+   * @returns {Promise<Object>} Updated model configuration
+   */
+  async updateModelConfig(modelId, config) {
+    return this.put(`/models/${modelId}`, config);
+  }
+
+  /**
+   * Create system backup
+   * @returns {Promise<Object>} Backup result
+   */
+  async createBackup() {
+    return this.post('/backup');
+  }
+
+  /**
+   * Restore system backup
+   * @param {string} backupId - Backup ID
+   * @returns {Promise<Object>} Restore result
+   */
+  async restoreBackup(backupId) {
+    return this.post(`/restore/${backupId}`);
+  }
+}
+
+// Export singleton instance
+const systemService = new SystemService();
 export default systemService;

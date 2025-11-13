@@ -5,6 +5,10 @@ import {
   getPrivacyConfig,
   updatePrivacyConfig
 } from "../controllers/privacyConfigController.js";
+import {
+  getSystemConfig,
+  updateSystemConfig
+} from "../controllers/systemController.js";
 
 const router = express.Router();
 
@@ -15,6 +19,10 @@ router.use(authorizeRoles("owner", "admin"));
 // Privacy Configuration Routes
 router.get("/config/privacy", getPrivacyConfig);
 router.put("/config/privacy", updatePrivacyConfig);
+
+// System Configuration Routes (also accessible via /api/admin/config/system)
+router.get("/config/system", getSystemConfig);
+router.put("/config/system", updateSystemConfig);
 
 export default router;
 

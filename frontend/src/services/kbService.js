@@ -1,85 +1,131 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const kbService = {
-  // Get all files from OpenAI
+/**
+ * Knowledge Base Service
+ * Handles file management, search, and vector store operations
+ * @extends BaseService
+ */
+class KBService extends BaseService {
+  constructor() {
+    super('/api/kb', {
+      dataPath: 'files',
+      normalizeResponse: true
+    });
+  }
+
+  /**
+   * Get all files from OpenAI
+   * @returns {Promise<Array<Object>>} Array of file objects
+   */
   async getAllFiles() {
-    console.log('🔍 KB Service - Fetching files from /api/kb/files');
-    try {
-      const response = await authenticatedApiClient.get('/api/kb/files');
-      console.log('🔍 KB Service - Response:', response.data);
-      return response.data.files || [];
-    } catch (error) {
-      console.error('🔍 KB Service - Error:', error);
-      throw error;
-    }
-  },
+    const response = await this.get('/files');
+    return response.data || [];
+  }
 
-  // Get file by ID
+  /**
+   * Get file by ID
+   * @param {string} fileId - File ID
+   * @returns {Promise<Object>} File object
+   */
   async getFile(fileId) {
-    const response = await authenticatedApiClient.get(`/api/kb/files/${fileId}`);
-    return response.data.file;
-  },
+    const response = await this.get(`/files/${fileId}`);
+    return response.data?.file || response.data;
+  }
 
-  // Upload file to OpenAI
+  /**
+   * Upload file to OpenAI
+   * @param {File} file - File to upload
+   * @param {Array<string>} tags - File tags
+   * @returns {Promise<Object>} Uploaded file object
+   */
   async uploadFile(file, tags = []) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('tags', JSON.stringify(tags));
 
-    const response = await authenticatedApiClient.post('/api/kb/files/upload', formData, {
+    const response = await this.post('/files/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      normalizeResponse: false // Don't normalize FormData responses
     });
-    return response.data.file;
-  },
+    return response.data?.file || response.data;
+  }
 
-  // Delete file from OpenAI
+  /**
+   * Delete file from OpenAI
+   * @param {string} fileId - File ID
+   * @returns {Promise<Object>} Deletion result
+   */
   async deleteFile(fileId) {
-    const response = await authenticatedApiClient.delete(`/api/kb/files/${fileId}`);
-    return response.data;
-  },
+    return this.delete(`/files/${fileId}`);
+  }
 
-  // Search files using OpenAI File Search
+  /**
+   * Search files using OpenAI File Search
+   * @param {string} query - Search query
+   * @param {Array<string>|null} fileIds - Optional file IDs to search within
+   * @returns {Promise<Object>} Search results
+   */
   async searchFiles(query, fileIds = null) {
-    const response = await authenticatedApiClient.post('/api/kb/search', {
+    return this.post('/search', {
       query,
       fileIds
     });
-    return response.data;
-  },
+  }
 
-  // Get vector store status
+  /**
+   * Get vector store status
+   * @returns {Promise<Object>} Vector store status
+   */
   async getVectorStoreStatus() {
-    const response = await authenticatedApiClient.get('/api/kb/vector-store/status');
-    return response.data.vectorStore;
-  },
+    const response = await this.get('/vector-store/status');
+    return response.data?.vectorStore || response.data;
+  }
 
-  // Get file content for viewing
+  /**
+   * Get file content for viewing
+   * @param {string} fileId - File ID
+   * @returns {Promise<Object>} File content
+   */
   async getFileContent(fileId) {
-    const response = await authenticatedApiClient.get(`/api/kb/files/${fileId}/content`);
-    return response.data.content; // Return just the content object, not the full response
-  },
+    const response = await this.get(`/files/${fileId}/content`);
+    return response.data?.content || response.data;
+  }
 
-  // Update file tags
+  /**
+   * Update file tags
+   * @param {string} fileId - File ID
+   * @param {Array<string>} tags - New tags
+   * @returns {Promise<Object>} Updated file object
+   */
   async updateFileTags(fileId, tags) {
-    const response = await authenticatedApiClient.put(`/api/kb/files/${fileId}/tags`, {
+    const response = await this.put(`/files/${fileId}/tags`, {
       tags: Array.isArray(tags) ? tags : []
     });
-    return response.data.file;
-  },
-
-  // Re-ingest a single file
-  async reingestFile(fileId) {
-    const response = await authenticatedApiClient.post(`/api/kb/files/${fileId}/reingest`);
-    return response.data;
-  },
-
-  // Detect drift for a single file
-  async detectFileDrift(fileId) {
-    const response = await authenticatedApiClient.post(`/api/kb/files/${fileId}/detect-drift`);
-    return response.data.drift;
+    return response.data?.file || response.data;
   }
-};
 
+  /**
+   * Re-ingest a single file
+   * @param {string} fileId - File ID
+   * @returns {Promise<Object>} Re-ingestion result
+   */
+  async reingestFile(fileId) {
+    return this.post(`/files/${fileId}/reingest`);
+  }
+
+  /**
+   * Detect drift for a single file
+   * @param {string} fileId - File ID
+   * @returns {Promise<Object>} Drift detection result
+   */
+  async detectFileDrift(fileId) {
+    const response = await this.post(`/files/${fileId}/detect-drift`);
+    return response.data?.drift || response.data;
+  }
+}
+
+// Export singleton instance
+const kbService = new KBService();
 export default kbService;

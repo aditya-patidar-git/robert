@@ -1,35 +1,64 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const uncertaintyGateService = {
-  async validateResults(searchResults, options = {}) {
-    const response = await authenticatedApiClient.post('/api/uncertainty-gate/validate', { searchResults, options });
-    return response.data;
-  },
-
-  async generateUncertaintyResponse(validation) {
-    const response = await authenticatedApiClient.post('/api/uncertainty-gate/response', { validation });
-    return response.data;
-  },
-
-  async trackUncertaintyEvent(eventData) {
-    const response = await authenticatedApiClient.post('/api/uncertainty-gate/track', eventData);
-    return response.data;
-  },
-
-  async getConfiguration() {
-    const response = await authenticatedApiClient.get('/api/uncertainty-gate/config');
-    return response.data;
-  },
-
-  async updateConfiguration(config) {
-    const response = await authenticatedApiClient.put('/api/uncertainty-gate/config', { config });
-    return response.data;
+/**
+ * Uncertainty Gate Service
+ * Handles uncertainty validation and response generation
+ * @extends BaseService
+ */
+class UncertaintyGateService extends BaseService {
+  constructor() {
+    super('/api/uncertainty-gate', {
+      dataPath: null,
+      normalizeResponse: true
+    });
   }
-};
 
+  /**
+   * Validate search results
+   * @param {Array<Object>} searchResults - Search results to validate
+   * @param {Object} options - Validation options
+   * @returns {Promise<Object>} Validation result
+   */
+  async validateResults(searchResults, options = {}) {
+    return this.post('/validate', { searchResults, options });
+  }
+
+  /**
+   * Generate uncertainty response
+   * @param {Object} validation - Validation object
+   * @returns {Promise<Object>} Uncertainty response
+   */
+  async generateUncertaintyResponse(validation) {
+    return this.post('/response', { validation });
+  }
+
+  /**
+   * Track uncertainty event
+   * @param {Object} eventData - Event data
+   * @returns {Promise<Object>} Tracking result
+   */
+  async trackUncertaintyEvent(eventData) {
+    return this.post('/track', eventData);
+  }
+
+  /**
+   * Get configuration
+   * @returns {Promise<Object>} Configuration object
+   */
+  async getConfiguration() {
+    return this.get('/config');
+  }
+
+  /**
+   * Update configuration
+   * @param {Object} config - Configuration object
+   * @returns {Promise<Object>} Updated configuration
+   */
+  async updateConfiguration(config) {
+    return this.put('/config', { config });
+  }
+}
+
+// Export singleton instance
+const uncertaintyGateService = new UncertaintyGateService();
 export default uncertaintyGateService;
-
-
-
-
-

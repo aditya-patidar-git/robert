@@ -1,54 +1,93 @@
-import authenticatedApiClient from '../api/authenticatedApi.js';
+import { BaseService } from './baseService';
 
-const transcriptService = {
-  // Get all transcripts with pagination and filtering
+/**
+ * Transcript Service
+ * Handles transcript retrieval, deletion, complaints, and exports
+ * @extends BaseService
+ */
+class TranscriptService extends BaseService {
+  constructor() {
+    super('/api/transcripts', {
+      dataPath: null,
+      normalizeResponse: true
+    });
+  }
+
+  /**
+   * Get all transcripts with pagination and filtering
+   * @param {Object} params - Query parameters (page, limit, filters, etc.)
+   * @returns {Promise<Object>} Transcripts data with pagination
+   */
   async getAllTranscripts(params = {}) {
-    const response = await authenticatedApiClient.get('/api/transcripts', { params });
-    return response.data;
-  },
+    return this.get('', params);
+  }
 
-  // Get specific transcript with full details (escalations, complaints, provenance)
+  /**
+   * Get specific transcript with full details (escalations, complaints, provenance)
+   * @param {string} transcriptId - Transcript ID
+   * @returns {Promise<Object>} Transcript details
+   */
   async getTranscript(transcriptId) {
-    const response = await authenticatedApiClient.get(`/api/transcripts/${transcriptId}`);
-    return response.data;
-  },
+    return this.get(`/${transcriptId}`);
+  }
 
-  // Delete or redact transcript
+  /**
+   * Delete or redact transcript
+   * @param {string} transcriptId - Transcript ID
+   * @param {boolean} redact - Whether to redact instead of delete (default: false)
+   * @returns {Promise<Object>} Deletion/redaction result
+   */
   async deleteTranscript(transcriptId, redact = false) {
-    const response = await authenticatedApiClient.delete(`/api/transcripts/${transcriptId}`, {
+    return this.delete(`/${transcriptId}`, {
       data: { redact }
     });
-    return response.data;
-  },
+  }
 
-  // Submit complaint
+  /**
+   * Submit complaint
+   * @param {Object} complaintData - Complaint data
+   * @returns {Promise<Object>} Complaint submission result
+   */
   async submitComplaint(complaintData) {
-    const response = await authenticatedApiClient.post('/api/transcripts/complaint', complaintData);
-    return response.data;
-  },
+    return this.post('/complaint', complaintData);
+  }
 
-  // Export transcripts
+  /**
+   * Export transcripts
+   * @param {Object} params - Export parameters (format, id, filters, etc.)
+   * @param {string} params.format - Export format ('csv' or 'json')
+   * @returns {Promise<Blob>} Exported file (Blob)
+   */
   async exportTranscripts(params = {}) {
     const { format = 'csv', id, ...filters } = params;
-    const response = await authenticatedApiClient.get('/api/transcripts/export', {
-      params: { format, ...filters },
-      responseType: 'blob'
+    const response = await this.get('/export', { format, ...filters }, {
+      responseType: 'blob',
+      normalizeResponse: false // Don't normalize blob responses
     });
     return response.data;
-  },
+  }
 
-  // Get escalation timeline for a call
+  /**
+   * Get escalation timeline for a call
+   * @param {string} callId - Call ID
+   * @returns {Promise<Object>} Escalation timeline
+   */
   async getEscalationTimeline(callId) {
-    const response = await authenticatedApiClient.get(`/api/transcripts/${callId}/escalations`);
-    return response.data;
-  },
+    return this.get(`/${callId}/escalations`);
+  }
 
-  // Get recording URL (if available)
+  /**
+   * Get recording URL (if available)
+   * @param {string} callSid - Call SID
+   * @returns {string} Recording URL
+   */
   async getRecordingUrl(callSid) {
     // Use the outbound recording proxy endpoint
     const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
     return `${API_BASE}/api/outbound/recording/${callSid}`;
   }
-};
+}
 
+// Export singleton instance
+const transcriptService = new TranscriptService();
 export default transcriptService;

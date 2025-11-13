@@ -98,8 +98,19 @@ import { useToast } from '../../components/common/ToastProvider';
 import configService from '../../services/configService';
 import telephonyService from '../../services/telephonyService';
 import voiceService from '../../services/voiceService';
+import ModelCapabilityRegistry from '../../components/config/ModelCapabilityRegistry';
+import LanguageVoiceMapping from '../../components/config/LanguageVoiceMapping';
+import AudioSettings from '../../components/config/AudioSettings';
+import ModelVoiceSelection from '../../components/config/ModelVoiceSelection';
 import aiService from '../../services/aiService';
 import languageVoiceService from '../../services/languageVoiceService';
+import { useModelCapabilities } from '../../hooks/useModelCapabilities';
+import { useAIModels } from '../../hooks/useAIModels';
+import { useLanguageVoiceMappings } from '../../hooks/useLanguageVoiceMappings';
+import { useModelVoiceCompatibility } from '../../hooks/useModelVoiceCompatibility';
+import { useFallbackChain } from '../../hooks/useFallbackChain';
+import { useAudioConfig } from '../../hooks/useAudioConfig';
+import { useTelephonyConfig } from '../../hooks/useTelephonyConfig';
 
 const AudioTelephonyPage = () => {
   const { showSuccess, showError } = useToast();
@@ -119,9 +130,6 @@ const AudioTelephonyPage = () => {
   const [modelRanges, setModelRanges] = useState(null);
   const [selectedNumberForProfile, setSelectedNumberForProfile] = useState(null);
   const [numberProfileDialog, setNumberProfileDialog] = useState(false);
-  const [fallbackChain, setFallbackChain] = useState([]);
-  const [languageMappings, setLanguageMappings] = useState([]);
-  const [previewingVoice, setPreviewingVoice] = useState(null);
   const [callQualityTimeRange, setCallQualityTimeRange] = useState('24h');
   const [callQualityFilter, setCallQualityFilter] = useState('');
 
@@ -182,74 +190,17 @@ const AudioTelephonyPage = () => {
     })
   );
 
-  // Fetch audio configuration
-  const { data: audioConfig, isLoading: audioLoading } = useQuery({
-    queryKey: ['audio-config'],
-    queryFn: configService.getAudioConfig,
-    onSuccess: (data) => {
-      if (data?.config) {
-        const config = data.config;
-        setValue('vadThreshold', config.vadThreshold);
-        setValue('startPadding', config.startPadding);
-        setValue('endPadding', config.endPadding);
-        setValue('bargeInPolicy', config.bargeInPolicy);
-        setValue('noiseSuppression', config.noiseSuppression);
-        setValue('noiseSuppressionAlgorithm', config.noiseSuppressionAlgorithm || 'basic');
-        setValue('echoCancellation', config.echoCancellation);
-        setValue('automaticGainControl', config.automaticGainControl || false);
-        setValue('audioQuality', config.audioQuality);
-        setValue('energyThreshold', config.energyThreshold);
-        setValue('energyThresholdAutoCalibrate', config.energyThresholdAutoCalibrate !== undefined ? config.energyThresholdAutoCalibrate : true);
-        setValue('defaultVoice', config.defaultVoice);
-        setValue('selectedModelId', config.selectedModelId);
-        setValue('temperature', config.temperature);
-        setValue('topP', config.topP);
-        setValue('maxTokens', config.maxTokens);
-        setValue('speechRate', config.speechRate);
-        setValue('usePerNumberProfiles', config.usePerNumberProfiles || false);
-        
-        // Load model ranges if model is selected
-        if (config.selectedModelId) {
-          loadModelRanges(config.selectedModelId);
-        }
-      }
+  // Use custom hooks for audio and telephony config
+  const { isLoading: audioLoading } = useAudioConfig({ setValue, watch });
+  const { isLoading: telephonyLoading } = useTelephonyConfig({ setValue, watch });
+  
+  // Load model ranges when selectedModelId changes
+  useEffect(() => {
+    const selectedModelId = watch('selectedModelId');
+    if (selectedModelId) {
+      loadModelRanges(selectedModelId);
     }
-  });
-
-  // Fetch telephony configuration
-  const { data: telephonyConfig, isLoading: telephonyLoading } = useQuery({
-    queryKey: ['telephony-config'],
-    queryFn: configService.getTelephonyConfig,
-    onSuccess: (data) => {
-      if (data?.config) {
-        const config = data.config;
-        setValue('numbers', config.numbers || []);
-        setValue('outboundCallerId', config.outboundCallerId || '+442045726060');
-        setValue('transferNumbers', config.transferNumbers || []);
-        setValue('afterHoursPolicy', config.afterHoursPolicy || {
-          enabled: true,
-          startTime: '18:00',
-          endTime: '09:00',
-          timezone: 'Europe/London',
-          message: 'Thank you for calling Universal Motorcycle Training. Our office hours are Monday to Friday, 9 AM to 6 PM. Please call back during business hours or leave a message.',
-          action: 'voicemail'
-        });
-        setValue('voicemailSettings', config.voicemailSettings || {
-          enabled: true,
-          greeting: 'Please leave your name, number, and a brief message after the tone.',
-          maxDuration: 300,
-          emailNotification: true,
-          emailRecipients: []
-        });
-        setValue('sipSettings', config.sipSettings || {
-          primaryPath: 'sip',
-          fallbackPath: 'media_streams',
-          codec: 'opus',
-          region: 'europe'
-        });
-      }
-    }
-  });
+  }, [watch('selectedModelId')]);
 
   // Fetch available voices
   const { data: voicesData, isLoading: voicesLoading } = useQuery({
@@ -297,25 +248,10 @@ const AudioTelephonyPage = () => {
     refetchInterval: 30000 // Refresh every 30 seconds
   });
 
-  // Fetch available models
-  const { data: availableModels } = useQuery({
-    queryKey: ['available-models'],
-    queryFn: () => aiService.getModels(),
-    staleTime: 5 * 60 * 1000 // 5 minutes
-  });
-
-  // Fetch language/voice mappings
-  const { data: fetchedMappings = [], isLoading: mappingsLoading } = useQuery({
-    queryKey: ['language-voice-mappings'],
-    queryFn: languageVoiceService.getLanguageMappings
-  });
-
-  // Fetch model capabilities
-  const { data: capabilitiesData, isLoading: capabilitiesLoading } = useQuery({
-    queryKey: ['model-capabilities'],
-    queryFn: aiService.getModelCapabilities,
-    refetchInterval: 300000 // Refetch every 5 minutes
-  });
+  // Use custom hooks for data fetching
+  const { models: availableModels } = useAIModels();
+  const { mappings: languageMappings, isLoading: mappingsLoading, previewingVoice, setPreviewingVoice } = useLanguageVoiceMappings();
+  const { isLoading: capabilitiesLoading } = useModelCapabilities();
 
   // Load model parameter ranges
   const loadModelRanges = async (modelId) => {
@@ -334,14 +270,17 @@ const AudioTelephonyPage = () => {
     }
   };
 
-  // Update local state when mappings are fetched
-  useEffect(() => {
-    if (fetchedMappings && fetchedMappings.length > 0) {
-      setLanguageMappings(fetchedMappings);
-    }
-  }, [fetchedMappings]);
-
-  // Fetch AI config to get fallback chain
+  // Fetch AI config to get fallback chain and model/voice selection
+  const selectedModelId = watch('selectedModel') || watch('selectedModelId');
+  const selectedVoiceId = watch('selectedVoice');
+  
+  // Use model/voice compatibility hook (handles clearing incompatible voices automatically)
+  const { voices, compatibleVoices, getCompatibleVoices: getCompatibleVoicesForModel } = useModelVoiceCompatibility(selectedModelId, selectedVoiceId, setValue);
+  
+  // Use fallback chain hook
+  const { fallbackChain, setFallbackChain, handleDragEnd: handleFallbackChainDragEnd } = useFallbackChain([], selectedModelId);
+  
+  // Fetch AI config to initialize form values
   useEffect(() => {
     const fetchAIConfig = async () => {
       try {
@@ -373,10 +312,10 @@ const AudioTelephonyPage = () => {
             chain = chain.filter(item => item.modelId !== config.model.id);
             // Add primary model as first with current voice
             chain = [{ modelId: config.model.id, voiceId: currentVoiceId }, ...chain];
-            setFallbackChain(chain);
+            setTimeout(() => setFallbackChain(chain), 0);
           } else {
             // If no fallback chain, create one with just the primary model
-            setFallbackChain([{ modelId: config.model.id, voiceId: currentVoiceId }]);
+            setTimeout(() => setFallbackChain([{ modelId: config.model.id, voiceId: currentVoiceId }]), 0);
           }
         }
         if (config?.voice?.id) {
@@ -392,77 +331,17 @@ const AudioTelephonyPage = () => {
       }
     };
     fetchAIConfig();
-  }, [setValue]);
+  }, [setValue, setFallbackChain]);
 
-  // Get compatible voices for the selected model
-  const getCompatibleVoices = useCallback((modelId) => {
-    const voices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
-    const models = availableModels || [];
-    
-    if (!modelId || !Array.isArray(voices) || !Array.isArray(models)) {
-      return voices || [];
-    }
-
-    // Find the selected model
-    const selectedModel = models.find(m => m.id === modelId);
-    if (!selectedModel) {
-      return voices || [];
-    }
-
-    // Check model capabilities
-    const modelSupportsRealtime = selectedModel.capabilities?.realtime || 
-                                   modelId.includes('realtime') || 
-                                   modelId.includes('gpt-realtime');
-    
-    const modelSupportsTTS = modelId.includes('tts') || 
-                             modelId.includes('tts-1');
-    
-    const modelSupportsAudio = selectedModel.capabilities?.audio || 
-                               modelSupportsRealtime || 
-                               modelSupportsTTS ||
-                               modelId.includes('whisper');
-
-    // Filter voices based on model type
-    if (modelSupportsRealtime) {
-      // Realtime models: show only voices with realtime capability
-      return voices.filter(voice => voice.capabilities?.realtime === true);
-    } else if (modelSupportsTTS) {
-      // TTS models: show all voices (TTS models generally support all voices)
-      return voices;
-    } else if (modelSupportsAudio) {
-      // Other audio models: show all voices
-      return voices;
-    } else {
-      // Non-audio models: no voices available
-      return [];
-    }
-  }, [voicesData, availableModels]);
-
-  // Clear voice selection when model changes and current voice is incompatible
-  const selectedModelValue = watch('selectedModel');
-  const selectedVoiceValue = watch('selectedVoice');
-  
+  // Watch for model changes (using selectedModelId from form)
   useEffect(() => {
-    if (selectedModelValue && selectedVoiceValue) {
-      const compatibleVoices = getCompatibleVoices(selectedModelValue);
-      const isCurrentVoiceCompatible = compatibleVoices.some(v => v.id === selectedVoiceValue);
-      
-      // If current voice is not compatible with new model, clear it
-      if (!isCurrentVoiceCompatible) {
-        setValue('selectedVoice', '');
-      }
-    }
-  }, [selectedModelValue, selectedVoiceValue, setValue, getCompatibleVoices]);
-
-  // Watch for model changes
-  const selectedModelId = watch('selectedModelId');
-  useEffect(() => {
-    if (selectedModelId) {
-      loadModelRanges(selectedModelId);
+    const modelId = watch('selectedModelId');
+    if (modelId) {
+      loadModelRanges(modelId);
     } else {
       setModelRanges(null);
     }
-  }, [selectedModelId]);
+  }, [watch('selectedModelId')]);
 
   // Save configuration mutation
   const saveConfigMutation = useMutation({
@@ -624,26 +503,9 @@ const AudioTelephonyPage = () => {
     }
   };
 
-  // Fallback chain handlers
-  const handleDragEnd = (event) => {
-    const { active, over } = event;
-    
-    if (over && active.id !== over.id) {
-      setFallbackChain((items) => {
-        const oldIndex = items.findIndex(item => {
-          const itemId = typeof item === 'string' ? item : item.modelId;
-          return itemId === active.id;
-        });
-        const newIndex = items.findIndex(item => {
-          const itemId = typeof item === 'string' ? item : item.modelId;
-          return itemId === over.id;
-        });
-        if (oldIndex === -1 || newIndex === -1) return items;
-        return arrayMove(items, oldIndex, newIndex);
-      });
-    }
-  };
-
+  // Fallback chain handlers (using hook methods)
+  const handleDragEnd = handleFallbackChainDragEnd;
+  
   const handleRemoveFromFallbackChain = (index) => {
     const newChain = fallbackChain.filter((_, i) => i !== index);
     setFallbackChain(newChain);
@@ -963,1006 +825,31 @@ const AudioTelephonyPage = () => {
       <form onSubmit={handleSubmit(onSubmit)}>
         {/* Tab 1: Audio Settings */}
         {activeTab === 0 && (
-          <Paper sx={{ p: 3, mb: 3 }}>
-            <Typography variant="h5" component="h2" gutterBottom fontWeight="bold">
-              Audio Processing Settings
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Configure voice activity detection and audio processing parameters
-            </Typography>
-
-            <Grid container spacing={3}>
-              {/* VAD Settings */}
-              <Grid item xs={12} md={6}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Voice Activity Detection
-                    </Typography>
-                    <Box>
-                      <Typography variant="subtitle1" gutterBottom>
-                        VAD Threshold: {watch('vadThreshold')}ms
-                      </Typography>
-                      <Controller
-                        name="vadThreshold"
-                        control={control}
-                        render={({ field }) => (
-                          <Slider
-                            {...field}
-                            min={100}
-                            max={2000}
-                            step={100}
-                            marks={[
-                              { value: 100, label: '100ms' },
-                              { value: 500, label: '500ms' },
-                              { value: 1000, label: '1s' },
-                              { value: 1500, label: '1.5s' },
-                              { value: 2000, label: '2s' }
-                            ]}
-                            valueLabelDisplay="auto"
-                          />
-                        )}
-                      />
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Energy Threshold */}
-              <Grid item xs={12} md={6}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                        Energy Threshold
-                      </Typography>
-                      <Tooltip title="Adaptive threshold for line noise detection. When auto-calibrate is enabled, the system adjusts the threshold at the start of each call based on detected background noise levels.">
-                        <IconButton size="small">
-                          <Info fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      Adaptive threshold for line noise detection. Auto-calibration adjusts per call start.
-                    </Typography>
-                    <Stack spacing={2}>
-                      <Controller
-                        name="energyThresholdAutoCalibrate"
-                        control={control}
-                        render={({ field }) => (
-                          <MuiFormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Auto-calibrate per call"
-                          />
-                        )}
-                      />
-                      {!watch('energyThresholdAutoCalibrate') && (
-                        <Box>
-                          <Controller
-                            name="energyThreshold"
-                            control={control}
-                            render={({ field }) => (
-                              <Slider
-                                {...field}
-                                value={field.value || 50}
-                                min={0}
-                                max={100}
-                                step={5}
-                                marks={[
-                                  { value: 0, label: '0' },
-                                  { value: 50, label: '50' },
-                                  { value: 100, label: '100' }
-                                ]}
-                                valueLabelDisplay="auto"
-                                disabled={watch('energyThresholdAutoCalibrate')}
-                              />
-                            )}
-                          />
-                        </Box>
-                      )}
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Audio Quality */}
-              <Grid item xs={12} md={6}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Audio Quality Settings
-                    </Typography>
-                    <Box sx={{ mb: 3 }}>
-                      <Controller
-                        name="audioQuality"
-                        control={control}
-                        render={({ field }) => (
-                          <FormControl fullWidth>
-                            <InputLabel>Audio Quality</InputLabel>
-                            <Select {...field}>
-                              <MenuItem value="standard">Standard</MenuItem>
-                              <MenuItem value="high">High</MenuItem>
-                              <MenuItem value="premium">Premium</MenuItem>
-                            </Select>
-                          </FormControl>
-                        )}
-                      />
-                    </Box>
-                    <Stack spacing={1.5}>
-                      <Controller
-                        name="noiseSuppression"
-                        control={control}
-                        render={({ field }) => (
-                          <MuiFormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Noise Suppression"
-                          />
-                        )}
-                      />
-                      {watch('noiseSuppression') && (
-                        <Box sx={{ ml: 4, mt: 1.5 }}>
-                          <Controller
-                            name="noiseSuppressionAlgorithm"
-                            control={control}
-                            render={({ field }) => (
-                              <FormControl fullWidth size="small">
-                                <InputLabel>Algorithm</InputLabel>
-                                <Select {...field}>
-                                  <MenuItem value="basic">Basic</MenuItem>
-                                  <MenuItem value="rnnoise">RNNoise</MenuItem>
-                                  <MenuItem value="webrtc">WebRTC NS</MenuItem>
-                                </Select>
-                              </FormControl>
-                            )}
-                          />
-                        </Box>
-                      )}
-                      <Controller
-                        name="echoCancellation"
-                        control={control}
-                        render={({ field }) => (
-                          <MuiFormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Echo Cancellation (AEC)"
-                          />
-                        )}
-                      />
-                      <Controller
-                        name="automaticGainControl"
-                        control={control}
-                        render={({ field }) => (
-                          <MuiFormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Automatic Gain Control (AGC)"
-                          />
-                        )}
-                      />
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Padding Settings */}
-              <Grid item xs={12} md={6}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Audio Padding
-                    </Typography>
-                    <Stack spacing={2}>
-                      <Controller
-                        name="startPadding"
-                        control={control}
-                        render={({ field }) => (
-                          <TextField
-                            {...field}
-                            label="Start Padding (ms)"
-                            type="number"
-                            fullWidth
-                            inputProps={{ min: 0, max: 1000, step: 50 }}
-                            helperText="Audio capture padding before speech detection"
-                          />
-                        )}
-                      />
-                      <Controller
-                        name="endPadding"
-                        control={control}
-                        render={({ field }) => (
-                          <TextField
-                            {...field}
-                            label="End Padding (ms)"
-                            type="number"
-                            fullWidth
-                            inputProps={{ min: 0, max: 1500, step: 50 }}
-                            helperText="Audio capture padding after speech ends"
-                          />
-                        )}
-                      />
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Barge-in Policy */}
-              <Grid item xs={12} md={6}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Barge-in Policy
-                    </Typography>
-                    <Box>
-                      <Controller
-                        name="bargeInPolicy"
-                        control={control}
-                        render={({ field }) => (
-                          <RadioGroup {...field}>
-                            <FormControlLabel
-                              value="pause"
-                              control={<Radio />}
-                              label="Pause (Resume after interruption)"
-                            />
-                            <FormControlLabel
-                              value="stop"
-                              control={<Radio />}
-                              label="Stop (Cancel current speech)"
-                            />
-                          </RadioGroup>
-                        )}
-                      />
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Model Parameter Validation */}
-              <Grid item xs={12}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                        Model Parameter Validation
-                      </Typography>
-                      {modelRanges && (
-                        <Chip 
-                          icon={<CheckCircle />} 
-                          label="Validated" 
-                          color="success" 
-                          size="small" 
-                        />
-                      )}
-                    </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                      Select a model to view and validate parameter ranges from the capability registry.
-                    </Typography>
-                    <Grid container spacing={3}>
-                      <Grid item xs={12} md={6}>
-                        <Controller
-                          name="selectedModelId"
-                          control={control}
-                          render={({ field }) => (
-                            <FormControl fullWidth>
-                              <InputLabel>Model</InputLabel>
-                              <Select {...field} label="Model">
-                                <MenuItem value={null}>Use default from AI Config</MenuItem>
-                                {availableModels?.map((model) => (
-                                  <MenuItem key={model.id} value={model.id}>
-                                    {model.name || model.id}
-                                  </MenuItem>
-                                ))}
-                              </Select>
-                            </FormControl>
-                          )}
-                        />
-                      </Grid>
-                      {modelRanges && (
-                        <>
-                          <Grid item xs={12} md={6}>
-                            <Alert severity="info" icon={<Info />}>
-                              <Typography variant="body2" fontWeight="bold" gutterBottom>
-                                Allowed Parameter Ranges:
-                              </Typography>
-                              <Typography variant="body2">
-                                Temperature: {modelRanges.temperature?.min} - {modelRanges.temperature?.max} (default: {modelRanges.temperature?.default})
-                              </Typography>
-                              <Typography variant="body2">
-                                TopP: {modelRanges.top_p?.min} - {modelRanges.top_p?.max} (default: {modelRanges.top_p?.default})
-                              </Typography>
-                              <Typography variant="body2">
-                                MaxTokens: {modelRanges.max_tokens?.min} - {modelRanges.max_tokens?.max} (default: {modelRanges.max_tokens?.default})
-                              </Typography>
-                            </Alert>
-                          </Grid>
-                          <Grid item xs={12}>
-                            <Grid container spacing={3}>
-                              <Grid item xs={12} md={4}>
-                                <Controller
-                                  name="temperature"
-                                  control={control}
-                                  render={({ field }) => (
-                                    <Box>
-                                      <Typography variant="subtitle2" gutterBottom>
-                                        Temperature: {field.value}
-                                      </Typography>
-                                      <Slider
-                                        {...field}
-                                        min={modelRanges.temperature?.min || 0}
-                                        max={modelRanges.temperature?.max || 2}
-                                        step={modelRanges.temperature?.step || 0.1}
-                                        valueLabelDisplay="auto"
-                                      />
-                                    </Box>
-                                  )}
-                                />
-                              </Grid>
-                              <Grid item xs={12} md={4}>
-                                <Controller
-                                  name="topP"
-                                  control={control}
-                                  render={({ field }) => (
-                                    <Box>
-                                      <Typography variant="subtitle2" gutterBottom>
-                                        TopP: {field.value}
-                                      </Typography>
-                                      <Slider
-                                        {...field}
-                                        min={modelRanges.top_p?.min || 0}
-                                        max={modelRanges.top_p?.max || 1}
-                                        step={modelRanges.top_p?.step || 0.1}
-                                        valueLabelDisplay="auto"
-                                      />
-                                    </Box>
-                                  )}
-                                />
-                              </Grid>
-                              <Grid item xs={12} md={4}>
-                                <Controller
-                                  name="maxTokens"
-                                  control={control}
-                                  render={({ field }) => (
-                                    <Box>
-                                      <Typography variant="subtitle2" gutterBottom>
-                                        MaxTokens: {field.value}
-                                      </Typography>
-                                      <Slider
-                                        {...field}
-                                        min={modelRanges.max_tokens?.min || 1}
-                                        max={Math.min(modelRanges.max_tokens?.max || 500, 500)}
-                                        step={modelRanges.max_tokens?.step || 1}
-                                        valueLabelDisplay="auto"
-                                      />
-                                    </Box>
-                                  )}
-                                />
-                              </Grid>
-                            </Grid>
-                          </Grid>
-                        </>
-                      )}
-                    </Grid>
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Per-Number Profile Settings */}
-              <Grid item xs={12}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Per-Number Audio Profiles
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                      Configure different audio settings for specific phone numbers. When enabled, each number can have its own audio profile.
-                    </Typography>
-                    <Stack spacing={2}>
-                      <Controller
-                        name="usePerNumberProfiles"
-                        control={control}
-                        render={({ field }) => (
-                          <MuiFormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Enable per-number profiles"
-                          />
-                        )}
-                      />
-                      {watch('usePerNumberProfiles') && (
-                        <>
-                          <Alert severity="info">
-                            Per-number profiles can be managed from the Telephony Routing tab. Each number can override global audio settings.
-                          </Alert>
-                          <Box>
-                            <Button
-                              variant="outlined"
-                              startIcon={<Settings />}
-                              onClick={() => {
-                                setActiveTab(2); // Switch to Telephony Routing tab
-                              }}
-                            >
-                              Manage Number Profiles
-                            </Button>
-                          </Box>
-                        </>
-                      )}
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-          </Paper>
+          <AudioSettings control={control} watch={watch} layout="default" />
         )}
 
         {/* Tab 2: Voice Management */}
         {activeTab === 1 && (
           <Box>
-            {/* Primary Model Selection */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Primary Model Selection
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Select the primary AI model and voice. The system will use this model for all calls unless it fails.
-              </Typography>
-              
-              <Box sx={{ display: 'flex', gap: 3, mb: 3, alignItems: 'center' }}>
-                <Controller
-                  name="selectedModel"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl sx={{ minWidth: 200 }}>
-                      <InputLabel>Primary AI Model</InputLabel>
-                      <Select {...field} label="Primary AI Model">
-                        {(Array.isArray(availableModels) ? availableModels : []).map((model) => (
-                          <MenuItem key={model.id} value={model.id}>
-                            {model.name || model.id}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  )}
-                />
-
-                <Controller
-                  name="selectedVoice"
-                  control={control}
-                  render={({ field }) => {
-                    const selectedModel = watch('selectedModel');
-                    const compatibleVoices = getCompatibleVoices(selectedModel);
-                    
-                    return (
-                      <FormControl sx={{ minWidth: 200 }}>
-                        <InputLabel>Voice</InputLabel>
-                        <Select 
-                          {...field} 
-                          label="Voice"
-                          disabled={!selectedModel}
-                        >
-                          {compatibleVoices.length > 0 ? (
-                            compatibleVoices.map((voice) => (
-                              <MenuItem key={voice.id} value={voice.id}>
-                                {voice.name}
-                              </MenuItem>
-                            ))
-                          ) : (
-                            <MenuItem disabled>
-                              {selectedModel ? 'No compatible voices available' : 'Select a model first'}
-                            </MenuItem>
-                          )}
-                        </Select>
-                      </FormControl>
-                    );
-                  }}
-                />
-              </Box>
-            </Paper>
-
-            {/* Default Voice Selection */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Default Voice Selection
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Select the default voice to use when no specific voice is configured.
-              </Typography>
-              <Box sx={{ maxWidth: 400 }}>
-                <Controller
-                  name="defaultVoice"
-                  control={control}
-                  render={({ field }) => {
-                    const voices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
-                    return (
-                      <FormControl fullWidth>
-                        <InputLabel>Default Voice</InputLabel>
-                        <Select
-                          {...field}
-                          label="Default Voice"
-                          value={field.value?.id || ''}
-                          onChange={(e) => {
-                            const selectedVoice = voices.find(v => v.id === e.target.value);
-                            if (selectedVoice) {
-                              field.onChange({
-                                id: selectedVoice.id,
-                                name: selectedVoice.name,
-                                language: selectedVoice.language || 'en-GB'
-                              });
-                            }
-                          }}
-                        >
-                          {voices.map((voice) => (
-                            <MenuItem key={voice.id} value={voice.id}>
-                              {voice.name} ({voice.language || 'N/A'})
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    );
-                  }}
-                />
-              </Box>
-            </Paper>
-
-            {/* Fallback Chain Configuration */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Model Fallback Chain
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Configure the order of models to use if the primary model is unavailable. Models are tried in sequence from top to bottom.
-              </Typography>
-
-              {fallbackChain.length === 0 ? (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  No fallback chain configured. Add models below to create a fallback sequence.
-                </Alert>
-              ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={fallbackChain.map(item => typeof item === 'string' ? item : item.modelId)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <Box sx={{ mb: 2 }}>
-                      {fallbackChain.map((item, index) => {
-                        const modelId = typeof item === 'string' ? item : item.modelId;
-                        return <SortableItem key={`${modelId}-${index}`} id={modelId} index={index} />;
-                      })}
-                    </Box>
-                  </SortableContext>
-                </DndContext>
-              )}
-
-              {/* Add Model to Fallback Chain */}
-              <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Add Model to Fallback Chain
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Controller
-                    name="selectedModel"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControl sx={{ minWidth: 200 }}>
-                        <InputLabel>Model</InputLabel>
-                        <Select {...field} label="Model">
-                          {(Array.isArray(availableModels) ? availableModels : []).map((model) => (
-                            <MenuItem key={model.id} value={model.id}>
-                              {model.name || model.id}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    )}
-                  />
-                  <Controller
-                    name="selectedVoice"
-                    control={control}
-                    render={({ field }) => {
-                      const selectedModel = watch('selectedModel');
-                      const compatibleVoices = getCompatibleVoices(selectedModel);
-                      return (
-                        <FormControl sx={{ minWidth: 200 }}>
-                          <InputLabel>Voice</InputLabel>
-                          <Select 
-                            {...field} 
-                            label="Voice"
-                            disabled={!selectedModel}
-                          >
-                            {compatibleVoices.length > 0 ? (
-                              compatibleVoices.map((voice) => (
-                                <MenuItem key={voice.id} value={voice.id}>
-                                  {voice.name}
-                                </MenuItem>
-                              ))
-                            ) : (
-                              <MenuItem disabled>
-                                {selectedModel ? 'No compatible voices' : 'Select model first'}
-                              </MenuItem>
-                            )}
-                          </Select>
-                        </FormControl>
-                      );
-                    }}
-                  />
-                  <Button
-                    variant="contained"
-                    startIcon={<Add />}
-                    onClick={handleSaveModelVoice}
-                    disabled={!watch('selectedModel') || !watch('selectedVoice')}
-                  >
-                    Add to Chain
-                  </Button>
-                </Box>
-              </Box>
-
-              {/* Visual Chain Representation */}
-              {fallbackChain.length > 0 && (
-                <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary" gutterBottom>
-                    Fallback Sequence:
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    {fallbackChain.map((item, index) => {
-                      const modelId = typeof item === 'string' ? item : item.modelId;
-                      const voiceId = typeof item === 'string' ? undefined : item.voiceId;
-                      const voices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
-                      const models = availableModels || [];
-                      const model = models.find(m => m.id === modelId);
-                      const voice = voices.find(v => v.id === voiceId);
-                      const label = model?.name || modelId;
-                      const voiceLabel = voice ? ` (${voice.name})` : '';
-                      
-                      const tooltipContent = model ? (
-                        <Box>
-                          <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 'bold' }}>
-                            {model.name}
-                          </Typography>
-                          <Typography variant="caption" display="block">
-                            Context: {model.contextLimit || model.context_limit || 'N/A'} tokens
-                          </Typography>
-                          <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                            Capabilities: {[
-                              model.supportsTools && 'Tools',
-                              model.supportsAudio && 'Audio',
-                              model.capabilities?.fileSearch && 'File Search',
-                              model.capabilities?.realtime && 'Realtime'
-                            ].filter(Boolean).join(', ') || 'None'}
-                          </Typography>
-                          {model.rateLimits && (
-                            <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                              Rate: {model.rateLimits.requestsPerMinute} req/min, {model.rateLimits.tokensPerMinute?.toLocaleString() || 'N/A'} tokens/min
-                            </Typography>
-                          )}
-                        </Box>
-                      ) : `Model: ${modelId}`;
-                      
-                      return (
-                        <React.Fragment key={`${modelId}-${index}`}>
-                          <Tooltip title={tooltipContent} arrow placement="top">
-                            <Chip
-                              label={label + voiceLabel}
-                              size="small"
-                              color={index === 0 ? 'primary' : 'default'}
-                              sx={{
-                                cursor: 'help',
-                                '&:hover': {
-                                  opacity: 0.8
-                                }
-                              }}
-                            />
-                          </Tooltip>
-                          {index < fallbackChain.length - 1 && (
-                            <ArrowForward fontSize="small" color="action" />
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </Box>
-                </Box>
-              )}
-            </Paper>
+            {/* Primary Model Selection and Fallback Chain */}
+            <ModelVoiceSelection 
+              control={control}
+              watch={watch}
+              fallbackChain={fallbackChain}
+              setFallbackChain={setFallbackChain}
+              showFallbackChain={true}
+              showDefaultVoice={true}
+            />
 
             {/* Model Capability Registry */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" gutterBottom>
-                  Active Model Capabilities
-                </Typography>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<Refresh />}
-                  onClick={() => {
-                    queryClient.invalidateQueries(['model-capabilities']);
-                  }}
-                >
-                  Refresh
-                </Button>
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                View capabilities for your primary model and fallback chain models.
-              </Typography>
-
-              {capabilitiesLoading ? (
-                <LinearProgress sx={{ mb: 2 }} />
-              ) : (() => {
-                const selectedModel = watch('selectedModel');
-                const allCapabilities = capabilitiesData?.capabilities || [];
-                
-                const primaryModelId = selectedModel;
-                const fallbackModelIds = fallbackChain.map(item => 
-                  typeof item === 'string' ? item : item.modelId
-                ).filter(id => id && id !== primaryModelId);
-                
-                const activeModels = allCapabilities.filter(model => 
-                  model.id === primaryModelId || fallbackModelIds.includes(model.id)
-                );
-                
-                if (activeModels.length === 0) {
-                  return (
-                    <Alert severity="info">
-                      No active models selected. Please select a primary model above.
-                    </Alert>
-                  );
-                }
-                
-                return (
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell><strong>Model Name</strong></TableCell>
-                          <TableCell align="right"><strong>Context Limit</strong></TableCell>
-                          <TableCell align="center"><strong>Tools</strong></TableCell>
-                          <TableCell align="center"><strong>Audio</strong></TableCell>
-                          <TableCell align="center"><strong>File Search</strong></TableCell>
-                          <TableCell align="center"><strong>Details</strong></TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {activeModels.map((model, index) => {
-                          const isPrimary = model.id === primaryModelId;
-                          return (
-                            <TableRow 
-                              key={model.id}
-                              sx={{ 
-                                bgcolor: isPrimary ? 'action.selected' : 'transparent',
-                                '&:hover': { bgcolor: 'action.hover' }
-                              }}
-                            >
-                              <TableCell>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Typography variant="body2" fontWeight={isPrimary ? "bold" : "medium"}>
-                                    {model.name || model.id}
-                                  </Typography>
-                                  {isPrimary && (
-                                    <Chip 
-                                      label="Primary" 
-                                      size="small" 
-                                      color="primary"
-                                      variant="outlined"
-                                    />
-                                  )}
-                                  {!isPrimary && index === 1 && (
-                                    <Chip 
-                                      label="Fallback" 
-                                      size="small" 
-                                      color="default"
-                                      variant="outlined"
-                                    />
-                                  )}
-                                </Box>
-                              </TableCell>
-                              <TableCell align="right">
-                                {model.contextLimit 
-                                  ? model.contextLimit.toLocaleString() 
-                                  : 'N/A'}
-                              </TableCell>
-                              <TableCell align="center">
-                                <Chip 
-                                  label={model.supportsTools ? 'Yes' : 'No'} 
-                                  color={model.supportsTools ? 'success' : 'default'}
-                                  size="small"
-                                />
-                              </TableCell>
-                              <TableCell align="center">
-                                <Chip 
-                                  label={model.supportsAudio ? 'Yes' : 'No'} 
-                                  color={model.supportsAudio ? 'success' : 'default'}
-                                  size="small"
-                                />
-                              </TableCell>
-                              <TableCell align="center">
-                                <Chip 
-                                  label={model.capabilities?.fileSearch ? 'Yes' : 'No'} 
-                                  color={model.capabilities?.fileSearch ? 'success' : 'default'}
-                                  size="small"
-                                />
-                              </TableCell>
-                              <TableCell align="center">
-                                <Tooltip 
-                                  title={
-                                    <Box>
-                                      <Typography variant="caption" display="block" fontWeight="bold">
-                                        Additional Details:
-                                      </Typography>
-                                      {model.defaultTemperature && (
-                                        <Typography variant="caption" display="block">
-                                          Default Temp: {model.defaultTemperature}
-                                        </Typography>
-                                      )}
-                                      {model.defaultTopP && (
-                                        <Typography variant="caption" display="block">
-                                          Default Top-P: {model.defaultTopP}
-                                        </Typography>
-                                      )}
-                                      {model.rateLimits && (
-                                        <>
-                                          <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                                            Rate Limits:
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            • {model.rateLimits.requestsPerMinute || 'N/A'} req/min
-                                          </Typography>
-                                          <Typography variant="caption" display="block">
-                                            • {model.rateLimits.tokensPerMinute?.toLocaleString() || 'N/A'} tokens/min
-                                          </Typography>
-                                        </>
-                                      )}
-                                      {model.knownLimitations && model.knownLimitations.length > 0 && (
-                                        <>
-                                          <Typography variant="caption" display="block" sx={{ mt: 0.5 }} fontWeight="bold">
-                                            Limitations:
-                                          </Typography>
-                                          {model.knownLimitations.map((limitation, idx) => (
-                                            <Typography key={idx} variant="caption" display="block">
-                                              • {limitation}
-                                            </Typography>
-                                          ))}
-                                        </>
-                                      )}
-                                    </Box>
-                                  }
-                                >
-                                  <IconButton size="small">
-                                    <Visibility fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                );
-              })()}
-            </Paper>
+            <ModelCapabilityRegistry 
+              mode="simplified" 
+              selectedModelId={watch('selectedModel')} 
+              fallbackChain={fallbackChain} 
+            />
 
             {/* Language/Voice Mapping Configuration */}
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" gutterBottom>
-                  Language/Voice Mapping Configuration
-                </Typography>
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<Save />}
-                  onClick={handleSaveLanguageMappings}
-                  disabled={mappingsLoading}
-                >
-                  Save Mappings
-                </Button>
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Configure voice selection for each supported language. Preview voices before saving.
-              </Typography>
-
-              {mappingsLoading ? (
-                <LinearProgress sx={{ mb: 2 }} />
-              ) : languageMappings.length === 0 ? (
-                <Alert severity="info">
-                  No language mappings found. Default mappings will be created on first load.
-                </Alert>
-              ) : (
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Language</strong></TableCell>
-                        <TableCell><strong>Locale Code</strong></TableCell>
-                        <TableCell><strong>Voice</strong></TableCell>
-                        <TableCell align="center"><strong>Preview</strong></TableCell>
-                        <TableCell align="center"><strong>Status</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {languageMappings.map((mapping) => {
-                        const voices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
-                        // Filter voices by language/locale if possible
-                        const compatibleVoices = voices.filter(voice => {
-                          if (!voice.language) return true;
-                          return voice.language.toLowerCase().includes(mapping.localeCode.toLowerCase().split('-')[0]);
-                        });
-                        
-                        return (
-                          <TableRow key={mapping.languageCode}>
-                            <TableCell>
-                              <Typography variant="body2" fontWeight="medium">
-                                {mapping.languageName}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <Typography variant="body2" color="text.secondary">
-                                {mapping.localeCode}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <FormControl size="small" fullWidth>
-                                <Select
-                                  value={mapping.voiceId || ''}
-                                  onChange={(e) => {
-                                    const selectedVoice = voices.find(v => v.id === e.target.value);
-                                    handleLanguageMappingChange(
-                                      mapping.languageCode,
-                                      'voiceId',
-                                      e.target.value
-                                    );
-                                    if (selectedVoice) {
-                                      handleLanguageMappingChange(
-                                        mapping.languageCode,
-                                        'voiceName',
-                                        selectedVoice.name
-                                      );
-                                    }
-                                  }}
-                                  displayEmpty
-                                >
-                                  <MenuItem value="" disabled>
-                                    Select Voice
-                                  </MenuItem>
-                                  {(compatibleVoices.length > 0 ? compatibleVoices : voices).map((voice) => (
-                                    <MenuItem key={voice.id} value={voice.id}>
-                                      {voice.name} ({voice.language || 'N/A'})
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
-                            </TableCell>
-                            <TableCell align="center">
-                              <IconButton
-                                size="small"
-                                color="primary"
-                                onClick={() => handleLanguageVoicePreview(mapping.voiceId, mapping.languageCode)}
-                                disabled={!mapping.voiceId || (previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode)}
-                              >
-                                {previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode ? (
-                                  <Stop />
-                                ) : (
-                                  <PlayArrow />
-                                )}
-                              </IconButton>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Switch
-                                checked={mapping.isActive !== false}
-                                onChange={(e) => handleLanguageMappingChange(
-                                  mapping.languageCode,
-                                  'isActive',
-                                  e.target.checked
-                                )}
-                                size="small"
-                              />
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </Paper>
+            <LanguageVoiceMapping />
 
             {/* Available Voices Grid */}
             <Paper sx={{ p: 3, mb: 3 }}>

@@ -35,6 +35,7 @@ import promptVersionRoutes from "./routes/promptVersionRoutes.js";
 import flowParameterRoutes from "./routes/flowParameterRoutes.js";
 import tokenManagementRoutes from "./routes/tokenManagementRoutes.js";
 import observabilityRoutes from "./routes/observabilityRoutes.js";
+import systemRoutes from "./routes/systemRoutes.js";
 
 dotenv.config();
 
@@ -135,6 +136,9 @@ app.use("/api/dashboard", dashboardRoutes);
 
 // Observability Routes
 app.use("/api/observability", observabilityRoutes);
+
+// System Routes
+app.use("/api/system", systemRoutes);
 
 // ITM Booking Test Routes
 app.use("/api/itm-booking", itmBookingRoutes);

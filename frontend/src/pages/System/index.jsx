@@ -66,6 +66,13 @@ import configService from '../../services/configService';
 import aiService from '../../services/aiService';
 import mcpToolsService from '../../services/mcpToolsService';
 import voiceService from '../../services/voiceService';
+import ModelCapabilityRegistry from '../../components/config/ModelCapabilityRegistry';
+import MCPToolsConfig from '../../components/config/MCPToolsConfig';
+import AudioSettings from '../../components/config/AudioSettings';
+import { useModelCapabilities } from '../../hooks/useModelCapabilities';
+import { useAIModels } from '../../hooks/useAIModels';
+import { useAudioConfig } from '../../hooks/useAudioConfig';
+import { useTelephonyConfig } from '../../hooks/useTelephonyConfig';
 
 const SystemConfigPage = () => {
   const { user } = useAuth();
@@ -75,10 +82,6 @@ const SystemConfigPage = () => {
 
   const isOwner = user?.role === 'owner';
 
-  // MCP Tools state for domain management
-  const [editingDomains, setEditingDomains] = useState({});
-  const [newDomainInputs, setNewDomainInputs] = useState({});
-  const [rateLimitValues, setRateLimitValues] = useState({});
 
   // CRM Tasks state
   const [crmTasksConfig, setCrmTasksConfig] = useState({
@@ -126,7 +129,7 @@ const SystemConfigPage = () => {
   // Fetch system configuration
   const { data: systemConfig, isLoading: configLoading } = useQuery({
     queryKey: ['system-config'],
-    queryFn: systemService.getSystemConfig,
+    queryFn: () => systemService.getSystemConfig(),
     onSuccess: (data) => {
       if (data) {
         Object.keys(data).forEach(key => {
@@ -138,82 +141,17 @@ const SystemConfigPage = () => {
     }
   });
 
-  // Fetch MCP tools - using real API
-  const { data: fetchedMcpTools = [], isLoading: mcpLoading, refetch: refetchMcpTools } = useQuery({
-    queryKey: ['mcp-tools'],
-    queryFn: mcpToolsService.getAllTools
-  });
 
-  // Update local state when MCP tools are fetched
-  useEffect(() => {
-    if (fetchedMcpTools && fetchedMcpTools.length > 0) {
-      const domainsState = {};
-      const rateLimitState = {};
-      fetchedMcpTools.forEach(tool => {
-        domainsState[tool.name] = [...(tool.domains || [])];
-        rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
-      });
-      setEditingDomains(domainsState);
-      setRateLimitValues(rateLimitState);
-    }
-  }, [fetchedMcpTools]);
-
-  // Fetch available models - using real API
-  const { data: models = [], isLoading: modelsLoading } = useQuery({
-    queryKey: ['ai-models'],
-    queryFn: () => aiService.getModels(),
-    refetchInterval: 300000 // Refresh every 5 minutes
-  });
-
-  // Fetch model capabilities
-  const { data: capabilitiesData, isLoading: capabilitiesLoading } = useQuery({
-    queryKey: ['model-capabilities'],
-    queryFn: aiService.getModelCapabilities,
-    refetchInterval: 300000 // Refresh every 5 minutes
-  });
-
-  // Fetch audio configuration
-  const { data: audioConfigData, isLoading: audioLoading } = useQuery({
-    queryKey: ['audio-config'],
-    queryFn: configService.getAudioConfig
-  });
-
-  // Update audio form values when config is loaded
-  useEffect(() => {
-    if (audioConfigData?.config) {
-      const config = audioConfigData.config;
-      setValue('vadThreshold', config.vadThreshold);
-      setValue('startPadding', config.startPadding);
-      setValue('endPadding', config.endPadding);
-      setValue('bargeInPolicy', config.bargeInPolicy);
-      setValue('noiseSuppression', config.noiseSuppression);
-      setValue('noiseSuppressionAlgorithm', config.noiseSuppressionAlgorithm || 'basic');
-      setValue('echoCancellation', config.echoCancellation);
-      setValue('automaticGainControl', config.automaticGainControl || false);
-      setValue('audioQuality', config.audioQuality);
-      setValue('energyThreshold', config.energyThreshold);
-      setValue('energyThresholdAutoCalibrate', config.energyThresholdAutoCalibrate !== undefined ? config.energyThresholdAutoCalibrate : true);
-    }
-  }, [audioConfigData, setValue]);
-
-  // Fetch telephony configuration
-  const { data: telephonyConfigData, isLoading: telephonyLoading } = useQuery({
-    queryKey: ['telephony-config'],
-    queryFn: configService.getTelephonyConfig
-  });
-
-  // Update telephony form values when config is loaded
-  useEffect(() => {
-    if (telephonyConfigData?.config) {
-      const config = telephonyConfigData.config;
-      setValue('outboundCallerId', config.outboundCallerId || '+442045726060');
-    }
-  }, [telephonyConfigData, setValue]);
+  // Use custom hooks for data fetching
+  const { models, isLoading: modelsLoading } = useAIModels();
+  const { capabilities: capabilitiesData, isLoading: capabilitiesLoading } = useModelCapabilities();
+  const { isLoading: audioLoading } = useAudioConfig({ setValue, watch });
+  const { config: telephonyConfig, isLoading: telephonyLoading } = useTelephonyConfig({ setValue, watch });
 
   // Fetch privacy configuration
   const { data: privacyConfigData, isLoading: privacyLoading } = useQuery({
     queryKey: ['privacy-config'],
-    queryFn: configService.getPrivacyConfig
+    queryFn: () => configService.getPrivacyConfig()
   });
 
   // Update privacy form values when config is loaded
@@ -238,25 +176,9 @@ const SystemConfigPage = () => {
     onError: () => showError('Failed to save system configuration')
   });
 
-  // Save audio configuration mutation
-  const saveAudioConfigMutation = useMutation({
-    mutationFn: configService.updateAudioConfig,
-    onSuccess: () => {
-      showSuccess('Audio configuration saved successfully');
-      queryClient.invalidateQueries(['audio-config']);
-    },
-    onError: () => showError('Failed to save audio configuration')
-  });
-
-  // Save telephony configuration mutation
-  const saveTelephonyConfigMutation = useMutation({
-    mutationFn: configService.updateTelephonyConfig,
-    onSuccess: () => {
-      showSuccess('Telephony configuration saved successfully');
-      queryClient.invalidateQueries(['telephony-config']);
-    },
-    onError: () => showError('Failed to save telephony configuration')
-  });
+  // Use custom hooks for audio and telephony config
+  const { saveConfig: saveAudioConfig, isSaving: isSavingAudio } = useAudioConfig({ setValue, watch });
+  const { saveConfig: saveTelephonyConfig, isSaving: isSavingTelephony } = useTelephonyConfig({ setValue, watch });
 
   // Save privacy configuration mutation
   const savePrivacyConfigMutation = useMutation({
@@ -268,87 +190,13 @@ const SystemConfigPage = () => {
     onError: () => showError('Failed to save privacy configuration')
   });
 
-  // MCP Tools Handlers
-  const handleToggleTool = async (toolName, enabled) => {
-    try {
-      if (enabled) {
-        await mcpToolsService.enableTool(toolName);
-      } else {
-        await mcpToolsService.disableTool(toolName);
-      }
-      showSuccess(`Tool ${toolName} ${enabled ? 'enabled' : 'disabled'}`);
-      queryClient.invalidateQueries(['mcp-tools']);
-    } catch (error) {
-      showError(`Failed to ${enabled ? 'enable' : 'disable'} tool ${toolName}`);
-    }
-  };
-
-  const handleUpdateRateLimit = async (toolName, newLimit) => {
-    try {
-      if (newLimit < 1 || newLimit > 1000) {
-        showError('Rate limit must be between 1 and 1000');
-        return;
-      }
-      await mcpToolsService.updateRateLimit(toolName, newLimit);
-      showSuccess(`Rate limit updated for ${toolName}`);
-      queryClient.invalidateQueries(['mcp-tools']);
-    } catch (error) {
-      showError(`Failed to update rate limit for ${toolName}`);
-    }
-  };
-
-  const handleAddDomain = useCallback((toolName, domain) => {
-    if (!domain || domain.trim() === '') {
-      showError('Domain cannot be empty');
-      return;
-    }
-    
-    // Basic domain validation
-    const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-    if (!domainRegex.test(domain.trim())) {
-      showError('Invalid domain format');
-      return;
-    }
-
-    setEditingDomains(prev => {
-      const currentDomains = prev[toolName] || [];
-      if (currentDomains.includes(domain.trim())) {
-        showError('Domain already exists');
-        return prev;
-      }
-      const updatedDomains = [...currentDomains, domain.trim()];
-      return { ...prev, [toolName]: updatedDomains };
-    });
-    setNewDomainInputs(prev => ({ ...prev, [toolName]: '' }));
-  }, [showError]);
-
-  const handleRemoveDomain = useCallback((toolName, domainToRemove) => {
-    setEditingDomains(prev => {
-      const currentDomains = prev[toolName] || [];
-      const updatedDomains = currentDomains.filter(d => d !== domainToRemove);
-      return { ...prev, [toolName]: updatedDomains };
-    });
-  }, []);
-
-  const handleSaveDomains = async (toolName) => {
-    try {
-      const domains = editingDomains[toolName] || [];
-      await mcpToolsService.updateDomainAllowlist(toolName, domains);
-      showSuccess(`Domain allowlist updated for ${toolName}`);
-      queryClient.invalidateQueries(['mcp-tools']);
-    } catch (error) {
-      showError(`Failed to update domain allowlist for ${toolName}`);
-    }
-  };
 
   const onSubmit = (data) => {
     saveConfigMutation.mutate(data);
   };
 
   const handleSaveAudioConfig = (data) => {
-    const config = audioConfigData?.config || {};
-    saveAudioConfigMutation.mutate({
-      ...config,
+    saveAudioConfig({
       vadThreshold: data.vadThreshold,
       startPadding: data.startPadding,
       endPadding: data.endPadding,
@@ -364,9 +212,7 @@ const SystemConfigPage = () => {
   };
 
   const handleSaveTelephonyConfig = (data) => {
-    const config = telephonyConfigData?.config || {};
-    saveTelephonyConfigMutation.mutate({
-      ...config,
+    saveTelephonyConfig({
       outboundCallerId: data.outboundCallerId
     });
   };
@@ -470,363 +316,14 @@ const SystemConfigPage = () => {
             </Paper>
 
             {/* MCP Tools Registry */}
-            <Paper>
-              <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6" gutterBottom>
-                  Available MCP Tools ({fetchedMcpTools.length})
-                </Typography>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<Refresh />}
-                  onClick={() => refetchMcpTools()}
-                  disabled={mcpLoading}
-                >
-                  Refresh
-                </Button>
-              </Box>
-              {mcpLoading ? (
-                <LinearProgress sx={{ mb: 2 }} />
-              ) : fetchedMcpTools.length === 0 ? (
-                <Alert severity="info" sx={{ m: 2 }}>
-                  No MCP tools found. Tools will be discovered on system startup.
-                </Alert>
-              ) : (
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Tool</strong></TableCell>
-                        <TableCell><strong>Description</strong></TableCell>
-                        <TableCell align="center"><strong>Enabled</strong></TableCell>
-                        <TableCell><strong>Rate Limit</strong></TableCell>
-                        <TableCell><strong>Domain Allowlist</strong></TableCell>
-                        <TableCell><strong>Usage Stats</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {fetchedMcpTools.map((tool) => {
-                        const toolDomains = editingDomains[tool.name] || tool.domains || [];
-                        const newDomainInput = newDomainInputs[tool.name] || '';
-                        const rateLimitValue = rateLimitValues[tool.name] ?? tool.rateLimit?.limit ?? 100;
-                        
-                        return (
-                          <TableRow key={tool.name}>
-                            <TableCell>
-                              <Typography variant="body2" fontWeight="medium" fontFamily="monospace">
-                                {tool.name}
-                              </Typography>
-                            </TableCell>
-                            <TableCell>
-                              <Tooltip title={tool.description || 'No description available'}>
-                                <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {tool.description || 'N/A'}
-                                </Typography>
-                              </Tooltip>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Switch
-                                checked={tool.enabled}
-                                onChange={(e) => handleToggleTool(tool.name, e.target.checked)}
-                                size="small"
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <TextField
-                                  type="number"
-                                  value={rateLimitValue}
-                                  onChange={(e) => {
-                                    const value = parseInt(e.target.value, 10);
-                                    if (!isNaN(value)) {
-                                      setRateLimitValues(prev => ({ ...prev, [tool.name]: value }));
-                                    }
-                                  }}
-                                  onBlur={(e) => {
-                                    const value = parseInt(e.target.value, 10);
-                                    if (!isNaN(value) && value !== tool.rateLimit?.limit) {
-                                      handleUpdateRateLimit(tool.name, value);
-                                    }
-                                  }}
-                                  inputProps={{
-                                    min: 1,
-                                    max: 1000,
-                                    style: { textAlign: 'center', width: '80px' }
-                                  }}
-                                  size="small"
-                                  sx={{ width: '100px' }}
-                                />
-                                <Typography variant="caption" color="text.secondary">
-                                  /min
-                                </Typography>
-                              </Box>
-                            </TableCell>
-                            <TableCell>
-                              <Box sx={{ minWidth: 250 }}>
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                                  {toolDomains.length > 0 ? (
-                                    toolDomains.map((domain, idx) => (
-                                      <Chip
-                                        key={idx}
-                                        label={domain}
-                                        size="small"
-                                        onDelete={() => handleRemoveDomain(tool.name, domain)}
-                                        color="primary"
-                                        variant="outlined"
-                                      />
-                                    ))
-                                  ) : (
-                                    <Typography variant="caption" color="text.secondary" fontStyle="italic">
-                                      All domains allowed
-                                    </Typography>
-                                  )}
-                                </Box>
-                                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                  <TextField
-                                    placeholder="Add domain"
-                                    value={newDomainInput}
-                                    onChange={(e) => {
-                                      const value = e.target.value;
-                                      setNewDomainInputs(prev => {
-                                        if (prev[tool.name] === value) return prev;
-                                        return { ...prev, [tool.name]: value };
-                                      });
-                                    }}
-                                    onKeyPress={(e) => {
-                                      if (e.key === 'Enter') {
-                                        handleAddDomain(tool.name, newDomainInput);
-                                      }
-                                    }}
-                                    size="small"
-                                    sx={{ flex: 1 }}
-                                  />
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => handleAddDomain(tool.name, newDomainInput)}
-                                    disabled={!newDomainInput.trim()}
-                                  >
-                                    Add
-                                  </Button>
-                                  {(() => {
-                                    const originalDomains = tool.domains || [];
-                                    const hasChanges = toolDomains.length !== originalDomains.length || 
-                                      toolDomains.some((domain, idx) => domain !== (originalDomains[idx] || ''));
-                                    return hasChanges ? (
-                                      <Button
-                                        size="small"
-                                        variant="contained"
-                                        onClick={() => handleSaveDomains(tool.name)}
-                                      >
-                                        Save
-                                      </Button>
-                                    ) : null;
-                                  })()}
-                                </Box>
-                              </Box>
-                            </TableCell>
-                            <TableCell>
-                              <Box>
-                                <Typography variant="caption" display="block">
-                                  Used: {tool.usageCount || 0} times
-                                </Typography>
-                                <Typography variant="caption" display="block" color="text.secondary">
-                                  {tool.lastUsed ? formatDateTime(tool.lastUsed) : 'Never'}
-                                </Typography>
-                                {tool.rateLimit && (
-                                  <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
-                                    Current: {tool.rateLimit.current}/{tool.rateLimit.limit}
-                                  </Typography>
-                                )}
-                              </Box>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </Paper>
+            <MCPToolsConfig showSystemControls={false} />
           </Box>
         )}
 
         {/* Tab B: Model Capability Registry */}
         {currentTab === 1 && (
           <Box>
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" gutterBottom>
-                  Model Capability Registry
-                </Typography>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<Refresh />}
-                  onClick={() => {
-                    queryClient.invalidateQueries(['model-capabilities']);
-                    queryClient.invalidateQueries(['ai-models']);
-                  }}
-                  disabled={capabilitiesLoading || modelsLoading}
-                >
-                  Refresh
-                </Button>
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Dynamic registry of available AI models discovered from OpenAI API. Auto-refreshes every 5 minutes.
-              </Typography>
-
-              {capabilitiesLoading || modelsLoading ? (
-                <LinearProgress sx={{ mb: 2 }} />
-              ) : (() => {
-                const allCapabilities = capabilitiesData?.capabilities || [];
-                const allModels = models || [];
-                
-                // Combine models and capabilities
-                const modelsWithCapabilities = allModels.map(model => {
-                  const capabilities = allCapabilities.find(cap => cap.id === model.id);
-                  return {
-                    ...model,
-                    ...capabilities
-                  };
-                });
-
-                if (modelsWithCapabilities.length === 0) {
-                  return (
-                    <Alert severity="info">
-                      No models found. Models will be discovered on system startup.
-                    </Alert>
-                  );
-                }
-
-                return (
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell><strong>Model Name</strong></TableCell>
-                          <TableCell align="right"><strong>Context Limit</strong></TableCell>
-                          <TableCell align="center"><strong>Tools</strong></TableCell>
-                          <TableCell align="center"><strong>Audio</strong></TableCell>
-                          <TableCell align="center"><strong>Realtime</strong></TableCell>
-                          <TableCell align="center"><strong>File Search</strong></TableCell>
-                          <TableCell align="center"><strong>Details</strong></TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {modelsWithCapabilities.map((model) => (
-                          <TableRow 
-                            key={model.id}
-                            sx={{ 
-                              '&:hover': { bgcolor: 'action.hover' }
-                            }}
-                          >
-                            <TableCell>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Typography variant="body2" fontWeight="medium">
-                                  {model.name || model.id}
-                                </Typography>
-                                {model.capabilities?.realtime && (
-                                  <Chip 
-                                    label="Realtime" 
-                                    size="small" 
-                                    color="primary"
-                                    variant="outlined"
-                                  />
-                                )}
-                              </Box>
-                            </TableCell>
-                            <TableCell align="right">
-                              {model.contextLimit || model.context_limit 
-                                ? (model.contextLimit || model.context_limit).toLocaleString() 
-                                : 'N/A'}
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip 
-                                label={model.supportsTools ? 'Yes' : 'No'} 
-                                color={model.supportsTools ? 'success' : 'default'}
-                                size="small"
-                              />
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip 
-                                label={model.supportsAudio ? 'Yes' : 'No'} 
-                                color={model.supportsAudio ? 'success' : 'default'}
-                                size="small"
-                              />
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip 
-                                label={model.capabilities?.realtime ? 'Yes' : 'No'} 
-                                color={model.capabilities?.realtime ? 'success' : 'default'}
-                                size="small"
-                              />
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip 
-                                label={model.capabilities?.fileSearch ? 'Yes' : 'No'} 
-                                color={model.capabilities?.fileSearch ? 'success' : 'default'}
-                                size="small"
-                              />
-                            </TableCell>
-                            <TableCell align="center">
-                              <Tooltip 
-                                title={
-                                  <Box>
-                                    <Typography variant="caption" display="block" fontWeight="bold">
-                                      Additional Details:
-                                    </Typography>
-                                    {model.defaultTemperature && (
-                                      <Typography variant="caption" display="block">
-                                        Default Temp: {model.defaultTemperature}
-                                      </Typography>
-                                    )}
-                                    {model.defaultTopP && (
-                                      <Typography variant="caption" display="block">
-                                        Default Top-P: {model.defaultTopP}
-                                      </Typography>
-                                    )}
-                                    {model.rateLimits && (
-                                      <>
-                                        <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                                          Rate Limits:
-                                        </Typography>
-                                        <Typography variant="caption" display="block">
-                                          • {model.rateLimits.requestsPerMinute || 'N/A'} req/min
-                                        </Typography>
-                                        <Typography variant="caption" display="block">
-                                          • {model.rateLimits.tokensPerMinute?.toLocaleString() || 'N/A'} tokens/min
-                                        </Typography>
-                                      </>
-                                    )}
-                                    {model.knownLimitations && model.knownLimitations.length > 0 && (
-                                      <>
-                                        <Typography variant="caption" display="block" sx={{ mt: 0.5 }} fontWeight="bold">
-                                          Limitations:
-                                        </Typography>
-                                        {model.knownLimitations.map((limitation, idx) => (
-                                          <Typography key={idx} variant="caption" display="block">
-                                            • {limitation}
-                                          </Typography>
-                                        ))}
-                                      </>
-                                    )}
-                                  </Box>
-                                }
-                              >
-                                <IconButton size="small">
-                                  <Visibility fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                );
-              })()}
-            </Paper>
+            <ModelCapabilityRegistry mode="full" />
           </Box>
         )}
 
@@ -834,208 +331,21 @@ const SystemConfigPage = () => {
         {currentTab === 2 && (
           <form onSubmit={handleSubmit(handleSaveAudioConfig)}>
             <Box>
-              <Paper sx={{ p: 3, mb: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Audio Configuration
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                  Configure voice activity detection, audio quality, and barge-in settings
-                </Typography>
-
-                {audioLoading ? (
-                  <LinearProgress sx={{ mb: 2 }} />
-                ) : (
-                  <Grid container spacing={3}>
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="subtitle2" gutterBottom>
-                        VAD Threshold: {watch('vadThreshold')}ms
-                      </Typography>
-                      <Controller
-                        name="vadThreshold"
-                        control={control}
-                        render={({ field }) => (
-                          <Slider
-                            {...field}
-                            min={100}
-                            max={2000}
-                            step={50}
-                            marks={[
-                              { value: 100, label: '100ms' },
-                              { value: 500, label: '500ms' },
-                              { value: 1000, label: '1000ms' },
-                              { value: 2000, label: '2000ms' }
-                            ]}
-                            valueLabelDisplay="auto"
-                          />
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="subtitle2" gutterBottom>
-                        Start Padding: {watch('startPadding')}ms
-                      </Typography>
-                      <Controller
-                        name="startPadding"
-                        control={control}
-                        render={({ field }) => (
-                          <Slider
-                            {...field}
-                            min={0}
-                            max={1000}
-                            step={50}
-                            marks={[
-                              { value: 0, label: '0ms' },
-                              { value: 250, label: '250ms' },
-                              { value: 500, label: '500ms' },
-                              { value: 1000, label: '1000ms' }
-                            ]}
-                            valueLabelDisplay="auto"
-                          />
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Typography variant="subtitle2" gutterBottom>
-                        End Padding: {watch('endPadding')}ms
-                      </Typography>
-                      <Controller
-                        name="endPadding"
-                        control={control}
-                        render={({ field }) => (
-                          <Slider
-                            {...field}
-                            min={0}
-                            max={1500}
-                            step={50}
-                            marks={[
-                              { value: 0, label: '0ms' },
-                              { value: 300, label: '300ms' },
-                              { value: 500, label: '500ms' },
-                              { value: 1500, label: '1500ms' }
-                            ]}
-                            valueLabelDisplay="auto"
-                          />
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Controller
-                        name="bargeInPolicy"
-                        control={control}
-                        render={({ field }) => (
-                          <FormControl fullWidth>
-                            <InputLabel>Barge-in Policy</InputLabel>
-                            <Select {...field} label="Barge-in Policy">
-                              <MenuItem value="pause">Pause</MenuItem>
-                              <MenuItem value="stop">Stop</MenuItem>
-                            </Select>
-                          </FormControl>
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Controller
-                        name="noiseSuppression"
-                        control={control}
-                        render={({ field }) => (
-                          <FormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Noise Suppression"
-                          />
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Controller
-                        name="noiseSuppressionAlgorithm"
-                        control={control}
-                        render={({ field }) => (
-                          <FormControl fullWidth>
-                            <InputLabel>Noise Suppression Algorithm</InputLabel>
-                            <Select {...field} label="Noise Suppression Algorithm">
-                              <MenuItem value="basic">Basic</MenuItem>
-                              <MenuItem value="rnnoise">RNNoise</MenuItem>
-                              <MenuItem value="webrtc">WebRTC</MenuItem>
-                            </Select>
-                          </FormControl>
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Controller
-                        name="echoCancellation"
-                        control={control}
-                        render={({ field }) => (
-                          <FormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Echo Cancellation"
-                          />
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Controller
-                        name="automaticGainControl"
-                        control={control}
-                        render={({ field }) => (
-                          <FormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Automatic Gain Control"
-                          />
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Controller
-                        name="audioQuality"
-                        control={control}
-                        render={({ field }) => (
-                          <FormControl fullWidth>
-                            <InputLabel>Audio Quality</InputLabel>
-                            <Select {...field} label="Audio Quality">
-                              <MenuItem value="standard">Standard</MenuItem>
-                              <MenuItem value="high">High</MenuItem>
-                              <MenuItem value="premium">Premium</MenuItem>
-                            </Select>
-                          </FormControl>
-                        )}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} md={6}>
-                      <Controller
-                        name="energyThresholdAutoCalibrate"
-                        control={control}
-                        render={({ field }) => (
-                          <FormControlLabel
-                            control={<Switch {...field} checked={field.value} />}
-                            label="Auto-calibrate Energy Threshold"
-                          />
-                        )}
-                      />
-                    </Grid>
-                  </Grid>
-                )}
-
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    startIcon={<Save />}
-                    disabled={saveAudioConfigMutation.isLoading}
-                  >
-                    {saveAudioConfigMutation.isLoading ? 'Saving...' : 'Save Audio Config'}
-                  </Button>
-                </Box>
-              </Paper>
+              {audioLoading ? (
+                <LinearProgress sx={{ mb: 2 }} />
+              ) : (
+                <AudioSettings control={control} watch={watch} layout="compact" />
+              )}
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  startIcon={<Save />}
+                  disabled={isSavingAudio}
+                >
+                  {isSavingAudio ? 'Saving...' : 'Save Audio Config'}
+                </Button>
+              </Box>
             </Box>
           </form>
         )}
@@ -1071,7 +381,7 @@ const SystemConfigPage = () => {
                       />
                     </Grid>
 
-                    {telephonyConfigData?.config && (
+                    {telephonyConfig && (
                       <>
                         <Grid item xs={12}>
                           <Divider sx={{ my: 2 }} />
@@ -1089,7 +399,7 @@ const SystemConfigPage = () => {
                                 </TableRow>
                               </TableHead>
                               <TableBody>
-                                {telephonyConfigData.config.numbers?.map((number, idx) => (
+                                {telephonyConfig.numbers?.map((number, idx) => (
                                   <TableRow key={idx}>
                                     <TableCell>{number.number}</TableCell>
                                     <TableCell>
@@ -1126,7 +436,7 @@ const SystemConfigPage = () => {
                                 </TableRow>
                               </TableHead>
                               <TableBody>
-                                {telephonyConfigData.config.transferNumbers?.map((transfer, idx) => (
+                                {telephonyConfig.transferNumbers?.map((transfer, idx) => (
                                   <TableRow key={idx}>
                                     <TableCell>{transfer.number}</TableCell>
                                     <TableCell>{transfer.name || 'N/A'}</TableCell>
@@ -1145,7 +455,7 @@ const SystemConfigPage = () => {
                           </TableContainer>
                         </Grid>
 
-                        {telephonyConfigData.config.afterHoursPolicy && (
+                        {telephonyConfig.afterHoursPolicy && (
                           <Grid item xs={12}>
                             <Divider sx={{ my: 2 }} />
                             <Typography variant="subtitle1" gutterBottom>
@@ -1153,22 +463,22 @@ const SystemConfigPage = () => {
                             </Typography>
                             <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
                               <Typography variant="body2">
-                                <strong>Enabled:</strong> {telephonyConfigData.config.afterHoursPolicy.enabled ? 'Yes' : 'No'}
+                                <strong>Enabled:</strong> {telephonyConfig.afterHoursPolicy.enabled ? 'Yes' : 'No'}
                               </Typography>
                               <Typography variant="body2">
-                                <strong>Hours:</strong> {telephonyConfigData.config.afterHoursPolicy.startTime} - {telephonyConfigData.config.afterHoursPolicy.endTime}
+                                <strong>Hours:</strong> {telephonyConfig.afterHoursPolicy.startTime} - {telephonyConfig.afterHoursPolicy.endTime}
                               </Typography>
                               <Typography variant="body2">
-                                <strong>Timezone:</strong> {telephonyConfigData.config.afterHoursPolicy.timezone}
+                                <strong>Timezone:</strong> {telephonyConfig.afterHoursPolicy.timezone}
                               </Typography>
                               <Typography variant="body2">
-                                <strong>Action:</strong> {telephonyConfigData.config.afterHoursPolicy.action}
+                                <strong>Action:</strong> {telephonyConfig.afterHoursPolicy.action}
                               </Typography>
                             </Box>
                           </Grid>
                         )}
 
-                        {telephonyConfigData.config.voicemailSettings && (
+                        {telephonyConfig.voicemailSettings && (
                           <Grid item xs={12}>
                             <Divider sx={{ my: 2 }} />
                             <Typography variant="subtitle1" gutterBottom>
@@ -1176,13 +486,13 @@ const SystemConfigPage = () => {
                             </Typography>
                             <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
                               <Typography variant="body2">
-                                <strong>Enabled:</strong> {telephonyConfigData.config.voicemailSettings.enabled ? 'Yes' : 'No'}
+                                <strong>Enabled:</strong> {telephonyConfig.voicemailSettings.enabled ? 'Yes' : 'No'}
                               </Typography>
                               <Typography variant="body2">
-                                <strong>Max Duration:</strong> {telephonyConfigData.config.voicemailSettings.maxDuration}s
+                                <strong>Max Duration:</strong> {telephonyConfig.voicemailSettings.maxDuration}s
                               </Typography>
                               <Typography variant="body2">
-                                <strong>Email Notification:</strong> {telephonyConfigData.config.voicemailSettings.emailNotification ? 'Yes' : 'No'}
+                                <strong>Email Notification:</strong> {telephonyConfig.voicemailSettings.emailNotification ? 'Yes' : 'No'}
                               </Typography>
                             </Box>
                           </Grid>
@@ -1197,9 +507,9 @@ const SystemConfigPage = () => {
                     type="submit"
                     variant="contained"
                     startIcon={<Save />}
-                    disabled={saveTelephonyConfigMutation.isLoading}
+                    disabled={isSavingTelephony}
                   >
-                    {saveTelephonyConfigMutation.isLoading ? 'Saving...' : 'Save Telephony Config'}
+                    {isSavingTelephony ? 'Saving...' : 'Save Telephony Config'}
                   </Button>
                 </Box>
               </Paper>

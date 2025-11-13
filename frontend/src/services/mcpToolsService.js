@@ -1,52 +1,90 @@
-import authenticatedApiClient from '../api/authenticatedApi';
+import { BaseService } from './baseService';
 
-const mcpToolsService = {
-  // Get all MCP tools
+/**
+ * MCP Tools Service
+ * Handles MCP tools configuration and management
+ * @extends BaseService
+ */
+class MCPToolsService extends BaseService {
+  constructor() {
+    super('/api/mcp-tools', {
+      dataPath: 'tools',
+      normalizeResponse: true
+    });
+  }
+
+  /**
+   * Get all MCP tools
+   * @returns {Promise<Array<Object>>} Array of tool objects
+   */
   async getAllTools() {
-    const response = await authenticatedApiClient.get('/api/mcp-tools');
-    return response.data.tools || [];
-  },
+    const response = await this.get('');
+    return response.data || [];
+  }
 
-  // Get specific tool status
+  /**
+   * Get specific tool status
+   * @param {string} toolName - Tool name
+   * @returns {Promise<Object>} Tool status object
+   */
   async getToolStatus(toolName) {
-    const response = await authenticatedApiClient.get(`/api/mcp-tools/${toolName}/status`);
-    return response.data.tool;
-  },
+    const response = await this.get(`/${toolName}/status`);
+    return response.data?.tool || response.data;
+  }
 
-  // Enable a tool
+  /**
+   * Enable a tool
+   * @param {string} toolName - Tool name
+   * @returns {Promise<Object>} Operation result
+   */
   async enableTool(toolName) {
-    const response = await authenticatedApiClient.post(`/api/mcp-tools/${toolName}/enable`);
-    return response.data;
-  },
+    return this.post(`/${toolName}/enable`);
+  }
 
-  // Disable a tool
+  /**
+   * Disable a tool
+   * @param {string} toolName - Tool name
+   * @returns {Promise<Object>} Operation result
+   */
   async disableTool(toolName) {
-    const response = await authenticatedApiClient.post(`/api/mcp-tools/${toolName}/disable`);
-    return response.data;
-  },
+    return this.post(`/${toolName}/disable`);
+  }
 
-  // Update rate limit for a tool
+  /**
+   * Update rate limit for a tool
+   * @param {string} toolName - Tool name
+   * @param {number} newLimit - New rate limit
+   * @returns {Promise<Object>} Updated tool configuration
+   */
   async updateRateLimit(toolName, newLimit) {
-    const response = await authenticatedApiClient.put(`/api/mcp-tools/${toolName}/rate-limit`, {
+    return this.put(`/${toolName}/rate-limit`, {
       newLimit
     });
-    return response.data;
-  },
+  }
 
-  // Update domain allowlist for a tool
+  /**
+   * Update domain allowlist for a tool
+   * @param {string} toolName - Tool name
+   * @param {Array<string>} domains - Array of allowed domains
+   * @returns {Promise<Object>} Updated tool configuration
+   */
   async updateDomainAllowlist(toolName, domains) {
-    const response = await authenticatedApiClient.put(`/api/mcp-tools/${toolName}/domains`, {
+    return this.put(`/${toolName}/domains`, {
       domains
     });
-    return response.data;
-  },
-
-  // Get tool metrics
-  async getToolMetrics(toolName) {
-    const response = await authenticatedApiClient.get(`/api/mcp-tools/${toolName}/metrics`);
-    return response.data.metrics;
   }
-};
 
+  /**
+   * Get tool metrics
+   * @param {string} toolName - Tool name
+   * @returns {Promise<Object>} Tool metrics
+   */
+  async getToolMetrics(toolName) {
+    const response = await this.get(`/${toolName}/metrics`);
+    return response.data?.metrics || response.data;
+  }
+}
+
+// Export singleton instance
+const mcpToolsService = new MCPToolsService();
 export default mcpToolsService;
-
