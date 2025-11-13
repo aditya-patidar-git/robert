@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+    getDSARRequests,
     createDSARRequest,
     processDSARRequest,
     exportUserData,
@@ -18,6 +19,7 @@ import {
 const router = express.Router();
 
 // DSAR Management
+router.get('/dsar', getDSARRequests);
 router.post('/dsar', createDSARRequest);
 router.post('/dsar/:dsarId/process', processDSARRequest);
 

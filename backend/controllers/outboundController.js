@@ -191,6 +191,18 @@ export const handleMediaStreamConnection = (ws, req) => {
     let startTimeout = null;
     let durationTimer = null;
     
+    // Audio quality metrics tracking
+    const audioMetrics = {
+        incomingTimestamps: [], // Timestamps when audio chunks arrive from Twilio
+        outgoingTimestamps: [], // Timestamps when audio chunks are sent to OpenAI
+        responseTimestamps: [], // Timestamps when audio responses arrive from OpenAI
+        expectedChunks: 0, // Expected number of audio chunks
+        receivedChunks: 0, // Actual number of audio chunks received
+        lastIncomingTime: null,
+        lastOutgoingTime: null,
+        lastResponseTime: null
+    };
+    
     // ── Twilio frame pacing and buffering (μ-law at 8 kHz; 20ms = 160 bytes) ─────────
     const FRAME_BYTES = 160;
     class ByteQueue {
@@ -382,7 +394,7 @@ export const handleMediaStreamConnection = (ws, req) => {
     };
     
     // Cleanup function - call only once with proper resource cleanup
-    const cleanup = (reason = 'unknown') => {
+    const cleanup = async (reason = 'unknown') => {
         if (isClosed) return;
         isClosed = true;
         accepting = false;
@@ -430,6 +442,86 @@ export const handleMediaStreamConnection = (ws, req) => {
         ulawQueue.clear();
         try { if (downFfmpeg) downFfmpeg.kill('SIGKILL'); } catch (_) {}
         try { if (upFfmpeg) upFfmpeg.kill('SIGKILL'); } catch (_) {}
+        
+        // STEP 5: Calculate and store audio quality metrics
+        if (callSid && audioMetrics.receivedChunks > 0) {
+            try {
+                // Calculate latency (average time between sending to OpenAI and receiving response)
+                let averageLatency = null;
+                if (audioMetrics.outgoingTimestamps.length > 0 && audioMetrics.responseTimestamps.length > 0) {
+                    const latencies = [];
+                    // Match outgoing and response timestamps (simplified pairing)
+                    const minLength = Math.min(audioMetrics.outgoingTimestamps.length, audioMetrics.responseTimestamps.length);
+                    for (let i = 0; i < minLength; i++) {
+                        const latency = audioMetrics.responseTimestamps[i] - audioMetrics.outgoingTimestamps[i];
+                        if (latency > 0 && latency < 5000) { // Reasonable latency bounds (0-5s)
+                            latencies.push(latency);
+                        }
+                    }
+                    if (latencies.length > 0) {
+                        averageLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+                    }
+                }
+                
+                // Calculate jitter (variation in inter-arrival times)
+                let jitter = null;
+                if (audioMetrics.incomingTimestamps.length > 1) {
+                    const interArrivalTimes = [];
+                    for (let i = 1; i < audioMetrics.incomingTimestamps.length; i++) {
+                        const interval = audioMetrics.incomingTimestamps[i] - audioMetrics.incomingTimestamps[i - 1];
+                        if (interval > 0 && interval < 1000) { // Reasonable bounds (0-1s)
+                            interArrivalTimes.push(interval);
+                        }
+                    }
+                    if (interArrivalTimes.length > 1) {
+                        const expectedInterval = 20; // Expected 20ms for 8kHz audio
+                        const deviations = interArrivalTimes.map(interval => Math.abs(interval - expectedInterval));
+                        jitter = deviations.reduce((a, b) => a + b, 0) / deviations.length;
+                    }
+                }
+                
+                // Estimate packet loss (based on expected vs received chunks)
+                let packetLoss = null;
+                if (audioMetrics.expectedChunks > 0) {
+                    const callDuration = Date.now() - callStartTime;
+                    const expectedChunks = Math.floor(callDuration / 20); // ~50 chunks per second
+                    const actualChunks = audioMetrics.receivedChunks;
+                    if (expectedChunks > 0) {
+                        packetLoss = Math.max(0, ((expectedChunks - actualChunks) / expectedChunks) * 100);
+                    }
+                }
+                
+                // Calculate MOS score using callQualityService
+                const callQualityService = (await import('../services/callQualityService.js')).default;
+                const mosScore = callQualityService.calculateMOS(
+                    averageLatency || 0,
+                    jitter || 0,
+                    packetLoss || 0
+                );
+                const callQuality = callQualityService.getQualityCategory(mosScore);
+                
+                // Update CallRecord with audio quality metrics
+                const CallRecord = (await import('../models/callRecord.js')).default;
+                await CallRecord.findOneAndUpdate(
+                    { callSid },
+                    {
+                        $set: {
+                            'audioQuality.latency': averageLatency ? Math.round(averageLatency * 100) / 100 : null,
+                            'audioQuality.jitter': jitter ? Math.round(jitter * 100) / 100 : null,
+                            'audioQuality.packetLoss': packetLoss ? Math.round(packetLoss * 100) / 100 : null,
+                            'audioQuality.mosScore': Math.round(mosScore * 100) / 100,
+                            'audioQuality.callQuality': callQuality,
+                            'audioQuality.measuredAt': new Date()
+                        }
+                    },
+                    { upsert: false }
+                );
+                
+                console.log(`📊 Audio quality metrics stored for call ${callSid}: latency=${averageLatency?.toFixed(2)}ms, jitter=${jitter?.toFixed(2)}ms, packetLoss=${packetLoss?.toFixed(2)}%, MOS=${mosScore.toFixed(2)}, quality=${callQuality}`);
+            } catch (err) {
+                console.error(`❌ Error storing audio quality metrics for call ${callSid}:`, err);
+            }
+        }
         
         if (callSid) {
             delete realtimeClients[callSid];
@@ -740,6 +832,11 @@ export const handleMediaStreamConnection = (ws, req) => {
                         audioChunkCount++;
                         console.log(`🔊 CAPTURING AUDIO DELTA (${event.type}) - size: ${event.delta.length} bytes - chunk #${audioChunkCount}`);
                         
+                        // Track response timestamp for latency calculation
+                        const responseTime = Date.now();
+                        audioMetrics.responseTimestamps.push(responseTime);
+                        audioMetrics.lastResponseTime = responseTime;
+                        
                         // Safety: Limit audio chunks to prevent runaway
                         if (audioChunkCount > MAX_AUDIO_BUFFER_SIZE * 100) {
                             console.error(`❌ Too many audio chunks (${audioChunkCount}), closing`);
@@ -816,6 +913,18 @@ export const handleMediaStreamConnection = (ws, req) => {
                     if (json.event === 'media' && json.media?.payload) {
                         audioChunkCount++;
                         
+                        // Track incoming audio chunk timestamp
+                        const now = Date.now();
+                        audioMetrics.incomingTimestamps.push(now);
+                        audioMetrics.receivedChunks++;
+                        if (audioMetrics.lastIncomingTime) {
+                            // Track inter-arrival time for jitter calculation
+                            const interArrival = now - audioMetrics.lastIncomingTime;
+                            // Expected interval is ~20ms for 8kHz audio (160 bytes per frame)
+                            audioMetrics.expectedChunks++;
+                        }
+                        audioMetrics.lastIncomingTime = now;
+                        
                         // Safety: Limit audio chunks
                         if (audioChunkCount > MAX_AUDIO_BUFFER_SIZE * 100) {
                             console.error(`❌ Too many audio chunks (${audioChunkCount}), closing`);
@@ -825,6 +934,11 @@ export const handleMediaStreamConnection = (ws, req) => {
                         
                         if (openaiWs && openaiWs.readyState === WebSocket.OPEN && !isClosed) {
                             try {
+                                // Track outgoing timestamp
+                                const outgoingTime = Date.now();
+                                audioMetrics.outgoingTimestamps.push(outgoingTime);
+                                audioMetrics.lastOutgoingTime = outgoingTime;
+                                
                                 // ✅ μ-law (8k) → PCM16 8k → upsample to 24k via ffmpeg → send to OpenAI
                                 startUpsampler();
                                 const base64Pcm8k = convertMulawToPcm16(json.media.payload);
@@ -901,16 +1015,57 @@ export const handleResponse = async (req, res) => {
     let aiReply = "Thank you for your message. How can I help you further?";
 
     try {
-        // Generate AI reply
-        const conversationText = conversations[callSid].transcript
-            .map(t => `${t.role === "agent" ? "AI" : "User"}: ${t.text}`)
-            .join("\n");
+        // Get or create conversation context for token management
+        const ConversationContext = (await import('../models/ConversationContext.js')).default;
+        const tokenManagementService = (await import('../services/tokenManagementService.js')).default;
+        
+        let contextDoc = await ConversationContext.findOne({ callSid });
+        if (!contextDoc) {
+            const AIConfig = (await import('../models/AIConfig.js')).default;
+            const modelDiscoveryService = (await import('../services/modelDiscoveryService.js')).default;
+            const globalConfig = await AIConfig.findOne({ isActive: true });
+            const modelId = globalConfig?.model?.id || 'gpt-4o';
+            const contextLimit = modelDiscoveryService.getContextLimit(modelId);
+            
+            contextDoc = new ConversationContext({
+                callSid,
+                modelId,
+                contextLimit,
+                currentTokens: 0,
+                messages: []
+            });
+        }
 
-        const aiResponse = await getAIResponse(conversationText, null, { callSid });
+        // Add user message to context
+        const userMessage = {
+            role: 'user',
+            content: userAnswer,
+            timestamp: new Date(),
+            tokenCount: tokenManagementService.countMessageTokens({ role: 'user', content: userAnswer }, contextDoc.modelId)
+        };
+        contextDoc.messages.push(userMessage);
+        contextDoc.currentTokens += userMessage.tokenCount;
+        await contextDoc.save();
+
+        // Prepare call context
+        const callContext = {
+            callSid,
+            transcript: conversations[callSid].transcript,
+            messages: contextDoc.messages
+        };
+
+        // Generate AI reply - getAIResponse will handle token management
+        const aiResponse = await getAIResponse(contextDoc.messages, null, callContext);
         aiReply = aiResponse.content || "I understand. How else can I help?";
         
         // Add AI response to transcript
         conversations[callSid].transcript.push({ role: "agent", text: aiReply });
+        
+        // Store token usage
+        if (aiResponse.tokenUsage && contextDoc) {
+            contextDoc.currentTokens = aiResponse.tokenUsage.totalTokens || aiResponse.tokenUsage.after;
+            await contextDoc.save();
+        }
         
         console.log(`🤖 AI replied: "${aiReply}"`);
         

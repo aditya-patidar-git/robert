@@ -1,6 +1,21 @@
 import gdprService from '../services/gdprService.js';
 import observabilityService from '../services/observabilityService.js';
 
+// Get all DSAR requests
+export const getDSARRequests = async (req, res) => {
+    try {
+        const { email } = req.query;
+        
+        const filters = { email };
+        const dsarRequests = await gdprService.getDSARRequests(filters);
+        
+        res.json({ success: true, dsarRequests });
+    } catch (error) {
+        observabilityService.error('Get DSAR requests error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 // Create DSAR request
 export const createDSARRequest = async (req, res) => {
     try {

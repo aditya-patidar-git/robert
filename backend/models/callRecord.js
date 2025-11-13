@@ -96,7 +96,24 @@ const callRecordSchema = new mongoose.Schema({
     aiResponseTime: Number,
     toolExecutionTime: Number,
     totalTokens: Number,
+    maxTokensUsed: Number,
+    truncationCount: Number,
+    averageTokensPerMessage: Number,
+    contextOptimizationApplied: Boolean,
     errorCount: Number
+  },
+  // Audio Quality metrics
+  audioQuality: {
+    latency: Number,        // ms
+    jitter: Number,         // ms
+    packetLoss: Number,      // %
+    mosScore: Number,        // 1-5
+    callQuality: {
+      type: String,
+      enum: ['excellent', 'good', 'fair', 'poor'],
+      default: 'good'
+    },
+    measuredAt: { type: Date, default: Date.now }
   },
   // MCP Tools usage
   toolsUsed: [{
@@ -118,5 +135,7 @@ callRecordSchema.index({ result: 1 });
 callRecordSchema.index({ callStatus: 1 });
 callRecordSchema.index({ 'escalation.escalated': 1 });
 callRecordSchema.index({ 'complaint.hasComplaint': 1 });
+callRecordSchema.index({ 'audioQuality.measuredAt': -1 });
+callRecordSchema.index({ 'audioQuality.callQuality': 1 });
 
-export default mongoose.model("CallRecord", callRecordSchema);
+export default mongoose.models.CallRecord || mongoose.model("CallRecord", callRecordSchema);

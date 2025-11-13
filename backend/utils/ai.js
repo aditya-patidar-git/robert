@@ -126,10 +126,13 @@ const TOOLS = [
 
 export const getAIResponse = async (conversationText, tools = null, callContext = {}) => {
     try {
-        // Import services for flow detection and parameter management
+        // Import services
         const flowDetectionService = (await import('../services/flowDetectionService.js')).default;
         const flowParameterService = (await import('../services/flowParameterService.js')).default;
+        const tokenManagementService = (await import('../services/tokenManagementService.js')).default;
+        const messagePriorityService = (await import('../services/messagePriorityService.js')).default;
         const AIConfig = (await import('../models/AIConfig.js')).default;
+        const ConversationContext = (await import('../models/ConversationContext.js')).default;
 
         // Get global AI config
         let globalConfig = await AIConfig.findOne({ isActive: true });
@@ -141,6 +144,8 @@ export const getAIResponse = async (conversationText, tools = null, callContext 
             };
         }
 
+        const modelId = globalConfig.model?.id || 'gpt-4o';
+
         // Detect flow type if not provided
         let flowType = callContext.flowType;
         if (!flowType) {
@@ -151,26 +156,152 @@ export const getAIResponse = async (conversationText, tools = null, callContext 
         // Get effective parameters (flow-specific or global)
         const effectiveParams = await flowParameterService.getEffectiveParameters(flowType, globalConfig);
 
-        const messages = [
-            {
+        // Build messages array - support both string and structured messages
+        let messages = [];
+        if (Array.isArray(conversationText)) {
+            // If conversationText is already an array of messages, use it
+            messages = conversationText;
+        } else if (callContext.messages && Array.isArray(callContext.messages)) {
+            // Use messages from call context if available
+            messages = callContext.messages;
+        } else {
+            // Convert conversationText string to messages array
+            messages = [
+                {
+                    role: "system",
+                    content: ROBERT_SYSTEM_INSTRUCTIONS
+                },
+                {
+                    role: "user",
+                    content: conversationText
+                }
+            ];
+        }
+
+        // Ensure system message is first
+        if (messages[0]?.role !== 'system') {
+            messages.unshift({
                 role: "system",
                 content: ROBERT_SYSTEM_INSTRUCTIONS
-            },
-            {
-                role: "user",
-                content: conversationText
+            });
+        }
+
+        // Count tokens and check if truncation is needed
+        const contextLimit = tokenManagementService.getContextLimit(modelId);
+        const tokenCheck = tokenManagementService.shouldTruncate(messages, modelId, contextLimit);
+        
+        let optimizedMessages = messages;
+        let tokenUsage = {
+            before: tokenCheck.currentTokens,
+            after: tokenCheck.currentTokens,
+            optimized: false,
+            warningLevel: tokenCheck.warningLevel
+        };
+
+        // Apply optimization if needed
+        if (tokenCheck.shouldTruncate) {
+            const optimizationResult = await tokenManagementService.optimizeContext(
+                messages,
+                modelId,
+                contextLimit,
+                {
+                    summarizationEnabled: process.env.SUMMARIZATION_ENABLED !== 'false',
+                    callContext
+                }
+            );
+
+            optimizedMessages = optimizationResult.messages;
+            tokenUsage = {
+                before: optimizationResult.tokensBefore || tokenCheck.currentTokens,
+                after: optimizationResult.tokenCount,
+                optimized: optimizationResult.optimized,
+                removedCount: optimizationResult.removedCount || 0,
+                strategy: optimizationResult.strategy || 'none',
+                warningLevel: optimizationResult.warningLevel || tokenCheck.warningLevel
+            };
+
+            // Log truncation event
+            if (tokenUsage.optimized && callContext.callSid) {
+                try {
+                    let contextDoc = await ConversationContext.findOne({ callSid: callContext.callSid });
+                    if (!contextDoc) {
+                        contextDoc = new ConversationContext({
+                            callSid: callContext.callSid,
+                            modelId,
+                            contextLimit,
+                            currentTokens: tokenUsage.after,
+                            messages: optimizedMessages
+                        });
+                    } else {
+                        contextDoc.currentTokens = tokenUsage.after;
+                        contextDoc.messages = optimizedMessages;
+                    }
+
+                    // Add truncation history entry
+                    if (tokenUsage.removedCount > 0) {
+                        contextDoc.truncationHistory.push({
+                            tokensBefore: tokenUsage.before,
+                            tokensAfter: tokenUsage.after,
+                            messagesRemoved: tokenUsage.removedCount,
+                            strategy: tokenUsage.strategy
+                        });
+                    }
+
+                    await contextDoc.save();
+                } catch (contextError) {
+                    console.error('Error saving conversation context:', contextError);
+                }
             }
-        ];
+
+            // Log warnings
+            if (tokenUsage.warningLevel === 'warning') {
+                console.warn(`Token usage warning (${tokenCheck.percentage.toFixed(1)}%) for call ${callContext.callSid || 'unknown'}`);
+            } else if (tokenUsage.warningLevel === 'critical') {
+                console.error(`Token usage critical (${tokenCheck.percentage.toFixed(1)}%) for call ${callContext.callSid || 'unknown'}`);
+            } else if (tokenUsage.warningLevel === 'emergency') {
+                console.error(`Token usage emergency (${tokenCheck.percentage.toFixed(1)}%) for call ${callContext.callSid || 'unknown'}`);
+            }
+        }
 
         const response = await openai.chat.completions.create({
             model: effectiveParams.model,
-            messages: messages,
+            messages: optimizedMessages,
             tools: tools || TOOLS,
             tool_choice: "auto",
             temperature: effectiveParams.temperature,
             top_p: effectiveParams.top_p,
             max_tokens: effectiveParams.max_tokens
         });
+
+        // Track response tokens
+        const responseMessage = response.choices[0].message;
+        const responseTokens = response.usage?.total_tokens || 0;
+        
+        // Update conversation context with response
+        if (callContext.callSid) {
+            try {
+                let contextDoc = await ConversationContext.findOne({ callSid: callContext.callSid });
+                if (contextDoc) {
+                    // Add assistant response to messages
+                    const assistantMessage = {
+                        role: 'assistant',
+                        content: responseMessage.content || '',
+                        timestamp: new Date(),
+                        tokenCount: tokenManagementService.countMessageTokens(responseMessage, modelId)
+                    };
+                    
+                    if (responseMessage.tool_calls) {
+                        assistantMessage.toolCalls = responseMessage.tool_calls;
+                    }
+
+                    contextDoc.messages.push(assistantMessage);
+                    contextDoc.currentTokens = tokenUsage.after + (response.usage?.prompt_tokens || 0);
+                    await contextDoc.save();
+                }
+            } catch (contextError) {
+                console.error('Error updating conversation context with response:', contextError);
+            }
+        }
 
         const message = response.choices[0].message;
         
@@ -180,14 +311,24 @@ export const getAIResponse = async (conversationText, tools = null, callContext 
                 content: message.content,
                 tool_calls: message.tool_calls,
                 requires_tool_execution: true,
-                flowType: flowType
+                flowType: flowType,
+                tokenUsage: {
+                    ...tokenUsage,
+                    responseTokens: responseTokens,
+                    totalTokens: tokenUsage.after + responseTokens
+                }
             };
         }
 
         return {
             content: message.content || "Sorry, I didn't understand that.",
             requires_tool_execution: false,
-            flowType: flowType
+            flowType: flowType,
+            tokenUsage: {
+                ...tokenUsage,
+                responseTokens: responseTokens,
+                totalTokens: tokenUsage.after + responseTokens
+            }
         };
     } catch (err) {
         console.error("AI error:", err.message);

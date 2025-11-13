@@ -5,7 +5,13 @@ import {
   getAudioConfig,
   updateAudioConfig,
   testAudioConfig,
-  getAudioMetrics
+  getAudioMetrics,
+  getHistoricalAudioMetrics,
+  getRecentCallsWithQuality,
+  getModelParameterRanges,
+  getNumberProfile,
+  saveNumberProfile,
+  deleteNumberProfile
 } from "../controllers/audioConfigController.js";
 import {
   getTelephonyConfig,
@@ -34,6 +40,14 @@ router.get("/config/audio", getAudioConfig);
 router.put("/config/audio", updateAudioConfig);
 router.post("/config/audio/test", testAudioConfig);
 router.get("/config/audio/metrics", getAudioMetrics);
+router.get("/config/audio/metrics/historical", getHistoricalAudioMetrics);
+router.get("/config/audio/metrics/recent-calls", getRecentCallsWithQuality);
+router.get("/config/audio/model-ranges", getModelParameterRanges);
+
+// Per-Number Profile Routes
+router.get("/config/audio/number-profile/:phoneNumber", getNumberProfile);
+router.put("/config/audio/number-profile/:phoneNumber", saveNumberProfile);
+router.delete("/config/audio/number-profile/:phoneNumber", deleteNumberProfile);
 
 // Telephony Configuration Routes
 router.get("/config/telephony", getTelephonyConfig);
