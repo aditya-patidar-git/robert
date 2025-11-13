@@ -96,6 +96,10 @@ const callRecordSchema = new mongoose.Schema({
     aiResponseTime: Number,
     toolExecutionTime: Number,
     totalTokens: Number,
+    maxTokensUsed: Number,
+    truncationCount: Number,
+    averageTokensPerMessage: Number,
+    contextOptimizationApplied: Boolean,
     errorCount: Number
   },
   // MCP Tools usage

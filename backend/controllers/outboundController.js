@@ -901,16 +901,57 @@ export const handleResponse = async (req, res) => {
     let aiReply = "Thank you for your message. How can I help you further?";
 
     try {
-        // Generate AI reply
-        const conversationText = conversations[callSid].transcript
-            .map(t => `${t.role === "agent" ? "AI" : "User"}: ${t.text}`)
-            .join("\n");
+        // Get or create conversation context for token management
+        const ConversationContext = (await import('../models/ConversationContext.js')).default;
+        const tokenManagementService = (await import('../services/tokenManagementService.js')).default;
+        
+        let contextDoc = await ConversationContext.findOne({ callSid });
+        if (!contextDoc) {
+            const AIConfig = (await import('../models/AIConfig.js')).default;
+            const modelDiscoveryService = (await import('../services/modelDiscoveryService.js')).default;
+            const globalConfig = await AIConfig.findOne({ isActive: true });
+            const modelId = globalConfig?.model?.id || 'gpt-4o';
+            const contextLimit = modelDiscoveryService.getContextLimit(modelId);
+            
+            contextDoc = new ConversationContext({
+                callSid,
+                modelId,
+                contextLimit,
+                currentTokens: 0,
+                messages: []
+            });
+        }
 
-        const aiResponse = await getAIResponse(conversationText, null, { callSid });
+        // Add user message to context
+        const userMessage = {
+            role: 'user',
+            content: userAnswer,
+            timestamp: new Date(),
+            tokenCount: tokenManagementService.countMessageTokens({ role: 'user', content: userAnswer }, contextDoc.modelId)
+        };
+        contextDoc.messages.push(userMessage);
+        contextDoc.currentTokens += userMessage.tokenCount;
+        await contextDoc.save();
+
+        // Prepare call context
+        const callContext = {
+            callSid,
+            transcript: conversations[callSid].transcript,
+            messages: contextDoc.messages
+        };
+
+        // Generate AI reply - getAIResponse will handle token management
+        const aiResponse = await getAIResponse(contextDoc.messages, null, callContext);
         aiReply = aiResponse.content || "I understand. How else can I help?";
         
         // Add AI response to transcript
         conversations[callSid].transcript.push({ role: "agent", text: aiReply });
+        
+        // Store token usage
+        if (aiResponse.tokenUsage && contextDoc) {
+            contextDoc.currentTokens = aiResponse.tokenUsage.totalTokens || aiResponse.tokenUsage.after;
+            await contextDoc.save();
+        }
         
         console.log(`🤖 AI replied: "${aiReply}"`);
         

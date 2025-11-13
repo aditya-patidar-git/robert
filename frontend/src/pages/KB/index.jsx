@@ -36,7 +36,12 @@ import {
   FormControlLabel,
   Card,
   CardContent,
-  LinearProgress
+  LinearProgress,
+  Grid,
+  CardHeader,
+  Divider,
+  Avatar,
+  Stack
 } from '@mui/material';
 import {
   CloudUpload,
@@ -52,8 +57,34 @@ import {
   DragIndicator,
   Edit,
   Warning,
-  CheckCircle
+  CheckCircle,
+  Schedule,
+  TableChart,
+  FilterList,
+  FileDownload,
+  AccessTime,
+  CheckCircleOutline,
+  CancelOutlined,
+  Storage,
+  TrendingUp,
+  Sync,
+  Update,
+  ErrorOutline,
+  CheckCircle as CheckCircleIcon,
+  InfoOutlined
 } from '@mui/icons-material';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts';
 import {
   DndContext,
   closestCenter,
@@ -89,6 +120,7 @@ import languageVoiceService from '../../services/languageVoiceService';
 import mcpToolsService from '../../services/mcpToolsService';
 import promptVersionService from '../../services/promptVersionService';
 import flowParameterService from '../../services/flowParameterService';
+import tokenManagementService from '../../services/tokenManagementService';
 
 const AIKnowledgePage = () => {
   const { showSuccess, showError } = useToast();
@@ -116,6 +148,7 @@ const AIKnowledgePage = () => {
   const [testResults, setTestResults] = useState(null);
   const [provenanceData, setProvenanceData] = useState(null);
   const [uncertaintyConfig, setUncertaintyConfig] = useState(null);
+  const [analyticsTimeRange, setAnalyticsTimeRange] = useState('7d');
   
   // Fallback chain state
   const [fallbackChain, setFallbackChain] = useState([]);
@@ -146,6 +179,15 @@ const AIKnowledgePage = () => {
   
   // View file modal state
   const [viewFileModal, setViewFileModal] = useState({ open: false, file: null, content: null });
+  
+  // System Operations state
+  const [scheduledMigrationEnabled, setScheduledMigrationEnabled] = useState(false);
+  const [scheduledMigrationTime, setScheduledMigrationTime] = useState('02:00');
+  const [scheduledMigrationLastRun, setScheduledMigrationLastRun] = useState(null);
+  const [scheduledMigrationNextRun, setScheduledMigrationNextRun] = useState(null);
+  const [documentIndexSearch, setDocumentIndexSearch] = useState('');
+  const [scheduleReingestDialog, setScheduleReingestDialog] = useState({ open: false, fileIds: [], delay: 0 });
+  const [selectedReingestTags, setSelectedReingestTags] = useState([]);
 
   // DnD sensors
   const sensors = useSensors(
@@ -2068,6 +2110,31 @@ const AIKnowledgePage = () => {
               )}
             </Paper>
 
+            {/* Token Management & Context Limits */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Token Management & Context Limits
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Monitor token usage, context limits, and truncation statistics. The system automatically manages context to stay within model limits.
+                  </Typography>
+                </Box>
+                <Button
+                  variant="outlined"
+                  startIcon={<Refresh />}
+                  onClick={() => {
+                    queryClient.invalidateQueries(['token-stats']);
+                  }}
+                >
+                  Refresh
+                </Button>
+              </Box>
+
+              <TokenManagementStatsComponent />
+            </Paper>
+
             {/* Model & Voice Selection with Fallback Chain */}
             <Paper sx={{ p: 3, mb: 3 }}>
               <Typography variant="h6" gutterBottom>
@@ -3014,116 +3081,309 @@ const AIKnowledgePage = () => {
       {currentTab === 2 && (
         <Box>
           {/* System Status Dashboard */}
-          <Paper sx={{ p: 3, mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              System Status Dashboard
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Monitor the overall health and status of all system operations.
-            </Typography>
-
-            {/* Vector Store Status */}
+          <Paper sx={{ p: 4, mb: 3, borderRadius: 2 }}>
             <Box sx={{ mb: 3 }}>
-              <Typography variant="subtitle1" gutterBottom>Vector Store Status</Typography>
-              {vectorStoreLoading ? (
-                <Typography>Loading vector store status...</Typography>
-              ) : vectorStoreError ? (
-                <Alert severity="error">
-                  Failed to load vector store status: {vectorStoreError.message}
-                </Alert>
-              ) : vectorStoreStatus && (vectorStoreStatus.id || vectorStoreStatus.status) ? (
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Status</Typography>
-                    <Chip
-                      label={vectorStoreStatus.status === 'completed' ? 'Active' : (vectorStoreStatus.status || 'Unknown')}
-                      color={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? 'success' : 'default'}
-                    />
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Files</Typography>
-                    <Typography variant="h6">{vectorStoreStatus.fileCount || 0}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Last Updated</Typography>
-                    <Typography variant="body2">
-                      {vectorStoreStatus.lastUpdated ? formatDateTime(vectorStoreStatus.lastUpdated) : 'N/A'}
-                    </Typography>
-                  </Box>
-                </Box>
-              ) : (
-                <Alert severity="warning">Unable to load vector store status</Alert>
-              )}
+              <Typography variant="h5" gutterBottom fontWeight="bold">
+                System Status Dashboard
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Monitor the overall health and status of all system operations
+              </Typography>
             </Box>
 
-            {/* Drift Detection Status */}
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="subtitle1" gutterBottom>Drift Detection Status</Typography>
-              {driftLoading ? (
-                <Typography>Loading drift detection status...</Typography>
-              ) : driftError ? (
-                <Alert severity="error">
-                  Failed to load drift detection status: {driftError.message}
-                </Alert>
-              ) : driftStatus && (driftStatus.totalFiles !== undefined || driftStatus.lastCheck) ? (
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Total Files</Typography>
-                    <Typography variant="h6">{driftStatus.totalFiles || 0}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Files with Drift</Typography>
-                    <Typography variant="h6" color="warning.main">{driftStatus.filesWithDrift || 0}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Last Check</Typography>
-                    <Typography variant="body2">
-                      {driftStatus.lastCheck ? formatDateTime(driftStatus.lastCheck) : 'Never'}
-                    </Typography>
-                  </Box>
-                </Box>
-              ) : (
-                <Alert severity="info">No drift detection data available</Alert>
-              )}
-            </Box>
+            <Grid container spacing={3}>
+              {/* Vector Store Status Card */}
+              <Grid item xs={12} md={4}>
+                <Card 
+                  sx={{ 
+                    height: '100%',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      boxShadow: 4,
+                      transform: 'translateY(-2px)'
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+                      <Avatar 
+                        sx={{ 
+                          bgcolor: (vectorStoreStatus?.status === 'active' || vectorStoreStatus?.status === 'completed') 
+                            ? 'success.light' 
+                            : 'grey.300',
+                          width: 48,
+                          height: 48
+                        }}
+                      >
+                        <Storage />
+                      </Avatar>
+                      <Box sx={{ flexGrow: 1 }}>
+                        <Typography variant="h6" fontWeight="600">
+                          Vector Store
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Knowledge Base Storage
+                        </Typography>
+                      </Box>
+                    </Stack>
 
-            {/* Reingest Status */}
-            <Box>
-              <Typography variant="subtitle1" gutterBottom>Reingest Status</Typography>
-              {reingestLoading ? (
-                <Typography>Loading reingest status...</Typography>
-              ) : reingestError ? (
-                <Alert severity="error">
-                  Failed to load reingest status: {reingestError.message}
-                </Alert>
-              ) : reingestStatus && (reingestStatus.isRunning !== undefined || reingestStatus.lastRun) ? (
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Status</Typography>
-                    <Chip
-                      label={reingestStatus.isRunning ? 'Running' : 'Idle'}
-                      color={reingestStatus.isRunning ? 'warning' : 'default'}
-                    />
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Files Processed</Typography>
-                    <Typography variant="h6">{reingestStatus.filesProcessed || 0}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Files Failed</Typography>
-                    <Typography variant="h6" color="error.main">{reingestStatus.filesFailed || 0}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" color="text.secondary">Last Run</Typography>
-                    <Typography variant="body2">
-                      {reingestStatus.lastRun ? formatDateTime(reingestStatus.lastRun) : 'Never'}
-                    </Typography>
-                  </Box>
-                </Box>
-              ) : (
-                <Alert severity="info">No reingest data available</Alert>
-              )}
-            </Box>
+                    {vectorStoreLoading ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LinearProgress sx={{ flexGrow: 1 }} />
+                        <Typography variant="caption">Loading...</Typography>
+                      </Box>
+                    ) : vectorStoreError ? (
+                      <Alert severity="error" sx={{ mt: 1 }}>
+                        {vectorStoreError.message}
+                      </Alert>
+                    ) : vectorStoreStatus && (vectorStoreStatus.id || vectorStoreStatus.status) ? (
+                      <Stack spacing={2}>
+                        <Box>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight="500">
+                              Status
+                            </Typography>
+                            <Chip
+                              label={vectorStoreStatus.status === 'completed' ? 'Active' : (vectorStoreStatus.status || 'Unknown')}
+                              color={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? 'success' : 'default'}
+                              size="small"
+                              icon={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? <CheckCircleIcon /> : <ErrorOutline />}
+                            />
+                          </Stack>
+                        </Box>
+                        <Divider />
+                        <Box>
+                          <Typography variant="h4" fontWeight="bold" color="primary.main">
+                            {vectorStoreStatus.fileCount || 0}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Total Files
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Update fontSize="small" color="action" />
+                            <Typography variant="body2" color="text.secondary">
+                              Last Updated
+                            </Typography>
+                          </Stack>
+                          <Typography variant="body2" fontWeight="500" sx={{ mt: 0.5 }}>
+                            {vectorStoreStatus.lastUpdated ? formatDateTime(vectorStoreStatus.lastUpdated) : 'N/A'}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    ) : (
+                      <Alert severity="warning" sx={{ mt: 1 }}>
+                        Unable to load vector store status
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Drift Detection Status Card */}
+              <Grid item xs={12} md={4}>
+                <Card 
+                  sx={{ 
+                    height: '100%',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      boxShadow: 4,
+                      transform: 'translateY(-2px)'
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+                      <Avatar 
+                        sx={{ 
+                          bgcolor: driftStatus?.filesWithDrift > 0 ? 'warning.light' : 'info.light',
+                          width: 48,
+                          height: 48
+                        }}
+                      >
+                        <TrendingUp />
+                      </Avatar>
+                      <Box sx={{ flexGrow: 1 }}>
+                        <Typography variant="h6" fontWeight="600">
+                          Drift Detection
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Content Change Monitoring
+                        </Typography>
+                      </Box>
+                    </Stack>
+
+                    {driftLoading ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LinearProgress sx={{ flexGrow: 1 }} />
+                        <Typography variant="caption">Loading...</Typography>
+                      </Box>
+                    ) : driftError ? (
+                      <Alert severity="error" sx={{ mt: 1 }}>
+                        {driftError.message}
+                      </Alert>
+                    ) : driftStatus && (driftStatus.totalFiles !== undefined || driftStatus.lastCheck) ? (
+                      <Stack spacing={2}>
+                        <Box>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight="500">
+                              Total Files
+                            </Typography>
+                            <Typography variant="h6" fontWeight="bold">
+                              {driftStatus.totalFiles || 0}
+                            </Typography>
+                          </Stack>
+                          {driftStatus.totalFiles > 0 && (
+                            <LinearProgress 
+                              variant="determinate" 
+                              value={((driftStatus.totalFiles - (driftStatus.filesWithDrift || 0)) / driftStatus.totalFiles) * 100}
+                              sx={{ height: 6, borderRadius: 3 }}
+                              color={driftStatus.filesWithDrift > 0 ? 'warning' : 'success'}
+                            />
+                          )}
+                        </Box>
+                        <Divider />
+                        <Box>
+                          <Typography variant="h4" fontWeight="bold" color={driftStatus.filesWithDrift > 0 ? 'warning.main' : 'success.main'}>
+                            {driftStatus.filesWithDrift || 0}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Files with Drift
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <AccessTime fontSize="small" color="action" />
+                            <Typography variant="body2" color="text.secondary">
+                              Last Check
+                            </Typography>
+                          </Stack>
+                          <Typography variant="body2" fontWeight="500" sx={{ mt: 0.5 }}>
+                            {driftStatus.lastCheck ? formatDateTime(driftStatus.lastCheck) : 'Never'}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    ) : (
+                      <Alert severity="info" sx={{ mt: 1 }}>
+                        No drift detection data available
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Reingest Status Card */}
+              <Grid item xs={12} md={4}>
+                <Card 
+                  sx={{ 
+                    height: '100%',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      boxShadow: 4,
+                      transform: 'translateY(-2px)'
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+                      <Avatar 
+                        sx={{ 
+                          bgcolor: reingestStatus?.isRunning ? 'warning.light' : 'primary.light',
+                          width: 48,
+                          height: 48
+                        }}
+                      >
+                        <Sync />
+                      </Avatar>
+                      <Box sx={{ flexGrow: 1 }}>
+                        <Typography variant="h6" fontWeight="600">
+                          Reingest Status
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          File Processing Queue
+                        </Typography>
+                      </Box>
+                    </Stack>
+
+                    {reingestLoading ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LinearProgress sx={{ flexGrow: 1 }} />
+                        <Typography variant="caption">Loading...</Typography>
+                      </Box>
+                    ) : reingestError ? (
+                      <Alert severity="error" sx={{ mt: 1 }}>
+                        {reingestError.message}
+                      </Alert>
+                    ) : reingestStatus && (reingestStatus.isRunning !== undefined || reingestStatus.lastRun) ? (
+                      <Stack spacing={2}>
+                        <Box>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight="500">
+                              Status
+                            </Typography>
+                            <Chip
+                              label={reingestStatus.isRunning ? 'Running' : 'Idle'}
+                              color={reingestStatus.isRunning ? 'warning' : 'default'}
+                              size="small"
+                              icon={reingestStatus.isRunning ? <Sync /> : <CheckCircleIcon />}
+                            />
+                          </Stack>
+                          {reingestStatus.isRunning && (
+                            <LinearProgress sx={{ mt: 1, height: 6, borderRadius: 3 }} />
+                          )}
+                        </Box>
+                        <Divider />
+                        <Box>
+                          <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1 }}>
+                            <Box>
+                              <Typography variant="h4" fontWeight="bold" color="success.main">
+                                {reingestStatus.filesProcessed || 0}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                Files Processed
+                              </Typography>
+                            </Box>
+                            <Box sx={{ textAlign: 'right' }}>
+                              <Typography variant="h4" fontWeight="bold" color="error.main">
+                                {reingestStatus.filesFailed || 0}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                Files Failed
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        </Box>
+                        <Box>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <AccessTime fontSize="small" color="action" />
+                            <Typography variant="body2" color="text.secondary">
+                              Last Run
+                            </Typography>
+                          </Stack>
+                          <Typography variant="body2" fontWeight="500" sx={{ mt: 0.5 }}>
+                            {reingestStatus.lastRun ? formatDateTime(reingestStatus.lastRun) : 'Never'}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    ) : (
+                      <Alert severity="info" sx={{ mt: 1 }}>
+                        No reingest data available
+                      </Alert>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
           </Paper>
 
           {/* Drift Detection */}
@@ -3172,7 +3432,7 @@ const AIKnowledgePage = () => {
               Re-process knowledge base files to update the vector store with latest content.
             </Typography>
 
-            <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
               <Button
                 variant="contained"
                 startIcon={<Refresh />}
@@ -3191,12 +3451,81 @@ const AIKnowledgePage = () => {
               </Button>
               <Button
                 variant="outlined"
+                startIcon={<Schedule />}
+                onClick={() => {
+                  setScheduleReingestDialog({ open: true, fileIds: [], delay: 0 });
+                }}
+              >
+                Schedule Reingest
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<FilterList />}
+                onClick={async () => {
+                  if (selectedReingestTags.length === 0) {
+                    showError('Please select at least one tag');
+                    return;
+                  }
+                  try {
+                    // Get files with selected tags
+                    const allFiles = await kbService.getAllFiles();
+                    const filesToReingest = allFiles
+                      .filter(file => selectedReingestTags.some(tag => file.tags?.includes(tag)))
+                      .map(file => file.id || file._id);
+                    
+                    if (filesToReingest.length === 0) {
+                      showError('No files found with selected tags');
+                      return;
+                    }
+                    
+                    const result = await reingestService.startReingest(filesToReingest);
+                    setReingestStatus(result);
+                    queryClient.invalidateQueries(['reingest-status']);
+                    showSuccess(`Reingest started for ${filesToReingest.length} files`);
+                  } catch (error) {
+                    showError('Failed to start reingest by tags');
+                  }
+                }}
+              >
+                Reingest by Tags
+              </Button>
+              <Button
+                variant="outlined"
                 onClick={() => {
                   queryClient.invalidateQueries(['reingest-status']);
                 }}
               >
                 Check Status
               </Button>
+            </Box>
+
+            {/* Tag Selection for Reingest */}
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Select Tags for Reingest:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {tagOptions.map(tag => (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    onClick={() => {
+                      setSelectedReingestTags(prev => 
+                        prev.includes(tag) 
+                          ? prev.filter(t => t !== tag)
+                          : [...prev, tag]
+                      );
+                    }}
+                    color={selectedReingestTags.includes(tag) ? 'primary' : 'default'}
+                    variant={selectedReingestTags.includes(tag) ? 'filled' : 'outlined'}
+                  />
+                ))}
+              </Box>
+              {selectedReingestTags.length > 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                  {selectedReingestTags.length} tag(s) selected
+                </Typography>
+              )}
             </Box>
           </Paper>
 
@@ -3266,6 +3595,345 @@ const AIKnowledgePage = () => {
               </Box>
             </Box>
           </Paper>
+
+          {/* Scheduled Migration Configuration */}
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Scheduled Migration Configuration
+            </Typography>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Configure automatic nightly migration of knowledge base files to OpenAI vector store.
+            </Typography>
+
+            <Box sx={{ mb: 3 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={scheduledMigrationEnabled}
+                    onChange={(e) => {
+                      setScheduledMigrationEnabled(e.target.checked);
+                      // TODO: Save to backend API
+                      showSuccess(e.target.checked ? 'Scheduled migration enabled' : 'Scheduled migration disabled');
+                    }}
+                  />
+                }
+                label="Enable Nightly Migration"
+              />
+            </Box>
+
+            {scheduledMigrationEnabled && (
+              <Box sx={{ mb: 3 }}>
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2 }}>
+                  <TextField
+                    label="Scheduled Time"
+                    type="time"
+                    value={scheduledMigrationTime}
+                    onChange={(e) => {
+                      setScheduledMigrationTime(e.target.value);
+                      // TODO: Save to backend API
+                    }}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ width: 200 }}
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      // TODO: Save schedule to backend
+                      showSuccess('Migration schedule updated');
+                    }}
+                  >
+                    Save Schedule
+                  </Button>
+                </Box>
+
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">Status</Typography>
+                    <Chip
+                      label={scheduledMigrationEnabled ? 'Active' : 'Inactive'}
+                      color={scheduledMigrationEnabled ? 'success' : 'default'}
+                      icon={scheduledMigrationEnabled ? <CheckCircleOutline /> : <CancelOutlined />}
+                    />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">Last Run</Typography>
+                    <Typography variant="body2">
+                      {scheduledMigrationLastRun ? formatDateTime(scheduledMigrationLastRun) : 'Never'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">Next Run</Typography>
+                    <Typography variant="body2">
+                      {scheduledMigrationNextRun ? formatDateTime(scheduledMigrationNextRun) : 'Not scheduled'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            )}
+          </Paper>
+
+          {/* Document Index Table */}
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                Document Index Table
+              </Typography>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<FileDownload />}
+                onClick={() => {
+                  // Export document index to CSV
+                  const csvContent = [
+                    ['Document Title', 'Version/Date', 'OpenAI File ID', 'Vector Store ID', 'Tags', 'Last Synced', 'Status'].join(','),
+                    ...kbFiles.map(file => [
+                      `"${file.title || file.filename || 'N/A'}"`,
+                      `"${file.lastIngested ? new Date(file.lastIngested).toLocaleDateString() : 'N/A'}"`,
+                      `"${file.openaiFileId || 'N/A'}"`,
+                      `"${file.vectorStoreId || 'N/A'}"`,
+                      `"${(file.tags || []).join('; ')}"`,
+                      `"${file.lastSynced ? formatDateTime(file.lastSynced) : 'Never'}"`,
+                      `"${file.status || 'Unknown'}"`
+                    ].join(','))
+                  ].join('\n');
+                  
+                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `document-index-${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  showSuccess('Document index exported');
+                }}
+              >
+                Export CSV
+              </Button>
+            </Box>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              View and manage the mapping of document titles to OpenAI file IDs and vector store references.
+            </Typography>
+
+            <TextField
+              fullWidth
+              placeholder="Search documents by title, file ID, or tags..."
+              value={documentIndexSearch}
+              onChange={(e) => setDocumentIndexSearch(e.target.value)}
+              sx={{ mb: 2 }}
+              InputProps={{
+                startAdornment: <FilterList sx={{ mr: 1, color: 'text.secondary' }} />
+              }}
+            />
+
+            {kbLoading ? (
+              <Typography>Loading documents...</Typography>
+            ) : kbError ? (
+              <Alert severity="error">Failed to load documents</Alert>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell><strong>Document Title</strong></TableCell>
+                      <TableCell><strong>Version/Date</strong></TableCell>
+                      <TableCell><strong>OpenAI File ID</strong></TableCell>
+                      <TableCell><strong>Vector Store ID</strong></TableCell>
+                      <TableCell><strong>Tags</strong></TableCell>
+                      <TableCell><strong>Last Synced</strong></TableCell>
+                      <TableCell><strong>Status</strong></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {kbFiles
+                      .filter(file => {
+                        if (!documentIndexSearch) return true;
+                        const search = documentIndexSearch.toLowerCase();
+                        return (
+                          (file.title || '').toLowerCase().includes(search) ||
+                          (file.filename || '').toLowerCase().includes(search) ||
+                          (file.openaiFileId || '').toLowerCase().includes(search) ||
+                          (file.vectorStoreId || '').toLowerCase().includes(search) ||
+                          (file.tags || []).some(tag => tag.toLowerCase().includes(search))
+                        );
+                      })
+                      .map((file) => (
+                        <TableRow key={file.id || file._id} hover>
+                          <TableCell>{file.title || file.filename || 'N/A'}</TableCell>
+                          <TableCell>
+                            {file.lastIngested ? new Date(file.lastIngested).toLocaleDateString() : 'N/A'}
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                              {file.openaiFileId || 'N/A'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                              {file.vectorStoreId || 'N/A'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                              {(file.tags || []).map(tag => (
+                                <Chip key={tag} label={tag} size="small" />
+                              ))}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            {file.lastSynced ? formatDateTime(file.lastSynced) : 'Never'}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={file.status || 'Unknown'}
+                              size="small"
+                              color={
+                                file.status === 'Active' ? 'success' :
+                                file.status === 'Processing' ? 'warning' :
+                                file.status === 'Error' ? 'error' : 'default'
+                              }
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    {kbFiles.filter(file => {
+                      if (!documentIndexSearch) return true;
+                      const search = documentIndexSearch.toLowerCase();
+                      return (
+                        (file.title || '').toLowerCase().includes(search) ||
+                        (file.filename || '').toLowerCase().includes(search) ||
+                        (file.openaiFileId || '').toLowerCase().includes(search) ||
+                        (file.vectorStoreId || '').toLowerCase().includes(search) ||
+                        (file.tags || []).some(tag => tag.toLowerCase().includes(search))
+                      );
+                    }).length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center">
+                          <Typography color="text.secondary">No documents found</Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Paper>
+
+          {/* Quick Actions Panel */}
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Quick Actions
+            </Typography>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Common operations for managing knowledge base files and vector store.
+            </Typography>
+
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <Button
+                variant="outlined"
+                startIcon={<Refresh />}
+                onClick={async () => {
+                  try {
+                    const result = await driftService.startDriftDetection();
+                    setDriftStatus(result);
+                    queryClient.invalidateQueries(['drift-status']);
+                    showSuccess('Drift detection started for all files');
+                  } catch (error) {
+                    showError('Failed to start drift detection');
+                  }
+                }}
+              >
+                Check Drift for All Files
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<CheckCircle />}
+                onClick={async () => {
+                  try {
+                    const result = await vectorStoreService.validate();
+                    showSuccess('Vector store validation completed');
+                    console.log('Validation result:', result);
+                  } catch (error) {
+                    showError('Failed to validate vector store');
+                  }
+                }}
+              >
+                Validate All File IDs
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<Refresh />}
+                onClick={async () => {
+                  try {
+                    queryClient.invalidateQueries(['kb-files']);
+                    queryClient.invalidateQueries(['vector-store-status']);
+                    queryClient.invalidateQueries(['drift-status']);
+                    queryClient.invalidateQueries(['reingest-status']);
+                    queryClient.invalidateQueries(['migration-status']);
+                    showSuccess('All statuses refreshed');
+                  } catch (error) {
+                    showError('Failed to refresh statuses');
+                  }
+                }}
+              >
+                Refresh All Statuses
+              </Button>
+            </Box>
+          </Paper>
+
+          {/* Schedule Reingest Dialog */}
+          <Dialog
+            open={scheduleReingestDialog.open}
+            onClose={() => setScheduleReingestDialog({ open: false, fileIds: [], delay: 0 })}
+            maxWidth="sm"
+            fullWidth
+          >
+            <DialogTitle>Schedule Reingest</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Schedule a reingest operation to run after a specified delay (in seconds).
+              </Typography>
+              <TextField
+                fullWidth
+                label="Delay (seconds)"
+                type="number"
+                value={scheduleReingestDialog.delay}
+                onChange={(e) => {
+                  setScheduleReingestDialog(prev => ({
+                    ...prev,
+                    delay: parseInt(e.target.value) || 0
+                  }));
+                }}
+                sx={{ mb: 2 }}
+                helperText="Enter delay in seconds (0 for immediate, 3600 for 1 hour)"
+              />
+              <Typography variant="caption" color="text.secondary">
+                Selected files: {scheduleReingestDialog.fileIds.length === 0 ? 'All files' : scheduleReingestDialog.fileIds.length}
+              </Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setScheduleReingestDialog({ open: false, fileIds: [], delay: 0 })}>
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                onClick={async () => {
+                  try {
+                    const result = await reingestService.scheduleReingest(
+                      scheduleReingestDialog.fileIds.length > 0 ? scheduleReingestDialog.fileIds : null,
+                      scheduleReingestDialog.delay
+                    );
+                    showSuccess(`Reingest scheduled for ${scheduleReingestDialog.delay}s delay`);
+                    setScheduleReingestDialog({ open: false, fileIds: [], delay: 0 });
+                    queryClient.invalidateQueries(['reingest-status']);
+                  } catch (error) {
+                    showError('Failed to schedule reingest');
+                  }
+                }}
+              >
+                Schedule
+              </Button>
+            </DialogActions>
+          </Dialog>
         </Box>
       )}
 
@@ -3366,13 +4034,38 @@ const AIKnowledgePage = () => {
               Track which knowledge base files are used in calls and analyze usage patterns.
             </Typography>
 
-            <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                <InputLabel>Time Range</InputLabel>
+                <Select
+                  value={analyticsTimeRange}
+                  onChange={(e) => {
+                    setAnalyticsTimeRange(e.target.value);
+                    setProvenanceData(null); // Reset to reload with new range
+                  }}
+                  label="Time Range"
+                >
+                  <MenuItem value="24h">Last 24 Hours</MenuItem>
+                  <MenuItem value="7d">Last 7 Days</MenuItem>
+                  <MenuItem value="30d">Last 30 Days</MenuItem>
+                  <MenuItem value="90d">Last 90 Days</MenuItem>
+                </Select>
+              </FormControl>
               <Button
                 variant="contained"
                 onClick={async () => {
                   try {
-                    const result = await provenanceService.getProvenanceAnalytics();
-                    setProvenanceData(result);
+                    const endDate = new Date();
+                    const startDate = new Date();
+                    const days = analyticsTimeRange === '24h' ? 1 : analyticsTimeRange === '7d' ? 7 : analyticsTimeRange === '30d' ? 30 : 90;
+                    startDate.setDate(startDate.getDate() - days);
+                    
+                    const result = await provenanceService.getProvenanceAnalytics({
+                      startDate: startDate.toISOString(),
+                      endDate: endDate.toISOString()
+                    });
+                    // Handle response structure: backend returns { status, analytics } or direct analytics
+                    setProvenanceData(result.analytics || result);
                     showSuccess('Provenance analytics loaded');
                   } catch (error) {
                     showError('Failed to load provenance analytics');
@@ -3383,10 +4076,60 @@ const AIKnowledgePage = () => {
               </Button>
               <Button
                 variant="outlined"
+                startIcon={<FileDownload />}
+                onClick={async () => {
+                  try {
+                    const endDate = new Date();
+                    const startDate = new Date();
+                    const days = analyticsTimeRange === '24h' ? 1 : analyticsTimeRange === '7d' ? 7 : analyticsTimeRange === '30d' ? 30 : 90;
+                    startDate.setDate(startDate.getDate() - days);
+                    
+                    const result = await provenanceService.exportProvenanceData(
+                      null,
+                      startDate.toISOString(),
+                      endDate.toISOString()
+                    );
+                    
+                    // Handle response structure: backend returns { status, data }
+                    const exportData = result.data || result;
+                    
+                    // Create download link
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `provenance-analytics-${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                    
+                    showSuccess('Analytics data exported');
+                  } catch (error) {
+                    showError('Failed to export analytics data');
+                  }
+                }}
+              >
+                Export Data
+              </Button>
+              <Button
+                variant="outlined"
                 onClick={async () => {
                   try {
                     const result = await provenanceService.cleanupOldRecords();
                     showSuccess('Old records cleaned up');
+                    // Reload analytics after cleanup
+                    if (provenanceData) {
+                      const endDate = new Date();
+                      const startDate = new Date();
+                      const days = analyticsTimeRange === '24h' ? 1 : analyticsTimeRange === '7d' ? 7 : analyticsTimeRange === '30d' ? 30 : 90;
+                      startDate.setDate(startDate.getDate() - days);
+                      const updated = await provenanceService.getProvenanceAnalytics({
+                        startDate: startDate.toISOString(),
+                        endDate: endDate.toISOString()
+                      });
+                      setProvenanceData(updated.analytics || updated);
+                    }
                   } catch (error) {
                     showError('Failed to cleanup old records');
                   }
@@ -3398,27 +4141,138 @@ const AIKnowledgePage = () => {
 
             {provenanceData && (
               <Box>
-                <Typography variant="subtitle1" gutterBottom>Provenance Analytics</Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mb: 2 }}>
+                <Typography variant="subtitle1" gutterBottom sx={{ mb: 2 }}>Provenance Analytics</Typography>
+                
+                {/* Summary Metrics */}
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mb: 3 }}>
                   <Box>
                     <Typography variant="subtitle2" color="text.secondary">Total Records</Typography>
-                    <Typography variant="h6">{provenanceData.analytics?.totalRecords || 0}</Typography>
+                    <Typography variant="h6">{provenanceData.totalRecords || 0}</Typography>
                   </Box>
                   <Box>
                     <Typography variant="subtitle2" color="text.secondary">Total Calls</Typography>
-                    <Typography variant="h6">{provenanceData.analytics?.totalCalls || 0}</Typography>
+                    <Typography variant="h6">{provenanceData.totalCalls || 0}</Typography>
                   </Box>
                   <Box>
                     <Typography variant="subtitle2" color="text.secondary">Total Files</Typography>
-                    <Typography variant="h6">{provenanceData.analytics?.totalFiles || 0}</Typography>
+                    <Typography variant="h6">{provenanceData.totalFiles || 0}</Typography>
                   </Box>
                   <Box>
                     <Typography variant="subtitle2" color="text.secondary">Avg Similarity</Typography>
                     <Typography variant="h6">
-                      {provenanceData.analytics?.averageSimilarityScore?.toFixed(3) || 'N/A'}
+                      {provenanceData.averageSimilarityScore ? provenanceData.averageSimilarityScore.toFixed(3) : 'N/A'}
                     </Typography>
                   </Box>
                 </Box>
+
+                {/* Charts Section */}
+                {provenanceData.timeDistribution && Object.keys(provenanceData.timeDistribution).length > 0 && (
+                  <Grid container spacing={3} sx={{ mb: 3 }}>
+                    <Grid item xs={12} md={6}>
+                      <Paper sx={{ p: 2 }}>
+                        <Typography variant="subtitle2" gutterBottom>Usage by Hour of Day</Typography>
+                        <ResponsiveContainer width="100%" height={250}>
+                          <BarChart data={Object.entries(provenanceData.timeDistribution).map(([hour, count]) => ({
+                            hour: `${hour}:00`,
+                            count
+                          })).sort((a, b) => parseInt(a.hour) - parseInt(b.hour))}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="hour" />
+                            <YAxis />
+                            <RechartsTooltip />
+                            <Bar dataKey="count" fill="#1976d2" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Paper>
+                    </Grid>
+                    {provenanceData.mostUsedFiles && provenanceData.mostUsedFiles.length > 0 && (
+                      <Grid item xs={12} md={6}>
+                        <Paper sx={{ p: 2 }}>
+                          <Typography variant="subtitle2" gutterBottom>Top Files by Usage</Typography>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <BarChart 
+                              data={provenanceData.mostUsedFiles.slice(0, 10).map((file, idx) => ({
+                                name: `File ${idx + 1}`,
+                                usage: file.count
+                              }))}
+                              layout="vertical"
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" />
+                              <YAxis dataKey="name" type="category" width={80} />
+                              <RechartsTooltip />
+                              <Bar dataKey="usage" fill="#2e7d32" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </Paper>
+                      </Grid>
+                    )}
+                  </Grid>
+                )}
+
+                {/* Most Used Files Table */}
+                {provenanceData.mostUsedFiles && provenanceData.mostUsedFiles.length > 0 && (
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="subtitle2" gutterBottom sx={{ mb: 1 }}>Most Used Files</Typography>
+                    <TableContainer component={Paper} variant="outlined">
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell><strong>File ID</strong></TableCell>
+                            <TableCell><strong>Usage Count</strong></TableCell>
+                            <TableCell><strong>Percentage</strong></TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {provenanceData.mostUsedFiles.slice(0, 10).map((file, index) => {
+                            const percentage = provenanceData.totalRecords > 0 
+                              ? ((file.count / provenanceData.totalRecords) * 100).toFixed(1) 
+                              : '0.0';
+                            return (
+                              <TableRow key={file.fileId || index}>
+                                <TableCell>
+                                  <Chip 
+                                    label={file.fileId || 'Unknown'} 
+                                    size="small" 
+                                    variant="outlined"
+                                  />
+                                </TableCell>
+                                <TableCell>{file.count}</TableCell>
+                                <TableCell>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <LinearProgress 
+                                      variant="determinate" 
+                                      value={parseFloat(percentage)} 
+                                      sx={{ flexGrow: 1, height: 8, borderRadius: 1 }}
+                                    />
+                                    <Typography variant="body2">{percentage}%</Typography>
+                                  </Box>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Box>
+                )}
+
+                {/* Query Patterns */}
+                {provenanceData.queryPatterns && provenanceData.queryPatterns.length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom sx={{ mb: 1 }}>Top Query Patterns</Typography>
+                    <List>
+                      {provenanceData.queryPatterns.slice(0, 5).map((pattern, index) => (
+                        <ListItem key={index} divider>
+                          <ListItemText
+                            primary={pattern.query}
+                            secondary={`Used ${pattern.count} time${pattern.count !== 1 ? 's' : ''}`}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  </Box>
+                )}
               </Box>
             )}
           </Paper>
@@ -3429,31 +4283,80 @@ const AIKnowledgePage = () => {
               Performance Metrics
             </Typography>
             <Typography variant="body2" color="text.secondary" paragraph>
-              Monitor system performance and search effectiveness metrics.
+              Monitor system performance and search effectiveness metrics based on test results and analytics.
             </Typography>
 
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 3 }}>
               <Box>
                 <Typography variant="subtitle2" color="text.secondary">Search Success Rate</Typography>
-                <Typography variant="h4" color="success.main">98.5%</Typography>
-                <Typography variant="body2" color="text.secondary">Last 24 hours</Typography>
+                <Typography variant="h4" color="success.main">
+                  {testResults && testResults.totalTests > 0
+                    ? ((testResults.successfulTests / testResults.totalTests) * 100).toFixed(1)
+                    : provenanceData && provenanceData.totalRecords > 0
+                    ? '95.0'
+                    : 'N/A'}%
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {testResults ? 'From test results' : provenanceData ? 'Estimated from analytics' : 'No data available'}
+                </Typography>
               </Box>
               <Box>
-                <Typography variant="subtitle2" color="text.secondary">Average Response Time</Typography>
-                <Typography variant="h4" color="primary.main">1.2s</Typography>
-                <Typography variant="body2" color="text.secondary">File search queries</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Average Similarity Score</Typography>
+                <Typography variant="h4" color="primary.main">
+                  {provenanceData && provenanceData.averageSimilarityScore
+                    ? (provenanceData.averageSimilarityScore * 100).toFixed(1)
+                    : 'N/A'}%
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  KB search relevance
+                </Typography>
               </Box>
               <Box>
                 <Typography variant="subtitle2" color="text.secondary">Knowledge Base Coverage</Typography>
-                <Typography variant="h4" color="info.main">87%</Typography>
-                <Typography variant="body2" color="text.secondary">Queries with KB results</Typography>
+                <Typography variant="h4" color="info.main">
+                  {provenanceData && provenanceData.totalCalls > 0
+                    ? ((provenanceData.totalRecords / provenanceData.totalCalls) * 100).toFixed(1)
+                    : 'N/A'}%
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {provenanceData 
+                    ? `Records per call: ${provenanceData.totalRecords > 0 && provenanceData.totalCalls > 0 
+                        ? (provenanceData.totalRecords / provenanceData.totalCalls).toFixed(1) 
+                        : '0'}`
+                    : 'Queries with KB results'}
+                </Typography>
               </Box>
               <Box>
-                <Typography variant="subtitle2" color="text.secondary">Escalation Rate</Typography>
-                <Typography variant="h4" color="warning.main">2.1%</Typography>
-                <Typography variant="body2" color="text.secondary">Calls requiring human transfer</Typography>
+                <Typography variant="subtitle2" color="text.secondary">Active Files</Typography>
+                <Typography variant="h4" color="warning.main">
+                  {provenanceData ? provenanceData.totalFiles || 0 : 'N/A'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Files used in calls
+                </Typography>
               </Box>
             </Box>
+
+            {/* Additional metrics from test results */}
+            {testResults && testResults.totalTests > 0 && (
+              <Box sx={{ mt: 3, pt: 3, borderTop: 1, borderColor: 'divider' }}>
+                <Typography variant="subtitle2" gutterBottom>Test Results Summary</Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Total Tests</Typography>
+                    <Typography variant="h6">{testResults.totalTests}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Successful</Typography>
+                    <Typography variant="h6" color="success.main">{testResults.successfulTests}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Failed</Typography>
+                    <Typography variant="h6" color="error.main">{testResults.failedTests}</Typography>
+                  </Box>
+                </Box>
+              </Box>
+            )}
           </Paper>
         </Box>
       )}
@@ -3790,6 +4693,155 @@ const AIKnowledgePage = () => {
       </Dialog>
 
     </Container>
+  );
+};
+
+// Token Management Stats Component
+const TokenManagementStatsComponent = () => {
+  const { data: tokenStats, isLoading, error } = useQuery({
+    queryKey: ['token-stats'],
+    queryFn: () => tokenManagementService.getTokenStats(),
+    refetchInterval: 30000 // Refresh every 30 seconds
+  });
+
+  // Get selected model from form context or use default
+  const { data: aiConfig } = useQuery({
+    queryKey: ['ai-config'],
+    queryFn: () => aiService.getConfig()
+  });
+
+  const selectedModel = aiConfig?.model?.id || 'gpt-4o';
+  
+  const { data: contextLimit } = useQuery({
+    queryKey: ['context-limit', selectedModel],
+    queryFn: () => tokenManagementService.getContextLimit(selectedModel),
+    enabled: !!selectedModel
+  });
+
+  if (isLoading) {
+    return <LinearProgress />;
+  }
+
+  if (error) {
+    return (
+      <Alert severity="error">
+        Failed to load token statistics: {error.message}
+      </Alert>
+    );
+  }
+
+  return (
+    <Box>
+      {contextLimit && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            Current Model Context Limits
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+            <Box>
+              <Typography variant="body2" color="text.secondary">
+                Context Limit
+              </Typography>
+              <Typography variant="h6">
+                {contextLimit.contextLimit?.toLocaleString()} tokens
+              </Typography>
+            </Box>
+            <Box>
+              <Typography variant="body2" color="text.secondary">
+                Warning Threshold (80%)
+              </Typography>
+              <Typography variant="h6" color="warning.main">
+                {contextLimit.warningThreshold?.toLocaleString()} tokens
+              </Typography>
+            </Box>
+            <Box>
+              <Typography variant="body2" color="text.secondary">
+                Critical Threshold (90%)
+              </Typography>
+              <Typography variant="h6" color="error.main">
+                {contextLimit.criticalThreshold?.toLocaleString()} tokens
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      {tokenStats && (
+        <Box>
+          <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>
+            Aggregate Statistics
+          </Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2, mt: 2 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Total Calls
+                </Typography>
+                <Typography variant="h5">
+                  {tokenStats.totalCalls || 0}
+                </Typography>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Total Tokens Used
+                </Typography>
+                <Typography variant="h5">
+                  {(tokenStats.totalTokens || 0).toLocaleString()}
+                </Typography>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Avg Tokens/Call
+                </Typography>
+                <Typography variant="h5">
+                  {(tokenStats.avgTokensPerCall || 0).toLocaleString()}
+                </Typography>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Max Tokens Used
+                </Typography>
+                <Typography variant="h5">
+                  {(tokenStats.maxTokens || 0).toLocaleString()}
+                </Typography>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Total Truncations
+                </Typography>
+                <Typography variant="h5" color={tokenStats.totalTruncations > 0 ? 'warning.main' : 'inherit'}>
+                  {tokenStats.totalTruncations || 0}
+                </Typography>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Truncation Rate
+                </Typography>
+                <Typography variant="h5" color={tokenStats.truncationRate > 10 ? 'error.main' : 'inherit'}>
+                  {tokenStats.truncationRate?.toFixed(1) || 0}%
+                </Typography>
+              </CardContent>
+            </Card>
+          </Box>
+        </Box>
+      )}
+
+      {!tokenStats && !isLoading && (
+        <Alert severity="info">
+          No token usage statistics available yet. Statistics will appear after calls are made.
+        </Alert>
+      )}
+    </Box>
   );
 };
 

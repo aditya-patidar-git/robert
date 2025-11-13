@@ -31,6 +31,7 @@ import itmBookingRoutes from "./routes/itmBookingRoutes.js";
 import languageVoiceRoutes from "./routes/languageVoiceRoutes.js";
 import promptVersionRoutes from "./routes/promptVersionRoutes.js";
 import flowParameterRoutes from "./routes/flowParameterRoutes.js";
+import tokenManagementRoutes from "./routes/tokenManagementRoutes.js";
 
 dotenv.config();
 
@@ -91,6 +92,7 @@ app.use("/api/kb", openaiKbRoutes);
 app.use("/api/admin/ai", aiRoutes);
 app.use("/api/admin/ai/prompt/versions", promptVersionRoutes);
 app.use("/api/admin/ai/flow-parameters", flowParameterRoutes);
+app.use("/api/admin/ai/token-management", tokenManagementRoutes);
 
 // Voice Routes
 app.use("/api/admin/voice", voiceRoutes);
