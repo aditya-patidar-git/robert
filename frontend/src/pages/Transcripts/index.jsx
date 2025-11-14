@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useCallback } from 'react';
 import {
   Container,
   Typography,
@@ -7,195 +6,99 @@ import {
   Paper,
   Tabs,
   Tab,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Button,
-  IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Chip,
+  Button,
   TextField,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Pagination,
-  CircularProgress,
+  Chip,
   Accordion,
   AccordionSummary,
   AccordionDetails,
   List,
-  ListItem
+  ListItem,
+  CircularProgress,
+  Typography as MuiTypography
 } from '@mui/material';
-import {
-  Visibility,
-  PlayArrow,
-  Pause,
-  GetApp,
-  Delete,
-  SmartToy,
-  Person,
-  ExpandMore,
-  Description,
-  Timeline,
-  Gavel
-} from '@mui/icons-material';
-import { formatDateTime, formatDuration } from '../../utils/formatters';
-import { useAuth } from '../../context/AuthContext';
-import { useToast } from '../../components/common/ToastProvider';
+import { SmartToy, Person, Description, Timeline, ExpandMore } from '@mui/icons-material';
+import { useTranscriptsState } from './hooks/useTranscriptsState';
+import TranscriptsTab from './tabs/TranscriptsTab';
+import ComplaintsTab from './tabs/ComplaintsTab';
 import transcriptService from '../../services/transcriptService';
 import complaintService from '../../services/complaintService';
+import { formatDateTime } from '../../utils/formatters';
+import { useMutation } from '@tanstack/react-query';
 
 const TranscriptsComplaintsPage = () => {
-  const { user } = useAuth();
-  const { showSuccess, showError } = useToast();
-  const queryClient = useQueryClient();
-
   const [currentTab, setCurrentTab] = useState(0);
-  const [selectedTranscript, setSelectedTranscript] = useState(null);
-  const [transcriptDialog, setTranscriptDialog] = useState(false);
-  const [complaintDialog, setComplaintDialog] = useState(false);
-  const [complaintText, setComplaintText] = useState('');
-  const [complaintType, setComplaintType] = useState('service_quality');
-  const [deleteDialog, setDeleteDialog] = useState(false);
-  const [transcriptToDelete, setTranscriptToDelete] = useState(null);
-  const [exportFormat, setExportFormat] = useState('csv');
-  const [exportDialog, setExportDialog] = useState(false);
-  const [playingAudio, setPlayingAudio] = useState(null);
-  const [playingCallSid, setPlayingCallSid] = useState(null);
-  const [selectedComplaint, setSelectedComplaint] = useState(null);
-  const [complaintDetailDialog, setComplaintDetailDialog] = useState(false);
-  const [statusUpdateDialog, setStatusUpdateDialog] = useState(false);
-  const [assignDialog, setAssignDialog] = useState(false);
-  const [priorityUpdateDialog, setPriorityUpdateDialog] = useState(false);
-  const [newStatus, setNewStatus] = useState('');
-  const [newResolution, setNewResolution] = useState('');
-  const [newAssignedTo, setNewAssignedTo] = useState('');
-  const [newPriority, setNewPriority] = useState('');
-
-  const canSeeAll = user?.role === 'owner' || user?.role === 'admin';
-
-  const [filters, setFilters] = useState({
-    page: 1,
-    limit: 20,
-    search: '',
-    result: '',
-    startDate: '',
-    endDate: ''
-  });
-
-  const [complaintFilters, setComplaintFilters] = useState({
-    page: 1,
-    limit: 20,
-    search: '',
-    status: '',
-    priority: '',
-    complaintType: '',
-    assignedTo: '',
-    startDate: '',
-    endDate: ''
-  });
-
-  const { data: transcriptData } = useQuery({
-    queryKey: ['transcripts', user?.id, filters],
-    queryFn: async () => {
-      const response = await transcriptService.getAllTranscripts(filters);
-      // Handle normalized response
-      if (response.success && response.data) {
-        // If data is the full object with transcripts and pagination
-        if (response.data.transcripts && response.data.pagination) {
-          return response.data;
-        }
-        // If data is just the transcripts array, return as-is (backward compat)
-        return { transcripts: response.data, pagination: null };
-      }
-      // Fallback for error or old format
-      return response.data || response;
-    }
-  });
-
-  const transcripts = transcriptData?.transcripts || [];
-  const pagination = transcriptData?.pagination;
-
-  // Complaints query
-  const { data: complaintData, isLoading: isLoadingComplaints } = useQuery({
-    queryKey: ['complaints', complaintFilters],
-    queryFn: async () => {
-      const response = await complaintService.getAllComplaints(complaintFilters);
-      // Handle normalized response
-      if (response.success && response.data) {
-        // If data is the full object with complaints and pagination
-        if (response.data.complaints && response.data.pagination) {
-          return response.data;
-        }
-        // If data is just the complaints array, return as-is (backward compat)
-        return { complaints: response.data, pagination: null };
-      }
-      // Fallback for error or old format
-      return response.data || response;
-    },
-    enabled: currentTab === 1
-  });
-
-  const complaints = complaintData?.complaints || [];
-  const complaintPagination = complaintData?.pagination;
-
-  const exportMutation = useMutation({
-    mutationFn: (params) => transcriptService.exportTranscripts(params),
-    onSuccess: (blob, variables) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const format = variables?.format || exportFormat;
-      const filename = variables?.id ? `transcript-${variables.id}.${format}` : `transcripts.${format}`;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      showSuccess('Transcripts exported successfully');
-      setExportDialog(false);
-    },
-    onError: () => {
-      showError('Failed to export transcripts');
-      setExportDialog(false);
-    }
-  });
-
-  // Query for full transcript details
-  const { data: fullTranscriptData, isLoading: isLoadingTranscript } = useQuery({
-    queryKey: ['transcript', selectedTranscript?._id || selectedTranscript?.id],
-    queryFn: async () => {
-      const response = await transcriptService.getTranscript(selectedTranscript?._id || selectedTranscript?.id);
-      // Handle normalized response
-      if (response.success && response.data) {
-        // If data is the full object with transcript, escalations, complaints, provenance
-        if (response.data.transcript || response.data.escalations || response.data.complaints || response.data.provenance) {
-          return response.data;
-        }
-        // If data is just the transcript object, wrap it
-        return { transcript: response.data, escalations: [], complaints: [], provenance: [] };
-      }
-      // Fallback for error or old format
-      return response.data || response;
-    },
-    enabled: !!selectedTranscript && transcriptDialog && !!(selectedTranscript?._id || selectedTranscript?.id)
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (transcriptId) => transcriptService.deleteTranscript(transcriptId),
-    onSuccess: () => {
-      showSuccess('Transcript deleted successfully');
-      queryClient.invalidateQueries(['transcripts']);
-      setDeleteDialog(false);
-      setTranscriptToDelete(null);
-    },
-    onError: () => showError('Failed to delete transcript')
-  });
+  
+  // Get all state and functions from the hook
+  const state = useTranscriptsState();
+  const {
+    user,
+    canSeeAll,
+    filters,
+    setFilters,
+    complaintFilters,
+    setComplaintFilters,
+    selectedTranscript,
+    setSelectedTranscript,
+    transcriptDialog,
+    setTranscriptDialog,
+    complaintDialog,
+    setComplaintDialog,
+    complaintText,
+    setComplaintText,
+    complaintType,
+    setComplaintType,
+    deleteDialog,
+    setDeleteDialog,
+    transcriptToDelete,
+    setTranscriptToDelete,
+    exportFormat,
+    setExportFormat,
+    exportDialog,
+    setExportDialog,
+    playingAudio,
+    setPlayingAudio,
+    playingCallSid,
+    setPlayingCallSid,
+    selectedComplaint,
+    setSelectedComplaint,
+    complaintDetailDialog,
+    setComplaintDetailDialog,
+    statusUpdateDialog,
+    setStatusUpdateDialog,
+    assignDialog,
+    setAssignDialog,
+    priorityUpdateDialog,
+    setPriorityUpdateDialog,
+    newStatus,
+    setNewStatus,
+    newResolution,
+    setNewResolution,
+    newAssignedTo,
+    setNewAssignedTo,
+    newPriority,
+    setNewPriority,
+    transcripts,
+    pagination,
+    complaints,
+    complaintPagination,
+    isLoadingComplaints,
+    fullTranscriptData,
+    isLoadingTranscript,
+    exportMutation,
+    deleteMutation,
+    queryClient,
+    showSuccess,
+    showError
+  } = state;
 
   // Complaint mutations
   const statusUpdateMutation = useMutation({
@@ -236,14 +139,14 @@ const TranscriptsComplaintsPage = () => {
     onError: () => showError('Failed to update complaint priority')
   });
 
-  const handleViewTranscript = (transcript) => {
+  // Handlers
+  const handleViewTranscript = useCallback((transcript) => {
     setSelectedTranscript(transcript);
     setTranscriptDialog(true);
-  };
+  }, [setSelectedTranscript, setTranscriptDialog]);
 
-  const handlePlayRecording = async (callSid) => {
+  const handlePlayRecording = useCallback(async (callSid) => {
     try {
-      // If this call is already playing, pause it
       if (playingCallSid === callSid && playingAudio) {
         playingAudio.pause();
         setPlayingAudio(null);
@@ -251,7 +154,6 @@ const TranscriptsComplaintsPage = () => {
         return;
       }
 
-      // If another call is playing, stop it first
       if (playingAudio) {
         playingAudio.pause();
         playingAudio.currentTime = 0;
@@ -260,7 +162,6 @@ const TranscriptsComplaintsPage = () => {
       const audioUrl = await transcriptService.getRecordingUrl(callSid);
       const audio = new Audio(audioUrl);
       
-      // Set up event listeners to reset state when audio ends
       audio.addEventListener('ended', () => {
         setPlayingAudio(null);
         setPlayingCallSid(null);
@@ -280,21 +181,21 @@ const TranscriptsComplaintsPage = () => {
       setPlayingAudio(null);
       setPlayingCallSid(null);
     }
-  };
+  }, [playingCallSid, playingAudio, showError, setPlayingAudio, setPlayingCallSid]);
 
-  const handleExport = (params = {}) => {
+  const handleExport = useCallback((params = {}) => {
     if (canSeeAll && !params.id) {
       setExportDialog(true);
     } else {
       exportMutation.mutate({ format: exportFormat, ...params });
     }
-  };
+  }, [canSeeAll, exportFormat, exportMutation, setExportDialog]);
 
-  const confirmExport = () => {
+  const confirmExport = useCallback(() => {
     exportMutation.mutate({ format: exportFormat, ...filters });
-  };
+  }, [exportFormat, filters, exportMutation]);
 
-  const handleSubmitComplaint = async () => {
+  const handleSubmitComplaint = useCallback(async () => {
     try {
       await transcriptService.submitComplaint({
         callId: selectedTranscript?.callSid,
@@ -311,20 +212,20 @@ const TranscriptsComplaintsPage = () => {
     } catch {
       showError('Failed to submit complaint');
     }
-  };
+  }, [selectedTranscript, complaintText, complaintType, showSuccess, showError, setComplaintDialog, setComplaintText, setComplaintType, queryClient]);
 
-  const handleDeleteTranscript = (transcript) => {
+  const handleDeleteTranscript = useCallback((transcript) => {
     setTranscriptToDelete(transcript);
     setDeleteDialog(true);
-  };
+  }, [setTranscriptToDelete, setDeleteDialog]);
 
-  const confirmDelete = () => {
+  const confirmDelete = useCallback(() => {
     if (transcriptToDelete) {
       deleteMutation.mutate(transcriptToDelete._id || transcriptToDelete.id);
     }
-  };
+  }, [transcriptToDelete, deleteMutation]);
 
-  const getChipColor = (status) => {
+  const getChipColor = useCallback((status) => {
     switch (status) {
       case 'resolved': return 'success';
       case 'escalated': return 'warning';
@@ -332,9 +233,9 @@ const TranscriptsComplaintsPage = () => {
       case 'error': return 'error';
       default: return 'default';
     }
-  };
+  }, []);
 
-  const getComplaintStatusColor = (status) => {
+  const getComplaintStatusColor = useCallback((status) => {
     switch (status) {
       case 'resolved': return 'success';
       case 'closed': return 'default';
@@ -342,9 +243,9 @@ const TranscriptsComplaintsPage = () => {
       case 'open': return 'error';
       default: return 'default';
     }
-  };
+  }, []);
 
-  const getPriorityColor = (priority) => {
+  const getPriorityColor = useCallback((priority) => {
     switch (priority) {
       case 'urgent': return 'error';
       case 'high': return 'warning';
@@ -352,9 +253,9 @@ const TranscriptsComplaintsPage = () => {
       case 'low': return 'default';
       default: return 'default';
     }
-  };
+  }, []);
 
-  const handleViewComplaint = async (complaint) => {
+  const handleViewComplaint = useCallback(async (complaint) => {
     try {
       const data = await complaintService.getComplaint(complaint._id || complaint.id);
       setSelectedComplaint(data);
@@ -362,9 +263,9 @@ const TranscriptsComplaintsPage = () => {
     } catch (error) {
       showError('Failed to load complaint details');
     }
-  };
+  }, [setSelectedComplaint, setComplaintDetailDialog, showError]);
 
-  const handleUpdateStatus = () => {
+  const handleUpdateStatus = useCallback(() => {
     if (selectedComplaint?.complaint?._id) {
       statusUpdateMutation.mutate({
         complaintId: selectedComplaint.complaint._id,
@@ -372,27 +273,27 @@ const TranscriptsComplaintsPage = () => {
         resolution: newResolution
       });
     }
-  };
+  }, [selectedComplaint, newStatus, newResolution, statusUpdateMutation]);
 
-  const handleAssign = () => {
+  const handleAssign = useCallback(() => {
     if (selectedComplaint?.complaint?._id) {
       assignMutation.mutate({
         complaintId: selectedComplaint.complaint._id,
         assignedTo: newAssignedTo
       });
     }
-  };
+  }, [selectedComplaint, newAssignedTo, assignMutation]);
 
-  const handleUpdatePriority = () => {
+  const handleUpdatePriority = useCallback(() => {
     if (selectedComplaint?.complaint?._id) {
       priorityUpdateMutation.mutate({
         complaintId: selectedComplaint.complaint._id,
         priority: newPriority
       });
     }
-  };
+  }, [selectedComplaint, newPriority, priorityUpdateMutation]);
 
-  const renderTranscriptContent = (transcript) => {
+  const renderTranscriptContent = useCallback((transcript) => {
     if (!transcript?.transcript) return <Typography>No transcript available</Typography>;
 
     return (
@@ -427,6 +328,25 @@ const TranscriptsComplaintsPage = () => {
         })}
       </Box>
     );
+  }, []);
+
+  // Prepare state and handlers for tabs
+  const tabState = {
+    ...state,
+    statusUpdateMutation,
+    assignMutation,
+    priorityUpdateMutation
+  };
+
+  const tabHandlers = {
+    handleViewTranscript,
+    handlePlayRecording,
+    handleExport,
+    handleDeleteTranscript,
+    handleViewComplaint,
+    getChipColor,
+    getComplaintStatusColor,
+    getPriorityColor
   };
 
   return (
@@ -454,326 +374,16 @@ const TranscriptsComplaintsPage = () => {
         </Tabs>
       </Paper>
 
-      {/* Tab: Transcripts */}
+      {/* Tab Content */}
       {currentTab === 0 && (
-        <Paper>
-          <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">Call Transcripts ({pagination?.total || transcripts.length})</Typography>
-            {canSeeAll && (
-              <Button 
-                variant="outlined" 
-                startIcon={<GetApp />} 
-                onClick={() => handleExport()} 
-                disabled={exportMutation.isLoading}
-              >
-                Export All
-              </Button>
-            )}
-          </Box>
-
-          <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
-            <TextField
-              size="small"
-              label="Search"
-              value={filters.search}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value, page: 1 }))}
-              placeholder="Search transcripts..."
-            />
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel id="result-label">Result</InputLabel>
-              <Select
-                labelId="result-label"
-                value={filters.result}
-                onChange={(e) => setFilters(prev => ({ ...prev, result: e.target.value, page: 1 }))}
-              >
-                <MenuItem value="">All</MenuItem>
-                <MenuItem value="resolved">Resolved</MenuItem>
-                <MenuItem value="escalated">Escalated</MenuItem>
-                <MenuItem value="voicemail">Voicemail</MenuItem>
-                <MenuItem value="error">Error</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField
-              size="small"
-              label="Start Date"
-              type="date"
-              value={filters.startDate}
-              onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value, page: 1 }))}
-              InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 150 }}
-            />
-            <TextField
-              size="small"
-              label="End Date"
-              type="date"
-              value={filters.endDate}
-              onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value, page: 1 }))}
-              InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 150 }}
-            />
-            <Button
-              variant="outlined"
-              onClick={() => setFilters({ page: 1, limit: 20, search: '', result: '', startDate: '', endDate: '' })}
-            >
-              Clear Filters
-            </Button>
-          </Box>
-
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Caller ID</TableCell>
-                  <TableCell>Date</TableCell>
-                  <TableCell>Duration</TableCell>
-                  <TableCell>Result</TableCell>
-                  <TableCell>Escalated</TableCell>
-                  <TableCell>Complaint</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {transcripts.map((t) => (
-                  <TableRow key={t.id || t.callSid}>
-                    <TableCell><Typography variant="body2" fontFamily="monospace">{t.from || t.callerId}</Typography></TableCell>
-                    <TableCell>{formatDateTime(t.createdAt)}</TableCell>
-                    <TableCell>{formatDuration(t.duration)}</TableCell>
-                    <TableCell><Chip label={t.result || 'resolved'} color={getChipColor(t.result)} size="small" /></TableCell>
-                    <TableCell><Chip label={t.escalation?.escalated ? 'Yes' : 'No'} color={t.escalation?.escalated ? 'warning' : 'default'} size="small" /></TableCell>
-                    <TableCell><Chip label={t.complaint?.hasComplaint ? 'Yes' : 'No'} color={t.complaint?.hasComplaint ? 'error' : 'default'} size="small" /></TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        <IconButton size="small" onClick={() => handleViewTranscript(t)}><Visibility fontSize="small" /></IconButton>
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handlePlayRecording(t.callSid)}
-                          color={playingCallSid === t.callSid ? 'primary' : 'default'}
-                        >
-                          {playingCallSid === t.callSid ? <Pause fontSize="small" /> : <PlayArrow fontSize="small" />}
-                        </IconButton>
-                        {canSeeAll && <>
-                          <IconButton size="small" onClick={() => handleExport({ id: t.id || t._id })}><GetApp fontSize="small" /></IconButton>
-                          <IconButton size="small" color="error" onClick={() => handleDeleteTranscript(t)}><Delete fontSize="small" /></IconButton>
-                        </>}
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          {pagination?.pages > 1 && (
-            <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
-              <Pagination count={pagination.pages} page={filters.page} onChange={(e, page) => setFilters(prev => ({ ...prev, page }))} color="primary" />
-            </Box>
-          )}
-        </Paper>
+        <TranscriptsTab state={tabState} handlers={tabHandlers} />
       )}
 
-      {/* Tab: Complaints & Escalations */}
       {currentTab === 1 && (
-        <Paper>
-          <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">
-              Complaints & Escalations ({complaintPagination?.total || complaints.length})
-            </Typography>
-            <Button 
-              variant="contained" 
-              onClick={() => {
-                if (selectedTranscript) {
-                  setComplaintDialog(true);
-                } else {
-                  showError('Please select a transcript first');
-                }
-              }}
-            >
-              Submit Complaint
-            </Button>
-          </Box>
-
-          <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
-            <TextField
-              size="small"
-              label="Search"
-              value={complaintFilters.search}
-              onChange={(e) => setComplaintFilters(prev => ({ ...prev, search: e.target.value, page: 1 }))}
-              placeholder="Search complaints..."
-            />
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel id="status-label">Status</InputLabel>
-              <Select
-                labelId="status-label"
-                value={complaintFilters.status}
-                onChange={(e) => setComplaintFilters(prev => ({ ...prev, status: e.target.value, page: 1 }))}
-              >
-                <MenuItem value="">All</MenuItem>
-                <MenuItem value="open">Open</MenuItem>
-                <MenuItem value="investigating">Investigating</MenuItem>
-                <MenuItem value="resolved">Resolved</MenuItem>
-                <MenuItem value="closed">Closed</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel id="priority-label">Priority</InputLabel>
-              <Select
-                labelId="priority-label"
-                value={complaintFilters.priority}
-                onChange={(e) => setComplaintFilters(prev => ({ ...prev, priority: e.target.value, page: 1 }))}
-              >
-                <MenuItem value="">All</MenuItem>
-                <MenuItem value="urgent">Urgent</MenuItem>
-                <MenuItem value="high">High</MenuItem>
-                <MenuItem value="medium">Medium</MenuItem>
-                <MenuItem value="low">Low</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: 180 }}>
-              <InputLabel id="type-label">Type</InputLabel>
-              <Select
-                labelId="type-label"
-                value={complaintFilters.complaintType}
-                onChange={(e) => setComplaintFilters(prev => ({ ...prev, complaintType: e.target.value, page: 1 }))}
-              >
-                <MenuItem value="">All</MenuItem>
-                <MenuItem value="service_quality">Service Quality</MenuItem>
-                <MenuItem value="ai_understanding">AI Understanding</MenuItem>
-                <MenuItem value="response_time">Response Time</MenuItem>
-                <MenuItem value="technical_issue">Technical Issue</MenuItem>
-                <MenuItem value="billing">Billing</MenuItem>
-                <MenuItem value="booking">Booking</MenuItem>
-                <MenuItem value="instructor_conduct">Instructor Conduct</MenuItem>
-                <MenuItem value="safety_concern">Safety Concern</MenuItem>
-                <MenuItem value="discrimination">Discrimination</MenuItem>
-                <MenuItem value="other">Other</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField
-              size="small"
-              label="Start Date"
-              type="date"
-              value={complaintFilters.startDate}
-              onChange={(e) => setComplaintFilters(prev => ({ ...prev, startDate: e.target.value, page: 1 }))}
-              InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 150 }}
-            />
-            <TextField
-              size="small"
-              label="End Date"
-              type="date"
-              value={complaintFilters.endDate}
-              onChange={(e) => setComplaintFilters(prev => ({ ...prev, endDate: e.target.value, page: 1 }))}
-              InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 150 }}
-            />
-            <Button
-              variant="outlined"
-              onClick={() => setComplaintFilters({ page: 1, limit: 20, search: '', status: '', priority: '', complaintType: '', assignedTo: '', startDate: '', endDate: '' })}
-            >
-              Clear Filters
-            </Button>
-          </Box>
-
-          {isLoadingComplaints ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-              <CircularProgress />
-            </Box>
-          ) : (
-            <>
-              <TableContainer>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Caller ID</TableCell>
-                      <TableCell>Date</TableCell>
-                      <TableCell>Type</TableCell>
-                      <TableCell>Status</TableCell>
-                      <TableCell>Priority</TableCell>
-                      <TableCell>Assigned To</TableCell>
-                      <TableCell>Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {complaints.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} align="center">
-                          <Typography color="text.secondary" sx={{ py: 3 }}>
-                            No complaints found
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      complaints.map((complaint) => (
-                        <TableRow key={complaint._id || complaint.id}>
-                          <TableCell>
-                            <Typography variant="body2" fontFamily="monospace">
-                              {complaint.callerId}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>{formatDateTime(complaint.submittedAt)}</TableCell>
-                          <TableCell>
-                            <Chip 
-                              label={complaint.complaintType?.replace('_', ' ') || 'other'} 
-                              size="small" 
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Chip 
-                              label={complaint.status || 'open'} 
-                              color={getComplaintStatusColor(complaint.status)} 
-                              size="small" 
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Chip 
-                              label={complaint.priority || 'medium'} 
-                              color={getPriorityColor(complaint.priority)} 
-                              size="small" 
-                            />
-                          </TableCell>
-                          <TableCell>
-                            {complaint.assignedTo ? (
-                              <Typography variant="body2" color="text.secondary">
-                                {complaint.assignedTo}
-                              </Typography>
-                            ) : (
-                              <Typography variant="body2" color="text.secondary" fontStyle="italic">
-                                Unassigned
-                              </Typography>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Box sx={{ display: 'flex', gap: 0.5 }}>
-                              <IconButton 
-                                size="small" 
-                                onClick={() => handleViewComplaint(complaint)}
-                              >
-                                <Visibility fontSize="small" />
-                              </IconButton>
-                            </Box>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-
-              {complaintPagination?.pages > 1 && (
-                <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
-                  <Pagination 
-                    count={complaintPagination.pages} 
-                    page={complaintFilters.page} 
-                    onChange={(e, page) => setComplaintFilters(prev => ({ ...prev, page }))} 
-                    color="primary" 
-                  />
-                </Box>
-              )}
-            </>
-          )}
-        </Paper>
+        <ComplaintsTab state={tabState} handlers={tabHandlers} />
       )}
 
+      {/* Dialogs */}
       {/* Transcript Dialog */}
       <Dialog open={transcriptDialog} onClose={() => setTranscriptDialog(false)} maxWidth="lg" fullWidth>
         <DialogTitle>
@@ -793,7 +403,6 @@ const TranscriptsComplaintsPage = () => {
             <>
               {(fullTranscriptData?.transcript || selectedTranscript) && renderTranscriptContent(fullTranscriptData?.transcript || selectedTranscript)}
               
-              {/* Summary */}
               {(fullTranscriptData?.transcript?.summary || selectedTranscript?.summary) && (
                 <Box sx={{ mt: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
                   <Typography variant="subtitle2" gutterBottom>AI Summary</Typography>
@@ -801,7 +410,6 @@ const TranscriptsComplaintsPage = () => {
                 </Box>
               )}
 
-              {/* Provenance/KB Citations */}
               {fullTranscriptData?.provenance && fullTranscriptData.provenance.length > 0 && (
                 <Box sx={{ mt: 3 }}>
                   <Accordion>
@@ -844,7 +452,6 @@ const TranscriptsComplaintsPage = () => {
                 </Box>
               )}
 
-              {/* Escalation Timeline */}
               {fullTranscriptData?.escalations && fullTranscriptData.escalations.length > 0 && (
                 <Box sx={{ mt: 3 }}>
                   <Accordion>
@@ -878,416 +485,152 @@ const TranscriptsComplaintsPage = () => {
                                   Handover: {esc.handoverSummary}
                                 </Typography>
                               )}
-                              {esc.targetNumber && (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                  Target: {esc.targetNumber}
-                                </Typography>
-                              )}
                             </Box>
                           </ListItem>
                         ))}
                       </List>
                     </AccordionDetails>
                   </Accordion>
-                </Box>
-              )}
-
-              {/* Complaint Details */}
-              {fullTranscriptData?.complaints && fullTranscriptData.complaints.length > 0 && (
-                <Box sx={{ mt: 3 }}>
-                  <Accordion>
-                    <AccordionSummary expandIcon={<ExpandMore />}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Gavel color="error" />
-                        <Typography variant="subtitle2">Complaints</Typography>
-                        <Chip label={fullTranscriptData.complaints.length} size="small" color="error" />
-                      </Box>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <List dense>
-                        {fullTranscriptData.complaints.map((complaint, idx) => (
-                          <ListItem key={idx} sx={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-                            <Box sx={{ width: '100%' }}>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                                <Typography variant="body2" fontWeight="medium">
-                                  Submitted: {formatDateTime(complaint.submittedAt)}
-                                </Typography>
-                                {complaint.status && (
-                                  <Chip 
-                                    label={complaint.status} 
-                                    size="small" 
-                                    color={
-                                      complaint.status === 'resolved' ? 'success' :
-                                      complaint.status === 'closed' ? 'default' :
-                                      complaint.status === 'investigating' ? 'warning' : 'error'
-                                    } 
-                                  />
-                                )}
-                              </Box>
-                              {complaint.complaintType && (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                                  Type: {complaint.complaintType}
-                                </Typography>
-                              )}
-                              {complaint.complaintText && (
-                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                  {complaint.complaintText}
-                                </Typography>
-                              )}
-                            </Box>
-                          </ListItem>
-                        ))}
-                      </List>
-                    </AccordionDetails>
-                  </Accordion>
-                </Box>
-              )}
-
-              {/* Call Metadata */}
-              {(fullTranscriptData?.transcript || selectedTranscript) && (
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" gutterBottom>Call Metadata</Typography>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1, mt: 1 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Duration: {formatDuration((fullTranscriptData?.transcript || selectedTranscript)?.duration)}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Language: {(fullTranscriptData?.transcript || selectedTranscript)?.language || 'en-GB'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Result: {(fullTranscriptData?.transcript || selectedTranscript)?.result || 'resolved'}
-                    </Typography>
-                    {((fullTranscriptData?.transcript || selectedTranscript)?.confidenceScores?.overall !== undefined) && (
-                      <Typography variant="body2" color="text.secondary">
-                        Confidence: {(((fullTranscriptData?.transcript || selectedTranscript)?.confidenceScores?.overall || 0) * 100).toFixed(1)}%
-                      </Typography>
-                    )}
-                  </Box>
                 </Box>
               )}
             </>
           )}
         </DialogContent>
         <DialogActions>
-          {selectedTranscript?.recordingUrl && (
+          <Button onClick={() => setTranscriptDialog(false)}>Close</Button>
+          {selectedTranscript && (
             <Button 
-              startIcon={playingCallSid === selectedTranscript.callSid ? <Pause /> : <PlayArrow />}
-              onClick={() => handlePlayRecording(selectedTranscript.callSid)}
-              color={playingCallSid === selectedTranscript.callSid ? 'primary' : 'default'}
+              variant="contained" 
+              onClick={() => {
+                setComplaintDialog(true);
+              }}
             >
-              {playingCallSid === selectedTranscript.callSid ? 'Pause Recording' : 'Play Recording'}
+              Submit Complaint
             </Button>
           )}
-          <Button onClick={() => {
-            setTranscriptDialog(false);
-            setSelectedTranscript(null);
-          }}>Close</Button>
         </DialogActions>
       </Dialog>
 
-      {/* Export Format Dialog */}
-      <Dialog open={exportDialog} onClose={() => setExportDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Export Transcripts</DialogTitle>
+      {/* Complaint Submission Dialog */}
+      <Dialog open={complaintDialog} onClose={() => setComplaintDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Submit Complaint</DialogTitle>
         <DialogContent>
-          <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel id="format-label">Export Format</InputLabel>
-            <Select
-              labelId="format-label"
-              value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value)}
-              label="Export Format"
-            >
-              <MenuItem value="csv">CSV</MenuItem>
-              <MenuItem value="json">JSON</MenuItem>
-            </Select>
-          </FormControl>
+          <Box sx={{ mt: 2 }}>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Complaint Type</InputLabel>
+              <Select
+                value={complaintType}
+                onChange={(e) => setComplaintType(e.target.value)}
+                label="Complaint Type"
+              >
+                <MenuItem value="service_quality">Service Quality</MenuItem>
+                <MenuItem value="ai_understanding">AI Understanding</MenuItem>
+                <MenuItem value="response_time">Response Time</MenuItem>
+                <MenuItem value="technical_issue">Technical Issue</MenuItem>
+                <MenuItem value="billing">Billing</MenuItem>
+                <MenuItem value="booking">Booking</MenuItem>
+                <MenuItem value="instructor_conduct">Instructor Conduct</MenuItem>
+                <MenuItem value="safety_concern">Safety Concern</MenuItem>
+                <MenuItem value="discrimination">Discrimination</MenuItem>
+                <MenuItem value="other">Other</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              multiline
+              rows={4}
+              label="Complaint Details"
+              value={complaintText}
+              onChange={(e) => setComplaintText(e.target.value)}
+              placeholder="Please describe your complaint..."
+            />
+          </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setExportDialog(false)}>Cancel</Button>
-          <Button onClick={confirmExport} variant="contained" disabled={exportMutation.isLoading}>
-            {exportMutation.isLoading ? 'Exporting...' : 'Export'}
+          <Button onClick={() => setComplaintDialog(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleSubmitComplaint} disabled={!complaintText.trim()}>
+            Submit
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Complaint Dialog */}
-      <Dialog open={complaintDialog} onClose={() => setComplaintDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Submit Complaint</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel id="complaint-type-label">Complaint Type</InputLabel>
-            <Select
-              labelId="complaint-type-label"
-              value={complaintType}
-              onChange={(e) => setComplaintType(e.target.value)}
-              label="Complaint Type"
-            >
-              <MenuItem value="service_quality">Service Quality</MenuItem>
-              <MenuItem value="ai_understanding">AI Understanding</MenuItem>
-              <MenuItem value="response_time">Response Time</MenuItem>
-              <MenuItem value="technical_issue">Technical Issue</MenuItem>
-              <MenuItem value="billing">Billing</MenuItem>
-              <MenuItem value="booking">Booking</MenuItem>
-              <MenuItem value="instructor_conduct">Instructor Conduct</MenuItem>
-              <MenuItem value="safety_concern">Safety Concern</MenuItem>
-              <MenuItem value="discrimination">Discrimination</MenuItem>
-              <MenuItem value="other">Other</MenuItem>
-            </Select>
-          </FormControl>
-          <TextField
-            multiline
-            rows={4}
-            fullWidth
-            label="Complaint Details"
-            placeholder="Describe your complaint..."
-            value={complaintText}
-            onChange={(e) => setComplaintText(e.target.value)}
-            sx={{ mt: 2 }}
-          />
-          <Box sx={{ mt: 2, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              Your complaint will be sent to: <strong>complaints@universalmct.co.uk</strong> (for the attention of John McGregor, Manager)
-            </Typography>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => {
-            setComplaintDialog(false);
-            setComplaintText('');
-            setComplaintType('service_quality');
-          }}>Cancel</Button>
-          <Button onClick={handleSubmitComplaint} variant="contained" disabled={!complaintText.trim()}>Submit</Button>
-        </DialogActions>
-      </Dialog>
-
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialog} onClose={() => setDeleteDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog open={deleteDialog} onClose={() => setDeleteDialog(false)}>
         <DialogTitle>Delete Transcript</DialogTitle>
         <DialogContent>
           <Typography>
             Are you sure you want to delete this transcript? This action cannot be undone.
           </Typography>
-          {transcriptToDelete && (
-            <Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-              <Typography variant="subtitle2" gutterBottom>Call Details:</Typography>
-              <Typography variant="body2">Caller: {transcriptToDelete.from || transcriptToDelete.callerId}</Typography>
-              <Typography variant="body2">Date: {formatDateTime(transcriptToDelete.createdAt)}</Typography>
-              <Typography variant="body2">Duration: {formatDuration(transcriptToDelete.duration)}</Typography>
-            </Box>
-          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={confirmDelete} 
-            variant="contained" 
-            color="error"
-            disabled={deleteMutation.isLoading}
-          >
-            {deleteMutation.isLoading ? 'Deleting...' : 'Delete'}
+          <Button variant="contained" color="error" onClick={confirmDelete} disabled={deleteMutation.isLoading}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Export Dialog */}
+      <Dialog open={exportDialog} onClose={() => setExportDialog(false)}>
+        <DialogTitle>Export Transcripts</DialogTitle>
+        <DialogContent>
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel>Format</InputLabel>
+            <Select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              label="Format"
+            >
+              <MenuItem value="csv">CSV</MenuItem>
+              <MenuItem value="json">JSON</MenuItem>
+              <MenuItem value="txt">TXT</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExportDialog(false)}>Cancel</Button>
+          <Button variant="contained" onClick={confirmExport} disabled={exportMutation.isLoading}>
+            Export
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Complaint Detail Dialog */}
-      <Dialog open={complaintDetailDialog} onClose={() => setComplaintDetailDialog(false)} maxWidth="lg" fullWidth>
-        <DialogTitle>
-          Complaint Details
-          {selectedComplaint?.complaint && (
-            <Typography variant="caption" color="text.secondary" sx={{ ml: 2, fontFamily: 'monospace' }}>
-              ID: {selectedComplaint.complaint._id}
-            </Typography>
-          )}
-        </DialogTitle>
+      <Dialog open={complaintDetailDialog} onClose={() => setComplaintDetailDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Complaint Details</DialogTitle>
         <DialogContent>
           {selectedComplaint?.complaint && (
-            <>
-              <Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1, border: 1, borderColor: 'error.main' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Gavel color="error" />
-                  <Typography variant="h6">Complaint Email</Typography>
-                </Box>
-                <Typography variant="body1" fontWeight="bold" color="error.main">
-                  {selectedComplaint.complaint.complaintEmail || 'complaints@universalmct.co.uk'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  For the attention of John McGregor, Manager
-                </Typography>
+            <Box>
+              <Typography variant="h6" gutterBottom>{selectedComplaint.complaint.complaintType}</Typography>
+              <Typography variant="body2" color="text.secondary" paragraph>
+                {selectedComplaint.complaint.complaintText}
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                <Chip label={selectedComplaint.complaint.status} color={getComplaintStatusColor(selectedComplaint.complaint.status)} />
+                <Chip label={selectedComplaint.complaint.priority} color={getPriorityColor(selectedComplaint.complaint.priority)} />
               </Box>
-
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="subtitle2" gutterBottom>Complaint Information</Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2, mt: 1 }}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Caller ID</Typography>
-                    <Typography variant="body2" fontFamily="monospace">{selectedComplaint.complaint.callerId}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Submitted</Typography>
-                    <Typography variant="body2">{formatDateTime(selectedComplaint.complaint.submittedAt)}</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Type</Typography>
-                    <Chip label={selectedComplaint.complaint.complaintType?.replace('_', ' ') || 'other'} size="small" />
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Status</Typography>
-                    <Chip 
-                      label={selectedComplaint.complaint.status} 
-                      color={getComplaintStatusColor(selectedComplaint.complaint.status)} 
-                      size="small" 
-                    />
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Priority</Typography>
-                    <Chip 
-                      label={selectedComplaint.complaint.priority} 
-                      color={getPriorityColor(selectedComplaint.complaint.priority)} 
-                      size="small" 
-                    />
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Assigned To</Typography>
-                    <Typography variant="body2">
-                      {selectedComplaint.complaint.assignedTo || 'Unassigned'}
-                    </Typography>
-                  </Box>
-                </Box>
-              </Box>
-
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="subtitle2" gutterBottom>Complaint Text</Typography>
-                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                  {selectedComplaint.complaint.complaintText}
-                </Typography>
-              </Box>
-
-              {selectedComplaint.complaint.resolution && (
-                <Box sx={{ mt: 3 }}>
-                  <Typography variant="subtitle2" gutterBottom>Resolution</Typography>
-                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                    {selectedComplaint.complaint.resolution}
-                  </Typography>
-                </Box>
-              )}
-
-              {selectedComplaint?.escalations && selectedComplaint.escalations.length > 0 && (
-                <Box sx={{ mt: 3 }}>
-                  <Accordion>
-                    <AccordionSummary expandIcon={<ExpandMore />}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Timeline color="warning" />
-                        <Typography variant="subtitle2">Escalation Timeline</Typography>
-                        <Chip label={selectedComplaint.escalations.length} size="small" color="warning" />
-                      </Box>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <List dense>
-                        {selectedComplaint.escalations.map((esc, idx) => (
-                          <ListItem key={idx} sx={{ flexDirection: 'column', alignItems: 'flex-start' }}>
-                            <Box sx={{ width: '100%' }}>
-                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                                <Typography variant="body2" fontWeight="medium">
-                                  {formatDateTime(esc.initiatedAt)}
-                                </Typography>
-                                <Chip 
-                                  label={esc.escalationStatus || 'initiated'} 
-                                  size="small" 
-                                  color={esc.escalationStatus === 'completed' ? 'success' : 'warning'} 
-                                />
-                              </Box>
-                              {esc.reason && (
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                  Reason: {esc.reason.replace('_', ' ')}
-                                </Typography>
-                              )}
-                              {esc.summary && (
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                                  Summary: {esc.summary}
-                                </Typography>
-                              )}
-                              {esc.handoverSummary && (
-                                <Typography variant="body2" color="text.secondary">
-                                  Handover: {esc.handoverSummary}
-                                </Typography>
-                              )}
-                              {esc.targetNumber && (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                  Target: {esc.targetNumber}
-                                </Typography>
-                              )}
-                            </Box>
-                          </ListItem>
-                        ))}
-                      </List>
-                    </AccordionDetails>
-                  </Accordion>
-                </Box>
-              )}
-
-              {selectedComplaint?.callRecord && (
-                <Box sx={{ mt: 3 }}>
-                  <Button 
-                    variant="outlined" 
-                    startIcon={<Visibility />}
-                    onClick={() => {
-                      setComplaintDetailDialog(false);
-                      setSelectedTranscript(selectedComplaint.callRecord);
-                      setTranscriptDialog(true);
-                    }}
-                  >
-                    View Related Transcript
-                  </Button>
-                </Box>
-              )}
-
-              {canSeeAll && (
-                <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                  <Button 
-                    variant="outlined" 
-                    onClick={() => {
-                      setNewStatus(selectedComplaint.complaint.status);
-                      setStatusUpdateDialog(true);
-                    }}
-                  >
-                    Update Status
-                  </Button>
-                  <Button 
-                    variant="outlined" 
-                    onClick={() => {
-                      setNewAssignedTo(selectedComplaint.complaint.assignedTo || '');
-                      setAssignDialog(true);
-                    }}
-                  >
-                    Assign Manager
-                  </Button>
-                  <Button 
-                    variant="outlined" 
-                    onClick={() => {
-                      setNewPriority(selectedComplaint.complaint.priority);
-                      setPriorityUpdateDialog(true);
-                    }}
-                  >
-                    Update Priority
-                  </Button>
-                </Box>
-              )}
-            </>
+            </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setComplaintDetailDialog(false)}>Close</Button>
+          {canSeeAll && (
+            <>
+              <Button onClick={() => setStatusUpdateDialog(true)}>Update Status</Button>
+              <Button onClick={() => setAssignDialog(true)}>Assign</Button>
+              <Button onClick={() => setPriorityUpdateDialog(true)}>Update Priority</Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
 
       {/* Status Update Dialog */}
-      <Dialog open={statusUpdateDialog} onClose={() => setStatusUpdateDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog open={statusUpdateDialog} onClose={() => setStatusUpdateDialog(false)}>
         <DialogTitle>Update Complaint Status</DialogTitle>
         <DialogContent>
-          <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel id="new-status-label">Status</InputLabel>
+          <FormControl fullWidth sx={{ mt: 2, mb: 2 }}>
+            <InputLabel>Status</InputLabel>
             <Select
-              labelId="new-status-label"
               value={newStatus}
               onChange={(e) => setNewStatus(e.target.value)}
               label="Status"
@@ -1299,81 +642,66 @@ const TranscriptsComplaintsPage = () => {
             </Select>
           </FormControl>
           <TextField
-            multiline
-            rows={4}
             fullWidth
-            label="Resolution Notes (optional)"
+            multiline
+            rows={3}
+            label="Resolution Notes"
             value={newResolution}
             onChange={(e) => setNewResolution(e.target.value)}
-            sx={{ mt: 2 }}
-            placeholder="Add resolution notes..."
+            placeholder="Optional resolution notes..."
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setStatusUpdateDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleUpdateStatus} 
-            variant="contained" 
-            disabled={!newStatus || statusUpdateMutation.isLoading}
-          >
-            {statusUpdateMutation.isLoading ? 'Updating...' : 'Update'}
+          <Button variant="contained" onClick={handleUpdateStatus} disabled={!newStatus || statusUpdateMutation.isLoading}>
+            Update
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Assign Dialog */}
-      <Dialog open={assignDialog} onClose={() => setAssignDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Assign Complaint to Manager</DialogTitle>
+      <Dialog open={assignDialog} onClose={() => setAssignDialog(false)}>
+        <DialogTitle>Assign Complaint</DialogTitle>
         <DialogContent>
           <TextField
             fullWidth
-            label="Manager Email"
+            label="Assign To"
             value={newAssignedTo}
             onChange={(e) => setNewAssignedTo(e.target.value)}
+            placeholder="Enter user email or name"
             sx={{ mt: 2 }}
-            placeholder="e.g., john.mcgregor@universalmct.co.uk"
-            helperText="Default: complaints@universalmct.co.uk (John McGregor, Manager)"
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAssignDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleAssign} 
-            variant="contained" 
-            disabled={!newAssignedTo.trim() || assignMutation.isLoading}
-          >
-            {assignMutation.isLoading ? 'Assigning...' : 'Assign'}
+          <Button variant="contained" onClick={handleAssign} disabled={!newAssignedTo.trim() || assignMutation.isLoading}>
+            Assign
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Priority Update Dialog */}
-      <Dialog open={priorityUpdateDialog} onClose={() => setPriorityUpdateDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog open={priorityUpdateDialog} onClose={() => setPriorityUpdateDialog(false)}>
         <DialogTitle>Update Complaint Priority</DialogTitle>
         <DialogContent>
           <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel id="new-priority-label">Priority</InputLabel>
+            <InputLabel>Priority</InputLabel>
             <Select
-              labelId="new-priority-label"
               value={newPriority}
               onChange={(e) => setNewPriority(e.target.value)}
               label="Priority"
             >
-              <MenuItem value="low">Low</MenuItem>
-              <MenuItem value="medium">Medium</MenuItem>
-              <MenuItem value="high">High</MenuItem>
               <MenuItem value="urgent">Urgent</MenuItem>
+              <MenuItem value="high">High</MenuItem>
+              <MenuItem value="medium">Medium</MenuItem>
+              <MenuItem value="low">Low</MenuItem>
             </Select>
           </FormControl>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPriorityUpdateDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleUpdatePriority} 
-            variant="contained" 
-            disabled={!newPriority || priorityUpdateMutation.isLoading}
-          >
-            {priorityUpdateMutation.isLoading ? 'Updating...' : 'Update'}
+          <Button variant="contained" onClick={handleUpdatePriority} disabled={!newPriority || priorityUpdateMutation.isLoading}>
+            Update
           </Button>
         </DialogActions>
       </Dialog>

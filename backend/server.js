@@ -152,7 +152,7 @@ httpServer.on('upgrade', async (request, socket, head) => {
     // Socket.IO handles its own upgrades automatically via the Server instance
     if (pathname === '/api/outbound/media-stream') {
         // Import handler dynamically to avoid circular dependencies
-        const { handleMediaStreamConnection } = await import('./controllers/outboundController.js');
+        const { handleMediaStreamConnection } = await import('./controllers/outbound/index.js');
         
         // Create WebSocket server for this connection
         const wss = new WebSocketServer({ noServer: true });

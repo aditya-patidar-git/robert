@@ -8,7 +8,7 @@ import {
     getAllCalls,
     proxyRecording,
     mediaStream
-} from "../controllers/outboundController.js";
+} from "../controllers/outbound/index.js";
 
 const router = express.Router();
 

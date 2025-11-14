@@ -12,7 +12,7 @@ import {
   getNumberProfile,
   saveNumberProfile,
   deleteNumberProfile
-} from "../controllers/audioConfigController.js";
+} from "../controllers/audioConfig/index.js";
 import {
   getTelephonyConfig,
   updateTelephonyConfig,
