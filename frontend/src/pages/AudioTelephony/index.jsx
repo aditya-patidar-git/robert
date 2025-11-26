@@ -425,7 +425,7 @@ const AudioTelephonyPage = () => {
           )}
         </DialogContent>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 
