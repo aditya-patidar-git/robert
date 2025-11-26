@@ -493,8 +493,19 @@ const PrivacyPage = () => {
           </Paper>
 
           {/* Tabs for additional sections */}
-          <Paper sx={{ mb: 3 }}>
-            <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
+          <Paper 
+            elevation={0}
+            sx={{ 
+              mb: 3,
+              borderRadius: 2
+            }}
+          >
+            <Tabs 
+              value={activeTab} 
+              onChange={(e, newValue) => setActiveTab(newValue)}
+              variant="scrollable"
+              scrollButtons="auto"
+            >
               <Tab label="DSAR Requests" />
               <Tab label="Audit Logs" />
               <Tab label="Retention Status" />
