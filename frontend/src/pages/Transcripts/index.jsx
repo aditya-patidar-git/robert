@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  Container,
+  
   Typography,
   Box,
   Paper,
@@ -726,7 +726,7 @@ const TranscriptsComplaintsPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 
