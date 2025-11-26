@@ -25,6 +25,11 @@ const VectorStoreStatus = ({
             <Chip
               label={vectorStoreStatus.status === 'completed' ? 'Active' : (vectorStoreStatus.status || 'Unknown')}
               color={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? 'success' : 'default'}
+              variant="filled"
+              sx={{
+                backgroundColor: (vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed') ? 'success.main' : undefined,
+                color: (vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed') ? 'success.contrastText' : undefined
+              }}
             />
           </Box>
           <Box>
