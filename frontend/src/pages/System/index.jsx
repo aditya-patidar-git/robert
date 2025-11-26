@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Container,
+  
   Typography,
   Box,
   Paper,
@@ -175,7 +175,7 @@ const SystemConfigPage = () => {
           />
         )}
       </form>
-    </Container>
+    </Box>
   );
 };
 
