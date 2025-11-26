@@ -350,19 +350,40 @@ const TranscriptsComplaintsPage = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" fontWeight="bold" gutterBottom>
+        <Typography 
+          variant="h4" 
+          component="h1"
+          sx={{ 
+            fontWeight: 700,
+            fontSize: { xs: '1.75rem', md: '2rem' },
+            color: 'text.primary',
+            mb: 1
+          }}
+        >
           Transcripts & Complaints
         </Typography>
-        <Typography color="text.secondary">
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: 'text.secondary',
+            fontSize: '0.9375rem'
+          }}
+        >
           {canSeeAll
             ? 'Manage call transcripts, recordings, and customer complaints'
             : 'View your call transcripts and submit complaints'}
         </Typography>
       </Box>
 
-      <Paper sx={{ mb: 3 }}>
+      <Paper 
+        elevation={0}
+        sx={{ 
+          mb: 3,
+          borderRadius: 2
+        }}
+      >
         <Tabs
           value={currentTab}
           onChange={(e, val) => setCurrentTab(val)}
