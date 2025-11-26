@@ -746,7 +746,7 @@ const AIKnowledgePage = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 
