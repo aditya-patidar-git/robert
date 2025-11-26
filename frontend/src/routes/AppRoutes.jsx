@@ -5,7 +5,6 @@ import AdminLayout from '../layouts/AdminLayout';
 import ProtectedRoute from '../components/common/ProtectedRoute';
 
 // Public Pages
-import Home from '../pages/Home';
 import Mvp from '../pages/Mvp';
 
 // Auth Pages
@@ -22,58 +21,6 @@ import TranscriptsComplaintsPage from '../pages/Transcripts/index';
 import PrivacyPage from '../pages/Privacy/index';
 import ObservabilityPage from '../pages/Observability/index';
 import SystemConfigPage from '../pages/System/index';
-
-// Placeholder components for future implementation
-
-const KBPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>Knowledge Base</h2>
-    <p>Knowledge base management functionality will be implemented here.</p>
-  </div>
-);
-
-const PromptsPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>Prompts & AI Controls</h2>
-    <p>AI prompt management and control functionality will be implemented here.</p>
-  </div>
-);
-
-const CRMPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>CRM Integration</h2>
-    <p>Customer relationship management integration functionality will be implemented here.</p>
-  </div>
-);
-
-const TranscriptsPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>Transcripts & Provenance</h2>
-    <p>Call transcript management and provenance functionality will be implemented here.</p>
-  </div>
-);
-
-
-const ComplaintsPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>Complaints & Escalations</h2>
-    <p>Customer complaints and escalation management functionality will be implemented here.</p>
-  </div>
-);
-
-const SystemPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>System Configuration</h2>
-    <p>MCP tools, models, and system configuration functionality will be implemented here.</p>
-  </div>
-);
-
-const SettingsPage = () => (
-  <div style={{ padding: '24px' }}>
-    <h2>System Settings</h2>
-    <p>System configuration settings will be implemented here.</p>
-  </div>
-);
 
 const AppRoutes = createBrowserRouter([
   // Public Routes

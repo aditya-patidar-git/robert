@@ -12,7 +12,7 @@ import {
   reingestFile,
   detectFileDrift,
   upload
-} from "../controllers/openaiKbController.js";
+} from "../controllers/openaiKb/index.js";
 
 const router = express.Router();
 

@@ -9,7 +9,7 @@ import {
   testPrompt,
   getModelParameters,
   getModelCapabilities
-} from "../controllers/aiController.js";
+} from "../controllers/ai/index.js";
 
 const router = express.Router();
 
