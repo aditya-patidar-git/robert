@@ -1,0 +1,30 @@
+{
+  "name": "robert-voice-agent-service",
+  "version": "1.0.0",
+  "description": "Independent agent service with MCP server for real-time call handling",
+  "type": "module",
+  "main": "src/agent/index.js",
+  "scripts": {
+    "start:agent": "node src/agent/index.js",
+    "start:mcp": "node src/mcp-server/server.js",
+    "dev:agent": "nodemon src/agent/index.js",
+    "dev:mcp": "nodemon src/mcp-server/server.js"
+  },
+  "keywords": ["voice-agent", "mcp", "twilio", "openai"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "express": "^5.1.0",
+    "ws": "^8.18.0",
+    "twilio": "^5.10.0",
+    "mongoose": "^8.18.1",
+    "dotenv": "^17.2.2",
+    "cors": "^2.8.5",
+    "axios": "^1.7.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
+
