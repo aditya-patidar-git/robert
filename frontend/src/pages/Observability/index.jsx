@@ -160,7 +160,13 @@ const ObservabilityPage = () => {
       </Grid>
 
       {/* Tabs for different views */}
-      <Paper sx={{ mb: 3 }}>
+      <Paper 
+        elevation={0}
+        sx={{ 
+          mb: 3,
+          borderRadius: 2
+        }}
+      >
         <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
           <Tab label="Metrics & Logs" />
           <Tab label="Live Calls" />
