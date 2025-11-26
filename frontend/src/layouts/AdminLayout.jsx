@@ -474,11 +474,14 @@ const AdminLayout = () => {
             flexGrow: 1,
             width: { md: `calc(100% - ${drawerWidth}px)` },
             minHeight: '100vh',
-            backgroundColor: 'background.default'
+            backgroundColor: 'background.default',
+            transition: 'background-color 0.2s'
           }}
         >
           <Toolbar />
-          <Outlet />
+          <Box sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
+            <Outlet />
+          </Box>
         </Box>
       </Box>
     </ThemeProvider>
