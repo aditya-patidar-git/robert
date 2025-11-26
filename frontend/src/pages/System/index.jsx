@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Container,
+  
   Typography,
   Box,
   Paper,
@@ -53,19 +53,40 @@ const SystemConfigPage = () => {
   } = useSystemPageState();
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
+        <Typography 
+          variant="h4" 
+          component="h1"
+          sx={{ 
+            fontWeight: 700,
+            fontSize: { xs: '1.75rem', md: '2rem' },
+            color: 'text.primary',
+            mb: 1
+          }}
+        >
           System Configuration
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: 'text.secondary',
+            fontSize: '0.9375rem'
+          }}
+        >
           Configure MCP tools, model capabilities, and system-wide settings
         </Typography>
       </Box>
 
       {/* Tabs */}
-      <Paper sx={{ mb: 3 }}>
+      <Paper 
+        elevation={0}
+        sx={{ 
+          mb: 3,
+          borderRadius: 2
+        }}
+      >
         <Tabs
           value={currentTab}
           onChange={(e, newValue) => setCurrentTab(newValue)}
@@ -154,7 +175,7 @@ const SystemConfigPage = () => {
           />
         )}
       </form>
-    </Container>
+    </Box>
   );
 };
 

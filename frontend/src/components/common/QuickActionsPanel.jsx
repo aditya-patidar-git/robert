@@ -103,44 +103,91 @@ const QuickActionsPanel = ({ onToggleMCPTools, onPauseRouting, onRefreshSystem, 
   return (
     <>
       <Box>
-        <Typography variant="h6" gutterBottom>
-          Quick Actions
-        </Typography>
-        <ButtonGroup 
-          variant="contained" 
-          size="medium"
-          orientation="horizontal"
-          sx={{ flexWrap: 'wrap', gap: 1 }}
-        >
+        <Box sx={{ mb: 3 }}>
+          <Typography 
+            variant="h6" 
+            component="h2"
+            sx={{ 
+              fontWeight: 600,
+              fontSize: '1.125rem',
+              color: 'text.primary',
+              mb: 0.5
+            }}
+          >
+            Quick Actions
+          </Typography>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              color: 'text.secondary',
+              fontSize: '0.875rem'
+            }}
+          >
+            Manage system operations
+          </Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Button
-            startIcon={loading.mcp ? <CircularProgress size={16} /> : <Build />}
+            fullWidth
+            variant="outlined"
+            size="large"
+            startIcon={loading.mcp ? <CircularProgress size={18} /> : <Build />}
             onClick={() => handleAction('mcp', onToggleMCPTools, false)}
             disabled={loading.mcp}
-            color="primary"
+            sx={{
+              justifyContent: 'flex-start',
+              py: 1.5,
+              px: 2,
+              textAlign: 'left',
+              fontWeight: 500,
+              fontSize: '0.875rem'
+            }}
           >
-            MCP Tools
+            Configure MCP Tools
           </Button>
 
           <Button
-            startIcon={loading.routing ? <CircularProgress size={16} /> : 
+            fullWidth
+            variant="outlined"
+            size="large"
+            startIcon={loading.routing ? <CircularProgress size={18} /> : 
               (systemStatus?.routingEnabled ? <PauseCircle /> : <PlayCircle />)
             }
             onClick={() => handleAction('routing', onPauseRouting)}
             disabled={loading.routing}
             color={systemStatus?.routingEnabled ? "warning" : "success"}
+            sx={{
+              justifyContent: 'flex-start',
+              py: 1.5,
+              px: 2,
+              textAlign: 'left',
+              fontWeight: 500,
+              fontSize: '0.875rem'
+            }}
           >
-            {systemStatus?.routingEnabled ? 'Pause Routing' : 'Resume Routing'}
+            {systemStatus?.routingEnabled ? 'Pause Call Routing' : 'Resume Call Routing'}
           </Button>
 
           <Button
-            startIcon={loading.refresh ? <CircularProgress size={16} /> : <RefreshRounded />}
+            fullWidth
+            variant="outlined"
+            size="large"
+            startIcon={loading.refresh ? <CircularProgress size={18} /> : <RefreshRounded />}
             onClick={() => handleAction('refresh', onRefreshSystem, false)}
             disabled={loading.refresh}
-            color="info"
+            sx={{
+              justifyContent: 'flex-start',
+              py: 1.5,
+              px: 2,
+              textAlign: 'left',
+              fontWeight: 500,
+              fontSize: '0.875rem'
+            }}
           >
-            Refresh
+            Refresh System Status
           </Button>
-        </ButtonGroup>
+        </Box>
       </Box>
 
       {/* Confirmation Dialog */}

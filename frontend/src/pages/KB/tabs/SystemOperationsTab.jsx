@@ -89,6 +89,10 @@ const SystemOperationsTab = ({ state, handlers }) => {
                           color={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? 'success' : 'default'}
                           size="small"
                           icon={vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed' ? <CheckCircleIcon /> : <ErrorOutline />}
+                          sx={{
+                            backgroundColor: (vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed') ? 'success.main' : undefined,
+                            color: (vectorStoreStatus.status === 'active' || vectorStoreStatus.status === 'completed') ? 'success.contrastText' : undefined
+                          }}
                         />
                       </Stack>
                     </Box>

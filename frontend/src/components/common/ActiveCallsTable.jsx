@@ -99,6 +99,40 @@ const ActiveCallsTable = ({ calls, loading = false, onRowClick, userRole }) => {
         disableSelectionOnClick
         onRowClick={handleRowClick}
         getRowId={(row) => row.callSid || row.id}
+        sx={{
+          border: 'none',
+          '& .MuiDataGrid-cell': {
+            borderColor: 'divider',
+            fontSize: '0.875rem',
+          },
+          '& .MuiDataGrid-columnHeaders': {
+            backgroundColor: 'action.hover',
+            borderRadius: 1,
+            border: 'none',
+            '& .MuiDataGrid-columnHeader': {
+              '&:focus, &:focus-within': {
+                outline: 'none',
+              },
+            },
+          },
+          '& .MuiDataGrid-row': {
+            cursor: onRowClick ? 'pointer' : 'default',
+            '&:hover': {
+              backgroundColor: 'action.hover',
+            },
+            '&.Mui-selected': {
+              backgroundColor: 'action.selected',
+              '&:hover': {
+                backgroundColor: 'action.selected',
+              },
+            },
+          },
+          '& .MuiDataGrid-footerContainer': {
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            backgroundColor: 'background.paper',
+          },
+        }}
       />
     </Box>
   );

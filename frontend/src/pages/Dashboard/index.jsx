@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Container,
   Typography,
   Box,
   Paper,
@@ -237,13 +236,28 @@ const Dashboard = () => {
   ];
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
+        <Typography 
+          variant="h4" 
+          component="h1" 
+          sx={{ 
+            fontWeight: 700,
+            fontSize: { xs: '1.75rem', md: '2rem' },
+            color: 'text.primary',
+            mb: 1
+          }}
+        >
           Dashboard
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: 'text.secondary',
+            fontSize: '0.9375rem'
+          }}
+        >
           Monitor your Robert Voice Agent system performance and manage operations
         </Typography>
       </Box>
@@ -251,44 +265,63 @@ const Dashboard = () => {
       {/* Section A: Business Metrics */}
       <Box
         sx={{
-          display: 'flex',
-          flexDirection: { xs: 'column', sm: 'row' },
-          flexWrap: 'wrap',
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: '1fr',
+            sm: 'repeat(2, 1fr)',
+            md: 'repeat(4, 1fr)'
+          },
           gap: 3,
-          mb: 4,
-          width: '100%'
+          mb: 4
         }}
       >
         {visibleMetrics.map((metric, index) => (
-          <Box
+          <MetricCard
             key={index}
-            sx={{
-              flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 12px)', md: '1 1 calc(25% - 18px)' },
-              minWidth: 0
-            }}
-          >
-            <MetricCard
-              title={metric.title}
-              value={metric.value}
-              icon={metric.icon}
-              color={metric.color}
-              change={metric.change}
-              changeType={metric.changeType}
-              onClick={metric.onClick}
-              loading={loading.metrics}
-            />
-          </Box>
+            title={metric.title}
+            value={metric.value}
+            icon={metric.icon}
+            color={metric.color}
+            change={metric.change}
+            changeType={metric.changeType}
+            onClick={metric.onClick}
+            loading={loading.metrics}
+          />
         ))}
       </Box>
 
       {/* Section B: Active Calls Panel */}
-      <Paper sx={{ p: 3, mb: 4 }}>
-        <Typography variant="h5" component="h2" gutterBottom fontWeight="bold">
-          Live Calls
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Real-time view of active calls in the system
-        </Typography>
+      <Paper 
+        elevation={0}
+        sx={{ 
+          p: 3, 
+          mb: 4,
+          borderRadius: 2
+        }}
+      >
+        <Box sx={{ mb: 3 }}>
+          <Typography 
+            variant="h6" 
+            component="h2"
+            sx={{ 
+              fontWeight: 600,
+              fontSize: '1.125rem',
+              color: 'text.primary',
+              mb: 0.5
+            }}
+          >
+            Live Calls
+          </Typography>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              color: 'text.secondary',
+              fontSize: '0.875rem'
+            }}
+          >
+            Real-time view of active calls in the system
+          </Typography>
+        </Box>
         <ActiveCallsTable
           calls={activeCalls}
           loading={loading.calls}
@@ -300,56 +333,77 @@ const Dashboard = () => {
       {/* Section C: Alerts & Quick Actions */}
       <Box
         sx={{
-          display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          gap: 3,
-          alignItems: 'stretch'
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: '1fr',
+            md: canSeeQuickActions ? 'repeat(2, 1fr)' : '1fr'
+          },
+          gap: 3
         }}
       >
         {/* Alerts Panel */}
-        <Box
-          sx={{
-            flex: canSeeQuickActions ? '1 1 50%' : '1 1 100%',
-            minWidth: 0
+        <Paper 
+          elevation={0}
+          sx={{ 
+            p: 3,
+            borderRadius: 2,
+            display: 'flex', 
+            flexDirection: 'column'
           }}
         >
-          <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="h5" component="h2" gutterBottom fontWeight="bold">
+          <Box sx={{ mb: 3 }}>
+            <Typography 
+              variant="h6" 
+              component="h2"
+              sx={{ 
+                fontWeight: 600,
+                fontSize: '1.125rem',
+                color: 'text.primary',
+                mb: 0.5
+              }}
+            >
               System Alerts
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                color: 'text.secondary',
+                fontSize: '0.875rem'
+              }}
+            >
               Recent system notifications and warnings
             </Typography>
-            <Divider sx={{ mb: 2 }} />
-            <Box sx={{ flex: 1 }}>
-              <AlertsPanel
-                alerts={alerts}
-                onDismiss={handleDismissAlert}
-              />
-            </Box>
-          </Paper>
-        </Box>
+          </Box>
+          <Divider sx={{ mb: 2 }} />
+          <Box sx={{ flex: 1 }}>
+            <AlertsPanel
+              alerts={alerts}
+              onDismiss={handleDismissAlert}
+            />
+          </Box>
+        </Paper>
 
         {/* Quick Actions Panel (Owner/Admin only) */}
         {canSeeQuickActions && (
-          <Box
-            sx={{
-              flex: '1 1 50%',
-              minWidth: 0
+          <Paper 
+            elevation={0}
+            sx={{ 
+              p: 3,
+              borderRadius: 2,
+              display: 'flex', 
+              flexDirection: 'column'
             }}
           >
-            <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-              <QuickActionsPanel
-                onToggleMCPTools={handleToggleMCPTools}
-                onPauseRouting={handlePauseRouting}
-                onRefreshSystem={handleRefreshSystem}
-                systemStatus={systemStatus}
-              />
-            </Paper>
-          </Box>
+            <QuickActionsPanel
+              onToggleMCPTools={handleToggleMCPTools}
+              onPauseRouting={handlePauseRouting}
+              onRefreshSystem={handleRefreshSystem}
+              systemStatus={systemStatus}
+            />
+          </Paper>
         )}
       </Box>
-    </Container>
+    </Box>
   );
 };
 

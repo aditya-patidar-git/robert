@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Container,
+  
   Typography,
   Box,
   Paper,
@@ -64,13 +64,28 @@ const ObservabilityPage = () => {
   } = useObservabilityState();
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
+        <Typography 
+          variant="h4" 
+          component="h1"
+          sx={{ 
+            fontWeight: 700,
+            fontSize: { xs: '1.75rem', md: '2rem' },
+            color: 'text.primary',
+            mb: 1
+          }}
+        >
           System Observability
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: 'text.secondary',
+            fontSize: '0.9375rem'
+          }}
+        >
           Monitor system health, performance metrics, and error logs
         </Typography>
       </Box>
@@ -145,7 +160,13 @@ const ObservabilityPage = () => {
       </Grid>
 
       {/* Tabs for different views */}
-      <Paper sx={{ mb: 3 }}>
+      <Paper 
+        elevation={0}
+        sx={{ 
+          mb: 3,
+          borderRadius: 2
+        }}
+      >
         <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
           <Tab label="Metrics & Logs" />
           <Tab label="Live Calls" />
@@ -213,7 +234,7 @@ const ObservabilityPage = () => {
         toolTraces={toolTraces}
         toolTracesLoading={toolTracesLoading}
       />
-    </Container>
+    </Box>
   );
 };
 

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Container,
   Typography,
   Box,
   Paper,
@@ -242,13 +241,28 @@ const PrivacyPage = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
+        <Typography 
+          variant="h4" 
+          component="h1"
+          sx={{ 
+            fontWeight: 700,
+            fontSize: { xs: '1.75rem', md: '2rem' },
+            color: 'text.primary',
+            mb: 1
+          }}
+        >
           Privacy & Compliance
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: 'text.secondary',
+            fontSize: '0.9375rem'
+          }}
+        >
           {canSeeAll ? 
             'Manage GDPR compliance, data retention, and privacy policies' :
             'Manage your personal data and privacy settings'
@@ -478,8 +492,19 @@ const PrivacyPage = () => {
           </Paper>
 
           {/* Tabs for additional sections */}
-          <Paper sx={{ mb: 3 }}>
-            <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
+          <Paper 
+            elevation={0}
+            sx={{ 
+              mb: 3,
+              borderRadius: 2
+            }}
+          >
+            <Tabs 
+              value={activeTab} 
+              onChange={(e, newValue) => setActiveTab(newValue)}
+              variant="scrollable"
+              scrollButtons="auto"
+            >
               <Tab label="DSAR Requests" />
               <Tab label="Audit Logs" />
               <Tab label="Retention Status" />
@@ -1156,7 +1181,7 @@ const PrivacyPage = () => {
           <Button onClick={() => setPiaDialog({ open: false })}>Close</Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 
