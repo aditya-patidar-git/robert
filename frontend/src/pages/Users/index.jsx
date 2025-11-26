@@ -121,27 +121,63 @@ const UsersPage = () => {
 
   if (usersLoading) {
     return (
-      <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
           <CircularProgress />
         </Box>
-      </Container>
+      </Box>
     );
   }
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        User Management
-      </Typography>
+    <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
+      {/* Page Header */}
+      <Box sx={{ mb: 4 }}>
+        <Typography 
+          variant="h4" 
+          component="h1"
+          sx={{ 
+            fontWeight: 700,
+            fontSize: { xs: '1.75rem', md: '2rem' },
+            color: 'text.primary',
+            mb: 1
+          }}
+        >
+          User Management
+        </Typography>
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: 'text.secondary',
+            fontSize: '0.9375rem'
+          }}
+        >
+          Manage system users, roles, and permissions
+        </Typography>
+      </Box>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Box display="flex" gap={2}>
+      {/* Filters */}
+      <Paper 
+        elevation={0}
+        sx={{ 
+          p: 3, 
+          mb: 3,
+          borderRadius: 2
+        }}
+      >
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            gap: 2,
+            flexWrap: 'wrap'
+          }}
+        >
           <TextField
             select
             label="Filter by Role"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
+            size="small"
             sx={{ minWidth: 200 }}
           >
             <MenuItem value="">All Roles</MenuItem>
@@ -154,6 +190,7 @@ const UsersPage = () => {
             label="Filter by Status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
+            size="small"
             sx={{ minWidth: 200 }}
           >
             <MenuItem value="">All Statuses</MenuItem>
@@ -163,7 +200,12 @@ const UsersPage = () => {
         </Box>
       </Paper>
 
-      <TableContainer component={Paper}>
+      {/* Users Table */}
+      <TableContainer 
+        component={Paper} 
+        elevation={0}
+        sx={{ borderRadius: 2 }}
+      >
         <Table>
           <TableHead>
             <TableRow>
@@ -178,20 +220,58 @@ const UsersPage = () => {
           <TableBody>
             {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
-                  <Alert severity="info">No users found</Alert>
+                <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                  <Alert 
+                    severity="info"
+                    sx={{ 
+                      maxWidth: 400,
+                      margin: '0 auto',
+                      borderRadius: 2
+                    }}
+                  >
+                    No users found matching the selected filters
+                  </Alert>
                 </TableCell>
               </TableRow>
             ) : (
               filteredUsers.map((user) => (
-                <TableRow key={user.id || user._id}>
-                  <TableCell>{user.name || user.username || 'N/A'}</TableCell>
-                  <TableCell>{user.email}</TableCell>
+                <TableRow 
+                  key={user.id || user._id}
+                  sx={{
+                    '&:last-child td': { border: 0 }
+                  }}
+                >
+                  <TableCell>
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        fontWeight: 600,
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      {user.name || user.username || 'N/A'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography 
+                      variant="body2"
+                      sx={{ 
+                        color: 'text.secondary',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      {user.email}
+                    </Typography>
+                  </TableCell>
                   <TableCell>
                     <Chip
                       label={user.role || 'user'}
                       color={user.role === 'owner' ? 'error' : user.role === 'admin' ? 'warning' : 'default'}
                       size="small"
+                      sx={{ 
+                        textTransform: 'capitalize',
+                        fontWeight: 500
+                      }}
                     />
                   </TableCell>
                   <TableCell>
@@ -199,36 +279,65 @@ const UsersPage = () => {
                       label={user.status || 'active'}
                       color={user.status === 'active' ? 'success' : 'default'}
                       size="small"
+                      sx={{ 
+                        textTransform: 'capitalize',
+                        fontWeight: 500
+                      }}
                     />
                   </TableCell>
                   <TableCell>
-                    {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                    <Typography 
+                      variant="body2"
+                      sx={{ 
+                        color: 'text.secondary',
+                        fontSize: '0.875rem'
+                      }}
+                    >
+                      {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                    </Typography>
                   </TableCell>
                   <TableCell align="right">
-                    {user.status === 'active' ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
+                      {user.status === 'active' ? (
+                        <IconButton
+                          size="small"
+                          onClick={() => handleAction(user, 'deactivate')}
+                          color="warning"
+                          sx={{
+                            '&:hover': {
+                              backgroundColor: 'warning.lighter'
+                            }
+                          }}
+                        >
+                          <BlockIcon fontSize="small" />
+                        </IconButton>
+                      ) : (
+                        <IconButton
+                          size="small"
+                          onClick={() => handleAction(user, 'activate')}
+                          color="success"
+                          sx={{
+                            '&:hover': {
+                              backgroundColor: 'success.lighter'
+                            }
+                          }}
+                        >
+                          <CheckCircleIcon fontSize="small" />
+                        </IconButton>
+                      )}
                       <IconButton
                         size="small"
-                        onClick={() => handleAction(user, 'deactivate')}
-                        color="warning"
+                        onClick={() => handleAction(user, 'delete')}
+                        color="error"
+                        sx={{
+                          '&:hover': {
+                            backgroundColor: 'error.lighter'
+                          }
+                        }}
                       >
-                        <BlockIcon />
+                        <DeleteIcon fontSize="small" />
                       </IconButton>
-                    ) : (
-                      <IconButton
-                        size="small"
-                        onClick={() => handleAction(user, 'activate')}
-                        color="success"
-                      >
-                        <CheckCircleIcon />
-                      </IconButton>
-                    )}
-                    <IconButton
-                      size="small"
-                      onClick={() => handleAction(user, 'delete')}
-                      color="error"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))
