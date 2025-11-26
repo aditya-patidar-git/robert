@@ -346,27 +346,45 @@ const UsersPage = () => {
         </Table>
       </TableContainer>
 
+      {/* Confirmation Dialog */}
       <Dialog
         open={confirmDialog.open}
         onClose={() => setConfirmDialog({ open: false, user: null, action: '' })}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 2 }
+        }}
       >
-        <DialogTitle>Confirm Action</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to {confirmDialog.action} user{' '}
-            {confirmDialog.user?.email || confirmDialog.user?.name}?
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Confirm Action
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Typography sx={{ fontSize: '0.9375rem', color: 'text.secondary' }}>
+            Are you sure you want to <strong>{confirmDialog.action}</strong> user{' '}
+            <strong>{confirmDialog.user?.email || confirmDialog.user?.name}</strong>?
           </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmDialog({ open: false, user: null, action: '' })}>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button 
+            onClick={() => setConfirmDialog({ open: false, user: null, action: '' })}
+            variant="outlined"
+          >
             Cancel
           </Button>
-          <Button onClick={handleConfirm} color="error" variant="contained">
+          <Button 
+            onClick={handleConfirm} 
+            color="error" 
+            variant="contained"
+            autoFocus
+          >
             Confirm
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </Box>
   );
 };
 
