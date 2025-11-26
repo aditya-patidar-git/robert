@@ -212,24 +212,50 @@ const AudioTelephonyPage = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
+        <Typography 
+          variant="h4" 
+          component="h1"
+          sx={{ 
+            fontWeight: 700,
+            fontSize: { xs: '1.75rem', md: '2rem' },
+            color: 'text.primary',
+            mb: 1
+          }}
+        >
           Audio & Telephony Configuration
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: 'text.secondary',
+            fontSize: '0.9375rem'
+          }}
+        >
           Configure voice processing settings, telephony routing, and call management
         </Typography>
       </Box>
 
       {/* Tabs Navigation */}
-      <Paper sx={{ mb: 3 }}>
-        <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
-          <Tab label="Audio Settings" icon={<VolumeUp />} />
-          <Tab label="Voice Management" icon={<Mic />} />
-          <Tab label="Telephony Routing" icon={<Phone />} />
-          <Tab label="Call Quality" icon={<Headset />} />
+      <Paper 
+        elevation={0}
+        sx={{ 
+          mb: 3,
+          borderRadius: 2
+        }}
+      >
+        <Tabs 
+          value={activeTab} 
+          onChange={(e, newValue) => setActiveTab(newValue)}
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab label="Audio Settings" icon={<VolumeUp />} iconPosition="start" />
+          <Tab label="Voice Management" icon={<Mic />} iconPosition="start" />
+          <Tab label="Telephony Routing" icon={<Phone />} iconPosition="start" />
+          <Tab label="Call Quality" icon={<Headset />} iconPosition="start" />
         </Tabs>
       </Paper>
 
