@@ -166,57 +166,165 @@ const AdminLayout = () => {
   };
 
   const drawer = (
-    <Box>
-      <Toolbar>
-        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-          <Phone sx={{ mr: 1, color: 'primary.main' }} />
-          <Typography variant="h6" noWrap component="div">
-            Robert Admin
-          </Typography>
-        </Box>
-      </Toolbar>
-      <Divider />
-      <List>
-        {filteredMenuItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
-            <ListItemButton
-              selected={location.pathname.startsWith(item.path)}
-              onClick={() => handleNavigation(item.path)}
-              sx={{
-                '&.Mui-selected': {
-                  backgroundColor: 'primary.main',
-                  color: 'primary.contrastText',
-                  '&:hover': {
-                    backgroundColor: 'primary.dark',
-                  },
-                  '& .MuiListItemIcon-root': {
-                    color: 'primary.contrastText',
-                  },
-                },
+    <Box sx={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column',
+      backgroundColor: 'background.paper'
+    }}>
+      {/* Logo Section */}
+      <Box sx={{ px: 3, py: 3 }}>
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1.5,
+        }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: 2,
+              backgroundColor: 'primary.main',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 12px rgba(0, 82, 204, 0.2)',
+            }}
+          >
+            <Phone sx={{ color: 'white', fontSize: 24 }} />
+          </Box>
+          <Box>
+            <Typography 
+              variant="h6" 
+              sx={{ 
+                fontWeight: 700,
+                fontSize: '1.125rem',
+                lineHeight: 1.2,
+                color: 'text.primary'
               }}
             >
-              <ListItemIcon sx={{ color: 'inherit' }}>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText primary={item.text} />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
+              Robert
+            </Typography>
+            <Typography 
+              variant="caption" 
+              sx={{ 
+                color: 'text.secondary',
+                fontSize: '0.75rem',
+                fontWeight: 500
+              }}
+            >
+              AI Admin Portal
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
 
-      <Divider sx={{ mt: 'auto' }} />
+      <Divider />
+
+      {/* Navigation */}
+      <Box sx={{ flex: 1, overflowY: 'auto', py: 2 }}>
+        <List sx={{ px: 1 }}>
+          {filteredMenuItems.map((item) => {
+            const isSelected = location.pathname.startsWith(item.path);
+            return (
+              <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+                <ListItemButton
+                  selected={isSelected}
+                  onClick={() => handleNavigation(item.path)}
+                  sx={{
+                    borderRadius: 1.5,
+                    minHeight: 44,
+                    '&.Mui-selected': {
+                      backgroundColor: 'primary.main',
+                      color: 'white',
+                      boxShadow: '0 2px 8px rgba(0, 82, 204, 0.25)',
+                      '&:hover': {
+                        backgroundColor: 'primary.dark',
+                      },
+                      '& .MuiListItemIcon-root': {
+                        color: 'white',
+                      },
+                    },
+                    '&:hover': {
+                      backgroundColor: isSelected 
+                        ? 'primary.dark' 
+                        : 'action.hover',
+                    },
+                  }}
+                >
+                  <ListItemIcon 
+                    sx={{ 
+                      minWidth: 40,
+                      color: isSelected ? 'white' : 'text.secondary',
+                    }}
+                  >
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary={item.text}
+                    primaryTypographyProps={{
+                      fontSize: '0.875rem',
+                      fontWeight: isSelected ? 600 : 500,
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            );
+          })}
+        </List>
+      </Box>
+
+      <Divider />
 
       {/* User Info in Sidebar */}
-      <Box sx={{ p: 2, mt: 'auto' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-          <Avatar sx={{ width: 32, height: 32, mr: 1, fontSize: 14 }}>
+      <Box sx={{ p: 2 }}>
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            gap: 1.5,
+            p: 1.5,
+            borderRadius: 2,
+            backgroundColor: 'action.hover',
+            transition: 'all 0.2s',
+            '&:hover': {
+              backgroundColor: 'action.selected',
+            }
+          }}
+        >
+          <Avatar 
+            sx={{ 
+              width: 36, 
+              height: 36, 
+              fontSize: 14,
+              fontWeight: 600,
+              backgroundColor: 'primary.main',
+              boxShadow: '0 2px 8px rgba(0, 82, 204, 0.2)',
+            }}
+          >
             {user?.username?.[0]?.toUpperCase()}
           </Avatar>
-          <Box sx={{ overflow: 'hidden' }}>
-            <Typography variant="body2" noWrap>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography 
+              variant="body2" 
+              noWrap
+              sx={{ 
+                fontWeight: 600,
+                fontSize: '0.875rem',
+                color: 'text.primary'
+              }}
+            >
               {user?.username}
             </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
+            <Typography 
+              variant="caption" 
+              noWrap
+              sx={{ 
+                color: 'text.secondary',
+                fontSize: '0.75rem',
+                textTransform: 'capitalize'
+              }}
+            >
               {user?.role}
             </Typography>
           </Box>
