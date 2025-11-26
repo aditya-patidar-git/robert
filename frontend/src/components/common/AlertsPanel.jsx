@@ -26,16 +26,55 @@ const AlertsPanel = ({ alerts, onDismiss }) => {
 
   if (!alerts || alerts.length === 0) {
     return (
-      <Box sx={{ textAlign: 'center', py: 3 }}>
-        <Typography variant="body2" color="text.secondary">
+      <Box 
+        sx={{ 
+          textAlign: 'center', 
+          py: 6,
+          px: 2
+        }}
+      >
+        <Box
+          sx={{
+            width: 48,
+            height: 48,
+            borderRadius: 2,
+            backgroundColor: 'success.lighter',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 12px',
+            opacity: 0.6
+          }}
+        >
+          <Info sx={{ color: 'success.main', fontSize: 24 }} />
+        </Box>
+        <Typography 
+          variant="body2" 
+          sx={{ 
+            color: 'text.secondary',
+            fontSize: '0.875rem',
+            fontWeight: 500
+          }}
+        >
           No system alerts at the moment
+        </Typography>
+        <Typography 
+          variant="caption" 
+          sx={{ 
+            color: 'text.disabled',
+            fontSize: '0.75rem',
+            display: 'block',
+            mt: 0.5
+          }}
+        >
+          All systems operational
         </Typography>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
+    <Box sx={{ maxHeight: 350, overflowY: 'auto', overflowX: 'hidden' }}>
       {alerts.map((alert, index) => (
         <Collapse key={alert.id || index} in={!alert.dismissed}>
           <Alert
@@ -48,29 +87,70 @@ const AlertsPanel = ({ alerts, onDismiss }) => {
                   color="inherit"
                   size="small"
                   onClick={() => onDismiss(alert.id)}
+                  sx={{
+                    '&:hover': {
+                      backgroundColor: 'action.hover'
+                    }
+                  }}
                 >
                   <Close fontSize="inherit" />
                 </IconButton>
               )
             }
-            sx={{ mb: 1 }}
+            sx={{ 
+              mb: 1.5,
+              borderRadius: 1.5,
+              '& .MuiAlert-icon': {
+                fontSize: 20
+              }
+            }}
           >
-            <AlertTitle sx={{ fontWeight: 'bold' }}>
-              {alert.title}
-              {alert.timestamp && (
-                <Typography component="span" variant="caption" sx={{ ml: 2 }}>
-                  {formatTimestamp(alert.timestamp)}
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography 
+                  variant="subtitle2" 
+                  sx={{ 
+                    fontWeight: 600,
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  {alert.title || 'System Alert'}
+                </Typography>
+                {alert.timestamp && (
+                  <Typography 
+                    variant="caption" 
+                    sx={{ 
+                      color: 'text.secondary',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    {formatTimestamp(alert.timestamp)}
+                  </Typography>
+                )}
+              </Box>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontSize: '0.8125rem',
+                  lineHeight: 1.5
+                }}
+              >
+                {alert.message}
+              </Typography>
+              {alert.details && (
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    color: 'text.secondary',
+                    mt: 1, 
+                    display: 'block',
+                    fontSize: '0.75rem'
+                  }}
+                >
+                  {alert.details}
                 </Typography>
               )}
-            </AlertTitle>
-            <Typography variant="body2">
-              {alert.message}
-            </Typography>
-            {alert.details && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                {alert.details}
-              </Typography>
-            )}
+            </Box>
           </Alert>
         </Collapse>
       ))}
