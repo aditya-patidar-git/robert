@@ -389,38 +389,104 @@ const AdminLayout = () => {
 
         <Menu
           anchorEl={anchorEl}
-          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-          keepMounted
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
           open={Boolean(anchorEl)}
           onClose={handleProfileMenuClose}
           PaperProps={{
-            sx: { mt: 1.5, minWidth: 200 }
+            sx: { 
+              mt: 1.5, 
+              minWidth: 240,
+              borderRadius: 2,
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+            }
           }}
         >
-          <Box sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider' }}>
-            <Typography variant="subtitle1" fontWeight="bold">
-              {user?.username}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {user?.email}
-            </Typography>
+          <Box sx={{ px: 3, py: 2, borderBottom: 1, borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+              <Avatar 
+                sx={{ 
+                  width: 40, 
+                  height: 40,
+                  backgroundColor: 'primary.main',
+                  fontWeight: 600,
+                }}
+              >
+                {user?.username?.[0]?.toUpperCase()}
+              </Avatar>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: '0.9375rem' }}>
+                  {user?.username}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8125rem' }}>
+                  {user?.email}
+                </Typography>
+              </Box>
+            </Box>
+            <Box 
+              sx={{ 
+                mt: 1.5,
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 1,
+                backgroundColor: 'action.hover',
+                display: 'inline-block'
+              }}
+            >
+              <Typography 
+                variant="caption" 
+                sx={{ 
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  fontSize: '0.6875rem',
+                  letterSpacing: '0.05em',
+                  color: 'primary.main'
+                }}
+              >
+                {user?.role}
+              </Typography>
+            </Box>
           </Box>
 
-          <MenuItem onClick={handleProfileClick}>
+          <MenuItem 
+            onClick={handleProfileClick}
+            sx={{ 
+              mx: 1, 
+              my: 0.5, 
+              borderRadius: 1.5,
+              '&:hover': {
+                backgroundColor: 'action.hover',
+              }
+            }}
+          >
             <ListItemIcon>
               <Person fontSize="small" />
             </ListItemIcon>
-            Profile Settings
+            <Typography variant="body2" sx={{ fontSize: '0.875rem', fontWeight: 500 }}>
+              Profile Settings
+            </Typography>
           </MenuItem>
 
-          <Divider />
+          <Divider sx={{ my: 0.5 }} />
 
-          <MenuItem onClick={handleLogout}>
+          <MenuItem 
+            onClick={handleLogout}
+            sx={{ 
+              mx: 1, 
+              my: 0.5, 
+              borderRadius: 1.5,
+              color: 'error.main',
+              '&:hover': {
+                backgroundColor: 'error.lighter',
+              }
+            }}
+          >
             <ListItemIcon>
-              <Logout fontSize="small" />
+              <Logout fontSize="small" color="error" />
             </ListItemIcon>
-            Logout
+            <Typography variant="body2" sx={{ fontSize: '0.875rem', fontWeight: 500 }}>
+              Logout
+            </Typography>
           </MenuItem>
         </Menu>
 
