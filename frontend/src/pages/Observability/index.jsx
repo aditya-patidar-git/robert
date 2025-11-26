@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Container,
+  
   Typography,
   Box,
   Paper,
@@ -234,7 +234,7 @@ const ObservabilityPage = () => {
         toolTraces={toolTraces}
         toolTracesLoading={toolTracesLoading}
       />
-    </Container>
+    </Box>
   );
 };
 
