@@ -63,6 +63,16 @@ export const handleMediaStreamConnection = (ws, req) => {
     let waitingForUser = true;
     let lastUserTranscript = null;
     
+    // Response tracking for barge-in
+    let activeResponseId = null;
+    let responseItemId = null;
+    let responseStartTime = null;
+    let lastCancellationTime = 0; // Track when we last cancelled a response
+    
+    // Initial greeting tracking
+    let hasInitialGreetingBeenSent = false;
+    let hasInitialGreetingCompleted = false;
+    
     // Tool execution tracking
     const pendingToolCalls = new Map(); // call_id -> { name, arguments, startTime }
     
@@ -409,6 +419,21 @@ export const handleMediaStreamConnection = (ws, req) => {
                     const event = JSON.parse(data.toString());
                     
                     if (event.type === 'error') {
+                        const errorCode = event.error?.code;
+                        const errorMessage = event.error?.message || '';
+                        
+                        // Don't treat these as critical errors - they're expected in some scenarios
+                        const nonCriticalErrors = [
+                            'response_cancel_not_active',      // Response already cancelled (race condition)
+                            'missing_required_parameter'       // Truncate API issues (non-critical, truncate is optional)
+                        ];
+                        
+                        if (nonCriticalErrors.some(code => errorCode === code || errorMessage.includes(code))) {
+                            console.warn(`⚠️ [${callSid}] Non-critical OpenAI error (ignoring):`, event.error);
+                            return; // Don't increment errorCount for these
+                        }
+                        
+                        // Critical errors - increment counter
                         errorCount++;
                         console.error(`❌ OpenAI error for call ${callSid}:`, event.error);
                         if (errorCount >= MAX_ERROR_COUNT) {
@@ -421,10 +446,12 @@ export const handleMediaStreamConnection = (ws, req) => {
                         console.log(`✅ Session updated for call: ${callSid}`);
                         errorCount = 0;
                         
-                        setTimeout(() => {
-                            if (isClosed || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
-                                return;
-                            }
+                        // Send initial greeting immediately (no delay)
+                        if (isClosed || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
+                            return;
+                        }
+                        // Only create initial greeting if not already sent and not already responding
+                        if (!hasInitialGreetingBeenSent && !isResponding && activeResponseId === null) {
                             try {
                                 openaiWs.send(JSON.stringify({
                                     type: 'response.create',
@@ -432,12 +459,37 @@ export const handleMediaStreamConnection = (ws, req) => {
                                         modalities: ['audio', 'text']
                                     }
                                 }));
-                                console.log(`🎯 Triggered AI to speak first for call: ${callSid}`);
+                                hasInitialGreetingBeenSent = true;
+                                isResponding = true; // Set flag before creating response
+                                console.log(`🎯 [${callSid}] Initial greeting sent immediately`);
                             } catch (err) {
+                                isResponding = false; // Reset if send fails
+                                hasInitialGreetingBeenSent = false; // Reset flag
                                 errorCount++;
-                                console.error('❌ Error sending response.create:', err);
+                                console.error(`❌ [${callSid}] Error sending initial greeting:`, err);
                             }
-                        }, 1000);
+                        } else {
+                            console.log(`⚠️ [${callSid}] Skipping initial greeting - already sent: ${hasInitialGreetingBeenSent}, isResponding: ${isResponding}, activeResponseId: ${activeResponseId}`);
+                        }
+                    }
+                    
+                    // Track response creation for barge-in cancellation
+                    if (event.type === 'response.created') {
+                        activeResponseId = event.response?.id;
+                        // Note: item_id comes from conversation.item.created, not response.created
+                        responseStartTime = Date.now();
+                        // Synchronize isResponding flag with activeResponseId to prevent race conditions
+                        isResponding = true;
+                        console.log(`📝 [${callSid}] Response created - ID: ${activeResponseId}, isResponding: ${isResponding}`);
+                    }
+                    
+                    // Get item_id from conversation.item.created event
+                    if (event.type === 'conversation.item.created' && event.item?.role === 'assistant') {
+                        // Match this item to the active response by checking if we have an active response
+                        if (activeResponseId && !responseItemId) {
+                            responseItemId = event.item?.id;
+                            console.log(`📝 [${callSid}] Response item created - Item ID: ${responseItemId} for response ${activeResponseId}`);
+                        }
                     }
                     
                     // Handle audio output
@@ -471,9 +523,66 @@ export const handleMediaStreamConnection = (ws, req) => {
                     
                     // Handle when response is done
                     if (event.type === 'response.done') {
-                        console.log(`✅ Response done for call: ${callSid}`);
-                        isResponding = false;
-                        waitingForUser = true;
+                        const status = event.response?.status || 'completed';
+                        const responseId = event.response?.id;
+                        console.log(`✅ [${callSid}] Response done - ID: ${responseId}, status: ${status}`);
+                        
+                        // Check if this was the initial greeting
+                        const wasInitialGreeting = hasInitialGreetingBeenSent && !hasInitialGreetingCompleted;
+                        if (wasInitialGreeting && status !== 'interrupted') {
+                            hasInitialGreetingCompleted = true;
+                            console.log(`✅ [${callSid}] Initial greeting completed`);
+                        }
+                        
+                        // Only clear tracking if response completed naturally (not interrupted)
+                        // If interrupted, the barge-in handler already cleared it
+                        if (status === 'interrupted') {
+                            console.log(`🛑 [${callSid}] Response was interrupted (barge-in)`);
+                            // Don't clear activeResponseId here - barge-in handler already cleared it
+                            // Just reset flags if they weren't already reset
+                            isResponding = false;
+                            waitingForUser = true;
+                        } else {
+                            // Response completed naturally - clear all tracking
+                            activeResponseId = null;
+                            responseItemId = null;
+                            responseStartTime = null;
+                            isResponding = false;
+                            waitingForUser = true;
+                        }
+                    }
+                    
+                    // Handle barge-in: user speech detected during active response
+                    if (event.type === 'input_audio_buffer.speech_started') {
+                        if (activeResponseId && isResponding) {
+                            console.log(`🛑 [${callSid}] Barge-in detected! Cancelling active response ${activeResponseId}`);
+                            
+                            // Save IDs before clearing
+                            const responseIdToCancel = activeResponseId;
+                            
+                            // Clear response tracking immediately to prevent race conditions
+                            activeResponseId = null;
+                            responseItemId = null;
+                            responseStartTime = null;
+                            isResponding = false;
+                            waitingForUser = true; // Ready to listen to interrupting speech
+                            lastCancellationTime = Date.now(); // Mark when we cancelled (for stop command detection)
+                            
+                            try {
+                                // Cancel the active response (this is sufficient for barge-in)
+                                openaiWs.send(JSON.stringify({
+                                    type: 'response.cancel',
+                                    response_id: responseIdToCancel
+                                }));
+                                console.log(`🛑 [${callSid}] Sent response.cancel for ${responseIdToCancel}`);
+                            } catch (err) {
+                                // If cancel fails, log but don't treat as fatal
+                                // This can happen if response already completed/cancelled
+                                console.warn(`⚠️ [${callSid}] Error sending response.cancel (non-critical):`, err.message);
+                            }
+                        } else {
+                            console.log(`👤 [${callSid}] User speech started (no active response to cancel - activeResponseId: ${activeResponseId}, isResponding: ${isResponding})`);
+                        }
                     }
                     
                     // Handle user speech transcription with confidence check
@@ -488,16 +597,51 @@ export const handleMediaStreamConnection = (ws, req) => {
                             return;
                         }
                         
-                        if (transcript && transcript !== lastUserTranscript && !isResponding) {
+                        // Check if this is a stop command (if we cancelled recently, user might be trying to stop)
+                        const timeSinceCancellation = Date.now() - lastCancellationTime;
+                        const isRecentCancellation = lastCancellationTime > 0 && timeSinceCancellation < 3000;
+                        const stopCommands = /\b(stop|wait|hold on|pause|shut up|be quiet|enough|that's enough)\b/i;
+                        const isStopCommand = stopCommands.test(transcript);
+                        
+                        if (isRecentCancellation && isStopCommand) {
+                            console.log(`🛑 [${callSid}] Stop command detected after interruption: "${transcript}" - entering listening mode`);
+                            waitingForUser = true;
+                            lastCancellationTime = 0; // Reset
+                            return; // Don't respond to stop commands
+                        }
+                        
+                        // If we cancelled recently but it's NOT a stop command, process it normally
+                        // This allows the agent to respond to interrupting speech that's not a stop command
+                        if (isRecentCancellation) {
+                            console.log(`👂 [${callSid}] Processing interrupting speech: "${transcript}"`);
+                            lastCancellationTime = 0; // Reset after processing
+                        }
+                        
+                        // Prevent user responses until initial greeting completes (unless this is interrupting speech)
+                        if (!hasInitialGreetingCompleted && !isRecentCancellation) {
+                            console.log(`⏳ [${callSid}] Waiting for initial greeting to complete before responding to: "${transcript}"`);
+                            return; // Queue this input - will be processed after greeting completes
+                        }
+                        
+                        // Double-check: ensure no active response before creating new one
+                        if (transcript && transcript !== lastUserTranscript && !isResponding && activeResponseId === null && waitingForUser) {
                             lastUserTranscript = transcript;
                             waitingForUser = false;
-                            console.log('🎯 Creating response to user input:', transcript);
-                            openaiWs.send(JSON.stringify({
-                                type: 'response.create',
-                                response: {
-                                    modalities: ['audio']
-                                }
-                            }));
+                            isResponding = true; // Set flag before creating response
+                            console.log(`🎯 [${callSid}] Creating response to user input: "${transcript}" (isResponding: ${isResponding}, activeResponseId: ${activeResponseId})`);
+                            try {
+                                openaiWs.send(JSON.stringify({
+                                    type: 'response.create',
+                                    response: {
+                                        modalities: ['audio']
+                                    }
+                                }));
+                            } catch (err) {
+                                isResponding = false; // Reset if send fails
+                                console.error(`❌ [${callSid}] Error creating response to user input:`, err);
+                            }
+                        } else if (transcript && transcript !== lastUserTranscript) {
+                            console.log(`⚠️ [${callSid}] Skipping response - isResponding: ${isResponding}, activeResponseId: ${activeResponseId}, waitingForUser: ${waitingForUser}, hasInitialGreetingCompleted: ${hasInitialGreetingCompleted}`);
                         }
                     }
                     
@@ -544,25 +688,31 @@ export const handleMediaStreamConnection = (ws, req) => {
                             console.log(`🔧 [${callSid}] Parsed Parameters:`, JSON.stringify(parameters, null, 2));
                         } catch (parseError) {
                             console.error(`❌ [${callSid}] Failed to parse tool arguments for ${name}:`, parseError);
-                            // Submit error result
-                            if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
-                                openaiWs.send(JSON.stringify({
-                                    type: 'conversation.item.create',
-                                    item: {
-                                        type: 'function_call_output',
-                                        call_id: call_id,
-                                        output: JSON.stringify({
-                                            success: false,
-                                            error: 'Failed to parse tool arguments'
-                                        })
+                                // Submit error result
+                                if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'conversation.item.create',
+                                        item: {
+                                            type: 'function_call_output',
+                                            call_id: call_id,
+                                            output: JSON.stringify({
+                                                success: false,
+                                                error: 'Failed to parse tool arguments'
+                                            })
+                                        }
+                                    }));
+                                    // Trigger response ONLY if not already responding and no active response
+                                    if (!isResponding && activeResponseId === null && !isClosed) {
+                                        isResponding = true;
+                                        openaiWs.send(JSON.stringify({
+                                            type: 'response.create'
+                                        }));
+                                        console.log(`📤 [${callSid}] Parse error result submitted, waiting for AI response...`);
+                                    } else {
+                                        console.log(`⚠️ [${callSid}] Skipping response.create after parse error - isResponding: ${isResponding}, activeResponseId: ${activeResponseId}`);
                                     }
-                                }));
-                                // Trigger response
-                                openaiWs.send(JSON.stringify({
-                                    type: 'response.create'
-                                }));
-                            }
-                            return;
+                                }
+                                return;
                         }
                         
                         // Store tool call info
@@ -623,12 +773,16 @@ export const handleMediaStreamConnection = (ws, req) => {
                                         }
                                     }));
                                     
-                                    // Trigger model response
-                                    openaiWs.send(JSON.stringify({
-                                        type: 'response.create'
-                                    }));
-                                    
-                                    console.log(`📤 [${callSid}] Tool result submitted for ${name}, waiting for AI response...`);
+                                    // Trigger model response ONLY if not already responding and no active response
+                                    if (!isResponding && activeResponseId === null && !isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                        isResponding = true; // Set flag before creating response
+                                        openaiWs.send(JSON.stringify({
+                                            type: 'response.create'
+                                        }));
+                                        console.log(`📤 [${callSid}] Tool result submitted for ${name}, waiting for AI response...`);
+                                    } else {
+                                        console.log(`⚠️ [${callSid}] Skipping response.create - isResponding: ${isResponding}, activeResponseId: ${activeResponseId}, connection closed: ${!openaiWs || openaiWs.readyState !== WebSocket.OPEN}`);
+                                    }
                                 } catch (sendError) {
                                     console.error(`❌ [${callSid}] Error submitting tool result:`, sendError);
                                 }
@@ -665,10 +819,16 @@ export const handleMediaStreamConnection = (ws, req) => {
                                         }
                                     }));
                                     
-                                    // Trigger model response
-                                    openaiWs.send(JSON.stringify({
-                                        type: 'response.create'
-                                    }));
+                                    // Trigger model response ONLY if not already responding and no active response
+                                    if (!isResponding && activeResponseId === null && !isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                        isResponding = true; // Set flag before creating response
+                                        openaiWs.send(JSON.stringify({
+                                            type: 'response.create'
+                                        }));
+                                        console.log(`📤 [${callSid}] Tool error result submitted, waiting for AI response...`);
+                                    } else {
+                                        console.log(`⚠️ [${callSid}] Skipping response.create after tool error - isResponding: ${isResponding}, activeResponseId: ${activeResponseId}`);
+                                    }
                                 } catch (sendError) {
                                     console.error(`❌ [${callSid}] Error submitting tool error result:`, sendError);
                                 }

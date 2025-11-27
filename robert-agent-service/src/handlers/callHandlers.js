@@ -80,6 +80,44 @@ export const aiIntro = async (req, res) => {
     res.type("text/xml").send(twiml.toString());
 };
 
+// Inbound call handler - Updated for Media Streams
+export const handleIncomingCall = async (req, res) => {
+    const { CallSid, From, To } = req.body;
+    
+    if (!conversations[CallSid]) {
+        conversations[CallSid] = { 
+            transcript: [], 
+            from: From, 
+            to: To,
+            startTime: Date.now(),
+            language: 'en-US',
+            realtimeWs: null 
+        };
+    }
+
+    const twilio = await import("twilio");
+    const VoiceResponse = twilio.twiml.VoiceResponse;
+    const twiml = new VoiceResponse();
+
+    // Start Media Stream FIRST (before any Say commands)
+    // Determine WebSocket URL - use agent service domain
+    const baseUrl = process.env.DOMAIN ? `https://${process.env.DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
+    const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
+    const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const wsUrl = `${wsProtocol}://${wsHost}/media-stream?callSid=${CallSid}`;
+    
+    const start = twiml.start();
+    const stream = start.stream({
+        url: wsUrl,
+        track: 'both_tracks'
+    });
+    
+    // Add a long pause to keep call alive while Media Stream takes over
+    twiml.pause({ length: 3600 }); // 1 hour pause
+
+    res.type("text/xml").send(twiml.toString());
+};
+
 // Get all calls
 export const getAllCalls = async (req, res) => {
     const CallRecord = (await import("../database/models/CallRecord.js")).default;

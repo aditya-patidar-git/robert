@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import configManager from './configManager.js';
 import { handleMediaStreamConnection } from '../handlers/mediaStreamHandler.js';
-import { makeCall, aiIntro, getAllCalls } from '../handlers/callHandlers.js';
+import { makeCall, aiIntro, getAllCalls, handleIncomingCall } from '../handlers/callHandlers.js';
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
 
@@ -152,13 +152,19 @@ wss.on('connection', twilioWs => {
   }
 });
 
-// API Routes
+// API Routes - Outbound
 app.post('/api/outbound/make-call', makeCall);
 app.post('/api/outbound/ai-intro', aiIntro);
 app.get('/api/outbound/get-all-calls', getAllCalls);
 app.post('/api/outbound/call-status', callStatus);
 app.post('/api/outbound/recording-status', recordingStatus);
 app.get('/api/outbound/recording/:callSid', proxyRecording);
+
+// API Routes - Inbound
+app.post('/api/inbound/incoming-call', handleIncomingCall);
+app.post('/api/inbound/call-status', callStatus);
+app.post('/api/inbound/recording-status', recordingStatus);
+app.get('/api/inbound/recording/:callSid', proxyRecording);
 
 // Manual call trigger (for testing)
 app.get('/call', async (req, res) => {
