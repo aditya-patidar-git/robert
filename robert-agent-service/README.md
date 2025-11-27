@@ -1,13 +1,13 @@
 # Robert Voice Agent Service
 
-Independent agent service with integrated MCP server for real-time call handling. This service handles all Twilio media streams, WebSocket connections, and OpenAI Realtime API interactions, while fetching configurations dynamically from MongoDB.
+Independent agent service for real-time call handling with direct tool integration. This service handles all Twilio media streams, WebSocket connections, and OpenAI Realtime API interactions, while fetching configurations dynamically from MongoDB.
 
 ## Features
 
 - Real-time call handling via Twilio Media Streams
 - Dynamic configuration fetching from MongoDB (updates every 30 seconds)
 - Per-number profile support
-- Integrated MCP server with tools (web search, calendar, email, CRM, payments)
+- Direct tool integration (web search, calendar, email, CRM, payments, file search, transfer call)
 - OpenAI Realtime API integration with configurable voice, temperature, and VAD settings
 - Confidence threshold checking via uncertainty gate
 
@@ -16,8 +16,8 @@ Independent agent service with integrated MCP server for real-time call handling
 ```
 robert-agent-service/
 ├── src/
-│   ├── mcp-server/          # MCP Server (stdio transport)
 │   ├── agent/               # Main agent service
+│   ├── tools/               # All tools (webSearch, calendar, email, crm, payments, fileSearch, transferCall)
 │   ├── handlers/            # Call handlers
 │   ├── database/            # MongoDB models and connection
 │   ├── utils/               # Utilities
@@ -50,11 +50,6 @@ cp .env.example .env
 npm run start:agent
 ```
 
-5. (Optional) Start MCP server separately:
-```bash
-npm run start:mcp
-```
-
 ## Configuration
 
 The agent service automatically fetches configurations from MongoDB:
@@ -79,20 +74,22 @@ Configurations are cached for 30 seconds and automatically refreshed. Changes ma
 
 - `/media-stream` - Twilio Media Stream WebSocket endpoint
 
-## MCP Server
+## Tools
 
-The MCP server exposes:
-- **Tools**: web_search, calendar, email, crm, payments
-- **Resources**: config://ai, config://audio, config://telephony
-
-Run with: `npm run start:mcp`
+The agent service includes direct tool integration:
+- **web_search**: Search the web for time-sensitive information
+- **calendar**: Manage calendar events and availability
+- **email**: Send and manage emails
+- **crm**: Access CRM system for customer management
+- **payments**: Process payments and refunds
+- **file_search**: Search the knowledge base for relevant information
+- **transfer_call**: Transfer call to human agent
 
 ## Development
 
 ```bash
 # Run in development mode with auto-reload
 npm run dev:agent
-npm run dev:mcp
 ```
 
 ## Notes

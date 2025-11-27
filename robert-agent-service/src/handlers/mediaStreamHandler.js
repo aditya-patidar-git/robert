@@ -3,6 +3,7 @@ import { spawn } from "child_process";
 import { conversations, realtimeClients } from "../shared/state.js";
 import { convertMulawToPcm16, convertPcm16ToMulaw } from "../utils/audioConversion.js";
 import configManager from "../agent/configManager.js";
+import toolExecutor from "../tools/index.js";
 
 // Media Stream WebSocket Handler for Realtime API
 export const mediaStream = async (req, res) => {
@@ -22,9 +23,25 @@ export const mediaStream = async (req, res) => {
 
 // Handle WebSocket connection for Media Streams with dynamic config
 export const handleMediaStreamConnection = (ws, req) => {
-    console.log('🔌 Media Stream WebSocket connection received');
-    
-    let callSid = null;
+    try {
+        console.log('🔌 [DEBUG] Media Stream WebSocket connection received');
+        console.log('🔌 [DEBUG] WebSocket type:', typeof ws);
+        console.log('🔌 [DEBUG] WebSocket readyState:', ws?.readyState, '(OPEN=1, CLOSING=2, CLOSED=3)');
+        console.log('🔌 [DEBUG] Request object:', req ? 'present' : 'missing');
+        
+        // Add validation
+        if (!ws) {
+            console.error('❌ [DEBUG] WebSocket is null or undefined');
+            return;
+        }
+        
+        if (ws.readyState !== WebSocket.OPEN && ws.readyState !== 0) {
+            console.warn(`⚠️ [DEBUG] WebSocket not in OPEN state: ${ws.readyState}`);
+        }
+        
+        console.log('🔌 Media Stream WebSocket connection received');
+        
+        let callSid = null;
     let streamSid = null;
     let phoneNumber = null;
     let openaiWs = null;
@@ -45,6 +62,9 @@ export const handleMediaStreamConnection = (ws, req) => {
     let isResponding = false;
     let waitingForUser = true;
     let lastUserTranscript = null;
+    
+    // Tool execution tracking
+    const pendingToolCalls = new Map(); // call_id -> { name, arguments, startTime }
     
     // Audio quality metrics
     const audioMetrics = {
@@ -214,6 +234,7 @@ export const handleMediaStreamConnection = (ws, req) => {
         if (callSid) {
             delete realtimeClients[callSid];
             delete conversations[callSid];
+            pendingToolCalls.clear();
         }
     };
     
@@ -223,18 +244,26 @@ export const handleMediaStreamConnection = (ws, req) => {
     }, MAX_CALL_DURATION_MS);
     
     const messageHandler = (data) => {
-        if (isClosed) return;
+        if (isClosed) {
+            console.log('🔌 [DEBUG] Message received but connection is closed');
+            return;
+        }
         
         try {
             const json = JSON.parse(data.toString());
+            console.log('🔌 [DEBUG] Received message event:', json.event);
             
             if (json.event === 'start') {
+                console.log('🔌 [DEBUG] Start event received, parsing...');
                 callSid = json.start?.callSid;
                 streamSid = json.start?.streamSid;
                 phoneNumber = json.start?.callSidTo || json.start?.from || 'unknown';
                 
+                console.log('🔌 [DEBUG] Parsed start event:', { callSid, streamSid, phoneNumber });
+                
                 if (!callSid) {
                     console.error('❌ No callSid in start event');
+                    console.error('❌ [DEBUG] Full start event:', JSON.stringify(json, null, 2));
                     cleanup('no_callsid');
                     return;
                 }
@@ -242,12 +271,16 @@ export const handleMediaStreamConnection = (ws, req) => {
                 console.log(`📞 Start event - callSid: ${callSid}, phoneNumber: ${phoneNumber}`);
                 callStartTime = Date.now();
                 
+                console.log('🔌 [DEBUG] Removing message handler and setting up OpenAI...');
                 ws.removeListener('message', messageHandler);
                 setupOpenAI();
+            } else {
+                console.log('🔌 [DEBUG] Non-start event received:', json.event);
             }
         } catch (err) {
             errorCount++;
             console.error('❌ Error parsing message:', err);
+            console.error('❌ [DEBUG] Raw message data:', data.toString().substring(0, 200));
             if (errorCount >= MAX_ERROR_COUNT) {
                 cleanup('max_errors');
             }
@@ -256,9 +289,27 @@ export const handleMediaStreamConnection = (ws, req) => {
     
     ws.on('message', messageHandler);
     
+    // Add error handler early
+    ws.on('error', (err) => {
+        console.error('❌ [DEBUG] Twilio WebSocket error (early):', err);
+        errorCount++;
+        if (errorCount >= MAX_ERROR_COUNT) {
+            cleanup('twilio_error_early');
+        }
+    });
+    
+    ws.on('close', (code, reason) => {
+        console.log(`🔌 [DEBUG] Twilio WebSocket closed - code: ${code}, reason: ${reason}`);
+        if (!isClosed) {
+            cleanup('twilio_close_early');
+        }
+    });
+    
     startTimeout = setTimeout(() => {
         if (!setupComplete) {
             console.error('❌ Timeout waiting for start event');
+            console.error('❌ [DEBUG] WebSocket state at timeout:', ws.readyState);
+            console.error('❌ [DEBUG] isClosed:', isClosed);
             cleanup('start_timeout');
         }
     }, 10000);
@@ -318,6 +369,9 @@ export const handleMediaStreamConnection = (ws, req) => {
                 openaiReady = true;
                 
                 try {
+                    // Get tool definitions
+                    const tools = toolExecutor.getToolDefinitions();
+                    
                     // Apply dynamic config to OpenAI session
                     openaiWs.send(JSON.stringify({
                         type: 'session.update',
@@ -333,10 +387,12 @@ export const handleMediaStreamConnection = (ws, req) => {
                                 threshold: config.vadThreshold / 1000, // Convert ms to seconds
                                 prefix_padding_ms: config.startPadding,
                                 silence_duration_ms: config.endPadding
-                            }
+                            },
+                            tools: tools,
+                            tool_choice: 'auto'
                         }
                     }));
-                    console.log(`📤 Sent session.update with config for call: ${callSid}`);
+                    console.log(`📤 Sent session.update with config and ${tools.length} tools for call: ${callSid}`);
                 } catch (err) {
                     errorCount++;
                     console.error('❌ Error sending session.update:', err);
@@ -445,6 +501,180 @@ export const handleMediaStreamConnection = (ws, req) => {
                         }
                     }
                     
+                    // Handle function call arguments streaming (optional - for better UX)
+                    if (event.type === 'response.function_call_arguments.delta') {
+                        // Track partial arguments if needed (optional)
+                        const callId = event.call_id;
+                        if (!pendingToolCalls.has(callId)) {
+                            pendingToolCalls.set(callId, {
+                                name: null,
+                                arguments: '',
+                                startTime: Date.now()
+                            });
+                        }
+                        const toolCall = pendingToolCalls.get(callId);
+                        toolCall.arguments += event.delta || '';
+                    }
+                    
+                    // Handle complete function call arguments
+                    if (event.type === 'response.function_call_arguments.done') {
+                        const callId = event.call_id;
+                        if (pendingToolCalls.has(callId)) {
+                            const toolCall = pendingToolCalls.get(callId);
+                            toolCall.arguments = event.arguments || '';
+                        }
+                    }
+                    
+                    // Handle function call completion - PRIMARY EVENT
+                    if (event.type === 'response.output_item.done' && 
+                        event.item?.type === 'function_call') {
+                        
+                        const { call_id, name, arguments: args } = event.item;
+                        console.log(`\n🔧 [${callSid}] ========================================`);
+                        console.log(`🔧 [${callSid}] TOOL INVOCATION DETECTED`);
+                        console.log(`🔧 [${callSid}] Tool: ${name}`);
+                        console.log(`🔧 [${callSid}] Call ID: ${call_id}`);
+                        console.log(`🔧 [${callSid}] Phone: ${phoneNumber || 'unknown'}`);
+                        console.log(`🔧 [${callSid}] Raw Arguments: ${args || '{}'}`);
+                        
+                        // Parse arguments JSON string
+                        let parameters = {};
+                        try {
+                            parameters = JSON.parse(args || '{}');
+                            console.log(`🔧 [${callSid}] Parsed Parameters:`, JSON.stringify(parameters, null, 2));
+                        } catch (parseError) {
+                            console.error(`❌ [${callSid}] Failed to parse tool arguments for ${name}:`, parseError);
+                            // Submit error result
+                            if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                openaiWs.send(JSON.stringify({
+                                    type: 'conversation.item.create',
+                                    item: {
+                                        type: 'function_call_output',
+                                        call_id: call_id,
+                                        output: JSON.stringify({
+                                            success: false,
+                                            error: 'Failed to parse tool arguments'
+                                        })
+                                    }
+                                }));
+                                // Trigger response
+                                openaiWs.send(JSON.stringify({
+                                    type: 'response.create'
+                                }));
+                            }
+                            return;
+                        }
+                        
+                        // Store tool call info
+                        const toolStartTime = Date.now();
+                        pendingToolCalls.set(call_id, {
+                            name: name,
+                            arguments: args,
+                            startTime: toolStartTime
+                        });
+                        
+                        console.log(`🔧 [${callSid}] Starting tool execution: ${name}`);
+                        console.log(`🔧 [${callSid}] ========================================\n`);
+                        
+                        // Execute tool asynchronously
+                        const callContext = {
+                            callSid: callSid,
+                            phoneNumber: phoneNumber
+                        };
+                        
+                        toolExecutor.execute(name, parameters, callContext)
+                            .then(async (executionResult) => {
+                                if (isClosed || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
+                                    return;
+                                }
+                                
+                                // Remove from pending
+                                const toolCallInfo = pendingToolCalls.get(call_id);
+                                const totalTime = Date.now() - (toolCallInfo?.startTime || toolStartTime);
+                                pendingToolCalls.delete(call_id);
+                                
+                                // Format result
+                                const output = executionResult.success 
+                                    ? executionResult.result 
+                                    : { success: false, error: executionResult.error };
+                                
+                                console.log(`\n✅ [${callSid}] ========================================`);
+                                console.log(`✅ [${callSid}] TOOL EXECUTION COMPLETED`);
+                                console.log(`✅ [${callSid}] Tool: ${name}`);
+                                console.log(`✅ [${callSid}] Success: ${executionResult.success}`);
+                                console.log(`✅ [${callSid}] Execution Time: ${executionResult.executionTime}ms`);
+                                console.log(`✅ [${callSid}] Total Time (including overhead): ${totalTime}ms`);
+                                if (executionResult.success) {
+                                    console.log(`✅ [${callSid}] Result:`, JSON.stringify(output, null, 2).substring(0, 500));
+                                } else {
+                                    console.log(`✅ [${callSid}] Error: ${executionResult.error}`);
+                                }
+                                console.log(`✅ [${callSid}] Submitting result to OpenAI...`);
+                                console.log(`✅ [${callSid}] ========================================\n`);
+                                
+                                // Submit tool result
+                                try {
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'conversation.item.create',
+                                        item: {
+                                            type: 'function_call_output',
+                                            call_id: call_id,
+                                            output: JSON.stringify(output) // Must be stringified JSON
+                                        }
+                                    }));
+                                    
+                                    // Trigger model response
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'response.create'
+                                    }));
+                                    
+                                    console.log(`📤 [${callSid}] Tool result submitted for ${name}, waiting for AI response...`);
+                                } catch (sendError) {
+                                    console.error(`❌ [${callSid}] Error submitting tool result:`, sendError);
+                                }
+                            })
+                            .catch(async (error) => {
+                                if (isClosed || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
+                                    return;
+                                }
+                                
+                                // Remove from pending
+                                const toolCallInfo = pendingToolCalls.get(call_id);
+                                const totalTime = toolCallInfo ? Date.now() - toolCallInfo.startTime : 0;
+                                pendingToolCalls.delete(call_id);
+                                
+                                console.error(`\n❌ [${callSid}] ========================================`);
+                                console.error(`❌ [${callSid}] TOOL EXECUTION FAILED`);
+                                console.error(`❌ [${callSid}] Tool: ${name}`);
+                                console.error(`❌ [${callSid}] Error: ${error.message || error}`);
+                                console.error(`❌ [${callSid}] Total Time: ${totalTime}ms`);
+                                console.error(`❌ [${callSid}] Submitting error result to OpenAI...`);
+                                console.error(`❌ [${callSid}] ========================================\n`);
+                                
+                                // Submit error result
+                                try {
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'conversation.item.create',
+                                        item: {
+                                            type: 'function_call_output',
+                                            call_id: call_id,
+                                            output: JSON.stringify({
+                                                success: false,
+                                                error: error.message || 'Tool execution failed'
+                                            })
+                                        }
+                                    }));
+                                    
+                                    // Trigger model response
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'response.create'
+                                    }));
+                                } catch (sendError) {
+                                    console.error(`❌ [${callSid}] Error submitting tool error result:`, sendError);
+                                }
+                            });
+                    }
+                    
                     // Capture transcripts
                     if (event.type === 'conversation.item.created') {
                         const item = event.item;
@@ -526,5 +756,13 @@ export const handleMediaStreamConnection = (ws, req) => {
             }
         }
     }
+    
+    } catch (error) {
+         console.error('❌ [DEBUG] Fatal error in handleMediaStreamConnection:', error);
+         console.error('❌ [DEBUG] Error stack:', error.stack);
+         if (ws && ws.readyState === WebSocket.OPEN) {
+             ws.close(1011, 'Internal server error');
+         }
+     }
 };
 

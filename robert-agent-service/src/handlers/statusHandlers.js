@@ -3,8 +3,26 @@ import { conversations } from "../shared/state.js";
 
 // Call status with live updates (no Socket.IO in agent service)
 export const callStatus = async (req, res) => {
-    const { CallSid, CallStatus, From, To } = req.body;
-    console.log(`Call Status for ${CallSid}: ${CallStatus}`);
+    // Twilio sends form-encoded data, handle safely
+    const CallSid = req.body?.CallSid;
+    const CallStatus = req.body?.CallStatus;
+    const From = req.body?.From;
+    const To = req.body?.To;
+    
+    if (!CallSid) {
+        console.error('❌ [CALL STATUS] Missing CallSid in request');
+        console.error('❌ [CALL STATUS] Request body:', req.body);
+        console.error('❌ [CALL STATUS] Request query:', req.query);
+        return res.status(400).send('Missing CallSid');
+    }
+    
+    console.log(`\n📞 [CALL STATUS] Call ${CallSid}: ${CallStatus}`);
+    console.log(`📞 [CALL STATUS] From: ${From}, To: ${To}`);
+    
+    // Log when call is answered - this is when WebSocket should connect
+    if (CallStatus === 'in-progress' || CallStatus === 'ringing') {
+        console.log(`📞 [CALL STATUS] Call ${CallSid} is ${CallStatus} - WebSocket should connect soon...`);
+    }
 
     if (!conversations[CallSid]) {
         conversations[CallSid] = { transcript: [] };

@@ -38,9 +38,15 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
+// Add error handler to WebSocket server
+wss.on('error', (error) => {
+  console.error('❌ [DEBUG] WebSocket server error:', error);
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Required for Twilio form-encoded callbacks
 
 // Initialize config manager
 await configManager.initialize();
@@ -53,23 +59,97 @@ app.get('/', (_, res) => res.json({
     ai: configManager.getAIConfig() ? 'loaded' : 'not loaded',
     audio: configManager.getAudioConfig() ? 'loaded' : 'not loaded',
     telephony: configManager.getTelephonyConfig() ? 'loaded' : 'not loaded'
+  },
+  websocket: {
+    url: DOMAIN ? `wss://${DOMAIN}/media-stream` : `ws://localhost:${PORT}/media-stream`,
+    status: 'ready'
   }
 }));
 
+// WebSocket test endpoint
+app.get('/test-websocket', (_, res) => {
+  res.send(`
+    <html>
+      <head><title>WebSocket Test</title></head>
+      <body>
+        <h1>WebSocket Connection Test</h1>
+        <div id="status">Connecting...</div>
+        <div id="messages"></div>
+        <script>
+          const ws = new WebSocket('${DOMAIN ? `wss://${DOMAIN}` : `ws://localhost:${PORT}`}/media-stream');
+          const status = document.getElementById('status');
+          const messages = document.getElementById('messages');
+          
+          ws.onopen = () => {
+            status.textContent = '✅ WebSocket Connected!';
+            status.style.color = 'green';
+            messages.innerHTML += '<p>WebSocket opened successfully</p>';
+          };
+          
+          ws.onerror = (error) => {
+            status.textContent = '❌ WebSocket Error';
+            status.style.color = 'red';
+            messages.innerHTML += '<p>Error: ' + error + '</p>';
+          };
+          
+          ws.onclose = () => {
+            status.textContent = 'WebSocket Closed';
+            messages.innerHTML += '<p>Connection closed</p>';
+          };
+          
+          ws.onmessage = (event) => {
+            messages.innerHTML += '<p>Message: ' + event.data + '</p>';
+          };
+        </script>
+      </body>
+    </html>
+  `);
+});
+
 // WebSocket upgrade
 server.on('upgrade', (req, socket, head) => {
+  console.log('🔌 [DEBUG] WebSocket upgrade request received');
+  console.log('🔌 [DEBUG] Request URL:', req.url);
+  console.log('🔌 [DEBUG] Request method:', req.method);
+  console.log('🔌 [DEBUG] Request headers:', {
+    'upgrade': req.headers.upgrade,
+    'connection': req.headers.connection,
+    'sec-websocket-key': req.headers['sec-websocket-key'] ? 'present' : 'missing',
+    'host': req.headers.host
+  });
+  
   if (req.url === '/media-stream' || req.url.startsWith('/media-stream?')) {
-    wss.handleUpgrade(req, socket, head, ws => {
-      wss.emit('connection', ws);
-    });
+    console.log('✅ [DEBUG] URL matches /media-stream, handling upgrade...');
+    try {
+      wss.handleUpgrade(req, socket, head, ws => {
+        console.log('✅ [DEBUG] WebSocket upgrade completed, emitting connection event');
+        console.log('✅ [DEBUG] WebSocket readyState:', ws.readyState, '(OPEN=1)');
+        wss.emit('connection', ws);
+      });
+    } catch (error) {
+      console.error('❌ [DEBUG] Error during WebSocket upgrade:', error);
+      console.error('❌ [DEBUG] Error stack:', error.stack);
+      socket.destroy();
+    }
   } else {
+    console.log('❌ [DEBUG] URL does not match /media-stream');
+    console.log('❌ [DEBUG] Expected: /media-stream or /media-stream?..., Got:', req.url);
     socket.destroy();
   }
 });
 
 wss.on('connection', twilioWs => {
   console.log('Twilio WebSocket connected');
-  handleMediaStreamConnection(twilioWs, {});
+  try {
+    console.log('📞 [DEBUG] About to call handleMediaStreamConnection');
+    console.log('📞 [DEBUG] WebSocket readyState:', twilioWs?.readyState);
+    console.log('📞 [DEBUG] WebSocket type:', typeof twilioWs);
+    handleMediaStreamConnection(twilioWs, {});
+    console.log('✅ [DEBUG] handleMediaStreamConnection called successfully');
+  } catch (error) {
+    console.error('❌ [DEBUG] Error calling handleMediaStreamConnection:', error);
+    console.error('❌ [DEBUG] Error stack:', error.stack);
+  }
 });
 
 // API Routes
@@ -86,23 +166,39 @@ app.get('/call', async (req, res) => {
   if (!to) return res.status(400).send('Add ?to=+918120523400');
 
   try {
+    console.log(`📞 [DEBUG] Call request received for: ${to}`);
     const client = twilio(TWILIO_SID, TWILIO_AUTH_TOKEN);
     const baseUrl = DOMAIN ? `https://${DOMAIN}` : `http://localhost:${PORT}`;
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const wsUrl = `${wsProtocol}://${wsHost}/media-stream`;
+    
+    console.log(`📞 [DEBUG] Creating Twilio call with WebSocket URL: ${wsUrl}`);
+    
+    // Build status callback URL
+    const statusCallbackUrl = DOMAIN 
+      ? `https://${DOMAIN}/api/outbound/call-status`
+      : `http://localhost:${PORT}/api/outbound/call-status`;
+    
+    console.log(`📞 [DEBUG] Status callback URL: ${statusCallbackUrl}`);
     
     const call = await client.calls.create({
       from: TWILIO_NUMBER,
       to: to,
+      statusCallback: statusCallbackUrl,
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       twiml: `<Response>
         <Connect>
-          <Stream url="${wsProtocol}://${wsHost}/media-stream"/>
+          <Stream url="${wsUrl}"/>
         </Connect>
         <Pause length="3600"/>
       </Response>`
     });
+    
+    console.log(`✅ [DEBUG] Twilio call created - SID: ${call.sid}, Status: ${call.status}`);
     res.send(`Calling ${to}... SID: ${call.sid}`);
   } catch (err) {
+    console.error('❌ [DEBUG] Error creating call:', err);
     res.status(500).send(err.message);
   }
 });
