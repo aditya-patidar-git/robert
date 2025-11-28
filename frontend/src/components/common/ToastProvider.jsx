@@ -75,14 +75,37 @@ export const ToastProvider = ({ children }) => {
         <Snackbar
           key={toast.id}
           open={toast.open}
-          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-          sx={{ mt: 8 }} // Offset from top to avoid app bar
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+          sx={{
+            mt: 2,
+            zIndex: 9999,
+            '& .MuiSnackbarContent-root': {
+              justifyContent: 'center',
+            },
+          }}
+          TransitionProps={{
+            appear: true,
+            timeout: { enter: 300, exit: 200 },
+          }}
         >
           <Alert
             severity={toast.severity}
-            onClose={() => removeToast(toast.id)}
             variant="filled"
-            sx={{ minWidth: 300 }}
+            sx={{
+              minWidth: 400,
+              maxWidth: 600,
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
+              borderRadius: 2,
+              py: 1.5,
+              px: 2,
+              '& .MuiAlert-message': {
+                width: '100%',
+              },
+              '& .MuiAlertTitle-root': {
+                fontWeight: 600,
+                mb: 0.5,
+              },
+            }}
           >
             {toast.title && <AlertTitle>{toast.title}</AlertTitle>}
             {toast.message}

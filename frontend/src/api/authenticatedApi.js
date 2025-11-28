@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 
 // Configuration constants
 const REQUEST_TIMEOUT = 30000; // 30 seconds

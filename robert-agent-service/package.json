@@ -1,0 +1,28 @@
+{
+  "name": "robert-voice-agent-service",
+  "version": "1.0.0",
+  "description": "Independent agent service for real-time call handling with direct tool integration",
+  "type": "module",
+  "main": "src/agent/index.js",
+  "scripts": {
+    "start:agent": "node src/agent/index.js",
+    "dev:agent": "nodemon src/agent/index.js"
+  },
+  "keywords": ["voice-agent", "twilio", "openai"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "openai": "^4.0.0",
+    "express": "^5.1.0",
+    "ws": "^8.18.0",
+    "twilio": "^5.10.0",
+    "mongoose": "^8.18.1",
+    "dotenv": "^17.2.2",
+    "cors": "^2.8.5",
+    "axios": "^1.7.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
+
