@@ -68,6 +68,17 @@ export const handleMediaStreamConnection = (ws, req) => {
     let responseItemId = null;
     let responseStartTime = null;
     let lastCancellationTime = 0; // Track when we last cancelled a response
+    let explicitResponseRequested = false; // Track if we explicitly requested a response
+    
+    // Interruption state tracking
+    let isInterrupted = false; // Boolean flag tracking active interruption
+    let interruptionStartTime = 0; // Timestamp when interruption began
+    let pendingTranscriptions = []; // Array to queue transcriptions during interruption
+    let lastProcessedTranscriptionTime = 0; // Timestamp of last processed transcription
+    let lastTranscriptionReceivedTime = 0; // Track when we last received a transcription (to distinguish barge-in from normal input)
+    let agentFinishedSpeakingTime = 0; // Track when agent finished speaking (for 5-6 second user speaking window)
+    const USER_SPEAKING_WINDOW_MS = 6000; // 6 second window for user to speak after agent finishes
+    let userSpeechStartedTime = 0; // Track when user speech started (to distinguish barge-in from normal input)
     
     // Initial greeting tracking
     let hasInitialGreetingBeenSent = false;
@@ -222,7 +233,13 @@ export const handleMediaStreamConnection = (ws, req) => {
         if (openaiWs) {
             openaiWs.removeAllListeners();
             if (openaiWs.readyState === WebSocket.OPEN) {
-                openaiWs.send(JSON.stringify({ type: 'session.cancel' }));
+                // Clear conversation state before closing to prevent buffer persistence
+                try {
+                    openaiWs.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+                    openaiWs.send(JSON.stringify({ type: 'session.cancel' }));
+                } catch (err) {
+                    console.warn(`⚠️ [${callSid}] Error clearing state during cleanup:`, err.message);
+                }
                 openaiWs.close(1000, 'Call ended');
             }
         }
@@ -382,6 +399,15 @@ export const handleMediaStreamConnection = (ws, req) => {
                     // Get tool definitions
                     const tools = toolExecutor.getToolDefinitions();
                     
+                    // CRITICAL: Clear any existing conversation state and audio buffer
+                    // This prevents old queries from previous calls being answered
+                    try {
+                        openaiWs.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+                        console.log(`🧹 [${callSid}] Cleared input audio buffer at session start`);
+                    } catch (err) {
+                        console.warn(`⚠️ [${callSid}] Could not clear audio buffer at start:`, err.message);
+                    }
+                    
                     // Apply dynamic config to OpenAI session
                     openaiWs.send(JSON.stringify({
                         type: 'session.update',
@@ -453,6 +479,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                         // Only create initial greeting if not already sent and not already responding
                         if (!hasInitialGreetingBeenSent && !isResponding && activeResponseId === null) {
                             try {
+                                explicitResponseRequested = true; // Mark this as an explicit request
                                 openaiWs.send(JSON.stringify({
                                     type: 'response.create',
                                     response: {
@@ -463,6 +490,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                 isResponding = true; // Set flag before creating response
                                 console.log(`🎯 [${callSid}] Initial greeting sent immediately`);
                             } catch (err) {
+                                explicitResponseRequested = false; // Reset if send fails
                                 isResponding = false; // Reset if send fails
                                 hasInitialGreetingBeenSent = false; // Reset flag
                                 errorCount++;
@@ -477,7 +505,61 @@ export const handleMediaStreamConnection = (ws, req) => {
                     if (event.type === 'response.created') {
                         activeResponseId = event.response?.id;
                         // Note: item_id comes from conversation.item.created, not response.created
-                        responseStartTime = Date.now();
+                        responseStartTime = Date.now(); // Track when this response was created
+                        
+                        // CRITICAL: Block automatic responses that we didn't explicitly request
+                        // BUT: Distinguish between barge-in (block) and normal user input (allow)
+                        if (!explicitResponseRequested) {
+                            const currentTime = Date.now();
+                            const timeSinceTranscription = lastTranscriptionReceivedTime > 0 ? currentTime - lastTranscriptionReceivedTime : Infinity;
+                            const timeSinceAgentFinished = agentFinishedSpeakingTime > 0 ? currentTime - agentFinishedSpeakingTime : Infinity;
+                            // Validate times are reasonable (not negative or extremely large)
+                            const isRecentTranscription = lastTranscriptionReceivedTime > 0 && timeSinceTranscription >= 0 && timeSinceTranscription < 3000; // 3 second window
+                            const isWithinUserSpeakingWindow = agentFinishedSpeakingTime > 0 && timeSinceAgentFinished >= 0 && timeSinceAgentFinished < USER_SPEAKING_WINDOW_MS; // 6 second window
+                            
+                            // Log warning if transcription time seems invalid
+                            if (lastTranscriptionReceivedTime > 0 && (timeSinceTranscription < 0 || timeSinceTranscription > 3600000)) {
+                                console.warn(`⚠️ [${callSid}] Suspicious transcription timing: timeSinceTranscription=${timeSinceTranscription}ms, lastTranscriptionReceivedTime=${lastTranscriptionReceivedTime}, currentTime=${currentTime}`);
+                            }
+                            
+                            // Check if user speech started before this response was created
+                            const userSpokeBeforeResponse = userSpeechStartedTime > 0 && userSpeechStartedTime < responseStartTime;
+                            
+                            // Block automatic responses if:
+                            // 1. We're in an interrupted state (barge-in scenario - user interrupted agent WHILE agent was speaking)
+                            // 2. Agent is currently responding (shouldn't create new responses during active response)
+                            // 3. We're waiting but no recent transcription AND outside user speaking window AND user did NOT speak before response (ghost/phantom response)
+                            // NOTE: If user spoke before response, allow it even if outside speaking window (user initiated the response)
+                            // NOTE: isInterrupted should ONLY be true when agent was actively speaking (isResponding was true)
+                            const shouldBlock = isInterrupted || 
+                                             (isResponding && activeResponseId !== event.response?.id) ||
+                                             (waitingForUser && !isRecentTranscription && !isWithinUserSpeakingWindow && !userSpokeBeforeResponse);
+                            
+                            if (shouldBlock) {
+                                console.log(`🚫 [${callSid}] Blocking automatic response (barge-in/ghost) - ID: ${activeResponseId}, isInterrupted: ${isInterrupted}, isResponding: ${isResponding}, isRecentTranscription: ${isRecentTranscription}, isWithinUserSpeakingWindow: ${isWithinUserSpeakingWindow}, userSpokeBeforeResponse: ${userSpokeBeforeResponse}, timeSinceAgentFinished: ${timeSinceAgentFinished}ms`);
+                                try {
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'response.cancel',
+                                        response_id: activeResponseId
+                                    }));
+                                    activeResponseId = null;
+                                    isResponding = false;
+                                    waitingForUser = true;
+                                    return; // Don't process this response
+                                } catch (err) {
+                                    console.warn(`⚠️ [${callSid}] Error cancelling automatic response:`, err.message);
+                                }
+                            } else {
+                                // This is a legitimate automatic response after normal user input
+                                const timeUserSpokeBefore = userSpeechStartedTime > 0 ? (responseStartTime - userSpeechStartedTime) : 0;
+                                console.log(`✅ [${callSid}] Allowing automatic response after normal user input (transcription ${timeSinceTranscription}ms ago, within ${timeSinceAgentFinished}ms of agent finishing, user spoke ${timeUserSpokeBefore}ms before response)`);
+                                // Don't cancel - this is OpenAI responding to user input normally
+                            }
+                        }
+                        
+                        // Reset the flag after processing
+                        explicitResponseRequested = false;
+                        
                         // Synchronize isResponding flag with activeResponseId to prevent race conditions
                         isResponding = true;
                         console.log(`📝 [${callSid}] Response created - ID: ${activeResponseId}, isResponding: ${isResponding}`);
@@ -506,6 +588,16 @@ export const handleMediaStreamConnection = (ws, req) => {
                             return;
                         }
                         
+                        // CRITICAL: Skip sending audio if we're in an interrupted state
+                        // This ensures audio from cancelled responses is immediately silenced
+                        if (isInterrupted) {
+                            // Log first few blocked chunks to confirm it's working, then silence
+                            if (audioChunkCount % 100 === 0) {
+                                console.log(`🔇 [${callSid}] Blocking audio chunk #${audioChunkCount} - response interrupted`);
+                            }
+                            return; // Don't send audio chunks during interruption
+                        }
+                        
                         if (ws.readyState === WebSocket.OPEN && streamSid && !isClosed) {
                             try {
                                 // Direct μ-law - no conversion needed
@@ -529,19 +621,33 @@ export const handleMediaStreamConnection = (ws, req) => {
                         
                         // Check if this was the initial greeting
                         const wasInitialGreeting = hasInitialGreetingBeenSent && !hasInitialGreetingCompleted;
-                        if (wasInitialGreeting && status !== 'interrupted') {
+                        // Treat "cancelled" same as "interrupted" - both mean the response was stopped
+                        if (wasInitialGreeting && status !== 'interrupted' && status !== 'cancelled') {
                             hasInitialGreetingCompleted = true;
-                            console.log(`✅ [${callSid}] Initial greeting completed`);
+                            console.log(`✅ [${callSid}] Initial greeting completed - now waiting for user input`);
+                            console.log(`👂 [${callSid}] Agent is now listening - user has ${USER_SPEAKING_WINDOW_MS/1000} seconds to speak`);
+                            // CRITICAL: After initial greeting, wait for user input before creating any new responses
+                            waitingForUser = true;
+                            isResponding = false;
+                            activeResponseId = null;
+                            // Mark when agent finished speaking (for user speaking window)
+                            agentFinishedSpeakingTime = Date.now();
                         }
                         
-                        // Only clear tracking if response completed naturally (not interrupted)
-                        // If interrupted, the barge-in handler already cleared it
-                        if (status === 'interrupted') {
-                            console.log(`🛑 [${callSid}] Response was interrupted (barge-in)`);
+                        // Treat "cancelled" the same as "interrupted" - both indicate barge-in
+                        // When we call response.cancel, OpenAI returns status "cancelled", not "interrupted"
+                        // The "interrupted" status is only used when OpenAI's VAD detects speech automatically
+                        if (status === 'interrupted' || status === 'cancelled') {
+                            console.log(`🛑 [${callSid}] Response was interrupted/cancelled (barge-in) - status: ${status}`);
                             // Don't clear activeResponseId here - barge-in handler already cleared it
                             // Just reset flags if they weren't already reset
                             isResponding = false;
                             waitingForUser = true;
+                            // CRITICAL: Do NOT clear interruption state here
+                            // The interruption state must persist until speech_stopped event
+                            // This allows transcriptions to be queued properly
+                            console.log(`🛑 [${callSid}] Preserving interruption state (isInterrupted: ${isInterrupted}) to queue transcriptions`);
+                            // NOTE: Don't set agentFinishedSpeakingTime here - this was a barge-in, not natural completion
                         } else {
                             // Response completed naturally - clear all tracking
                             activeResponseId = null;
@@ -549,13 +655,50 @@ export const handleMediaStreamConnection = (ws, req) => {
                             responseStartTime = null;
                             isResponding = false;
                             waitingForUser = true;
+                            // Clear interruption state if it was somehow still set
+                            if (isInterrupted) {
+                                console.log(`⚠️ [${callSid}] Clearing lingering interruption state after natural completion`);
+                                isInterrupted = false;
+                                interruptionStartTime = 0;
+                                pendingTranscriptions = [];
+                            }
+                            // Mark when agent finished speaking (for user speaking window)
+                            agentFinishedSpeakingTime = Date.now();
+                            console.log(`👂 [${callSid}] Agent finished speaking - user has ${USER_SPEAKING_WINDOW_MS/1000} seconds to speak`);
                         }
                     }
                     
                     // Handle barge-in: user speech detected during active response
                     if (event.type === 'input_audio_buffer.speech_started') {
+                        // Track when user speech started
+                        userSpeechStartedTime = Date.now();
+                        
+                        // CRITICAL: Barge-in ONLY occurs when agent is actively speaking (isResponding = true)
+                        // AND user speech started AFTER the response was created
+                        // If user speech started BEFORE response was created, it's normal input, not barge-in
+                        // CRITICAL: Handle interruptions even if isInterrupted is already true (multiple interruptions)
                         if (activeResponseId && isResponding) {
-                            console.log(`🛑 [${callSid}] Barge-in detected! Cancelling active response ${activeResponseId}`);
+                            // Check if user speech started before this response was created
+                            const timeSinceResponseCreated = responseStartTime > 0 ? Date.now() - responseStartTime : Infinity;
+                            const userSpokeBeforeResponse = userSpeechStartedTime < responseStartTime || timeSinceResponseCreated > 2000; // 2 second grace period
+                            
+                            if (userSpokeBeforeResponse) {
+                                // User started speaking before response was created - this is normal input, not barge-in
+                                console.log(`👤 [${callSid}] User speech started before response was created (normal input, not barge-in) - response created ${timeSinceResponseCreated}ms ago`);
+                                // Don't treat as barge-in - allow the response to continue
+                                return; // Exit early, don't cancel response
+                            }
+                            
+                            // CRITICAL: User is interrupting an active response
+                            // Handle this even if isInterrupted is already true (multiple interruptions)
+                            // This ensures ANY interruption during agent response triggers the acknowledgment flow
+                            const isMultipleInterruption = isInterrupted;
+                            console.log(`🛑 [${callSid}] Barge-in detected! User is interrupting agent response ${activeResponseId} (agent was actively speaking)${isMultipleInterruption ? ' - multiple interruption' : ''}`);
+                            
+                            // Set interruption flags (even if already set - this handles multiple interruptions)
+                            isInterrupted = true;
+                            interruptionStartTime = Date.now();
+                            pendingTranscriptions = []; // Clear any pending transcriptions
                             
                             // Save IDs before clearing
                             const responseIdToCancel = activeResponseId;
@@ -569,19 +712,38 @@ export const handleMediaStreamConnection = (ws, req) => {
                             lastCancellationTime = Date.now(); // Mark when we cancelled (for stop command detection)
                             
                             try {
-                                // Cancel the active response (this is sufficient for barge-in)
+                                // Cancel the active response
                                 openaiWs.send(JSON.stringify({
                                     type: 'response.cancel',
                                     response_id: responseIdToCancel
                                 }));
-                                console.log(`🛑 [${callSid}] Sent response.cancel for ${responseIdToCancel}`);
+                                console.log(`🛑 [${callSid}] Sent response.cancel for ${responseIdToCancel}${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
+                                
+                                // Clear the input audio buffer to stop processing old audio
+                                openaiWs.send(JSON.stringify({
+                                    type: 'input_audio_buffer.clear'
+                                }));
+                                console.log(`🛑 [${callSid}] Cleared input audio buffer to prevent processing old audio${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
+                                
+                                // CRITICAL: Mark the interrupted response as completely discarded
+                                // This prevents any continuation or reference to the interrupted response
+                                console.log(`🗑️ [${callSid}] Discarding interrupted response ${responseIdToCancel} completely - will not continue${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
                             } catch (err) {
                                 // If cancel fails, log but don't treat as fatal
                                 // This can happen if response already completed/cancelled
                                 console.warn(`⚠️ [${callSid}] Error sending response.cancel (non-critical):`, err.message);
                             }
                         } else {
-                            console.log(`👤 [${callSid}] User speech started (no active response to cancel - activeResponseId: ${activeResponseId}, isResponding: ${isResponding})`);
+                            // Normal user input - agent is waiting, not responding
+                            // Check if we're within the user speaking window
+                            const timeSinceAgentFinished = agentFinishedSpeakingTime > 0 ? Date.now() - agentFinishedSpeakingTime : Infinity;
+                            const isWithinWindow = timeSinceAgentFinished < USER_SPEAKING_WINDOW_MS;
+                            
+                            if (isWithinWindow) {
+                                console.log(`👤 [${callSid}] User speech started (normal input - agent is waiting, user has ${Math.round((USER_SPEAKING_WINDOW_MS - timeSinceAgentFinished) / 1000)}s remaining in speaking window)`);
+                            } else {
+                                console.log(`👤 [${callSid}] User speech started (normal input - agent is waiting, not responding)`);
+                            }
                         }
                     }
                     
@@ -589,11 +751,103 @@ export const handleMediaStreamConnection = (ws, req) => {
                     if (event.type === 'conversation.item.input_audio_transcription.completed') {
                         const transcript = event.transcript || '';
                         const confidence = event.confidence || 1.0;
+                        const transcriptionTime = Date.now();
                         console.log(`👤 User said: "${transcript}" (confidence: ${confidence})`);
+                        
+                        // Track when we received this transcription (for distinguishing barge-in from normal input)
+                        const currentTime = Date.now();
+                        lastTranscriptionReceivedTime = currentTime;
+                        // Validate transcription time is reasonable (not in the past or far future)
+                        if (lastTranscriptionReceivedTime <= 0 || lastTranscriptionReceivedTime > currentTime + 1000) {
+                            console.warn(`⚠️ [${callSid}] Invalid transcription time detected: ${lastTranscriptionReceivedTime}, resetting to current time`);
+                            lastTranscriptionReceivedTime = currentTime;
+                        }
+                        
+                        // ALTERNATIVE INTERRUPTION DETECTION: If transcription arrives while agent is responding,
+                        // This is a BARGE-IN scenario - user interrupted the agent WHILE agent was speaking
+                        // CRITICAL: Only treat as barge-in if agent was actively responding (isResponding = true)
+                        // This ensures clear distinction: barge-in = agent speaking, normal = agent waiting
+                        // treat it as an interruption even if speech_started didn't fire
+                        // This is critical because OpenAI's VAD may not detect speech during agent responses
+                        // CRITICAL: Handle interruptions even if isInterrupted is already true (multiple interruptions)
+                        if (isResponding && activeResponseId) {
+                            // Check if this is a new interruption or a multiple interruption
+                            const isNewInterruption = !isInterrupted;
+                            const isMultipleInterruption = isInterrupted;
+                            
+                            if (isNewInterruption) {
+                                console.log(`🛑 [${callSid}] Barge-in detected via transcription! User interrupted agent response ${activeResponseId} (agent was actively speaking)`);
+                            } else {
+                                console.log(`🛑 [${callSid}] Multiple interruption detected via transcription! User interrupted again during existing interruption - cancelling response ${activeResponseId}`);
+                            }
+                            
+                            // Set interruption flags (even if already set - this handles multiple interruptions)
+                            isInterrupted = true;
+                            interruptionStartTime = Date.now();
+                            pendingTranscriptions = [];
+                            
+                            // Save IDs before clearing
+                            const responseIdToCancel = activeResponseId;
+                            
+                            // Clear response tracking immediately
+                            activeResponseId = null;
+                            responseItemId = null;
+                            responseStartTime = null;
+                            isResponding = false;
+                            waitingForUser = true;
+                            lastCancellationTime = Date.now();
+                            
+                            try {
+                                // Cancel the active response
+                                openaiWs.send(JSON.stringify({
+                                    type: 'response.cancel',
+                                    response_id: responseIdToCancel
+                                }));
+                                console.log(`🛑 [${callSid}] Sent response.cancel for ${responseIdToCancel} (via transcription detection${isMultipleInterruption ? ' - multiple interruption' : ''})`);
+                                
+                                // Clear the input audio buffer to stop processing old audio
+                                openaiWs.send(JSON.stringify({
+                                    type: 'input_audio_buffer.clear'
+                                }));
+                                console.log(`🛑 [${callSid}] Cleared input audio buffer (via transcription detection${isMultipleInterruption ? ' - multiple interruption' : ''})`);
+                                
+                                // CRITICAL: Mark the interrupted response as completely discarded
+                                console.log(`🗑️ [${callSid}] Discarding interrupted response ${responseIdToCancel} completely (via transcription detection${isMultipleInterruption ? ' - multiple interruption' : ''})`);
+                            } catch (err) {
+                                console.warn(`⚠️ [${callSid}] Error cancelling response (non-critical):`, err.message);
+                            }
+                            
+                            // CRITICAL: Queue this transcription since we detected/handled the interruption
+                            // This prevents it from being processed immediately and creating unwanted responses
+                            console.log(`⏸️ [${callSid}] Queuing transcription during interruption: "${transcript}"`);
+                            pendingTranscriptions.push({
+                                transcript,
+                                confidence,
+                                time: transcriptionTime
+                            });
+                            return; // Don't process yet - wait for speech to end
+                        }
                         
                         // Check confidence threshold
                         if (config.uncertaintyGateEnabled && confidence < config.confidenceThreshold) {
                             console.log(`⚠️ Low confidence transcript (${confidence} < ${config.confidenceThreshold}), skipping response`);
+                            return;
+                        }
+                        
+                        // If we're in an interruption window, queue this transcription and wait for speech to end
+                        if (isInterrupted) {
+                            console.log(`⏸️ [${callSid}] Transcription received during interruption - queuing: "${transcript}"`);
+                            pendingTranscriptions.push({
+                                transcript,
+                                confidence,
+                                time: transcriptionTime
+                            });
+                            return; // Don't process yet - wait for speech to end
+                        }
+                        
+                        // Check if this transcription is from before the last interruption (stale transcription)
+                        if (transcriptionTime < interruptionStartTime && interruptionStartTime > 0) {
+                            console.log(`🗑️ [${callSid}] Ignoring stale transcription from before interruption: "${transcript}"`);
                             return;
                         }
                         
@@ -607,14 +861,29 @@ export const handleMediaStreamConnection = (ws, req) => {
                             console.log(`🛑 [${callSid}] Stop command detected after interruption: "${transcript}" - entering listening mode`);
                             waitingForUser = true;
                             lastCancellationTime = 0; // Reset
+                            isInterrupted = false; // Clear interruption flag
+                            interruptionStartTime = 0;
                             return; // Don't respond to stop commands
                         }
                         
-                        // If we cancelled recently but it's NOT a stop command, process it normally
-                        // This allows the agent to respond to interrupting speech that's not a stop command
+                        // If we cancelled recently but it's NOT a stop command, check if still interrupted
+                        // If still interrupted, queue the transcription to wait for speech_stopped
+                        // This ensures transcriptions are queued even if they arrive after response.done but before speech_stopped
                         if (isRecentCancellation) {
-                            console.log(`👂 [${callSid}] Processing interrupting speech: "${transcript}"`);
-                            lastCancellationTime = 0; // Reset after processing
+                            if (isInterrupted) {
+                                // Still in interruption window - queue this transcription
+                                console.log(`⏸️ [${callSid}] Recent cancellation - queuing transcription during interruption: "${transcript}"`);
+                                pendingTranscriptions.push({
+                                    transcript,
+                                    confidence,
+                                    time: transcriptionTime
+                                });
+                                return; // Wait for speech_stopped to process
+                            } else {
+                                // Interruption state was already cleared (edge case) - process normally
+                                console.log(`👂 [${callSid}] Processing interrupting speech (interruption state already cleared): "${transcript}"`);
+                                lastCancellationTime = 0; // Reset after processing
+                            }
                         }
                         
                         // Prevent user responses until initial greeting completes (unless this is interrupting speech)
@@ -623,13 +892,16 @@ export const handleMediaStreamConnection = (ws, req) => {
                             return; // Queue this input - will be processed after greeting completes
                         }
                         
+                        // NORMAL USER INPUT: Process transcription when agent is waiting (not interrupting)
                         // Double-check: ensure no active response before creating new one
                         if (transcript && transcript !== lastUserTranscript && !isResponding && activeResponseId === null && waitingForUser) {
                             lastUserTranscript = transcript;
                             waitingForUser = false;
                             isResponding = true; // Set flag before creating response
-                            console.log(`🎯 [${callSid}] Creating response to user input: "${transcript}" (isResponding: ${isResponding}, activeResponseId: ${activeResponseId})`);
+                            lastProcessedTranscriptionTime = transcriptionTime; // Track this as the last processed
+                            console.log(`🎯 [${callSid}] Creating response to normal user input: "${transcript}" (agent was waiting, not interrupted)`);
                             try {
+                                explicitResponseRequested = true; // Mark this as an explicit request
                                 openaiWs.send(JSON.stringify({
                                     type: 'response.create',
                                     response: {
@@ -637,11 +909,140 @@ export const handleMediaStreamConnection = (ws, req) => {
                                     }
                                 }));
                             } catch (err) {
+                                explicitResponseRequested = false; // Reset if send fails
                                 isResponding = false; // Reset if send fails
                                 console.error(`❌ [${callSid}] Error creating response to user input:`, err);
                             }
                         } else if (transcript && transcript !== lastUserTranscript) {
                             console.log(`⚠️ [${callSid}] Skipping response - isResponding: ${isResponding}, activeResponseId: ${activeResponseId}, waitingForUser: ${waitingForUser}, hasInitialGreetingCompleted: ${hasInitialGreetingCompleted}`);
+                        }
+                    }
+                    
+                    // Handle when user speech ends - process the most recent transcription
+                    if (event.type === 'input_audio_buffer.speech_stopped') {
+                        if (isInterrupted && pendingTranscriptions.length > 0) {
+                            // Get the most recent transcription (last one in the queue)
+                            const latestTranscription = pendingTranscriptions[pendingTranscriptions.length - 1];
+                            console.log(`✅ [${callSid}] Speech ended after interruption - acknowledging interruption first`);
+                            
+                            // Clear interruption flag
+                            isInterrupted = false;
+                            const finalInterruptionTime = interruptionStartTime;
+                            interruptionStartTime = 0;
+                            
+                            // Clear pending transcriptions - we'll ignore the interrupting speech
+                            // and wait for the user to ask again after acknowledgment
+                            pendingTranscriptions = [];
+                            
+                            // Process only the latest transcription to check if it's a stop command
+                            const transcript = latestTranscription.transcript;
+                            const confidence = latestTranscription.confidence;
+                            const transcriptionTime = latestTranscription.time;
+                            
+                            // Check confidence threshold
+                            if (!config.uncertaintyGateEnabled || confidence >= config.confidenceThreshold) {
+                                // Check if this is a stop command
+                                const stopCommands = /\b(stop|wait|hold on|pause|shut up|be quiet|enough|that's enough)\b/i;
+                                const isStopCommand = stopCommands.test(transcript);
+                                
+                                if (isStopCommand) {
+                                    console.log(`🛑 [${callSid}] Stop command detected: "${transcript}" - entering listening mode`);
+                                    waitingForUser = true;
+                                    lastCancellationTime = 0;
+                                    return;
+                                }
+                                
+                                // CRITICAL: Only acknowledge the interruption, don't respond to the query yet
+                                // The user will ask again after the acknowledgment
+                                if (!isResponding && activeResponseId === null && waitingForUser) {
+                                    waitingForUser = false;
+                                    isResponding = true;
+                                    console.log(`🎯 [${callSid}] Creating acknowledgment response after barge-in (ignoring interrupting speech: "${transcript}")`);
+                                    try {
+                                        // Add a conversation item that instructs the agent to ONLY acknowledge the interruption
+                                        // Do NOT include the user's query - we'll wait for them to ask again
+                                        openaiWs.send(JSON.stringify({
+                                            type: 'conversation.item.create',
+                                            item: {
+                                                type: 'message',
+                                                role: 'user',
+                                                content: [
+                                                    {
+                                                        type: 'input_text',
+                                                        text: `[The user interrupted your previous response. Please acknowledge this by saying something like "What do you want to know? I can help with that" or "Sure, what can I help you with?" Do NOT respond to any specific query yet - just acknowledge and wait for them to ask again.]`
+                                                    }
+                                                ]
+                                            }
+                                        }));
+                                        console.log(`💬 [${callSid}] Added barge-in acknowledgment instruction (will wait for user to ask again)`);
+                                        
+                                        explicitResponseRequested = true; // Mark this as an explicit request
+                                        openaiWs.send(JSON.stringify({
+                                            type: 'response.create',
+                                            response: {
+                                                modalities: ['audio']
+                                            }
+                                        }));
+                                        console.log(`📤 [${callSid}] Created acknowledgment response - will wait for user's question`);
+                                    } catch (err) {
+                                        explicitResponseRequested = false; // Reset if send fails
+                                        isResponding = false;
+                                        waitingForUser = true;
+                                        console.error(`❌ [${callSid}] Error creating acknowledgment response:`, err);
+                                    }
+                                }
+                            }
+                        } else if (isInterrupted) {
+                            // Speech ended but no transcriptions were queued
+                            // CRITICAL: Still send acknowledgment to let user know we're ready
+                            console.log(`✅ [${callSid}] Speech ended after interruption - no transcriptions to process, sending acknowledgment`);
+                            
+                            // Clear interruption flag
+                            isInterrupted = false;
+                            const finalInterruptionTime = interruptionStartTime;
+                            interruptionStartTime = 0;
+                            
+                            // CRITICAL: Send acknowledgment even when there are no transcriptions
+                            // This ensures the user knows we're ready to listen
+                            if (!isResponding && activeResponseId === null && waitingForUser) {
+                                waitingForUser = false;
+                                isResponding = true;
+                                console.log(`🎯 [${callSid}] Creating acknowledgment response after barge-in (no transcriptions)`);
+                                try {
+                                    // Add a conversation item that instructs the agent to ONLY acknowledge the interruption
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'conversation.item.create',
+                                        item: {
+                                            type: 'message',
+                                            role: 'user',
+                                            content: [
+                                                {
+                                                    type: 'input_text',
+                                                    text: `[The user interrupted your previous response. Please acknowledge this by saying something like "What do you want to know? I can help with that" or "Sure, what can I help you with?" Do NOT respond to any specific query yet - just acknowledge and wait for them to ask again.]`
+                                                }
+                                            ]
+                                        }
+                                    }));
+                                    console.log(`💬 [${callSid}] Added barge-in acknowledgment instruction (no transcriptions)`);
+                                    
+                                    explicitResponseRequested = true; // Mark this as an explicit request
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'response.create',
+                                        response: {
+                                            modalities: ['audio']
+                                        }
+                                    }));
+                                    console.log(`📤 [${callSid}] Created acknowledgment response - will wait for user's question`);
+                                } catch (err) {
+                                    explicitResponseRequested = false; // Reset if send fails
+                                    isResponding = false;
+                                    waitingForUser = true;
+                                    console.error(`❌ [${callSid}] Error creating acknowledgment response:`, err);
+                                }
+                            } else {
+                                // Can't send acknowledgment right now - just wait
+                                waitingForUser = true;
+                            }
                         }
                     }
                     
@@ -684,10 +1085,17 @@ export const handleMediaStreamConnection = (ws, req) => {
                         // Parse arguments JSON string
                         let parameters = {};
                         try {
-                            parameters = JSON.parse(args || '{}');
+                            // Check if args is valid before parsing
+                            if (!args || args.trim() === '') {
+                                parameters = {};
+                            } else {
+                                parameters = JSON.parse(args);
+                            }
                             console.log(`🔧 [${callSid}] Parsed Parameters:`, JSON.stringify(parameters, null, 2));
                         } catch (parseError) {
                             console.error(`❌ [${callSid}] Failed to parse tool arguments for ${name}:`, parseError);
+                            console.error(`❌ [${callSid}] Raw arguments (first 200 chars):`, args ? args.substring(0, 200) : 'null');
+                            console.error(`❌ [${callSid}] Arguments length:`, args ? args.length : 0);
                                 // Submit error result
                                 if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
                                     openaiWs.send(JSON.stringify({
@@ -697,13 +1105,15 @@ export const handleMediaStreamConnection = (ws, req) => {
                                             call_id: call_id,
                                             output: JSON.stringify({
                                                 success: false,
-                                                error: 'Failed to parse tool arguments'
+                                                error: `Failed to parse tool arguments: ${parseError.message}`,
+                                                raw_args_preview: args ? args.substring(0, 100) : 'null'
                                             })
                                         }
                                     }));
                                     // Trigger response ONLY if not already responding and no active response
                                     if (!isResponding && activeResponseId === null && !isClosed) {
                                         isResponding = true;
+                                        explicitResponseRequested = true; // Mark this as an explicit request
                                         openaiWs.send(JSON.stringify({
                                             type: 'response.create'
                                         }));
@@ -776,6 +1186,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                     // Trigger model response ONLY if not already responding and no active response
                                     if (!isResponding && activeResponseId === null && !isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
                                         isResponding = true; // Set flag before creating response
+                                        explicitResponseRequested = true; // Mark this as an explicit request
                                         openaiWs.send(JSON.stringify({
                                             type: 'response.create'
                                         }));
@@ -822,6 +1233,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                     // Trigger model response ONLY if not already responding and no active response
                                     if (!isResponding && activeResponseId === null && !isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
                                         isResponding = true; // Set flag before creating response
+                                        explicitResponseRequested = true; // Mark this as an explicit request
                                         openaiWs.send(JSON.stringify({
                                             type: 'response.create'
                                         }));
