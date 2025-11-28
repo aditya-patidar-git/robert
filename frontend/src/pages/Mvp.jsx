@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import authenticatedApiClient from "../api/authenticatedApi.js";
 import { useSocket } from "../hooks/useSocket";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3001";
 
 // API functions using unified client
 const makeCall = (toNumbers) =>

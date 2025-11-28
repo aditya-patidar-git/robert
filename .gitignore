@@ -3,7 +3,6 @@ node_modules/
 docs/
 # Logs
 logs
-index.js
 .cursor
 *.log
 prompt_1.txt
