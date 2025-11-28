@@ -26,7 +26,13 @@ const AppRoutes = createBrowserRouter([
   // Public Routes
   {
     path: '/',
+    element: <AuthLayout />,
+    children: [
+      {
+        path: '',
     element: <LoginPage />,
+      },
+    ],
   },
   {
     path: '/mvp',
