@@ -69,6 +69,11 @@ export const handleMediaStreamConnection = (ws, req) => {
     let responseStartTime = null;
     let lastCancellationTime = 0; // Track when we last cancelled a response
     let explicitResponseRequested = false; // Track if we explicitly requested a response
+    let cancelledResponseIds = new Set(); // Track cancelled response IDs to block their audio
+    let cancellationTime = new Map(); // Track when each response was cancelled (for grace period)
+    const AUDIO_CANCELLATION_GRACE_PERIOD = 2000; // 2 seconds grace period to block audio after cancellation
+    let lastAudioChunkTime = 0; // Track when we last received an audio chunk
+    const AUDIO_PLAYBACK_GRACE_PERIOD = 1500; // 1.5 seconds after last audio chunk before considering playback stopped
     
     // Interruption state tracking
     let isInterrupted = false; // Boolean flag tracking active interruption
@@ -577,6 +582,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                     // Handle audio output
                     if ((event.type === 'response.audio.delta' || event.type === 'response.output_audio.delta') && event.delta) {
                         isResponding = true;
+                        lastAudioChunkTime = Date.now(); // Track when we last received audio
                         audioChunkCount++;
                         const responseTime = Date.now();
                         audioMetrics.responseTimestamps.push(responseTime);
@@ -588,14 +594,24 @@ export const handleMediaStreamConnection = (ws, req) => {
                             return;
                         }
                         
-                        // CRITICAL: Skip sending audio if we're in an interrupted state
-                        // This ensures audio from cancelled responses is immediately silenced
-                        if (isInterrupted) {
+                        // CRITICAL: Get response ID from event if available, otherwise use activeResponseId
+                        // Note: OpenAI audio.delta events may not include response_id, so we use activeResponseId as fallback
+                        const currentResponseId = event.response_id || activeResponseId;
+                        
+                        // CRITICAL: Block audio if:
+                        // 1. We're in an interrupted state, OR
+                        // 2. This response was cancelled (check both Set and grace period)
+                        const isCancelledResponse = currentResponseId && cancelledResponseIds.has(currentResponseId);
+                        const cancellationTimestamp = currentResponseId ? cancellationTime.get(currentResponseId) : null;
+                        const timeSinceCancellation = cancellationTimestamp ? Date.now() - cancellationTimestamp : Infinity;
+                        const withinGracePeriod = cancellationTimestamp && timeSinceCancellation < AUDIO_CANCELLATION_GRACE_PERIOD;
+                        
+                        if (isInterrupted || isCancelledResponse || (cancellationTimestamp && withinGracePeriod)) {
                             // Log first few blocked chunks to confirm it's working, then silence
-                            if (audioChunkCount % 100 === 0) {
-                                console.log(`🔇 [${callSid}] Blocking audio chunk #${audioChunkCount} - response interrupted`);
+                            if (audioChunkCount % 100 === 0 || audioChunkCount < 5) {
+                                console.log(`🔇 [${callSid}] Blocking audio chunk #${audioChunkCount} - response interrupted/cancelled (responseId: ${currentResponseId || 'unknown'}, isInterrupted: ${isInterrupted}, isCancelled: ${isCancelledResponse}, gracePeriod: ${withinGracePeriod})`);
                             }
-                            return; // Don't send audio chunks during interruption
+                            return; // Don't send audio chunks during interruption or from cancelled responses
                         }
                         
                         if (ws.readyState === WebSocket.OPEN && streamSid && !isClosed) {
@@ -618,6 +634,16 @@ export const handleMediaStreamConnection = (ws, req) => {
                         const status = event.response?.status || 'completed';
                         const responseId = event.response?.id;
                         console.log(`✅ [${callSid}] Response done - ID: ${responseId}, status: ${status}`);
+                        
+                        // Clean up cancelled response tracking after grace period
+                        if (responseId && cancelledResponseIds.has(responseId)) {
+                            // Keep in Set for a bit longer to catch any late-arriving chunks, then clean up
+                            setTimeout(() => {
+                                cancelledResponseIds.delete(responseId);
+                                cancellationTime.delete(responseId);
+                                console.log(`🧹 [${callSid}] Cleaned up cancelled response tracking for ${responseId}`);
+                            }, AUDIO_CANCELLATION_GRACE_PERIOD);
+                        }
                         
                         // Check if this was the initial greeting
                         const wasInitialGreeting = hasInitialGreetingBeenSent && !hasInitialGreetingCompleted;
@@ -649,22 +675,42 @@ export const handleMediaStreamConnection = (ws, req) => {
                             console.log(`🛑 [${callSid}] Preserving interruption state (isInterrupted: ${isInterrupted}) to queue transcriptions`);
                             // NOTE: Don't set agentFinishedSpeakingTime here - this was a barge-in, not natural completion
                         } else {
-                            // Response completed naturally - clear all tracking
-                            activeResponseId = null;
-                            responseItemId = null;
-                            responseStartTime = null;
-                            isResponding = false;
-                            waitingForUser = true;
-                            // Clear interruption state if it was somehow still set
-                            if (isInterrupted) {
-                                console.log(`⚠️ [${callSid}] Clearing lingering interruption state after natural completion`);
-                                isInterrupted = false;
-                                interruptionStartTime = 0;
-                                pendingTranscriptions = [];
-                            }
-                            // Mark when agent finished speaking (for user speaking window)
+                            // Response completed naturally
+                            // CRITICAL: Always keep tracking active for a grace period
+                            // Audio might still be playing even if chunks stopped arriving
+                            // Network buffering and playback delay mean we can't rely on lastAudioChunkTime
+                            // This ensures barge-in detection works even if audio is still playing
+                            const responseIdForGracePeriod = responseId;
+                            
+                            console.log(`⏳ [${callSid}] Response done - keeping response tracking active for ${AUDIO_PLAYBACK_GRACE_PERIOD}ms to allow barge-in detection`);
+                            
+                            // Always set a timer to clear after grace period
+                            // This ensures barge-in detection works even if audio is still playing
+                            setTimeout(() => {
+                                // Only clear if this is still the active response and not interrupted
+                                if (activeResponseId === responseIdForGracePeriod && !isInterrupted) {
+                                    activeResponseId = null;
+                                    responseItemId = null;
+                                    responseStartTime = null;
+                                    isResponding = false;
+                                    waitingForUser = true;
+                                    
+                                    // Clear interruption state if it was somehow still set
+                                    if (isInterrupted) {
+                                        console.log(`⚠️ [${callSid}] Clearing lingering interruption state after natural completion`);
+                                        isInterrupted = false;
+                                        interruptionStartTime = 0;
+                                        pendingTranscriptions = [];
+                                    }
+                                    
+                                    // Mark when agent finished speaking (for user speaking window)
+                                    agentFinishedSpeakingTime = Date.now();
+                                    console.log(`👂 [${callSid}] Agent finished speaking (audio playback grace period completed) - user has ${USER_SPEAKING_WINDOW_MS/1000} seconds to speak`);
+                                }
+                            }, AUDIO_PLAYBACK_GRACE_PERIOD);
+                            
+                            // Mark when response.done occurred (but audio might still be playing)
                             agentFinishedSpeakingTime = Date.now();
-                            console.log(`👂 [${callSid}] Agent finished speaking - user has ${USER_SPEAKING_WINDOW_MS/1000} seconds to speak`);
                         }
                     }
                     
@@ -702,6 +748,14 @@ export const handleMediaStreamConnection = (ws, req) => {
                             
                             // Save IDs before clearing
                             const responseIdToCancel = activeResponseId;
+                            
+                            // CRITICAL: Mark this response as cancelled BEFORE clearing activeResponseId
+                            // This ensures audio from this response is blocked immediately, even if chunks arrive after cancellation
+                            if (responseIdToCancel) {
+                                cancelledResponseIds.add(responseIdToCancel);
+                                cancellationTime.set(responseIdToCancel, Date.now());
+                                console.log(`🚫 [${callSid}] Marked response ${responseIdToCancel} as cancelled - will block all audio chunks from this response`);
+                            }
                             
                             // Clear response tracking immediately to prevent race conditions
                             activeResponseId = null;
@@ -788,6 +842,14 @@ export const handleMediaStreamConnection = (ws, req) => {
                             
                             // Save IDs before clearing
                             const responseIdToCancel = activeResponseId;
+                            
+                            // CRITICAL: Mark this response as cancelled BEFORE clearing activeResponseId
+                            // This ensures audio from this response is blocked immediately, even if chunks arrive after cancellation
+                            if (responseIdToCancel) {
+                                cancelledResponseIds.add(responseIdToCancel);
+                                cancellationTime.set(responseIdToCancel, Date.now());
+                                console.log(`🚫 [${callSid}] Marked response ${responseIdToCancel} as cancelled (via transcription) - will block all audio chunks from this response`);
+                            }
                             
                             // Clear response tracking immediately
                             activeResponseId = null;
@@ -905,7 +967,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                 openaiWs.send(JSON.stringify({
                                     type: 'response.create',
                                     response: {
-                                        modalities: ['audio']
+                                        modalities: ['audio', 'text']
                                     }
                                 }));
                             } catch (err) {
@@ -969,7 +1031,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                                 content: [
                                                     {
                                                         type: 'input_text',
-                                                        text: `[The user interrupted your previous response. Please acknowledge this by saying something like "What do you want to know? I can help with that" or "Sure, what can I help you with?" Do NOT respond to any specific query yet - just acknowledge and wait for them to ask again.]`
+                                                        text: `[The user interrupted your previous response. Please acknowledge this by saying something like "How can I help you with any other queries you have?" or "Sure, what can I help you with?" Do NOT respond to any specific query yet - just acknowledge and wait for them to ask again.]`
                                                     }
                                                 ]
                                             }
@@ -980,7 +1042,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                         openaiWs.send(JSON.stringify({
                                             type: 'response.create',
                                             response: {
-                                                modalities: ['audio']
+                                                modalities: ['audio', 'text']
                                             }
                                         }));
                                         console.log(`📤 [${callSid}] Created acknowledgment response - will wait for user's question`);
@@ -1018,7 +1080,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                             content: [
                                                 {
                                                     type: 'input_text',
-                                                    text: `[The user interrupted your previous response. Please acknowledge this by saying something like "What do you want to know? I can help with that" or "Sure, what can I help you with?" Do NOT respond to any specific query yet - just acknowledge and wait for them to ask again.]`
+                                                    text: `[The user interrupted your previous response. Please acknowledge this by saying something like "How can I help you with any other queries you have?" or "Sure, what can I help you with?" Do NOT respond to any specific query yet - just acknowledge and wait for them to ask again.]`
                                                 }
                                             ]
                                         }
@@ -1029,7 +1091,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                     openaiWs.send(JSON.stringify({
                                         type: 'response.create',
                                         response: {
-                                            modalities: ['audio']
+                                            modalities: ['audio', 'text']
                                         }
                                     }));
                                     console.log(`📤 [${callSid}] Created acknowledgment response - will wait for user's question`);
