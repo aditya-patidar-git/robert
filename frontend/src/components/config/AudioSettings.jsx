@@ -242,9 +242,9 @@ const AudioSettings = ({
         Configure voice activity detection and audio processing parameters
       </Typography>
 
-      <Grid container spacing={3}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3, mb: 3 }}>
         {/* VAD Settings */}
-        <Grid item xs={12} md={6}>
+        <Box sx={{ flex: { xs: '1 1 100%', md: '3 3 0%' }, minWidth: 0 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -278,10 +278,10 @@ const AudioSettings = ({
               </Box>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
 
         {/* Energy Threshold */}
-        <Grid item xs={12} md={6}>
+        <Box sx={{ flex: { xs: '1 1 100%', md: '4 4 0%' }, minWidth: 0 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -335,8 +335,41 @@ const AudioSettings = ({
               </Stack>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
 
+        {/* Barge-in Policy */}
+        <Box sx={{ flex: { xs: '1 1 100%', md: '3 3 0%' }, minWidth: 0 }}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Barge-in Policy
+              </Typography>
+              <Box>
+                <Controller
+                  name="bargeInPolicy"
+                  control={control}
+                  render={({ field }) => (
+                    <RadioGroup {...field} disabled={readOnly}>
+                      <FormControlLabel
+                        value="pause"
+                        control={<Radio />}
+                        label="Pause (Resume after interruption)"
+                      />
+                      <FormControlLabel
+                        value="stop"
+                        control={<Radio />}
+                        label="Stop (Cancel current speech)"
+                      />
+                    </RadioGroup>
+                  )}
+                />
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
+      </Box>
+
+      <Grid container spacing={3}>
         {/* Audio Quality */}
         <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%' }}>
@@ -345,12 +378,14 @@ const AudioSettings = ({
                 Audio Quality Settings
               </Typography>
               <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle1" gutterBottom>
+                  Audio Quality
+                </Typography>
                 <Controller
                   name="audioQuality"
                   control={control}
                   render={({ field }) => (
                     <FormControl fullWidth>
-                      <InputLabel>Audio Quality</InputLabel>
                       <Select {...field} disabled={readOnly}>
                         <MenuItem value="standard">Standard</MenuItem>
                         <MenuItem value="high">High</MenuItem>
@@ -373,12 +408,14 @@ const AudioSettings = ({
                 />
                 {watch('noiseSuppression') && (
                   <Box sx={{ ml: 4, mt: 1.5 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Algorithm
+                    </Typography>
                     <Controller
                       name="noiseSuppressionAlgorithm"
                       control={control}
                       render={({ field }) => (
                         <FormControl fullWidth size="small">
-                          <InputLabel>Algorithm</InputLabel>
                           <Select {...field} disabled={readOnly}>
                             <MenuItem value="basic">Basic</MenuItem>
                             <MenuItem value="rnnoise">RNNoise</MenuItem>
@@ -422,68 +459,45 @@ const AudioSettings = ({
                 Audio Padding
               </Typography>
               <Stack spacing={2}>
-                <Controller
-                  name="startPadding"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Start Padding (ms)"
-                      type="number"
-                      fullWidth
-                      inputProps={{ min: 0, max: 1000, step: 50 }}
-                      helperText="Audio capture padding before speech detection"
-                      disabled={readOnly}
-                    />
-                  )}
-                />
-                <Controller
-                  name="endPadding"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="End Padding (ms)"
-                      type="number"
-                      fullWidth
-                      inputProps={{ min: 0, max: 1500, step: 50 }}
-                      helperText="Audio capture padding after speech ends"
-                      disabled={readOnly}
-                    />
-                  )}
-                />
+                <Box>
+                  <Typography variant="subtitle1" gutterBottom>
+                    Start Padding (ms)
+                  </Typography>
+                  <Controller
+                    name="startPadding"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        type="number"
+                        fullWidth
+                        inputProps={{ min: 0, max: 1000, step: 50 }}
+                        helperText="Audio capture padding before speech detection"
+                        disabled={readOnly}
+                      />
+                    )}
+                  />
+                </Box>
+                <Box>
+                  <Typography variant="subtitle1" gutterBottom>
+                    End Padding (ms)
+                  </Typography>
+                  <Controller
+                    name="endPadding"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        type="number"
+                        fullWidth
+                        inputProps={{ min: 0, max: 1500, step: 50 }}
+                        helperText="Audio capture padding after speech ends"
+                        disabled={readOnly}
+                      />
+                    )}
+                  />
+                </Box>
               </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Barge-in Policy */}
-        <Grid item xs={12} md={6}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Barge-in Policy
-              </Typography>
-              <Box>
-                <Controller
-                  name="bargeInPolicy"
-                  control={control}
-                  render={({ field }) => (
-                    <RadioGroup {...field} disabled={readOnly}>
-                      <FormControlLabel
-                        value="pause"
-                        control={<Radio />}
-                        label="Pause (Resume after interruption)"
-                      />
-                      <FormControlLabel
-                        value="stop"
-                        control={<Radio />}
-                        label="Stop (Cancel current speech)"
-                      />
-                    </RadioGroup>
-                  )}
-                />
-              </Box>
             </CardContent>
           </Card>
         </Grid>

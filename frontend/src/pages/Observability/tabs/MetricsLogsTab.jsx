@@ -3,7 +3,6 @@ import {
   Box,
   Paper,
   Typography,
-  Grid,
   CircularProgress,
   Chip
 } from '@mui/material';
@@ -94,10 +93,10 @@ const MetricsLogsTab = ({
   return (
     <>
       {/* Charts Section */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3, mb: 4 }}>
         {/* Call Volume & Error Trends */}
-        <Grid item xs={12} lg={6}>
-          <Paper sx={{ p: 3, height: 400 }}>
+        <Box sx={{ width: { xs: '100%', lg: '25%' }, minWidth: 0 }}>
+          <Paper sx={{ p: 3, height: { xs: 300, md: 400, lg: 450 } }}>
             <Typography variant="h6" gutterBottom>
               Call Volume Trends
             </Typography>
@@ -118,11 +117,11 @@ const MetricsLogsTab = ({
               </ResponsiveContainer>
             )}
           </Paper>
-        </Grid>
+        </Box>
 
         {/* Latency Metrics */}
-        <Grid item xs={12} lg={6}>
-          <Paper sx={{ p: 3, height: 400 }}>
+        <Box sx={{ width: { xs: '100%', lg: '25%' }, minWidth: 0 }}>
+          <Paper sx={{ p: 3, height: { xs: 300, md: 400, lg: 450 } }}>
             <Typography variant="h6" gutterBottom>
               Response Latency Distribution
             </Typography>
@@ -163,8 +162,8 @@ const MetricsLogsTab = ({
               </ResponsiveContainer>
             )}
           </Paper>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
 
       {/* Error/Warning Logs */}
       <Paper>
