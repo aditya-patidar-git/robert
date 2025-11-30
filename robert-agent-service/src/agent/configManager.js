@@ -2,6 +2,7 @@ import { connectDB } from '../database/connection.js';
 import AIConfig from '../database/models/AIConfig.js';
 import AudioConfig from '../database/models/AudioConfig.js';
 import TelephonyConfig from '../database/models/TelephonyConfig.js';
+import multilingualService from '../services/multilingualService.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -103,13 +104,14 @@ class ConfigManager {
   }
 
   // Get merged config for a specific phone number (supports per-number profiles)
-  getConfigForNumber(phoneNumber) {
+  getConfigForNumber(phoneNumber, languageCode = 'en') {
     const aiConfig = this.getAIConfig();
     const audioConfig = this.getAudioConfig();
     const telephonyConfig = this.getTelephonyConfig();
 
-    // English-only instruction that must always be included
-    const englishOnlyInstruction = ` IMPORTANT: You MUST ONLY speak in English. Never switch to any other language including Hindi, Urdu, French, or any other language. Always respond in English only, regardless of what language the user speaks.`;
+    // Get language-specific instructions (multilingual support enabled)
+    const languageConfig = multilingualService.getLanguageConfig(languageCode);
+    const languageInstructions = multilingualService.getSystemInstructions(languageCode);
 
     // Check for per-number profile
     if (audioConfig?.usePerNumberProfiles && audioConfig?.perNumberProfiles) {
@@ -119,32 +121,42 @@ class ConfigManager {
       
       if (profile) {
         const baseInstructions = aiConfig.globalPrompt || 'You are a friendly AI assistant.';
+        // Combine base instructions with language-specific instructions
+        const fullInstructions = `${baseInstructions}\n\n${languageInstructions}`;
+        
         return {
-          voice: profile.defaultVoice || audioConfig.defaultVoice || aiConfig.voice || { id: 'alloy', name: 'Alloy' },
+          voice: { id: languageConfig.voice, name: languageConfig.name } || profile.defaultVoice || audioConfig.defaultVoice || aiConfig.voice || { id: 'ash', name: 'Ash' },
           temperature: profile.temperature ?? audioConfig.temperature ?? aiConfig.parameters?.temperature ?? 0.8,
           vadThreshold: profile.vadThreshold ?? audioConfig.vadThreshold ?? 500,
           startPadding: profile.startPadding ?? audioConfig.startPadding ?? 300,
           endPadding: profile.endPadding ?? audioConfig.endPadding ?? 500,
           confidenceThreshold: aiConfig.uncertaintyGate?.confidenceThreshold ?? 0.8,
-          instructions: baseInstructions + englishOnlyInstruction,
+          instructions: fullInstructions,
           model: aiConfig.model || { id: 'gpt-4o-realtime-preview', name: 'GPT-4o Realtime' },
-          uncertaintyGateEnabled: aiConfig.uncertaintyGate?.enabled ?? true
+          uncertaintyGateEnabled: aiConfig.uncertaintyGate?.enabled ?? true,
+          language: languageCode,
+          locale: languageConfig.code
         };
       }
     }
 
     // Return global config
     const baseInstructions = aiConfig.globalPrompt || 'You are a friendly AI assistant.';
+    // Combine base instructions with language-specific instructions
+    const fullInstructions = `${baseInstructions}\n\n${languageInstructions}`;
+    
     return {
-      voice: audioConfig.defaultVoice || aiConfig.voice || { id: 'alloy', name: 'Alloy' },
+      voice: { id: languageConfig.voice, name: languageConfig.name } || audioConfig.defaultVoice || aiConfig.voice || { id: 'ash', name: 'Ash' },
       temperature: audioConfig.temperature ?? aiConfig.parameters?.temperature ?? 0.8,
       vadThreshold: audioConfig.vadThreshold ?? 500,
       startPadding: audioConfig.startPadding ?? 300,
       endPadding: audioConfig.endPadding ?? 500,
       confidenceThreshold: aiConfig.uncertaintyGate?.confidenceThreshold ?? 0.8,
-      instructions: baseInstructions + englishOnlyInstruction,
+      instructions: fullInstructions,
       model: aiConfig.model || { id: 'gpt-4o-realtime-preview', name: 'GPT-4o Realtime' },
-      uncertaintyGateEnabled: aiConfig.uncertaintyGate?.enabled ?? true
+      uncertaintyGateEnabled: aiConfig.uncertaintyGate?.enabled ?? true,
+      language: languageCode,
+      locale: languageConfig.code
     };
   }
 

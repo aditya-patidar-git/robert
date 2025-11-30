@@ -5,6 +5,8 @@ import crmTool from './crm.js';
 import paymentsTool from './payments.js';
 import fileSearchTool from './fileSearch.js';
 import transferCallTool from './transferCall.js';
+import kbaVerificationTool from './kbaVerification.js';
+import complaintSubmissionTool from './complaintSubmission.js';
 
 /**
  * Tool Executor for OpenAI Realtime API
@@ -29,6 +31,8 @@ class ToolExecutor {
     this.tools.set('payments', paymentsTool);
     this.tools.set('file_search', fileSearchTool);
     this.tools.set('transfer_call', transferCallTool);
+    this.tools.set('kba_verification', kbaVerificationTool);
+    this.tools.set('complaint_submission', complaintSubmissionTool);
     
     // Log registered tools
     console.log('📋 [TOOL EXECUTOR] Registered tools:', Array.from(this.tools.keys()).join(', '));
@@ -208,6 +212,57 @@ class ToolExecutor {
             }
           },
           required: ['target']
+        }
+      },
+      {
+        type: 'function',
+        name: 'kba_verification',
+        description: 'Verify caller identity using Knowledge-Based Authentication (KBA). Required before accessing or changing personal booking data. Use email + postcode + booking reference (if available). If mobile number is registered, an OTP will be sent. Provide the OTP code in a subsequent call to complete verification.',
+        parameters: {
+          type: 'object',
+          properties: {
+            email: {
+              type: 'string',
+              description: 'Email address on the booking'
+            },
+            postcode: {
+              type: 'string',
+              description: 'Postcode associated with the booking'
+            },
+            bookingReference: {
+              type: 'string',
+              description: 'Booking reference number (optional but recommended)'
+            },
+            otpCode: {
+              type: 'string',
+              description: 'OTP verification code (if OTP was sent in previous verification step)'
+            }
+          },
+          required: ['email', 'postcode']
+        }
+      },
+      {
+        type: 'function',
+        name: 'complaint_submission',
+        description: 'Submit a formal complaint. Use this when a customer expresses dissatisfaction, reports an issue, or requests to file a complaint. Automatically creates a complaint record and sends email notification.',
+        parameters: {
+          type: 'object',
+          properties: {
+            complaintType: {
+              type: 'string',
+              enum: ['service_quality', 'ai_understanding', 'response_time', 'technical_issue', 'billing', 'booking', 'instructor_conduct', 'safety_concern', 'discrimination', 'legal', 'media', 'other'],
+              description: 'Type of complaint (optional, will be auto-detected if not provided)'
+            },
+            complaintText: {
+              type: 'string',
+              description: 'Details of the complaint'
+            },
+            callerDetails: {
+              type: 'object',
+              description: 'Additional caller details (optional)'
+            }
+          },
+          required: ['complaintText']
         }
       }
     ];

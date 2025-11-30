@@ -10,6 +10,42 @@ export const recordingStatus = async (req, res) => {
     const { RecordingUrl, CallSid } = req.body;
     try {
         if (conversations[CallSid]) {
+            // Check recording consent
+            const consent = conversations[CallSid].recordingConsent;
+            const consentGiven = consent?.given === true;
+            
+            if (!consentGiven) {
+                // Consent was denied or not given - do not store recording
+                console.log(`🚫 [${CallSid}] Recording consent not given - not storing recording URL`);
+                
+                // Still update CallRecord with consent info, but without recording URL
+                await CallRecord.findOneAndUpdate(
+                    { callSid: CallSid },
+                    {
+                        callSid: CallSid,
+                        recordingUrl: null, // Explicitly set to null
+                        transcript: conversations[CallSid].transcript,
+                        summary: "Recording not stored - consent not given",
+                        from: conversations[CallSid].from,
+                        to: conversations[CallSid].to,
+                        recordingConsent: {
+                            requested: consent?.requested || false,
+                            given: consent?.given || false,
+                            requestedAt: consent?.requestedAt || null,
+                            respondedAt: consent?.respondedAt || null,
+                            optOutReason: consent?.optOutReason || "Consent not given"
+                        }
+                    },
+                    { upsert: true, new: true }
+                );
+                
+                res.sendStatus(200);
+                return;
+            }
+            
+            // Consent given - process recording normally
+            console.log(`✅ [${CallSid}] Recording consent given - storing recording URL`);
+            
             // Generate a short summary
             let summary = "Summary not available";
             try {
@@ -34,6 +70,13 @@ export const recordingStatus = async (req, res) => {
                     summary: summary,
                     from: conversations[CallSid].from,
                     to: conversations[CallSid].to,
+                    recordingConsent: {
+                        requested: consent?.requested || false,
+                        given: consent?.given || true,
+                        requestedAt: consent?.requestedAt || null,
+                        respondedAt: consent?.respondedAt || null,
+                        optOutReason: null
+                    }
                 },
                 { upsert: true, new: true }
             );

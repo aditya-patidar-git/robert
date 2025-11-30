@@ -5,10 +5,6 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { WebSocketServer } from "ws";
-import { parse } from "url";
-import outboundRoutes from "./routes/outboundRoutes.js";
-import inboundRoutes from "./routes/inboundRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
@@ -28,7 +24,6 @@ import audioTelephonyRoutes from "./routes/audioTelephonyRoutes.js";
 import mcpToolsRoutes from "./routes/mcpToolsRoutes.js";
 import gdprRoutes from "./routes/gdprRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
-import itmBookingRoutes from "./routes/itmBookingRoutes.js";
 import languageVoiceRoutes from "./routes/languageVoiceRoutes.js";
 import privacyConfigRoutes from "./routes/privacyConfigRoutes.js";
 import promptVersionRoutes from "./routes/promptVersionRoutes.js";
@@ -36,6 +31,7 @@ import flowParameterRoutes from "./routes/flowParameterRoutes.js";
 import tokenManagementRoutes from "./routes/tokenManagementRoutes.js";
 import observabilityRoutes from "./routes/observabilityRoutes.js";
 import systemRoutes from "./routes/systemRoutes.js";
+import memoryRoutes from "./routes/memoryRoutes.js";
 
 dotenv.config();
 
@@ -82,10 +78,6 @@ app.use("/api/auth", authRoutes);
 // Admin Routes
 app.use("/api/admin", adminRoutes);
 
-// Call Routes
-app.use("/api/outbound", outboundRoutes);
-app.use("/api/inbound", inboundRoutes);
-
 // Booking Routes
 app.use("/api/booking", bookingRoutes);
 
@@ -116,6 +108,7 @@ app.use("/api/reingest", reingestRoutes);
 app.use("/api/test-retrieval", testRetrievalRoutes);
 app.use("/api/provenance", provenanceRoutes);
 app.use("/api/uncertainty-gate", uncertaintyGateRoutes);
+app.use("/api/memory", memoryRoutes);
 app.use("/api/transcripts", transcriptRoutes);
 app.use("/api/complaints", complaintRoutes);
 
@@ -139,32 +132,6 @@ app.use("/api/observability", observabilityRoutes);
 
 // System Routes
 app.use("/api/system", systemRoutes);
-
-// ITM Booking Test Routes
-app.use("/api/itm-booking", itmBookingRoutes);
-
-// WebSocket upgrade handler for Twilio Media Streams
-// Socket.IO will handle its own upgrades automatically, so we only need to handle media-stream
-httpServer.on('upgrade', async (request, socket, head) => {
-    const { pathname, query } = parse(request.url, true);
-    
-    // Only handle media-stream upgrades here
-    // Socket.IO handles its own upgrades automatically via the Server instance
-    if (pathname === '/api/outbound/media-stream') {
-        // Import handler dynamically to avoid circular dependencies
-        const { handleMediaStreamConnection } = await import('./controllers/outbound/index.js');
-        
-        // Create WebSocket server for this connection
-        const wss = new WebSocketServer({ noServer: true });
-        
-        wss.handleUpgrade(request, socket, head, (ws) => {
-            // Attach query params to request for handler
-            request.query = query;
-            handleMediaStreamConnection(ws, request);
-        });
-    }
-    // Don't destroy other upgrade requests - let Socket.IO handle them
-});
 
 // Start server
 const PORT = process.env.PORT || 5000;

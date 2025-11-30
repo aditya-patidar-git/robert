@@ -1,5 +1,7 @@
 import CallRecord from "../database/models/CallRecord.js";
 import { conversations } from "../shared/state.js";
+import summaryService from "../services/summaryService.js";
+import crossCallMemoryService from "../services/crossCallMemoryService.js";
 
 // Call status with live updates (no Socket.IO in agent service)
 export const callStatus = async (req, res) => {
@@ -44,6 +46,38 @@ export const callStatus = async (req, res) => {
         );
     } catch (err) {
         console.error('Error updating CallRecord:', err);
+    }
+
+    // Generate and store call summary on completion
+    if (CallStatus === "completed" && conversations[CallSid]) {
+        try {
+            const conversation = conversations[CallSid];
+            const callerId = From || conversation.from;
+            
+            if (callerId && conversation.transcript && conversation.transcript.length > 0) {
+                // Generate structured summary
+                const summary = await summaryService.generateCallSummary(
+                    conversation.transcript,
+                    { callSid: CallSid, from: From, to: To }
+                );
+                
+                // Store in CallMemory for cross-call context
+                await crossCallMemoryService.storeCallSummary(
+                    CallSid,
+                    callerId,
+                    summary,
+                    {
+                        language: conversation.language || 'en-GB',
+                        consentGiven: conversation.memoryConsent?.given || false
+                    }
+                );
+                
+                console.log(`✅ [${CallSid}] Call summary stored for caller ${callerId}`);
+            }
+        } catch (error) {
+            console.error(`❌ [${CallSid}] Error storing call summary:`, error);
+            // Don't block call completion if summary storage fails
+        }
     }
 
     // Cleanup memory for terminal states

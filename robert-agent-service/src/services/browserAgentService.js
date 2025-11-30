@@ -459,3 +459,4 @@ class BrowserAgentService {
 }
 
 export default new BrowserAgentService();
+

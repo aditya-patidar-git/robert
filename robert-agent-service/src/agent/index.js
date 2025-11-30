@@ -11,6 +11,8 @@ import { handleMediaStreamConnection } from '../handlers/mediaStreamHandler.js';
 import { makeCall, aiIntro, getAllCalls, handleIncomingCall } from '../handlers/callHandlers.js';
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
+import sipRoutes from '../routes/sipRoutes.js';
+import secretsManager from '../services/secretsManager.js';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -18,6 +20,18 @@ const __dirname = dirname(__filename);
 
 // Load .env from project root (two levels up from src/agent/)
 dotenv.config({ path: join(__dirname, '../../.env') });
+
+// Initialize secrets manager and validate required secrets
+(async () => {
+  try {
+    await secretsManager.initialize();
+    console.log('✅ Secrets Manager initialized successfully');
+  } catch (error) {
+    console.error('❌ Secrets Manager initialization failed:', error.message);
+    console.error('❌ Application cannot start without required secrets');
+    process.exit(1);
+  }
+})();
 
 const {
   TWILIO_SID,
@@ -28,11 +42,6 @@ const {
   MONGO_URI,
   PORT = 3002
 } = process.env;
-
-if (!TWILIO_SID || !TWILIO_AUTH_TOKEN || !TWILIO_NUMBER || !DOMAIN || !OPENAI_API_KEY || !MONGO_URI) {
-  console.error('Missing required environment variables!');
-  process.exit(1);
-}
 
 const app = express();
 const server = createServer(app);
@@ -165,6 +174,9 @@ app.post('/api/inbound/incoming-call', handleIncomingCall);
 app.post('/api/inbound/call-status', callStatus);
 app.post('/api/inbound/recording-status', recordingStatus);
 app.get('/api/inbound/recording/:callSid', proxyRecording);
+
+// API Routes - SIP (OpenAI Realtime SIP webhooks)
+app.use('/api/sip', sipRoutes);
 
 // Manual call trigger (for testing)
 app.get('/call', async (req, res) => {

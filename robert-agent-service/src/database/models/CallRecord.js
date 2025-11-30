@@ -89,6 +89,13 @@ const callRecordSchema = new mongoose.Schema({
     processing: { type: Boolean, default: false },
     timestamp: Date
   },
+  recordingConsent: {
+    requested: { type: Boolean, default: false },
+    given: { type: Boolean, default: null }, // null = not yet responded, true = consented, false = declined
+    requestedAt: { type: Date, default: null },
+    respondedAt: { type: Date, default: null },
+    optOutReason: { type: String, default: null }
+  },
   metrics: {
     aiResponseTime: Number,
     toolExecutionTime: Number,

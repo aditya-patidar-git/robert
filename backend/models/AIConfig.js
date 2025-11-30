@@ -92,9 +92,33 @@ const AIConfigSchema = new mongoose.Schema({
       min: 1
     }
   },
+  responsesApi: {
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    model: {
+      id: {
+        type: String,
+        default: 'gpt-4o-mini'
+      },
+      name: {
+        type: String,
+        default: 'GPT-4o Mini'
+      }
+    },
+    useForComplexTools: {
+      type: Boolean,
+      default: true
+    },
+    fallbackOnRealtimeFailure: {
+      type: Boolean,
+      default: true
+    }
+  },
   isActive: { 
     type: Boolean, 
-    default: true
+    default: true 
   },
   createdBy: { 
     type: String, 
