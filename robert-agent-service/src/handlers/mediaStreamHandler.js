@@ -4,6 +4,12 @@ import { conversations, realtimeClients } from "../shared/state.js";
 import { convertMulawToPcm16, convertPcm16ToMulaw } from "../utils/audioConversion.js";
 import configManager from "../agent/configManager.js";
 import toolExecutor from "../tools/index.js";
+import audioCalibrationService from "../services/audioCalibrationService.js";
+import crossCallMemoryService from "../services/crossCallMemoryService.js";
+import multilingualService from "../services/multilingualService.js";
+import toolOrchestrator from "../services/toolOrchestrator.js";
+import kbaService from "../services/kbaService.js";
+import complaintDetectionService from "../services/complaintDetectionService.js";
 
 // Media Stream WebSocket Handler for Realtime API
 export const mediaStream = async (req, res) => {
@@ -89,8 +95,25 @@ export const handleMediaStreamConnection = (ws, req) => {
     let hasInitialGreetingBeenSent = false;
     let hasInitialGreetingCompleted = false;
     
+    // Recording consent tracking
+    let recordingConsentState = {
+        requested: false,
+        given: null, // null = not yet responded, true = consented, false = declined
+        requestedAt: null,
+        respondedAt: null
+    };
+    let consentTimeout = null;
+    const CONSENT_TIMEOUT_MS = 10000; // 10 seconds to respond to consent question
+    
     // Tool execution tracking
     const pendingToolCalls = new Map(); // call_id -> { name, arguments, startTime }
+    
+    // VAD Calibration tracking
+    let calibrationSamples = []; // Array to store initial audio samples for calibration
+    let calibrationStartTime = null; // When calibration period started
+    let calibrationComplete = false; // Whether calibration has been completed
+    let calibratedThreshold = null; // The calibrated threshold value
+    const CALIBRATION_DURATION_MS = 3000; // 3 seconds of audio for calibration
     
     // Audio quality metrics
     const audioMetrics = {
@@ -197,6 +220,30 @@ export const handleMediaStreamConnection = (ws, req) => {
         downFfmpeg.stdout.on('data', (chunk) => {
             if (isClosed || !accepting) return;
             const base64Pcm8k = chunk.toString('base64');
+            
+            // Capture audio samples for VAD calibration (first 3 seconds)
+            if (!calibrationComplete) {
+                const audioConfig = configManager.getAudioConfig();
+                if (audioConfig?.energyThresholdAutoCalibrate !== false) {
+                    const pcm16Buffer = Buffer.from(base64Pcm8k, 'base64');
+                    if (!calibrationStartTime) {
+                        calibrationStartTime = Date.now();
+                        console.log(`📊 [${callSid}] Starting VAD calibration - capturing ${CALIBRATION_DURATION_MS}ms of audio`);
+                    }
+                    
+                    const elapsed = Date.now() - calibrationStartTime;
+                    if (elapsed < CALIBRATION_DURATION_MS) {
+                        calibrationSamples.push(pcm16Buffer);
+                    } else if (!calibrationComplete) {
+                        // Calibration period complete - perform calibration
+                        performCalibration();
+                    }
+                } else {
+                    // Calibration disabled - mark as complete
+                    calibrationComplete = true;
+                }
+            }
+            
             const mulawBase64 = convertPcm16ToMulaw(base64Pcm8k);
             const pushed = Buffer.from(mulawBase64, 'base64');
             ulawQueue.push(pushed);
@@ -204,6 +251,49 @@ export const handleMediaStreamConnection = (ws, req) => {
         });
         downFfmpeg.on('close', () => { downFfmpeg = null; });
         downFfmpeg.on('error', (err) => console.error('❌ ffmpeg downsampler error:', err));
+    };
+    
+    // Perform VAD calibration after capturing initial audio samples
+    const performCalibration = () => {
+        if (calibrationComplete || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        
+        try {
+            const audioConfig = configManager.getAudioConfig();
+            const baseThreshold = (configManager.getConfigForNumber(phoneNumber).vadThreshold || 500) / 1000; // Convert ms to seconds
+            
+            const calibrated = audioCalibrationService.calibrateEnergyThreshold(
+                callSid,
+                calibrationSamples,
+                baseThreshold
+            );
+            
+            calibratedThreshold = calibrated;
+            calibrationComplete = true;
+            
+            // Update session with calibrated threshold
+            openaiWs.send(JSON.stringify({
+                type: 'session.update',
+                session: {
+                    turn_detection: {
+                        type: 'server_vad',
+                        threshold: calibrated,
+                        prefix_padding_ms: configManager.getConfigForNumber(phoneNumber).startPadding || 250,
+                        silence_duration_ms: configManager.getConfigForNumber(phoneNumber).endPadding || 500
+                    }
+                }
+            }));
+            
+            console.log(`✅ [${callSid}] VAD calibration complete - threshold updated to ${calibrated.toFixed(3)}s`);
+            
+            // Clear calibration samples to free memory
+            calibrationSamples = [];
+        } catch (err) {
+            console.error(`❌ [${callSid}] Error during VAD calibration:`, err);
+            // Continue with base threshold if calibration fails
+            calibrationComplete = true;
+        }
     };
     
     const startUpsampler = () => {
@@ -258,6 +348,7 @@ export const handleMediaStreamConnection = (ws, req) => {
         
         if (durationTimer) clearTimeout(durationTimer);
         if (startTimeout) clearTimeout(startTimeout);
+        if (consentTimeout) clearTimeout(consentTimeout);
         if (pacer) { clearTimeout(pacer); pacer = null; }
         ulawQueue.clear();
         try { if (downFfmpeg) downFfmpeg.kill('SIGKILL'); } catch (_) {}
@@ -275,7 +366,7 @@ export const handleMediaStreamConnection = (ws, req) => {
         cleanup('max_duration');
     }, MAX_CALL_DURATION_MS);
     
-    const messageHandler = (data) => {
+    const messageHandler = async (data) => {
         if (isClosed) {
             console.log('🔌 [DEBUG] Message received but connection is closed');
             return;
@@ -290,6 +381,31 @@ export const handleMediaStreamConnection = (ws, req) => {
                 callSid = json.start?.callSid;
                 streamSid = json.start?.streamSid;
                 phoneNumber = json.start?.callSidTo || json.start?.from || 'unknown';
+                
+                // Fix: Check if phoneNumber is already in conversations (from status callback)
+                if (phoneNumber === 'unknown' && callSid && conversations[callSid]?.from) {
+                    phoneNumber = conversations[callSid].from;
+                    console.log(`📞 [${callSid}] Updated phoneNumber from conversations: ${phoneNumber}`);
+                }
+                
+                // Fix: If still unknown, try to get from CallRecord in database
+                if (phoneNumber === 'unknown' && callSid) {
+                    try {
+                        const CallRecord = (await import('../../database/models/CallRecord.js')).default;
+                        const callRecord = await CallRecord.findOne({ callSid }).lean();
+                        if (callRecord?.from) {
+                            phoneNumber = callRecord.from;
+                            console.log(`📞 [${callSid}] Updated phoneNumber from CallRecord: ${phoneNumber}`);
+                            // Update conversations for future reference
+                            if (!conversations[callSid]) {
+                                conversations[callSid] = { transcript: [] };
+                            }
+                            conversations[callSid].from = phoneNumber;
+                        }
+                    } catch (err) {
+                        console.warn(`⚠️ [${callSid}] Could not fetch phoneNumber from CallRecord:`, err.message);
+                    }
+                }
                 
                 console.log('🔌 [DEBUG] Parsed start event:', { callSid, streamSid, phoneNumber });
                 
@@ -346,7 +462,153 @@ export const handleMediaStreamConnection = (ws, req) => {
         }
     }, 10000);
     
-    function setupOpenAI() {
+    // Check for previous call memories and request consent if needed
+    async function checkAndRequestMemoryConsent() {
+        try {
+            if (!phoneNumber || !callSid) return;
+            
+            const hasPreviousCalls = await crossCallMemoryService.requestConsentForMemory(callSid, phoneNumber);
+            
+            if (hasPreviousCalls) {
+                // Get memory summary
+                const memorySummary = await crossCallMemoryService.getMemorySummary(phoneNumber);
+                
+                if (memorySummary) {
+                    // Mark memory consent as requested
+                    conversations[callSid].memoryConsent.requested = true;
+                    conversations[callSid].memoryConsent.requestedAt = new Date();
+                    
+                    // Inject instruction to ask for consent, but don't inject full memory yet
+                    // The AI will ask: "Shall I pick up from our last conversation about [topic]?"
+                    const memoryConsentInstruction = `\n\nIMPORTANT: You have previous interaction history with this caller. You should ask for their consent before referencing it. Say something like: "Shall I pick up from our last conversation about [brief topic]?" Only reference previous interactions if they consent.`;
+                    
+                    if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                        // Get current instructions and append memory consent instruction
+                        const currentLanguage = conversations[callSid]?.language || 'en';
+                        const currentConfig = configManager.getConfigForNumber(phoneNumber, currentLanguage);
+                        const updatedInstructions = currentConfig.instructions + memoryConsentInstruction;
+                        
+                        openaiWs.send(JSON.stringify({
+                            type: 'session.update',
+                            session: {
+                                instructions: updatedInstructions
+                            }
+                        }));
+                        
+                        console.log(`📚 [${callSid}] Memory consent prompt instruction injected for caller ${phoneNumber}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(`❌ [${callSid}] Error checking memory consent:`, error);
+            // Don't block call if memory check fails
+        }
+    }
+    
+    // Switch language and update OpenAI session
+    async function switchLanguage(detectedLanguageCode) {
+        try {
+            if (!callSid || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
+                return false;
+            }
+            
+            // Validate language
+            if (!multilingualService.isValidLanguage(detectedLanguageCode)) {
+                console.warn(`⚠️ [${callSid}] Invalid language code: ${detectedLanguageCode}`);
+                return false;
+            }
+            
+            // Get language config
+            const languageConfig = multilingualService.getLanguageConfig(detectedLanguageCode);
+            const languageInstructions = multilingualService.getSystemInstructions(detectedLanguageCode);
+            
+            // Update conversation state
+            if (conversations[callSid]) {
+                conversations[callSid].language = detectedLanguageCode;
+                conversations[callSid].locale = languageConfig.code;
+            }
+            
+            // Get updated config with new language
+            const config = configManager.getConfigForNumber(phoneNumber, detectedLanguageCode);
+            
+            // Update OpenAI session with new language and voice
+            openaiWs.send(JSON.stringify({
+                type: 'session.update',
+                session: {
+                    voice: languageConfig.voice,
+                    instructions: config.instructions
+                }
+            }));
+            
+            console.log(`🌐 [${callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${languageConfig.voice}`);
+            return true;
+        } catch (error) {
+            console.error(`❌ [${callSid}] Error switching language:`, error);
+            return false;
+        }
+    }
+    
+    // Detect and switch language from user transcription
+    function detectAndSwitchLanguage(transcript) {
+        if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
+            return;
+        }
+        
+        // Only detect language after initial greeting is completed
+        if (!hasInitialGreetingCompleted) {
+            return;
+        }
+        
+        // Get current language
+        const currentLanguage = conversations[callSid]?.language || 'en';
+        
+        // Skip if already in the detected language
+        if (currentLanguage !== 'en') {
+            return; // Already switched, don't re-detect
+        }
+        
+        // Detect language from transcript
+        const detectedLanguage = multilingualService.detectLanguage(transcript);
+        
+        // If detected language is different from current (and not English), switch
+        if (detectedLanguage !== currentLanguage && detectedLanguage !== 'en') {
+            console.log(`🌐 [${callSid}] Language detected: ${detectedLanguage} from transcript: "${transcript.substring(0, 50)}..."`);
+            switchLanguage(detectedLanguage);
+        } else if (detectedLanguage === 'en' && currentLanguage === 'en') {
+            // Low confidence - ask for confirmation if we're not sure
+            // This will be handled by the AI's instructions to ask "Would you like me to continue in English, or [language]?"
+            console.log(`🌐 [${callSid}] Language detection inconclusive, keeping English`);
+        }
+    }
+    
+    // Inject full memory context after user consents
+    async function injectMemoryContext() {
+        try {
+            if (!phoneNumber || !callSid) return;
+            
+            const memorySummary = await crossCallMemoryService.getMemorySummary(phoneNumber);
+            
+            if (memorySummary && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                const memoryContext = `\n\nPREVIOUS INTERACTION CONTEXT (user has consented to use this): ${memorySummary}\nYou may now reference this context naturally in the conversation.`;
+                
+                const currentConfig = configManager.getConfigForNumber(phoneNumber);
+                const updatedInstructions = currentConfig.instructions + memoryContext;
+                
+                openaiWs.send(JSON.stringify({
+                    type: 'session.update',
+                    session: {
+                        instructions: updatedInstructions
+                    }
+                }));
+                
+                console.log(`📚 [${callSid}] Full memory context injected after consent for caller ${phoneNumber}`);
+            }
+        } catch (error) {
+            console.error(`❌ [${callSid}] Error injecting memory context:`, error);
+        }
+    }
+    
+    async function setupOpenAI() {
         if (setupComplete || isClosed) return;
         setupComplete = true;
         clearTimeout(startTimeout);
@@ -360,13 +622,122 @@ export const handleMediaStreamConnection = (ws, req) => {
                 return;
             }
             
-            // Get dynamic config for this phone number
-            const config = configManager.getConfigForNumber(phoneNumber);
+            // Get dynamic config for this phone number (with current language)
+            const currentLanguage = conversations[callSid]?.language || 'en';
+            const config = configManager.getConfigForNumber(phoneNumber, currentLanguage);
             console.log('📋 Using config:', {
                 voice: config.voice.id,
                 temperature: config.temperature,
                 confidence: config.confidenceThreshold
             });
+            
+            // Initialize conversation state with recording consent tracking
+            if (!conversations[callSid]) {
+                conversations[callSid] = { 
+                    transcript: [], 
+                    language: 'en-US', 
+                    realtimeWs: ws,
+                    from: phoneNumber,
+                    to: phoneNumber,
+                    recordingConsent: {
+                        requested: false,
+                        given: null,
+                        requestedAt: null,
+                        respondedAt: null
+                    },
+                    memoryConsent: {
+                        requested: false,
+                        given: null,
+                        requestedAt: null,
+                        respondedAt: null
+                    },
+                    kba: {
+                        verified: false,
+                        method: null,
+                        verifiedAt: null,
+                        otpVerified: false,
+                        otpVerifiedAt: null,
+                        email: null,
+                        postcode: null,
+                        bookingReference: null
+                    }
+                };
+            } else {
+                // Ensure recordingConsent, memoryConsent, and kba exist even if conversations[callSid] was created elsewhere
+                if (!conversations[callSid].recordingConsent) {
+                    conversations[callSid].recordingConsent = {
+                        requested: false,
+                        given: null,
+                        requestedAt: null,
+                        respondedAt: null
+                    };
+                }
+                if (!conversations[callSid].memoryConsent) {
+                    conversations[callSid].memoryConsent = {
+                        requested: false,
+                        given: null,
+                        requestedAt: null,
+                        respondedAt: null
+                    };
+                }
+                if (!conversations[callSid].kba) {
+                    conversations[callSid].kba = {
+                        verified: false,
+                        method: null,
+                        verifiedAt: null,
+                        otpVerified: false,
+                        otpVerifiedAt: null,
+                        email: null,
+                        postcode: null,
+                        bookingReference: null
+                    };
+                }
+                // Ensure other required properties exist
+                if (!conversations[callSid].transcript) {
+                    conversations[callSid].transcript = [];
+                }
+                if (!conversations[callSid].language) {
+                    conversations[callSid].language = 'en-US';
+                }
+                if (!conversations[callSid].realtimeWs) {
+                    conversations[callSid].realtimeWs = ws;
+                }
+                if (!conversations[callSid].from) {
+                    conversations[callSid].from = phoneNumber;
+                }
+                if (!conversations[callSid].to) {
+                    conversations[callSid].to = phoneNumber;
+                }
+            }
+            
+            // Add recording consent notice and question to instructions
+            const privacyConfig = await import('../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
+            let privacySettings = null;
+            if (privacyConfig) {
+                privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+            }
+            
+            const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
+            const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
+            const consentQuestion = "Do you consent to this call being recorded?";
+            
+            // Modify instructions to include recording consent flow at the start
+            let modifiedInstructions = config.instructions;
+            if (requireExplicitConsent) {
+                modifiedInstructions = `IMPORTANT: You must start every call with the following exact sequence:
+1. First, say: "${consentNotice}"
+2. Then immediately ask: "${consentQuestion}"
+3. Wait for the caller's response (yes, no, or silence)
+4. After they respond, continue with: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+
+${config.instructions}`;
+                
+                // Mark consent as requested
+                recordingConsentState.requested = true;
+                recordingConsentState.requestedAt = new Date();
+                conversations[callSid].recordingConsent.requested = true;
+                conversations[callSid].recordingConsent.requestedAt = new Date();
+            }
             
             const openaiUrl = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview';
             openaiWs = new WebSocket(openaiUrl, {
@@ -377,7 +748,17 @@ export const handleMediaStreamConnection = (ws, req) => {
             });
             
             realtimeClients[callSid] = { twilioWs: ws, openaiWs, streamSid };
-            conversations[callSid] = { transcript: [], language: 'en-US', realtimeWs: ws };
+            // conversations[callSid] is already initialized above with recordingConsent and memoryConsent
+            // Just ensure transcript and language are set if they weren't already
+            if (!conversations[callSid].transcript) {
+                conversations[callSid].transcript = [];
+            }
+            if (!conversations[callSid].language) {
+                conversations[callSid].language = 'en-US';
+            }
+            if (!conversations[callSid].realtimeWs) {
+                conversations[callSid].realtimeWs = ws;
+            }
             
             const openaiTimeout = setTimeout(() => {
                 if (!openaiReady && !isClosed) {
@@ -413,19 +794,25 @@ export const handleMediaStreamConnection = (ws, req) => {
                         console.warn(`⚠️ [${callSid}] Could not clear audio buffer at start:`, err.message);
                     }
                     
+                    // Get audio config for calibration check
+                    const audioConfig = configManager.getAudioConfig();
+                    
+                    // Use base threshold initially (will be updated after calibration if enabled)
+                    const initialThreshold = config.vadThreshold / 1000; // Convert ms to seconds
+                    
                     // Apply dynamic config to OpenAI session
                     openaiWs.send(JSON.stringify({
                         type: 'session.update',
                         session: {
                             modalities: ['audio', 'text'],
-                            instructions: config.instructions,
+                            instructions: modifiedInstructions || config.instructions,
                             voice: config.voice.id,
                             temperature: Math.max(0.6, config.temperature), // Minimum is 0.6 for Realtime API
                             input_audio_format: 'g711_ulaw',
                             output_audio_format: 'g711_ulaw',
                             turn_detection: {
                                 type: 'server_vad',
-                                threshold: config.vadThreshold / 1000, // Convert ms to seconds
+                                threshold: initialThreshold,
                                 prefix_padding_ms: config.startPadding,
                                 silence_duration_ms: config.endPadding
                             },
@@ -434,6 +821,9 @@ export const handleMediaStreamConnection = (ws, req) => {
                         }
                     }));
                     console.log(`📤 Sent session.update with config and ${tools.length} tools for call: ${callSid}`);
+                    if (audioConfig?.energyThresholdAutoCalibrate !== false) {
+                        console.log(`📊 [${callSid}] VAD auto-calibration enabled - will calibrate after ${CALIBRATION_DURATION_MS}ms of audio`);
+                    }
                 } catch (err) {
                     errorCount++;
                     console.error('❌ Error sending session.update:', err);
@@ -494,6 +884,21 @@ export const handleMediaStreamConnection = (ws, req) => {
                                 hasInitialGreetingBeenSent = true;
                                 isResponding = true; // Set flag before creating response
                                 console.log(`🎯 [${callSid}] Initial greeting sent immediately`);
+                                
+                                // Set timeout for consent response (if consent was requested)
+                                if (recordingConsentState.requested && recordingConsentState.given === null) {
+                                    consentTimeout = setTimeout(() => {
+                                        if (recordingConsentState.given === null) {
+                                            // No response - default to opt-out for GDPR safety
+                                            recordingConsentState.given = false;
+                                            recordingConsentState.respondedAt = new Date();
+                                            conversations[callSid].recordingConsent.given = false;
+                                            conversations[callSid].recordingConsent.respondedAt = new Date();
+                                            conversations[callSid].recordingConsent.optOutReason = "No response within timeout";
+                                            console.log(`⏰ [${callSid}] Recording consent timeout - defaulting to opt-out (GDPR safety)`);
+                                        }
+                                    }, CONSENT_TIMEOUT_MS);
+                                }
                             } catch (err) {
                                 explicitResponseRequested = false; // Reset if send fails
                                 isResponding = false; // Reset if send fails
@@ -658,6 +1063,13 @@ export const handleMediaStreamConnection = (ws, req) => {
                             activeResponseId = null;
                             // Mark when agent finished speaking (for user speaking window)
                             agentFinishedSpeakingTime = Date.now();
+                            
+                            // Check for previous call memories and request consent if needed
+                            checkAndRequestMemoryConsent();
+                            
+                            // Language detection will happen when user responds after greeting
+                            // Set flag to enable language detection on next user input
+                            conversations[callSid].languageDetectionEnabled = true;
                         }
                         
                         // Treat "cancelled" the same as "interrupted" - both indicate barge-in
@@ -682,7 +1094,13 @@ export const handleMediaStreamConnection = (ws, req) => {
                             // This ensures barge-in detection works even if audio is still playing
                             const responseIdForGracePeriod = responseId;
                             
-                            console.log(`⏳ [${callSid}] Response done - keeping response tracking active for ${AUDIO_PLAYBACK_GRACE_PERIOD}ms to allow barge-in detection`);
+                            // Fix: Check if this was an acknowledgment response (created after barge-in)
+                            // If so, ensure state is fully reset after completion to allow subsequent barge-ins
+                            const wasAcknowledgmentResponse = isInterrupted === false && 
+                                                              activeResponseId === responseId && 
+                                                              explicitResponseRequested === true;
+                            
+                            console.log(`⏳ [${callSid}] Response done - keeping response tracking active for ${AUDIO_PLAYBACK_GRACE_PERIOD}ms to allow barge-in detection${wasAcknowledgmentResponse ? ' (acknowledgment response)' : ''}`);
                             
                             // Always set a timer to clear after grace period
                             // This ensures barge-in detection works even if audio is still playing
@@ -694,6 +1112,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                     responseStartTime = null;
                                     isResponding = false;
                                     waitingForUser = true;
+                                    explicitResponseRequested = false; // Reset explicit request flag
                                     
                                     // Clear interruption state if it was somehow still set
                                     if (isInterrupted) {
@@ -706,6 +1125,14 @@ export const handleMediaStreamConnection = (ws, req) => {
                                     // Mark when agent finished speaking (for user speaking window)
                                     agentFinishedSpeakingTime = Date.now();
                                     console.log(`👂 [${callSid}] Agent finished speaking (audio playback grace period completed) - user has ${USER_SPEAKING_WINDOW_MS/1000} seconds to speak`);
+                                    
+                                    // Fix: After acknowledgment response, ensure state is ready for next barge-in
+                                    if (wasAcknowledgmentResponse) {
+                                        console.log(`✅ [${callSid}] Acknowledgment response completed - state reset, ready for next barge-in`);
+                                    }
+                                } else {
+                                    // Log why we didn't clear (for debugging)
+                                    console.log(`⚠️ [${callSid}] Not clearing response state - activeResponseId: ${activeResponseId}, expected: ${responseIdForGracePeriod}, isInterrupted: ${isInterrupted}`);
                                 }
                             }, AUDIO_PLAYBACK_GRACE_PERIOD);
                             
@@ -723,6 +1150,12 @@ export const handleMediaStreamConnection = (ws, req) => {
                         // AND user speech started AFTER the response was created
                         // If user speech started BEFORE response was created, it's normal input, not barge-in
                         // CRITICAL: Handle interruptions even if isInterrupted is already true (multiple interruptions)
+                        
+                        // Enhanced logging for barge-in detection debugging
+                        if (activeResponseId || isResponding) {
+                            console.log(`🔍 [${callSid}] Speech started - activeResponseId: ${activeResponseId}, isResponding: ${isResponding}, isInterrupted: ${isInterrupted}, responseStartTime: ${responseStartTime}`);
+                        }
+                        
                         if (activeResponseId && isResponding) {
                             // Check if user speech started before this response was created
                             const timeSinceResponseCreated = responseStartTime > 0 ? Date.now() - responseStartTime : Infinity;
@@ -734,60 +1167,14 @@ export const handleMediaStreamConnection = (ws, req) => {
                                 // Don't treat as barge-in - allow the response to continue
                                 return; // Exit early, don't cancel response
                             }
-                            
-                            // CRITICAL: User is interrupting an active response
-                            // Handle this even if isInterrupted is already true (multiple interruptions)
-                            // This ensures ANY interruption during agent response triggers the acknowledgment flow
-                            const isMultipleInterruption = isInterrupted;
-                            console.log(`🛑 [${callSid}] Barge-in detected! User is interrupting agent response ${activeResponseId} (agent was actively speaking)${isMultipleInterruption ? ' - multiple interruption' : ''}`);
-                            
-                            // Set interruption flags (even if already set - this handles multiple interruptions)
-                            isInterrupted = true;
-                            interruptionStartTime = Date.now();
-                            pendingTranscriptions = []; // Clear any pending transcriptions
-                            
-                            // Save IDs before clearing
-                            const responseIdToCancel = activeResponseId;
-                            
-                            // CRITICAL: Mark this response as cancelled BEFORE clearing activeResponseId
-                            // This ensures audio from this response is blocked immediately, even if chunks arrive after cancellation
-                            if (responseIdToCancel) {
-                                cancelledResponseIds.add(responseIdToCancel);
-                                cancellationTime.set(responseIdToCancel, Date.now());
-                                console.log(`🚫 [${callSid}] Marked response ${responseIdToCancel} as cancelled - will block all audio chunks from this response`);
-                            }
-                            
-                            // Clear response tracking immediately to prevent race conditions
-                            activeResponseId = null;
-                            responseItemId = null;
-                            responseStartTime = null;
-                            isResponding = false;
-                            waitingForUser = true; // Ready to listen to interrupting speech
-                            lastCancellationTime = Date.now(); // Mark when we cancelled (for stop command detection)
-                            
-                            try {
-                                // Cancel the active response
-                                openaiWs.send(JSON.stringify({
-                                    type: 'response.cancel',
-                                    response_id: responseIdToCancel
-                                }));
-                                console.log(`🛑 [${callSid}] Sent response.cancel for ${responseIdToCancel}${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
-                                
-                                // Clear the input audio buffer to stop processing old audio
-                                openaiWs.send(JSON.stringify({
-                                    type: 'input_audio_buffer.clear'
-                                }));
-                                console.log(`🛑 [${callSid}] Cleared input audio buffer to prevent processing old audio${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
-                                
-                                // CRITICAL: Mark the interrupted response as completely discarded
-                                // This prevents any continuation or reference to the interrupted response
-                                console.log(`🗑️ [${callSid}] Discarding interrupted response ${responseIdToCancel} completely - will not continue${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
-                            } catch (err) {
-                                // If cancel fails, log but don't treat as fatal
-                                // This can happen if response already completed/cancelled
-                                console.warn(`⚠️ [${callSid}] Error sending response.cancel (non-critical):`, err.message);
-                            }
                         } else {
+                            // Log why barge-in wasn't detected (for debugging subsequent barge-ins)
+                            if (activeResponseId && !isResponding) {
+                                console.log(`⚠️ [${callSid}] Speech started but barge-in not detected - activeResponseId exists but isResponding=false (response may have just completed)`);
+                            } else if (!activeResponseId && isResponding) {
+                                console.log(`⚠️ [${callSid}] Speech started but barge-in not detected - isResponding=true but no activeResponseId (state inconsistency?)`);
+                            }
+                            // If both are false/null, this is normal - agent is waiting, not responding
                             // Normal user input - agent is waiting, not responding
                             // Check if we're within the user speaking window
                             const timeSinceAgentFinished = agentFinishedSpeakingTime > 0 ? Date.now() - agentFinishedSpeakingTime : Infinity;
@@ -798,6 +1185,65 @@ export const handleMediaStreamConnection = (ws, req) => {
                             } else {
                                 console.log(`👤 [${callSid}] User speech started (normal input - agent is waiting, not responding)`);
                             }
+                            return; // Exit early if barge-in conditions not met
+                        }
+                        
+                        // CRITICAL: User is interrupting an active response
+                        // Handle this even if isInterrupted is already true (multiple interruptions)
+                        // This ensures ANY interruption during agent response triggers the acknowledgment flow
+                        const isMultipleInterruption = isInterrupted;
+                        console.log(`🛑 [${callSid}] Barge-in detected! User is interrupting agent response ${activeResponseId} (agent was actively speaking)${isMultipleInterruption ? ' - multiple interruption' : ''}`);
+                        
+                        // Set interruption flags (even if already set - this handles multiple interruptions)
+                        isInterrupted = true;
+                        interruptionStartTime = Date.now();
+                        pendingTranscriptions = []; // Clear any pending transcriptions
+                        
+                        // Save IDs before clearing
+                        const responseIdToCancel = activeResponseId;
+                        
+                        // CRITICAL: Mark this response as cancelled BEFORE clearing activeResponseId
+                        // This ensures audio from this response is blocked immediately, even if chunks arrive after cancellation
+                        if (responseIdToCancel) {
+                            cancelledResponseIds.add(responseIdToCancel);
+                            cancellationTime.set(responseIdToCancel, Date.now());
+                            console.log(`🚫 [${callSid}] Marked response ${responseIdToCancel} as cancelled - will block all audio chunks from this response`);
+                        }
+                        
+                        // Clear response tracking immediately to prevent race conditions
+                        activeResponseId = null;
+                        responseItemId = null;
+                        responseStartTime = null;
+                        isResponding = false;
+                        waitingForUser = true; // Ready to listen to interrupting speech
+                        lastCancellationTime = Date.now(); // Mark when we cancelled (for stop command detection)
+                        
+                        try {
+                            // Fix: Only cancel if this is still the active response (prevent cancellation errors)
+                            if (responseIdToCancel) {
+                                // Cancel the active response
+                                openaiWs.send(JSON.stringify({
+                                    type: 'response.cancel',
+                                    response_id: responseIdToCancel
+                                }));
+                                console.log(`🛑 [${callSid}] Sent response.cancel for ${responseIdToCancel}${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
+                            } else {
+                                console.log(`⚠️ [${callSid}] Skipping response.cancel - no response to cancel`);
+                            }
+                            
+                            // Clear the input audio buffer to stop processing old audio
+                            openaiWs.send(JSON.stringify({
+                                type: 'input_audio_buffer.clear'
+                            }));
+                            console.log(`🛑 [${callSid}] Cleared input audio buffer to prevent processing old audio${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
+                            
+                            // CRITICAL: Mark the interrupted response as completely discarded
+                            // This prevents any continuation or reference to the interrupted response
+                            console.log(`🗑️ [${callSid}] Discarding interrupted response ${responseIdToCancel} completely - will not continue${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
+                        } catch (err) {
+                            // If cancel fails, log but don't treat as fatal
+                            // This can happen if response already completed/cancelled
+                            console.warn(`⚠️ [${callSid}] Error sending response.cancel (non-critical):`, err.message);
                         }
                     }
                     
@@ -807,6 +1253,95 @@ export const handleMediaStreamConnection = (ws, req) => {
                         const confidence = event.confidence || 1.0;
                         const transcriptionTime = Date.now();
                         console.log(`👤 User said: "${transcript}" (confidence: ${confidence})`);
+                        
+                        // Check for memory consent response (if consent was requested and not yet responded)
+                        if (conversations[callSid]?.memoryConsent?.requested && conversations[callSid]?.memoryConsent?.given === null) {
+                            const transcriptLower = transcript.toLowerCase().trim();
+                            const consentKeywords = ['yes', 'yeah', 'yep', 'okay', 'ok', 'sure', 'consent', 'agree', 'fine', 'alright', 'please', 'go ahead'];
+                            const declineKeywords = ['no', 'nope', "don't", 'refuse', 'decline', 'not', 'disagree', "don't want"];
+                            
+                            let consentDetected = false;
+                            let declineDetected = false;
+                            
+                            for (const keyword of consentKeywords) {
+                                if (transcriptLower.includes(keyword)) {
+                                    consentDetected = true;
+                                    break;
+                                }
+                            }
+                            
+                            for (const keyword of declineKeywords) {
+                                if (transcriptLower.includes(keyword)) {
+                                    declineDetected = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (consentDetected && !declineDetected) {
+                                conversations[callSid].memoryConsent.given = true;
+                                conversations[callSid].memoryConsent.respondedAt = new Date();
+                                console.log(`✅ [${callSid}] Memory consent GIVEN by user`);
+                                
+                                // Inject full memory context now that consent is given
+                                injectMemoryContext();
+                            } else if (declineDetected) {
+                                conversations[callSid].memoryConsent.given = false;
+                                conversations[callSid].memoryConsent.respondedAt = new Date();
+                                console.log(`❌ [${callSid}] Memory consent DECLINED by user`);
+                            }
+                        }
+                        
+                        // Check for recording consent response (if consent was requested and not yet responded)
+                        if (recordingConsentState.requested && recordingConsentState.given === null) {
+                            const transcriptLower = transcript.toLowerCase().trim();
+                            const consentKeywords = ['yes', 'yeah', 'yep', 'okay', 'ok', 'sure', 'consent', 'agree', 'fine', 'alright'];
+                            const declineKeywords = ['no', 'nope', "don't", 'refuse', 'decline', 'not', 'disagree'];
+                            
+                            let consentDetected = false;
+                            let declineDetected = false;
+                            
+                            // Check for consent
+                            for (const keyword of consentKeywords) {
+                                if (transcriptLower.includes(keyword)) {
+                                    consentDetected = true;
+                                    break;
+                                }
+                            }
+                            
+                            // Check for decline
+                            for (const keyword of declineKeywords) {
+                                if (transcriptLower.includes(keyword)) {
+                                    declineDetected = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (consentDetected && !declineDetected) {
+                                recordingConsentState.given = true;
+                                recordingConsentState.respondedAt = new Date();
+                                conversations[callSid].recordingConsent.given = true;
+                                conversations[callSid].recordingConsent.respondedAt = new Date();
+                                // Clear timeout since we got a response
+                                if (consentTimeout) {
+                                    clearTimeout(consentTimeout);
+                                    consentTimeout = null;
+                                }
+                                console.log(`✅ [${callSid}] Recording consent GIVEN by user`);
+                            } else if (declineDetected) {
+                                recordingConsentState.given = false;
+                                recordingConsentState.respondedAt = new Date();
+                                conversations[callSid].recordingConsent.given = false;
+                                conversations[callSid].recordingConsent.respondedAt = new Date();
+                                conversations[callSid].recordingConsent.optOutReason = transcript;
+                                // Clear timeout since we got a response
+                                if (consentTimeout) {
+                                    clearTimeout(consentTimeout);
+                                    consentTimeout = null;
+                                }
+                                console.log(`❌ [${callSid}] Recording consent DECLINED by user`);
+                            }
+                            // If neither detected, wait for more input (silence/unclear will default to false later)
+                        }
                         
                         // Track when we received this transcription (for distinguishing barge-in from normal input)
                         const currentTime = Date.now();
@@ -860,12 +1395,18 @@ export const handleMediaStreamConnection = (ws, req) => {
                             lastCancellationTime = Date.now();
                             
                             try {
-                                // Cancel the active response
-                                openaiWs.send(JSON.stringify({
-                                    type: 'response.cancel',
-                                    response_id: responseIdToCancel
-                                }));
-                                console.log(`🛑 [${callSid}] Sent response.cancel for ${responseIdToCancel} (via transcription detection${isMultipleInterruption ? ' - multiple interruption' : ''})`);
+                                // Fix: Use the saved responseIdToCancel (not activeResponseId which is now null)
+                                // Always try to cancel if we had a response to cancel
+                                if (responseIdToCancel) {
+                                    // Cancel the active response
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'response.cancel',
+                                        response_id: responseIdToCancel
+                                    }));
+                                    console.log(`🛑 [${callSid}] Sent response.cancel for ${responseIdToCancel} (via transcription detection${isMultipleInterruption ? ' - multiple interruption' : ''})`);
+                                } else {
+                                    console.log(`⚠️ [${callSid}] No response to cancel (responseIdToCancel was null)`);
+                                }
                                 
                                 // Clear the input audio buffer to stop processing old audio
                                 openaiWs.send(JSON.stringify({
@@ -954,6 +1495,45 @@ export const handleMediaStreamConnection = (ws, req) => {
                             return; // Queue this input - will be processed after greeting completes
                         }
                         
+                        // Add user transcription to conversation transcript
+                        if (transcript && conversations[callSid]) {
+                            conversations[callSid].transcript.push({
+                                role: 'user',
+                                text: transcript,
+                                timestamp: new Date(transcriptionTime)
+                            });
+                            
+                            // Detect and switch language if enabled (after initial greeting)
+                            if (conversations[callSid].languageDetectionEnabled && hasInitialGreetingCompleted) {
+                                detectAndSwitchLanguage(transcript);
+                                // Disable after first detection to avoid repeated switching
+                                conversations[callSid].languageDetectionEnabled = false;
+                            }
+
+                            // Monitor for complaint keywords
+                            const complaintDetection = complaintDetectionService.monitorCall(callSid);
+                            if (complaintDetection && complaintDetection.detected) {
+                                console.log(`⚠️ [${callSid}] Complaint detected: ${complaintDetection.riskLevel} risk, type: ${complaintDetection.complaintType}`);
+                                
+                                // Store complaint detection in conversation state
+                                if (!conversations[callSid].complaintDetected) {
+                                    conversations[callSid].complaintDetected = {
+                                        detected: true,
+                                        riskLevel: complaintDetection.riskLevel,
+                                        complaintType: complaintDetection.complaintType,
+                                        keywords: complaintDetection.keywords,
+                                        detectedAt: new Date()
+                                    };
+                                }
+
+                                // If high-risk, suggest immediate escalation
+                                if (complaintDetection.riskLevel === 'high') {
+                                    console.log(`🚨 [${callSid}] HIGH-RISK complaint detected. Suggesting immediate escalation.`);
+                                    // The AI will be prompted to escalate via instructions or tool call
+                                }
+                            }
+                        }
+                        
                         // NORMAL USER INPUT: Process transcription when agent is waiting (not interrupting)
                         // Double-check: ensure no active response before creating new one
                         if (transcript && transcript !== lastUserTranscript && !isResponding && activeResponseId === null && waitingForUser) {
@@ -1016,13 +1596,73 @@ export const handleMediaStreamConnection = (ws, req) => {
                                 
                                 // CRITICAL: Only acknowledge the interruption, don't respond to the query yet
                                 // The user will ask again after the acknowledgment
-                                if (!isResponding && activeResponseId === null && waitingForUser) {
+                                // Fix: Add atomic check right before sending to prevent race condition
+                                if (!isResponding && activeResponseId === null && waitingForUser && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                    // Double-check atomically right before sending (prevent race condition)
+                                    if (activeResponseId === null && !isResponding) {
+                                        waitingForUser = false;
+                                        isResponding = true;
+                                        console.log(`🎯 [${callSid}] Creating acknowledgment response after barge-in (ignoring interrupting speech: "${transcript}")`);
+                                        try {
+                                            // Add a conversation item that instructs the agent to ONLY acknowledge the interruption
+                                            // Do NOT include the user's query - we'll wait for them to ask again
+                                            openaiWs.send(JSON.stringify({
+                                                type: 'conversation.item.create',
+                                                item: {
+                                                    type: 'message',
+                                                    role: 'user',
+                                                    content: [
+                                                        {
+                                                            type: 'input_text',
+                                                            text: `[The user interrupted your previous response. Please acknowledge this by saying something like "How can I help you with any other queries you have?" or "Sure, what can I help you with?" Do NOT respond to any specific query yet - just acknowledge and wait for them to ask again.]`
+                                                        }
+                                                    ]
+                                                }
+                                            }));
+                                            console.log(`💬 [${callSid}] Added barge-in acknowledgment instruction (will wait for user to ask again)`);
+                                            
+                                            explicitResponseRequested = true; // Mark this as an explicit request
+                                            openaiWs.send(JSON.stringify({
+                                                type: 'response.create',
+                                                response: {
+                                                    modalities: ['audio', 'text']
+                                                }
+                                            }));
+                                            console.log(`📤 [${callSid}] Created acknowledgment response - will wait for user's question`);
+                                        } catch (err) {
+                                            explicitResponseRequested = false; // Reset if send fails
+                                            isResponding = false;
+                                            waitingForUser = true;
+                                            console.error(`❌ [${callSid}] Error creating acknowledgment response:`, err);
+                                        }
+                                    } else {
+                                        console.log(`⚠️ [${callSid}] Skipping acknowledgment - response already active (race condition prevented)`);
+                                    }
+                                } else {
+                                    console.log(`⚠️ [${callSid}] Skipping acknowledgment - conditions not met: isResponding=${isResponding}, activeResponseId=${activeResponseId}, waitingForUser=${waitingForUser}, wsOpen=${openaiWs && openaiWs.readyState === WebSocket.OPEN}`);
+                                }
+                            }
+                        } else if (isInterrupted) {
+                            // Speech ended but no transcriptions were queued
+                            // CRITICAL: Still send acknowledgment to let user know we're ready
+                            console.log(`✅ [${callSid}] Speech ended after interruption - no transcriptions to process, sending acknowledgment`);
+                            
+                            // Clear interruption flag
+                            isInterrupted = false;
+                            const finalInterruptionTime = interruptionStartTime;
+                            interruptionStartTime = 0;
+                            
+                            // CRITICAL: Send acknowledgment even when there are no transcriptions
+                            // This ensures the user knows we're ready to listen
+                            // Fix: Add atomic check right before sending to prevent race condition
+                            if (!isResponding && activeResponseId === null && waitingForUser && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                // Double-check atomically right before sending (prevent race condition)
+                                if (activeResponseId === null && !isResponding) {
                                     waitingForUser = false;
                                     isResponding = true;
-                                    console.log(`🎯 [${callSid}] Creating acknowledgment response after barge-in (ignoring interrupting speech: "${transcript}")`);
+                                    console.log(`🎯 [${callSid}] Creating acknowledgment response after barge-in (no transcriptions)`);
                                     try {
                                         // Add a conversation item that instructs the agent to ONLY acknowledge the interruption
-                                        // Do NOT include the user's query - we'll wait for them to ask again
                                         openaiWs.send(JSON.stringify({
                                             type: 'conversation.item.create',
                                             item: {
@@ -1036,7 +1676,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                                                 ]
                                             }
                                         }));
-                                        console.log(`💬 [${callSid}] Added barge-in acknowledgment instruction (will wait for user to ask again)`);
+                                        console.log(`💬 [${callSid}] Added barge-in acknowledgment instruction (no transcriptions)`);
                                         
                                         explicitResponseRequested = true; // Mark this as an explicit request
                                         openaiWs.send(JSON.stringify({
@@ -1052,58 +1692,11 @@ export const handleMediaStreamConnection = (ws, req) => {
                                         waitingForUser = true;
                                         console.error(`❌ [${callSid}] Error creating acknowledgment response:`, err);
                                     }
-                                }
-                            }
-                        } else if (isInterrupted) {
-                            // Speech ended but no transcriptions were queued
-                            // CRITICAL: Still send acknowledgment to let user know we're ready
-                            console.log(`✅ [${callSid}] Speech ended after interruption - no transcriptions to process, sending acknowledgment`);
-                            
-                            // Clear interruption flag
-                            isInterrupted = false;
-                            const finalInterruptionTime = interruptionStartTime;
-                            interruptionStartTime = 0;
-                            
-                            // CRITICAL: Send acknowledgment even when there are no transcriptions
-                            // This ensures the user knows we're ready to listen
-                            if (!isResponding && activeResponseId === null && waitingForUser) {
-                                waitingForUser = false;
-                                isResponding = true;
-                                console.log(`🎯 [${callSid}] Creating acknowledgment response after barge-in (no transcriptions)`);
-                                try {
-                                    // Add a conversation item that instructs the agent to ONLY acknowledge the interruption
-                                    openaiWs.send(JSON.stringify({
-                                        type: 'conversation.item.create',
-                                        item: {
-                                            type: 'message',
-                                            role: 'user',
-                                            content: [
-                                                {
-                                                    type: 'input_text',
-                                                    text: `[The user interrupted your previous response. Please acknowledge this by saying something like "How can I help you with any other queries you have?" or "Sure, what can I help you with?" Do NOT respond to any specific query yet - just acknowledge and wait for them to ask again.]`
-                                                }
-                                            ]
-                                        }
-                                    }));
-                                    console.log(`💬 [${callSid}] Added barge-in acknowledgment instruction (no transcriptions)`);
-                                    
-                                    explicitResponseRequested = true; // Mark this as an explicit request
-                                    openaiWs.send(JSON.stringify({
-                                        type: 'response.create',
-                                        response: {
-                                            modalities: ['audio', 'text']
-                                        }
-                                    }));
-                                    console.log(`📤 [${callSid}] Created acknowledgment response - will wait for user's question`);
-                                } catch (err) {
-                                    explicitResponseRequested = false; // Reset if send fails
-                                    isResponding = false;
-                                    waitingForUser = true;
-                                    console.error(`❌ [${callSid}] Error creating acknowledgment response:`, err);
+                                } else {
+                                    console.log(`⚠️ [${callSid}] Skipping acknowledgment - response already active (race condition prevented)`);
                                 }
                             } else {
-                                // Can't send acknowledgment right now - just wait
-                                waitingForUser = true;
+                                console.log(`⚠️ [${callSid}] Skipping acknowledgment - conditions not met: isResponding=${isResponding}, activeResponseId=${activeResponseId}, waitingForUser=${waitingForUser}, wsOpen=${openaiWs && openaiWs.readyState === WebSocket.OPEN}`);
                             }
                         }
                     }
@@ -1197,6 +1790,48 @@ export const handleMediaStreamConnection = (ws, req) => {
                         
                         console.log(`🔧 [${callSid}] Starting tool execution: ${name}`);
                         console.log(`🔧 [${callSid}] ========================================\n`);
+                        
+                        // Check if KBA is required for this tool
+                        if (kbaService.requiresKBA(name, parameters)) {
+                            const isKBAVerified = kbaService.isKBAVerified(callSid);
+                            
+                            if (!isKBAVerified) {
+                                console.log(`🔐 [${callSid}] KBA required for tool ${name} but not verified. Blocking execution.`);
+                                
+                                // Submit error result indicating KBA is required
+                                if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'conversation.item.create',
+                                        item: {
+                                            type: 'function_call_output',
+                                            call_id: call_id,
+                                            output: JSON.stringify({
+                                                success: false,
+                                                error: 'KBA_REQUIRED',
+                                                message: 'Identity verification is required before accessing or changing personal booking data. Please use the kba_verification tool first with your email, postcode, and booking reference (if available).',
+                                                requiresKBA: true
+                                            })
+                                        }
+                                    }));
+                                    
+                                    // Trigger model response
+                                    if (!isResponding && activeResponseId === null && !isClosed) {
+                                        isResponding = true;
+                                        explicitResponseRequested = true;
+                                        openaiWs.send(JSON.stringify({
+                                            type: 'response.create'
+                                        }));
+                                        console.log(`📤 [${callSid}] KBA required message sent, waiting for AI response...`);
+                                    }
+                                }
+                                
+                                // Remove from pending
+                                pendingToolCalls.delete(call_id);
+                                return;
+                            } else {
+                                console.log(`✅ [${callSid}] KBA verified for tool ${name}. Proceeding with execution.`);
+                            }
+                        }
                         
                         // Execute tool asynchronously
                         const callContext = {

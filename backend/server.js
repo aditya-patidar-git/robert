@@ -36,6 +36,7 @@ import flowParameterRoutes from "./routes/flowParameterRoutes.js";
 import tokenManagementRoutes from "./routes/tokenManagementRoutes.js";
 import observabilityRoutes from "./routes/observabilityRoutes.js";
 import systemRoutes from "./routes/systemRoutes.js";
+import memoryRoutes from "./routes/memoryRoutes.js";
 
 dotenv.config();
 
@@ -116,6 +117,7 @@ app.use("/api/reingest", reingestRoutes);
 app.use("/api/test-retrieval", testRetrievalRoutes);
 app.use("/api/provenance", provenanceRoutes);
 app.use("/api/uncertainty-gate", uncertaintyGateRoutes);
+app.use("/api/memory", memoryRoutes);
 app.use("/api/transcripts", transcriptRoutes);
 app.use("/api/complaints", complaintRoutes);
 
