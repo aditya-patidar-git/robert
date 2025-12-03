@@ -1,0 +1,1694 @@
+Playwright procedures to book a Gear Conversion session
+
+How to make a booking for a GEAR CONVERSION:
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 1:
+
+// Navigate to Gear Conversion availability page await
+page.goto(‘https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=C07F8089718288E3’);
+
+// Wait for the availability table to load await
+expect(page.locator(‘table, .availability-grid’)).toBeVisible();
+
+// Extract all available Gear Conversion slots into structured data
+const availableSlots = await page.locator(‘tr’).evaluateAll(rows => {
+return rows.slice(1).map(row => { const cells =
+row.querySelectorAll(‘td’); return { date: cells[0]?.textContent.trim(),
+time: cells[2]?.textContent.trim(), location:
+cells[1]?.textContent.trim(), instructor:
+cells[cells.length-1]?.textContent.trim() }; }).filter(slot => slot.date
+&& slot.time); });
+
+// Return structured data to voice agent for natural conversation //
+Voice agent will ask: ‘Do you have any preference of date or time?’ //
+‘Do you have any location preference?’ (Alperton, Croydon, Dagenham,
+Edgware, Eltham, Hoddesdon, Wimbledon) // ‘Do you have any instructor
+preference?’ return { availableSlots };
+
+STEP 1 (for all workflows)
+
+1.  Firstly, you will need to find the availability of the GEAR
+    CONVERSION trainings in the system and for that you need to access
+    this link
+
+When you click on the link above this webpage will show up:
+
+As you can see you will be able to offer to the client a training
+wherever and whenever we have availability. To be more efficient you may
+ask the client:
+
+(Question 1) “Do you have any preference of date or time?” For dates you
+will be looking on the fore most left column; for session starting time,
+you will be looking at the third column.
+
+(Question 2) “Do you have any location preference?” For locations, you
+will be looking at the third column. For the avoidance of doubt, we
+currently have seven motorcycle training centres: (1) Alperton, HA0 4LR;
+(2) Croydon (CR0 4WT; (3) Dagenham, RM9 6XW; (4) Edgware, HA8 6AG; (5)
+Eltham, SE3 8NB; (6) Hoddesdon, EN11 0EH; (7) Wimbledon, KT3 4PH
+
+(Question 3) “Do you have any instructor preference?” For the name of
+the instructors, you will be looking at last column on the far right of
+the screen.
+
+Feel free to discuss with the client the availability as can be seen on
+this screen.
+
+2.  Once, you have agreed with the client as specific available
+    session/course, and if the client agrees to proceed with the
+    booking, then move on to the next step.
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 2 - AUTHENTICATION:
+
+CRITICAL: Use persistent authentication to avoid repeated logins!
+
+// First-time setup: Login and save state if
+(!fs.existsSync(‘auth.json’)) { const context = await
+browser.newContext(); const page = await context.newPage();
+
+await page.goto(‘https://takeabyte.co.uk/InContact/Account/Login’);
+
+// Use environment variables for credentials (NEVER hardcode!) await
+page.getByLabel(‘Login name’).fill(process.env.CRM_LOGIN ||
+‘universalmct’); await
+page.getByLabel(/username.*email/i).fill(process.env.CRM_USERNAME ||
+‘auagent’); await
+page.getByLabel(‘Password’).fill(process.env.CRM_PASSWORD ||
+‘Robert2025!’);
+
+await page.getByRole(‘button’, { name: ‘Login’ }).click();
+
+// Wait for successful login await
+expect(page.locator(‘text=/Dashboard|Home|Welcome/i’)).toBeVisible({
+timeout: 10000 });
+
+// Save authentication state for future use await context.storageState({
+path: ‘auth.json’ }); await context.close(); }
+
+// Subsequent runs: Use saved authentication const context = await
+browser.newContext({ storageState: ‘auth.json’ }); const page = await
+context.newPage(); await page.goto(‘https://takeabyte.co.uk/InContact’);
+
+// Verify we’re logged in await
+expect(page.locator(‘text=/Dashboard|Contacts|Diaries/i’)).toBeVisible();
+
+STEP 2 (for all workflows)
+
+The next step is to login to the following CRM accessed via web browser.
+
+1.  Navigate to the following web page:
+
+2.  Once you arrive at the login screen, please find the required
+    credentials below to access the CRM via browser:
+
+🎭 PLAYWRIGHT LOCATORS FOR LOGIN FIELDS:
+
+await page.getByLabel(‘Login name’).fill(process.env.CRM_LOGIN); await
+page.getByLabel(/username.*email/i).fill(process.env.CRM_USERNAME);
+await page.getByLabel(‘Password’).fill(process.env.CRM_PASSWORD); await
+page.getByRole(‘button’, { name: /login/i }).click(); await
+expect(page.getByText(/Dashboard|Welcome/i)).toBeVisible({ timeout:
+10000 });
+
+-   login name: universalmct
+-   user name: auagent
+-   password: Robert2025!
+
+On the login name shown in the picture below you need to write:
+universalmct
+
+On the username or email shown in the picture below you need to write:
+auagent
+
+On the password shown in the picture below you need to write:
+Robert2025!
+
+3.  Then, the next task is to click on the “Login” button as shown in
+    the picture below:
+
+Once you have successfully logged in, consider this step done, and move
+on to the next step.
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 3:
+
+// This step is handled by the voice agent // Voice agent asks: ‘Have
+you done training with us before?’ // Based on client response, set
+workflow flag:
+
+let workflowType = ’‘; if (clientResponse === ’yes’) { workflowType =
+‘existing’; } else if (clientResponse === ‘no’ || clientResponse ===
+‘unsure’) { workflowType = ‘new’; }
+
+return { workflowType };
+
+STEP 3 (for all workflows) The next step is to ask the client the
+following question: “Have you done training with us before?” If the
+client sounds a bit confused or unsure, you may say to the client “Have
+done training with Universal Motorcycle Training before?”
+
+If the client says: “Yes”, then follow the “Existing client workflow”.
+
+If the client says: “No”, then follow the “New client workflow”.
+
+If the client says: “I am unsure/don’t know”, then follow the “New
+client workflow”.
+
+Existing client workflow
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 4 (EXISTING CLIENT):
+
+await page.getByRole(‘link’, { name: ‘CONTACTS’ }).click(); await
+expect(page.getByText(/Find contacts/i)).toBeVisible();
+
+STEP 4 (Existing client workflow)
+
+This workflow is designed for: - Existing clients: clients who have
+informed you that they have done training with Universal Motorcycle
+Training before.
+
+This step consists of asking the client about his/her contact details so
+you can check if they already have done trainings with us before.
+
+1.  Your first task is to click on “CONTACTS” tab, located on the left
+    column, as can be seen on the screenshot below:
+
+2.  Then, on the “Find contacts” page will appear. Please see screenshot
+    below:
+
+This page is the most important part for us to identify if the client is
+already part of our database or not.
+
+3.  Then, the next task is asking the client the following: “Have you
+    done training with us before?” If the client answers “yes”, then
+    follow the “existing client workflow”. However, if the client has
+    answered “no”, then take the “new client workflow”.
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 5 (CLIENT SEARCH):
+
+await page.getByRole(‘combobox’, { name: /Options/i
+}).selectOption(‘Smart search’);
+
+const searchField = page.getByPlaceholder(/search/i); await
+searchField.fill(clientMobileNumber); await page.waitForTimeout(1000);
+
+const searchResults = page.locator(‘.search-result, tr’).filter({
+hasText: clientMobileNumber }); const clientFound = await
+searchResults.count() > 0;
+
+if (!clientFound) { await searchField.clear(); await
+searchField.fill(clientEmail); await page.waitForTimeout(1000);
+
+const emailResults = page.locator(‘.search-result, tr’).filter({
+hasText: clientEmail }); const foundByEmail = await
+emailResults.count() > 0;
+
+if (!foundByEmail) { const nameSearch = clientFirstName.substring(0,3) +
+’ ’ + clientSurname.substring(0,3); await searchField.clear(); await
+searchField.fill(nameSearch); await page.waitForTimeout(1000); } }
+
+if (clientFound) { await searchResults.first().click(); const
+clientDetails = { name: await page.locator(‘.client-name,
+[data-field=“name”]’).textContent(), postcode: await
+page.locator(‘.postcode, [data-field=“postcode”]’).textContent(), phone:
+await page.locator(‘.phone, [data-field=“phone”]’).textContent() };
+return { clientFound: true, clientDetails, requiresVerification: true };
+}
+
+return { clientFound: false };
+
+STEP 5 (Existing client workflow)
+
+If the client has informed you that it has done training with us before
+(existing client), then, the next step is to ask for their telephone
+number so that we may try to locate the client in the CRM by adding its
+full telephone. 🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘combobox’).selectOption(‘Smart search’); await
+page.getByPlaceholder(/search/i).fill(searchTerm);
+
+1.  The first task on this step is to select the option “Smart search”
+    from the dropdown menu located on the top left of the screen (next
+    to the “Options…” button). 🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘combobox’).selectOption(‘Smart search’); await
+page.getByPlaceholder(/search/i).fill(searchTerm);
+
+2.  Then, click on the “search…” field located next to the “Smart
+    search” dropdown menu, and ask the client the following: “I will
+    attempt to locate your profile in our systems. Therefore, may I
+    please have your full mobile number?” Please see screenshot below:
+
+Please note: the mobile telephone numbers in the United Kingdom always
+starts with 07 and they have eleven characters in total (excluding the
+country code, if applicable, which is usually +44 for UK). As soon as
+you start typing the telephone numbers the system will start showing you
+the clients that have a telephone number starting with the same numbers
+as you can see on the next picture.
+
+If you have typed the full mobile number and you did not find the
+client’s details, please ask the client “Unfortunately, I could not
+locate your profile with us with the provided mobile number, could you
+please repeat your full mobile number to me so that I can try again?”
+Once the client tells you the number, try again.
+
+If you have typed the full mobile number for the second time and you did
+not find the client’s details, please ask the client “Unfortunately, I
+could not locate your profile with us with the provided mobile number,
+do you have or did you have an alternative phone number so that I can
+try again? Once the client tells you the number, try again.
+
+If you could not find the client’s profile on the CRM via the mobile
+number on the third attempt, please ask the client the following
+question “I could not locate your customer profile with us with the
+provided mobile phone number, could you please provide me with your full
+email address?
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘combobox’).selectOption(‘Smart search’); await
+page.getByPlaceholder(/search/i).fill(searchTerm);
+
+Then, type the client’s email address on the same “search…” field
+located next to the “Smart search” dropdown menu, please see the
+screenshot below:
+
+If you have successfully found the client’s profile from his/her email
+address, you will say to the client: “Thanks for this; I believe that I
+have found your profile with us; However, for data protection purposes,
+could you please confirm: (1) your full name, (2) your post code, and
+(3) your telephone number?”
+
+Then, once the client tells you these three pieces of information, you
+will need to check whether thy corresponds to what we have in our
+database (CRM) as shown on your current screen. If these three pieces of
+information are verbally confirmed by the client, from now on, you will
+consider the client as VERIFIED. If any of this information is
+incorrectly mentioned by the client, you will mention to the client
+which exact piece (or pieces of more than one) of information do not (or
+does not) correspond to what we have on file e.g.:
+
+(1) if their full name does not match (excluding any reference numbers
+    or symbols that may be present on their full name as this may be
+    ignored), you will say to the client “Unfortunately, the full name
+    that you have provided does not match the one that we hold on file
+    for you; have you changed your name ,or have you perhaps previously
+    provided a different spelling of your name to us?”
+
+(2) if their post code does not match the one that you have on the CRM,
+    you will say to the client “Unfortunately, the post code that you
+    have provided does not match the one that we hold on file for you;
+    have you changed your address, or have you perhaps previously
+    provided a different postcode to us?”
+
+(3) if the telephone number does not match the one that you have on the
+    CRM, you will say to the client “Unfortunately, the telephone number
+    that you have provided does not match the one that we hold on file
+    for you; have you changed your telephone number or have you ever
+    provided us with an alternative telephone number?”
+
+You may provide up to seven chances to the client to correctly tell you
+a given piece of information e.g. (1) full name, (2) post code, and (3)
+telephone number.
+
+Things to consider:
+
+(A) Incorrect telephone number: • If the telephone number is not the
+    same as the client have provided to you, please confirm the last
+    four digits of the telephone number and ask the client if that
+    corresponds to his/her previous telephone number? Ask the client:
+    “Could you please confirm the full telephone number of the telephone
+    number that we have on file for you that ends with [then you will
+    say the four last digits of their telephone number that we have on
+    file as per the screen]?”
+
+-   If the client is able to tell you the full telephone number that we
+    have for him/her on file, then this piece of information is
+    verified, and if the other two pieces of information, namely, their
+    full name and email address, have already been confirmed by the
+    client then, from now on, you will consider the client VERIFIED.
+
+After this, please ask the client whether he/she would like you to
+update their telephone number to the changed: if they say “no”, then no
+further action is required, and, therefore, you shall move on to the
+next step. However, if they say “yes”, you will be asking the client:
+“May I please have your new telephone number (mobile telephone number)
+so that we can update your details on our system (CRM)?” Once they tell
+you their new telephone number (please make sure that it is an 11-digit
+number, excluding the country code, which for the UK is usually +44),
+and please update it accordingly by accessing their profile as per Step
+8.
+
+(B) Cannot find the client via the email address: • If you insert the
+    email address that the client provides you, and you did not find the
+    client’s information, the next step is to ask the client’s full
+    name.
+
+By typing the first 3 letters of his/her first name add a space and the
+3 letters of his/her last name you may be able to find the client in our
+CRM. If you do not find the client, try to use the client’s middle name
+3 letters instead of the last surname.
+
+As can be seen on the screenshot below, the system will attempt to find
+the clients that matches the same name and surname as you can see in the
+red arrows and in the green arrows below:
+
+In the above example, they are two different clients with same first
+name and same last name. If that happens you need to confirm the (1)
+email address of the client, and (2) the postcode to see if that matches
+to what we have in the system. If these two pieces of information,
+namely, their email address and postcode, are confirmed by the client
+then, from now on, you will consider the client VERIFIED.
+
+WARNING: never disclose any personal information from our clients found
+in our system with the client over the phone as it is against GDPR rules
+in the UK.
+
+Once the client is VERIFIED, then, please move on to the next step.
+However, if the client remains unverified despite you providing him/her
+up to seven chances for information verification for any piece of
+information e.g. (1) full name, (2) post code, and (3) telephone number.
+Then, tell the client “Unfortunately, I am unable to gain access to your
+existing customer profile with us; however, I can create a new profile
+with us for you. Would you like me to proceed in creating a new customer
+profile with us?” If the client says “Yes”, then proceed to STEP 1 of
+“new client workflow”. If the client says “No”, then, advise the client
+that you are transferring the call to a colleague, then transfer the
+call to +442036918807.
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 6 (BOOKING CREATION):
+
+await page.getByRole(‘link’, { name: ‘Diaries’ }).click(); await
+expect(page.getByRole(‘heading’, { name: /Diaries/i })).toBeVisible();
+
+const dateSelector = page.getByLabel(/date|calendar/i); await
+dateSelector.click(); await page.getByRole(‘button’, { name: agreedDate
+}).click();
+
+const centreSelector = page.locator(‘select,
+[role=“combobox”]’).filter({ hasText: /location|centre/i }); await
+centreSelector.selectOption({ label: agreedLocation });
+
+await page.waitForLoadState(‘networkidle’);
+
+STEP 6 (Existing client workflow) Now that the existing client is
+VERIFIED, the next step is to get the client booked in the course
+according to the training that the client is interested in.
+
+1.  Your next task is to click on the “Diaries” button located on the
+    left column on the screen, please see below:
+
+🎭 PLAYWRIGHT CODE:
+
+const datePicker = page.getByLabel(/date|calendar/i); await
+datePicker.click(); await page.getByRole(‘button’, { name: agreedDate
+}).click();
+
+2.  Your next task is to find the date calendar selector located on the
+    left-hand side of the top bar on the screen. Then, please recall the
+    date which you have already discussed, verified availability, and
+    agreed with the client during Step 1.
+
+🎭 PLAYWRIGHT CODE:
+
+const centreDropdown = page.locator(‘select’).filter({ hasText:
+/location|centre/i }); await centreDropdown.selectOption({ label:
+agreedLocation }); await page.waitForLoadState(‘networkidle’);
+
+3.  Your next task is to select the training centre that you want to
+    make the booking. The selection button for the training centres is
+    next to the “Today” button located on the left-side of the top bar
+    on the screen. Again, for this step, you will have to recall the
+    training centre for the date and time of the course which you have
+    already discussed, verified availability, and agreed with the client
+    during Step 1. Please see screenshot below:
+
+4.  Once you have navigated to the correct date and training centre,
+    then you will need to find the correct Gear Conversion session which
+    you have already discussed, verified availability, and agreed with
+    the client during Step 1.
+
+🎭 PLAYWRIGHT CODE:
+
+const sessionFrame = page.locator(‘.session, .booking-slot,
+tr’).filter({ hasText: agreedTime }).filter({ hasText: agreedLocation
+});
+
+await sessionFrame.click(); await expect(page.getByRole(‘button’, {
+name: ‘NEW BOOKING’ })).toBeVisible();
+
+5.  Once you have found the correct Gear Conversion session, then left
+    click anywhere on the white part of this specific session frame.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘NEW BOOKING’ }).click(); await
+expect(page.getByRole(‘heading’, { name: /Price|Booking/i
+})).toBeVisible();
+
+6.  A pop-up menu will appear, and your task is to click on the “NEW
+    BOOKING” button on the pop-up menu, please see screenshot below:
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 7 (GEAR CONVERSION OPTIONS):
+
+await expect(page.getByRole(‘heading’, { name: /1. Price/i
+})).toBeVisible();
+
+// Gear Conversion: Select duration based on client needs // Voice agent
+asks: ‘How many hours of training would you like?’ // Options: 2 hours,
+3 hours, 4 hours
+
+await page.locator(‘text=/Booking options/i’).scrollIntoViewIfNeeded();
+
+const durationMap = { ‘2’: ‘2 hours’, ‘3’: ‘3 hours’, ‘4’: ‘4 hours’ };
+
+const selectedDuration = durationMap[clientRequestedHours]; await
+page.getByRole(‘radio’, { name: new RegExp(selectedDuration, ‘i’)
+}).check(); await expect(page.getByRole(‘radio’, { name: new
+RegExp(selectedDuration, ‘i’) })).toBeChecked();
+
+await page.getByRole(‘button’, { name: ‘NEXT’ }).click(); await
+expect(page.getByText(/Contact|Lookup contact/i)).toBeVisible();
+
+STEP 7 (Existing client workflow)
+
+1.  Then, you will be shown a new page which should say “1. Price” on
+    the top of the screen, please see screenshot below:
+
+2.  Then, your next task is to scroll down the page and find “Booking
+    options”. Once on this screen, you will inform the client that
+    he/she will do the course on a “125cc manual (geared)”. Despite
+    having more options on the screen, you will only provide the client
+    with this option. Once the client accepts that, your next task is to
+    click on the “NEXT” button, please see screenshot below:
+
+3.  Then, another window will appear with the following information:
+
+As can be seen in the picture above, you will have two options:
+
+And
+
+🎭 PLAYWRIGHT CODE:
+
+if (clientVerified) { await page.getByRole(‘button’, { name: ‘Lookup
+contact’ }).click(); await
+page.getByPlaceholder(/search/i).fill(clientIdentifier); await
+page.waitForTimeout(1000); await page.getByText(clientName).click(); }
+else { await page.getByRole(‘button’, { name: ‘New contact’ }).click();
+}
+
+As we have two options, we need to understand which one will apply to
+make this booking. I will show you first how to use the “Lookup contact”
+function if you have already found the client’s profile on the previous
+steps and if the client is already VERIFIED, then, if this is the case,
+your task is to click on the “Lookup contact” button. If not, e.g. if
+the client is not yet VERIFIED then go back to Step 5.
+
+4.  Then, your next task is to click on the downward arrow next to the
+    field “Search”, as indicated in the screenshot below:
+
+5.  Then, from the dropdown list, please select the best option
+    according with the information that you already have from the client
+    (who is already VERIFIED by you) in order to again find and then
+    access the client’s profile.
+
+TIP 1: • Go to the SMART SEARCH first as it can match the client’s
+telephone number, email address (if you type the email address up to the
+@), it can find the client’s name and surname. I have already explained
+in this guidance on how to search the name of the client, the email
+address, and by their telephone numbers, please refer to the
+instructions provided above as it is the same. However, if this option
+does not help, then chose the “First name begins with” option from the
+drop-down menu, and then, ask the client his/her first name. and type on
+the “search…” bar, please see screenshot below:
+
+TIP 2: If the client’s first name does not appear, then try the surname,
+the telephone number, email address, try to ask the client for his/her
+driving licence number which starts with the 5 letters of his/her
+surname, there are a sequence of 6 numbers then one or two letters,
+after that a number and two letters at the end, and it is number 5 on
+the licence.
+
+The SMART SEARCH only works with the name of the client, telephone
+number or email address. If you check the name of the client, you can
+type the first three or four letters of the first name and the first
+three or four letters of the last name with one space in between them.
+
+6.  If you have found the client on the SMART SEARCH, your next task is
+    to click on the name of the client as can be seen on the screenshot
+    below:
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 8 (CONTACT DETAILS):
+
+await expect(page.getByRole(‘heading’, { name: /3. Contact/i
+})).toBeVisible();
+
+const fieldsToCheck = [ { label: ‘Contact e-mail’, value: clientEmail },
+{ label: ‘Contact mobile number’, value: clientMobile }, { label: ‘Post
+code’, value: clientPostcode }, { label: ‘House number or name’, value:
+clientHouseNumber }, { label: ‘National Insurance number’, value:
+clientNI }, { label: ‘Driving licence number’, value: clientDLN }];
+
+for (const field of fieldsToCheck) { const fieldLocator =
+page.getByLabel(field.label); const currentValue = await
+fieldLocator.inputValue(); if (!currentValue || currentValue.trim() ===
+’’) { await fieldLocator.fill(field.value); await
+expect(fieldLocator).toHaveValue(field.value); } }
+
+const houseField = page.getByLabel(‘House number or name’); await
+houseField.fill(clientHouseNumber); await houseField.press(‘Tab’); await
+page.waitForTimeout(2000);
+
+const address1 = await page.getByLabel(‘Address 1’).inputValue(); return
+{ address1, requiresConfirmation: true };
+
+Step 8 (Existing client workflow)
+
+1.  After clicking on the client’s profile (thus, selecting it) you will
+    be taken to the “3. Contact” screen, please see screenshot below:
+
+2.  If you see that there is the following missing information on the
+    client’s profile: “Contact email address”, “contact mobile number”,
+    “post code”, “house number or name”, “licence held”, “national
+    insurance number”, or “driving licence number”. Your task is to ask
+    the client for the missing information. According to the missing
+    information field, you may ask the client the following questions:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Contact e-mail’).fill(clientEmail); await
+expect(page.getByLabel(‘Contact e-mail’)).toHaveValue(clientEmail);
+
+When a “contact e-mail address” is missing: “I can see in your profile
+that we currently don’t have your email address; could you please
+provide me with your full email address?” Then, your task is to populate
+the “contact e-mail address” field. So, once you have populated the
+“Contact e-mail” field, please ask the client: “Could you please confirm
+to me your full email address again?” Then, proceed in double checking
+what you have populated in the field “Contact email” before moving on to
+the next missing field or task.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Contact mobile number’).fill(clientMobile); await
+expect(page.getByLabel(‘Contact mobile
+number’)).toHaveValue(clientMobile);
+
+When a “contact mobile number” is missing: “I can see in your profile
+that we currently don’t have your mobile number; could you please
+provide me with your full mobile number?” Then, your task is to populate
+the “contact mobile number” field. However, if you the client has
+provided you with a mobile number that has more than eleven digits or
+less than eleven digits, please ask the client: “Could you please tell
+me your mobile number again?” Then, proceed in double checking what you
+have populated in the field “Contact mobile number” before moving on to
+the next missing field or task.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Post code’).fill(clientPostcode); await
+expect(page.getByLabel(‘Post code’)).toHaveValue(clientPostcode);
+
+When a “Post Code” is missing: “I can see in your profile that we
+currently don’t have your Post Code; could you please provide me with
+your post code?” Then, your task is to populate the “Post Code” field.
+So, once you have populated the “Post code” field, please ask the
+client: “Could you please confirm to me your post code again?” Then,
+proceed in double checking what you have populated in the field “Post
+code” before moving on to the next missing field or task.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘House number or name’).fill(houseNumber); await
+page.getByLabel(‘House number or name’).press(‘Tab’); await
+page.waitForTimeout(2000);
+
+const address1 = await page.getByLabel(‘Address 1’).inputValue(); const
+townCity = await page.getByLabel(‘Town/City’).inputValue(); return {
+address1, townCity, requiresVoiceConfirmation: true };
+
+When a “House number or name” is missing: “I can see in your profile
+that we currently don’t have your house number or name; could you please
+provide me with your house number or house name?” Then, your task is to
+populate the “House number or name” field. The house number or name is
+an important piece of information. So, once you have populated the
+“House number or house name” field, please ask the client: “Could you
+please confirm to me your house number or house name?” Then, whilst
+still being on the already populated “House number or name” field, and
+before you click away from this field, press the “TAB” key on your
+keyboard, and wait until the “Address 1” field is populated (usually
+this takes one or two seconds. Then, read the first line of the address
+now self-populated in the field “Address 1” back to the client, you may
+say: “I believe that I now have the first line of your address, is it…”
+then, proceed by reading to the client the self-populated information
+contained in the field “Address 1” field. Then, ask the client: “Was
+this the correct first line of your address?” If the client says “yes”,
+proceed to the next task. If the client says “no”, then erase the
+information that was self-populated on the field “Address 1” and replace
+it with the information that the client has given you. The “Address 1”
+field is an important piece of information. So, once you have manually
+populated the “Address 1” field, please ask the client: “Could you
+please confirm to me the first line of your address?” Then, proceed in
+double checking what you have populated in the field “House number or
+house” before moving on to the next missing field or task.
+
+When a “Licence held” is missing: “I can see in your profile that we
+currently don’t have the type of driving licence that you have; which
+driving licence do you have?” Then, your task is, from the drop-down
+list, please choose the option that best suits the client’s answer.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘National Insurance number’).fill(clientNI); await
+expect(page.getByLabel(‘National Insurance
+number’)).toHaveValue(clientNI);
+
+When a “National Insurance number” is missing: “I can see in your
+profile that we currently don’t have your National Insurance number;
+could you please provide me with your National Insurance number?” Then,
+your task is to populate the “National Insurance number” field.
+
+🎭 PLAYWRIGHT CODE:
+
+if (clientLicenceFormat === ‘NI’) { await page.getByRole(‘button’, {
+name: ‘GB’ }).click(); } await page.getByLabel(‘Driving licence
+number’).fill(clientDLN); await expect(page.getByLabel(‘Driving licence
+number’)).toHaveValue(clientDLN);
+
+When a “Driving licence number” is missing: “I can see in your profile
+that we currently don’t have your driving licence number; could you
+please provide me with your driving licence number?” Then, your task is
+to populate the “Driving licence number” field.
+
+Tip: Some clients might have a Northern Ireland driving licence which
+has only eight digits numbers on it without any letters. If that is the
+case, please refer to the next picture.
+
+Click on the button “NI” as outlined on the screenshot below, and then
+the driving licence format will automatically change to Northern Ireland
+format in the CRM system.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Hear about us’).selectOption({ label:
+clientSource });
+
+3.  Next, we will be moving to the “Hear about us” field. Therefore, you
+    will ask the client: “How did you hear about us?” On the dropdown
+    list, choose the option that best approximates to what the client
+    has told you, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘riding experience’).selectOption({ label:
+clientExperience });
+
+4.  The next field is the “riding experience”. From the dropdown list,
+    choose the option that best approximates to what the client has told
+    you. Regarding the field “riding experience”, 99.99% of the clients
+    will be in one of the following categories:
+
+None but can ride a push bike This person has never ridden a motorcycle
+before and just used a bicycle in his/her life.
+
+Some but a while ago This person might have ridden a motorcycle only
+once or twice in his/her life or maybe used a motorcycle abroad
+(Consider difference of rules and regulations of UK Highway Code).
+
+Some recently This person might have ridden a motorcycle either in the
+UK (on a private land or racing track or under an International Driving
+Licence) or abroad, it is important to ask the client about it as to
+understand the level of experience they have when they are trying to
+book the course with us so we can give them the correct advice.
+
+Some/medium experience This person had a previous riding experience
+abroad, or this person is riding a motorcycle at present (e.g. under an
+International Licence or in private land). This person might have ridden
+a large motorcycle in the past/recently.
+
+Had a previous CBT This person had completed a CBT in the past and is
+due to renew it.
+
+Experienced rider This person might have completed the full motorcycle
+licence, either abroad or in the UK and might have lost the licence for
+some reason and now need to book a CBT training again.
+
+Your task here is to ask the client and then choose from the dropdown
+list, the option that best approximates to what the client has told you,
+please see screenshots below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Keep you
+updated’).selectOption(clientMarketingConsent ? ‘YES’ : ‘NO’); await
+page.getByLabel(‘Send details to others’).selectOption(clientDataSharing
+? ‘YES’ : ‘NO’);
+
+5.  The next fields are “Keep you updated” and “Send details to others”.
+    Ideally, we would like to them to say “yes” to both questions.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Keep you
+updated’).selectOption(clientMarketingConsent ? ‘YES’ : ‘NO’); await
+page.getByLabel(‘Send details to others’).selectOption(clientDataSharing
+? ‘YES’ : ‘NO’);
+
+For the “Keep you updated” field, you will ask: “Are you OK for us to
+contact you via email, from time to time, about further courses that may
+be interest to you?” The answer is either YES or NO. Please select the
+appropriate as to confirm the client’s choice.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Keep you
+updated’).selectOption(clientMarketingConsent ? ‘YES’ : ‘NO’); await
+page.getByLabel(‘Send details to others’).selectOption(clientDataSharing
+? ‘YES’ : ‘NO’);
+
+For the “Send details to others”. You will ask: “For Quality Assurance
+and Evaluation purposes, are you OK for us to share your details
+(e.g. such as your email and telephone number) with the Driver and
+Vehicle Standards Agency (DVSA), the Motorcycle Industry Association
+(MCIA), the Honda School of Motorcycling (HSM), and in case of Transport
+for London (TfL) courses with Transport for London, who may also want to
+contact you?” The answer is either YES or NO. Please select the
+appropriate as to confirm the client’s choice. Please see screenshot
+below:
+
+6.  Then, your next task is to click on the “Next” button located on the
+    bottom of the screen to proceed to the next page.
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 9 (PAYMENT):
+
+await expect(page.getByRole(‘heading’, { name: /Confirm and Pay/i
+})).toBeVisible();
+
+await page.locator(‘text=/Choose when to take
+payment/i’).scrollIntoViewIfNeeded(); await page.getByLabel(‘Choose when
+to take payment’).selectOption(‘Take a payment now’); await
+page.getByLabel(‘payment method’).selectOption(clientCardType);
+
+await page.getByLabel(/long card number/i).fill(clientCardNumber); await
+page.getByLabel(/expiry date/i).fill(clientCardExpiry); await
+page.getByLabel(/security code|CRV/i).fill(clientCardCVV); await
+page.getByLabel(/card.holder.name/i).fill(clientCardholderName);
+
+// CRITICAL: Wait for voice agent to read terms and get client agreement
+if (voiceAgentConfirmsTermsAccepted) { await page.getByRole(‘button’, {
+name: ‘MAKE BOOKING’ }).click(); await
+expect(page.getByText(/booking.confirmed|payment.successful/i)).toBeVisible({
+timeout: 30000 }); return { bookingConfirmed: true }; } else { throw new
+Error(‘Client did not accept terms - booking cancelled’); }
+
+STEP 9 (Existing client workflow) Then, the page “Confirm and Pay”
+should show up, please see screenshot below:
+
+1.  Your next task is to scroll down the page to the bottom of the page,
+    and then click on the field “Choose when to take payment”. From the
+    dropdown list, choose the option “Take a payment now”. Please note
+    that we can only proceed with the booking if the payment is
+    processed successfully. Please see screenshots below:
+
+2.  Then, your next task is to move on to the field “payment method”.
+    You will have to ask the client the following question: “Which card
+    are you using to make the payment today?” If the client sounds a bit
+    confused or unsure, you may say to the client “We accept Visa Debit,
+    Visa Credit, Mastercard Debit and Credit, American Express, among
+    others. Which card are you using to make the payment today?” Then,
+    from the dropdown list, choose the option that best approximates to
+    what the client has told you, please see screenshot below:
+
+3.  As soon as you select the PAYMENT METHOD, a payment screen will show
+    up, and you will have to ask the client the information of his card.
+
+You will usually need to complete “long card number” field, “expiry
+date” field, and the “security code (CRV)” field, which is usually, but
+not always, at the back of the card. You will also have to complete the
+“card holders name” field as it appears on the card.
+
+4.  Before clicking in the “Make booking” button, therefore, attempting
+    to process the card payment, you must explain to the client the
+    following:
+
+“Before, I can proceed with the booking, I must make your aware of the
+following:
+
+A. On the day of your training, you must present a valid and original UK
+Driving Licence (or UK Driver number DVLA confirmation in case of
+European Driving Licences) to your instructor.”
+
+B. On the day of your training, you must wear appropriate footwear that
+covers the ankles for your own protection.
+
+C. On the day of your training, you must wear a pair of denim jeans
+(unripped) or motorcycle trousers (for your own protection).
+
+D. On the day of your training, you must arrive on time and at the
+correct location for your training.”
+
+E. By proceeding with the payment, you are agreeing to have a 30%
+cancellation fee in case of cancellation from your side, if it is made
+more than three full working days.
+
+F. Failure to any of those will result in losing your entire booking
+fees and no refunds will be offered.
+
+G. By making your booking with us, you will be bound to our Terms &
+Conditions. Our Terms & Conditions will be emailed to you alongside the
+booking confirmation of your course as soon as the payment is
+authorised. However, our Terms & Conditions can also be found on your
+website www.universalmct.co.uk/courses-prices/termsandconditions
+
+Do you agree with the statements that I have just made?”
+
+If the client says “no” or “ask you a question regarding your above
+statements”, then try to reply to the client to the best of your
+abilities until he agrees with the statements. If the client still does
+not agree with the statements, please ask the client whether he wishes
+to be transferred to a human user. If the client wants to be transferred
+to a human agent, then transfer the call to +442036918807. If the client
+says does not want to be transferred to a human agent, then say the
+following: “Unfortunately, it will not be possible to proceed with the
+booking. Goodbye.” And terminate the call.
+
+If the client says “yes”, then inform the client that you will now be
+taking a payment on the amount highlighted on the field “Grand total” as
+it is showing in the system (it is showing on the course details) on the
+moment of the payment. Please see screenshot below:
+
+🎭 PLAYWRIGHT CODE - CRITICAL STEP:
+
+// ONLY click after voice agent confirms client accepted terms! if
+(voiceAgentConfirmsTermsAccepted) { await page.getByRole(‘button’, {
+name: ‘MAKE BOOKING’ }).click(); await
+expect(page.getByText(/confirmed|successful/i)).toBeVisible({ timeout:
+30000 }); }
+
+5.  After that, your task is to click on the button “MAKE BOOKING”.
+
+🎭 PLAYWRIGHT CODE - CRITICAL STEP:
+
+// ONLY click after voice agent confirms client accepted terms! if
+(voiceAgentConfirmsTermsAccepted) { await page.getByRole(‘button’, {
+name: ‘MAKE BOOKING’ }).click(); await
+expect(page.getByText(/confirmed|successful/i)).toBeVisible({ timeout:
+30000 }); }
+
+6.  As soon as you click on the “MAKE BOOKING” button you will be
+    directed to another webpage as can be seen on the screenshot below:
+
+STEP 10 (Existing client workflow) 🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘SEND A CONFIRMATION’ }).click();
+await expect(page.getByText(/Pick an item of
+stationary/i)).toBeVisible();
+
+1.  Your next task will be sending the confirmation messages to the
+    client to confirm the booking. You will need to click on the “SEND A
+    CONFIRMATION” button as can be seen on the next picture.
+
+2.  After that, you will be transferred to another page called “Pick an
+    item of stationary to send to”. On this page, your next task is to
+    find the template called “ITM / Gear Conversion confirmation” and
+    then click on it, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘Preview’ }).click(); await
+page.waitForTimeout(1000);
+
+3.  Then, your next task is to click on the “Preview” button located at
+    the bottom of the screen, please see screenshot below:
+
+4.  Then, on the previous “Stationery Preview Area” located on the
+    right-hand side of the screen, a PREVIEW of the email that you are
+    about to send will show up, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘Send’ }).click(); await
+expect(page.getByText(‘Email has been sent’)).toBeVisible();
+
+5.  Then, your next task is to click on the button “Send” and wait for a
+    success message to be displayed on the top of the screen. The
+    success message should say “Email has been sent”, please see
+    screenshot below:
+
+STEP 11 (Existing client workflow) Now your next task is to send the
+email of our Terms and Conditions to the client.
+
+1.  You will firstly need to click on the “Back” button located at the
+    bottom of the screen.
+
+2.  Then, your next task is to click on the button “Send a
+    confirmation”, please see screenshot below:
+
+3.  Then, you will be transferred to the “Pick an item of stationary to
+    send to” page again. On this page, your task is to find the template
+    called “Terms & Conditions” and then click on it.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘Preview’ }).click(); await
+page.waitForTimeout(1000);
+
+4.  Then, your next task is to press the “Preview” button located at the
+    bottom of the screen, please see screenshot below:
+
+5.  Then, on the previous “Stationery Preview Area” located on the
+    right-hand side of the screen, a PREVIEW of the email that you are
+    about to send will show up, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘Send’ }).click(); await
+expect(page.getByText(‘Email has been sent’)).toBeVisible();
+
+6.  Then, your next task is to click on the button “Send” and wait for a
+    success message to be displayed on the top of the screen. The
+    success message should say “Email has been sent”, please see
+    screenshot below:
+
+STEP 12 (Existing client workflow) Now your next task is to send a SMS
+to the client to the client.
+
+1.  You will firstly need to click on the “Back” button at the bottom of
+    the screen.
+
+2.  Then, your next task is to click on the button “Send SMS”, please
+    see screenshot below:
+
+3.  Then, on the “(optional) Choose a preset” field, you will choose the
+    following option from the dropdown list “ITM / Gear Conversion /
+    Private Motorcycling SMS Booking Confirmation”, please see
+    screenshots below:
+
+4.  Then, on the “(optional) Choose a course”, please ensure that the
+    already agreed and booked course date and time is correct. You’ll
+    need to pay attention as some clients may have more than one
+    training booked on the system and you’ll need to select the correct
+    text message to send, please see screenshot below:
+
+5.  Then, click on the “Send the message” button on the bottom of the
+    screen, please see screenshot below:
+
+6.  The next step is to advise the client that their booking has been
+    made successfully and that you have sent both an email and an SMS
+    confirmation to him/her. Please say the following:
+
+“I am pleased to confirm that your booking has now been made
+successfully, and that I have also sent you both an email confirmation
+and a text message confirmation to you, which contains the full booking
+confirmation and the payment receipt. Is there anything else that I can
+help you with?”
+
+If the client says: “No”, please say thank you for choosing Universal
+Motorcycle Training, goodbye. Then, proceed to terminate the call.
+
+If the client says, “Yes”, please proceed in answering the client to the
+best of your ability, until the client is satisfied, so that you can
+terminate the call.
+
+*** This is the end of the procedure under the existing client workflow.
+You have finished everything successfully ***
+
+New client workflow
+
+STEP 4 (new client workflow) This workflow is designed for:
+
+• New clients. • For clients which you were unable to find its profile
+on the CRM. • For clients who failed to be VERIFIED and who have opted
+to have a new profile to be created on the CRM.
+
+If the client is a new client or if you were unable to find or verify
+the client’s profile with us, the next step is to get the client booked
+in the course according to the training that the client is interested in
+as a new client.
+
+1.  Your first task is to click on the “Diaries” button located on the
+    left column on the screen, please see below:
+
+🎭 PLAYWRIGHT CODE:
+
+const datePicker = page.getByLabel(/date|calendar/i); await
+datePicker.click(); await page.getByRole(‘button’, { name: agreedDate
+}).click();
+
+2.  Your next task is to find the date calendar selector located on the
+    left-hand side of the top bar on the screen. Then, please recall the
+    date which you have already discussed, verified availability, and
+    agreed with the client during Step 1.
+
+3.  Your next task is to select the training centre that you want to
+    make the booking. The selection button for the training centres is
+    next to the “Today” button located on the left-side of the top bar
+    on the screen. Again, for this step, you will have to recall the
+    training centre for the date and time of the course which you have
+    already discussed, verified availability, and agreed with the client
+    during Step 1. Please see screenshot below:
+
+4.  Once you have navigated to the correct date and training centre,
+    then you will need to find the correct Introduction to Motorcycling
+    (ITM) session which you have already discussed, verified
+    availability, and agreed with the client during Step 1.
+
+5.  Once you have found the correct Introduction to Motorcycling (ITM)
+    session, then left click anywhere on the white part of this specific
+    session frame.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘NEW BOOKING’ }).click(); await
+expect(page.getByRole(‘heading’, { name: /Price|Booking/i
+})).toBeVisible();
+
+5.  A pop-up menu will appear, and your task is to click on the “NEW
+    BOOKING” button on the pop-up menu, please see screenshot below:
+
+STEP 5 (new client workflow)
+
+1.  Then, you will be shown a new page which should say “1. Price” on
+    the top of the screen, please see screenshot below:
+
+2.  Then, your next task is to scroll down the page and find “Booking
+    options”. Once on this screen, you will ask the client whether
+    he/she wants to do the course on a “125cc automatic (scooter)” or on
+    a “50cc automatic” or on a “125cc manual (geared)”. Despite having
+    more options on the screen, you will only provide the client with
+    these three options. Once the client informs you his choice then,
+    your next task is to click on the “NEXT” button, please see
+    screenshot below:
+
+STEP 6 (new client workflow)
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘New contact’ }).click(); await
+expect(page.getByRole(‘heading’, { name: /3. Contact/i
+})).toBeVisible();
+
+1.  Your next task is to click on the button “New contact” as can be
+    seen on the screenshot below:
+
+2.  Then, you will be directed to the “3. Contact”, please see
+    screenshot below:
+
+Once you have reached the “3. Contact” page, then consider this step
+successfully finalised and move on to the next step.
+
+STEP 7 (new client workflow)
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Title’).selectOption(clientTitle);
+
+1.  Your next task on this step is to confirm with the client his/her
+    title for the “Title” field. You will ask the client: “May I ask,
+    what is your title?” If the client sounds a bit confused or unsure,
+    you may say to the client: “Is your title Mr, Mrs, Miss, or Dr?”.
+    Then, from the dropdown list, choose the option that best
+    approximates to what the client has told you, please see screenshot
+    below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘First names’).fill(clientFirstNames); await
+expect(page.getByLabel(‘First names’)).toHaveValue(clientFirstNames);
+
+2.  Your next task is to complete the “First names” field, by asking the
+    client “May I have your first and middle names, if you have any,
+    please?” Then, proceed in populating the field “First names” with
+    the information that that client has provided you. If you are unsure
+    of the spelling, please ask the client: “Could you please spell your
+    first and middle names for me?” Then, proceed in populating the
+    field “First names” with the information that that client has
+    provided you, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Surname’).fill(clientSurname); await
+expect(page.getByLabel(‘Surname’)).toHaveValue(clientSurname);
+
+3.  Your next task is to complete the “Surname” field, by asking the
+    client “May I have your surname, please?” Then, proceed in
+    populating the field “Surname” with the information that that client
+    has provided you. If you are unsure of the spelling, please ask the
+    client: “Could you please spell your surname for me?” Then, proceed
+    in populating the field “Surname” with the information that that
+    client has provided you. So, once you have populated the “Surname”
+    field, please ask the client: “Could you please confirm to me your
+    surname again?”. Then, proceed in double checking what you have
+    populated in the field “Surname” before moving on to the next task,
+    please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Contact mobile number’).fill(clientMobile); await
+expect(page.getByLabel(‘Contact mobile
+number’)).toHaveValue(clientMobile);
+
+4.  Your next task is to complete the “Contact mobile number” field, by
+    asking the client “May I have your mobile number, please?” Then,
+    proceed in populating the field “Contact mobile number” with the
+    information that that client has provided you. If you the client has
+    provided you with a mobile number that has more than eleven digits
+    or less than eleven digits, please ask the client: “Could you please
+    tell me your mobile number again?” Then, proceed in populating the
+    field “Contact mobile number” with the information that that client
+    has provided you, please see screenshot below:
+
+Tip: Please note that we do not use any spaces in between the numbers,
+it is written in sequence as a whole number. Also, please note that the
+mobile number in the United Kingdom starts always with 07 (Zero, Seven)
+and has a total of eleven numbers.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Contact e-mail’).fill(clientEmail); await
+expect(page.getByLabel(‘Contact e-mail’)).toHaveValue(clientEmail);
+
+5.  Your next task is to complete the “Contact e-mail” field, by asking
+    the client “May I have your email address, please?” Then, proceed in
+    populating the field “Contact e-mail” with the information that that
+    client has provided you. The email address is an extremely important
+    piece of information. So, once you have populated the “Contact
+    e-mail” field, please ask the client: “Could you please confirm to
+    me your full email address again?” Then, proceed in double checking
+    what you have populated in the field “Contact email” before moving
+    on to the next task, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Date of birth’).fill(clientDOB);
+
+const age = await page.locator(‘[data-field=“age”],
+.age’).textContent(); if (parseInt(age) < 16) { throw new Error(‘Client
+is under 16 - not eligible for Gear Conversion’); }
+
+6.  Your next task is to complete the “Date of birth” field, by asking
+    the client “May I have your date of birth, please?” Then, proceed in
+    populating the field “Date of birth” with the information that that
+    client has provided you. The date of birth is an important piece of
+    information. So, once you have populated the “Date of birth” field,
+    please ask the client: “Could you please confirm to me your date of
+    birth again?” Then, proceed in double checking what you have
+    populated in the field “Date of birth” before moving on to the next
+    task, please see screenshot below:
+
+7.  Your next task now is to look into the self-populated field “Age”,
+    and check whether the client is 16 or over. If the client is 16 or
+    over, then you are allowed to proceed to the next task. However, if
+    the client is not yet 16 years of age, you are not allowed to
+    proceed to the next task, and you will have to notify the client the
+    following: “I can see that you are currently under 16 years of age;
+    this means that you are not yet eligible to partake on motorcycle
+    training in the UK, and you will have to until you are at least 16
+    years old. I am sorry for the inconvenience caused. Goodbye.” Then,
+    terminate the call. Please see below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Post code’).fill(clientPostcode); await
+expect(page.getByLabel(‘Post code’)).toHaveValue(clientPostcode);
+
+8.  Your next task is to complete the “Post code” field, by asking the
+    client “May I have your post code, please?” Then, proceed in
+    populating the field “Post code” with the information that that
+    client has provided you. The post code is an important piece of
+    information. So, once you have populated the “Post code” field,
+    please ask the client: “Could you please confirm to me your post
+    code again?” Then, proceed in double checking what you have
+    populated in the field “Post code” before moving on to the next
+    task.
+
+9.  Your next task is to complete the “House number or name” field, by
+    asking the client “May I have your house number or house name,
+    please?” Then, proceed in populating the field “House number or
+    name” with the information that that client has provided you. The
+    house number or name is an important piece of information. So, once
+    you have populated the “House number or house name” field, please
+    ask the client: “Could you please confirm to me your house number or
+    house name?” Then, proceed in double checking what you have
+    populated in the field “House number or house” before moving on to
+    the next task, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘House number or name’).fill(houseNumber); await
+page.getByLabel(‘House number or name’).press(‘Tab’); await
+page.waitForTimeout(2000);
+
+const address1 = await page.getByLabel(‘Address 1’).inputValue(); const
+townCity = await page.getByLabel(‘Town/City’).inputValue(); return {
+address1, townCity, requiresVoiceConfirmation: true };
+
+10. Then, whilst still being on the already populated “House number or
+    name” field, and before you click away from this field, press the
+    “TAB” key on your keyboard, and wait until the “Address 1” field is
+    populated (usually this takes one or two seconds. Then, read the
+    first line of the address now self-populated in the field “Address
+    1” back to the client, you may say: “I believe that I now have the
+    first line of your address, is it…” then, proceed by reading to the
+    client the self-populated information contained in the field
+    “Address 1” field. Then, ask the client: “Was this the correct first
+    line of your address?” If the client says “yes”, proceed to the next
+    task. If the client says “no”, then erase the information that was
+    self-populated on the field “Address 1” and replace it with the
+    information that the client has given you. The “Address 1” field is
+    an important piece of information. So, once you have manually
+    populated the “Address 1” field, please ask the client: “Could you
+    please confirm to me the first name of your address?” Then, proceed
+    in double checking what you have populated in the field “House
+    number or house” before moving on to the next task, please see
+    screenshot below:
+
+11. Then, proceed by reading to the client the self-populated
+    information contained in the field “Town/City” field. Then, ask the
+    client: “Was this your current Town or City?” If the client says
+    “yes”, proceed to the next task. If the client says “no”, then erase
+    the information that was self-populated on the field “Town/City” and
+    replace it with the information that the client has given you. The
+    “Town/City” field is an important piece of information. So, once you
+    have manually populated the “Town/City” field, please ask the
+    client: “Could you please confirm to me the name of your Town or
+    City?” Then, proceed in double checking what you have populated in
+    the field “Town/City” before moving on to the next task, please see
+    screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Licence held’).selectOption({ label:
+clientLicenceType });
+
+12. Your next task is the “Licence held” field. Therefore, you will ask
+    the client: “Which driving licence do you have” On the dropdown
+    list, choose the option that best approximates to what the client
+    has told you, please see screenshot below:
+
+TIP: The most used answers are:
+
+A. Provisional Licence: If that is the answer from the client you will
+need to choose the option PROVISIONAL LICENCE WITH VALID CAT A as shown
+in the next picture.
+
+B. Full UK car licence: if that is the answer from the client, please
+select the appropriate answer on the drop-down list.
+
+C. European Licence with D9 Counterpart: This is only chosen if the
+client has an European Driving Licence accompanied by a D9 form from the
+Driver and Vehicle Licencing Agency (DVLA) to recognize his/her European
+Driving Licence in the United Kingdom.
+
+D. Full UK manual bike licence: A full manual motorcycle licence
+entitles you to ride manual (geared) motorbikes legally on UK roads
+without L-plates, carry a passenger, and use motorways. If the client is
+interested in participating on an ITM course, it is very unlikely that
+the client will hold this licence. However, sometimes the client might
+have lost the licence for any reason (banishment, disqualifications,
+etc) and/or is not riding for many years and want a refresher course.
+
+If the client says: That the does not yet have a driving licence, or
+that he currently only holds an overseas (foreign) licence, then please
+advise the client that before booking an ITM, he/she will need to apply
+and receive a UK Provisional Driving Licence. Then, terminate the call.
+
+Once you have chosen the option that best approximates to what the
+client has told you, proceed to the next task.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘National Insurance number’).fill(clientNI); await
+expect(page.getByLabel(‘National Insurance
+number’)).toHaveValue(clientNI);
+
+13. Your next task is to complete the “National Insurance Number” field,
+    by asking the client “May I have your National Insurance Number,
+    please?” Then, proceed in populating the field “National Insurance
+    Number” with the information that that client has provided you. The
+    post code is an important piece of information. So, once you have
+    populated the “National Insurance Number” field, please ask the
+    client: “Could you please confirm to me your National Insurance
+    Number again?” Then, proceed in double checking what you have
+    populated in the field “National Insurance Number” before moving on
+    to the next task. Please see screenshot below:
+
+TIP: National Insurance Number Structure A UK National Insurance number
+(NINo) always follows this format: Two prefix letters – Six digits – One
+suffix letter Example: AB 12 34 56 C
+
+🎭 PLAYWRIGHT CODE:
+
+if (clientLicenceFormat === ‘NI’) { await page.getByRole(‘button’, {
+name: ‘GB’ }).click(); } await page.getByLabel(‘Driving licence
+number’).fill(clientDLN); await expect(page.getByLabel(‘Driving licence
+number’)).toHaveValue(clientDLN);
+
+14. Your next task is to complete the “Driving licence number” field, by
+    asking the client “May I have your Driving Licence Number, please?”
+    Then, proceed in populating the field “Driving licence Number” with
+    the information that that client has provided you. The post code is
+    an important piece of information. So, once you have populated the
+    “Driving licence number” field, please ask the client: “Could you
+    please confirm to me your Driving Licence Number again?” Then,
+    proceed in double checking what you have populated in the field
+    “Driving licence Number” before moving on to the next task. Please
+    see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+if (clientLicenceFormat === ‘NI’) { await page.getByRole(‘button’, {
+name: ‘GB’ }).click(); } await page.getByLabel(‘Driving licence
+number’).fill(clientDLN); await expect(page.getByLabel(‘Driving licence
+number’)).toHaveValue(clientDLN);
+
+Tip: Please note that there are two different formats for the driving
+licence number in the United Kingdom, one is the Great Britain (GB)
+licence format, and the other is the Northern Ireland (NI) licence
+format. However, the most used format is the GB licence, which is the
+standard in our system, if the client provides you with a NI licence,
+please click on the button “GB”, located next to the “Driving licence
+number” field, so that the system changes from a GB licence format to a
+NI licence format, before you type the full driving licence number.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Hear about us’).selectOption({ label:
+clientSource });
+
+15. Your next task is the “Hear about us” field. Therefore, you will ask
+    the client: “How did you hear about us” On the dropdown list, choose
+    the option that best approximates to what the client has told you,
+    please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘riding experience’).selectOption({ label:
+clientExperience });
+
+16. The next field is the “riding experience”. From the dropdown list,
+    choose the option that best approximates to what the client has told
+    you. Regarding the field “riding experience”, 99.99% of the clients
+    will be in these the following categories:
+
+None but can ride a push bike This person has never ridden a motorcycle
+before and just used a bicycle in his/her life.
+
+Some but a while ago This person might have ridden a motorcycle only
+once or twice in his/her life or maybe used a motorcycle abroad
+(Consider difference of rules and regulations of UK Highway Code).
+
+Some recently This person might have ridden a motorcycle either in the
+UK (on a private land or racing track or under an International Driving
+Licence) or abroad, it is important to ask the client about it as to
+understand the level of experience they have when they are trying to
+book the course with us so we can give them the correct advice.
+
+Some/medium experience This person had a previous riding experience
+abroad, or this person is riding a motorcycle at present (e.g. under an
+International Licence or in private land). This person might have ridden
+a large motorcycle in the past/recently.
+
+Had a previous CBT This person had completed a CBT in the past and is
+due to renew it. Experienced rider This person might have completed the
+full motorcycle licence, either abroad or in the UK and might have lost
+the licence for some reason and now need to book a CBT training again.
+
+Your task here is to ask the client and then choose from the dropdown
+list, the option that best approximates to what the client has told you,
+please see screenshots below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘riding experience’).selectOption({ label:
+clientExperience });
+
+Once an option is chosen for the “riding experience” field, move on to
+the next task.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Keep you
+updated’).selectOption(clientMarketingConsent ? ‘YES’ : ‘NO’); await
+page.getByLabel(‘Send details to others’).selectOption(clientDataSharing
+? ‘YES’ : ‘NO’);
+
+17. The next fields are “Keep you updated” and “Send details to others”.
+    Ideally, we would like to them to say “yes” to both questions.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Keep you
+updated’).selectOption(clientMarketingConsent ? ‘YES’ : ‘NO’); await
+page.getByLabel(‘Send details to others’).selectOption(clientDataSharing
+? ‘YES’ : ‘NO’);
+
+For the “Keep you updated” field, you will ask: “Are you OK for us to
+contact you via email, from time to time, about further courses that may
+be interest to you?” The answer is either YES or NO. Please select the
+appropriate as to confirm the client’s choice.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Keep you
+updated’).selectOption(clientMarketingConsent ? ‘YES’ : ‘NO’); await
+page.getByLabel(‘Send details to others’).selectOption(clientDataSharing
+? ‘YES’ : ‘NO’);
+
+For the “Send details to others”. You will ask: “For Quality Assurance
+and Evaluation purposes, are you OK for us to share your details
+(e.g. such as your email and telephone number) with the Driver and
+Vehicle Standards Agency (DVSA), the Motorcycle Industry Association
+(MCIA), the Honda School of Motorcycling (HSM), and in case of Transport
+for London (TfL) courses with Transport for London, who may also want to
+contact you?” The answer is either YES or NO. Please select the
+appropriate as to confirm the client’s choice. Please see screenshot
+below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByLabel(‘Keep you
+updated’).selectOption(clientMarketingConsent ? ‘YES’ : ‘NO’); await
+page.getByLabel(‘Send details to others’).selectOption(clientDataSharing
+? ‘YES’ : ‘NO’);
+
+Once an option is chosen for the both the “Keep you updated” and “Send
+details to others” field, move on to the next task.
+
+18. Then, your next task is to click on the “Next” button located on the
+    bottom of the screen to proceed to the next page. Once, this is
+    done, please proceed to the next step.
+
+STEP 8 (new client workflow) Then, the page “Confirm and Pay” should
+show up, please see screenshot below:
+
+1.  Your next task is to scroll down the page to the bottom of the page,
+    and then click on the field “Choose when to take payment”. From the
+    dropdown list, choose the option “Take a payment now”. Please note
+    that we can only proceed with the booking if the payment is
+    processed successfully. Please see screenshots below:
+
+2.  Then, your next task is to move on to the field “payment method”.
+    You will have to ask the client the following question: “Which card
+    are you using to make the payment today?” If the client sounds a bit
+    confused or unsure, you may say to the client “We accept Visa Debit,
+    Visa Credit, Mastercard Debit and Credit, American Express, among
+    others. Which card are you using to make the payment today?” Then,
+    from the dropdown list, choose the option that best approximates to
+    what the client has told you, please see screenshot below:
+
+3.  As soon as you select the PAYMENT METHOD, a payment screen will show
+    up, and you will have to ask the client the information of his card.
+
+You will usually need to complete “long card number” field, “expiry
+date” field, and the “security code (CRV)” field, which is usually, but
+not always, at the back of the card. You will also have to complete the
+“card holders name” field as it appears on the card.
+
+4.  Before clicking in the “Make booking” button, therefore, attempting
+    to process the card payment, you must explain to the client the
+    following:
+
+“Before, I can proceed with the booking, I must make your aware of the
+following:
+
+A. On the day of your training, you must present a valid and original UK
+Driving Licence (or UK Driver number DVLA confirmation in case of
+European Driving Licences) to your instructor.”
+
+B. On the day of your training, you must wear appropriate footwear that
+covers the ankles for your own protection.
+
+C. On the day of your training, you must wear a pair of denim jeans
+(unripped) or motorcycle trousers (for your own protection).
+
+D. On the day of your training, you must arrive on time and at the
+correct location for your training.”
+
+E. By proceeding with the payment, you are agreeing to have a 30%
+cancellation fee in case of cancellation from your side, if it is made
+more than three full working days.
+
+C. Failure to any of those will result in losing your entire booking
+fees and no refunds will be offered.
+
+D. By making your booking with us, you will be bound to our Terms &
+Conditions. Our Terms & Conditions will be emailed to you alongside the
+booking confirmation of your course as soon as the payment is
+authorised. However, our Terms & Conditions can also be found on your
+website www.universalmct.co.uk/courses-prices/termsandconditions
+
+Do you agree with the statements that I have just made?”
+
+If the client says “no” or “ask you a question regarding your above
+statements”, then try to reply to the client to the best of your
+abilities until he agrees with the statements. If the client still does
+not agree with the statements, please ask the client whether he wishes
+to be transferred to a human user. If the client wants to be transferred
+to a human agent, then transfer the call to +442036918807. If the client
+says does not want to be transferred to a human agent, then say the
+following: “Unfortunately, it will not be possible to proceed with the
+booking. Goodbye.” And terminate the call.
+
+If the client says “yes”, then inform the client that you will now be
+taking a payment on the amount highlighted on the field “Grand total” as
+it is showing in the system (it is showing on the course details) on the
+moment of the payment. Please see screenshot below:
+
+🎭 PLAYWRIGHT CODE - CRITICAL STEP:
+
+// ONLY click after voice agent confirms client accepted terms! if
+(voiceAgentConfirmsTermsAccepted) { await page.getByRole(‘button’, {
+name: ‘MAKE BOOKING’ }).click(); await
+expect(page.getByText(/confirmed|successful/i)).toBeVisible({ timeout:
+30000 }); }
+
+5.  After that, your task is to click on the button “MAKE BOOKING”.
+
+🎭 PLAYWRIGHT CODE - CRITICAL STEP:
+
+// ONLY click after voice agent confirms client accepted terms! if
+(voiceAgentConfirmsTermsAccepted) { await page.getByRole(‘button’, {
+name: ‘MAKE BOOKING’ }).click(); await
+expect(page.getByText(/confirmed|successful/i)).toBeVisible({ timeout:
+30000 }); }
+
+6.  As soon as you click on the “MAKE BOOKING” button you will be
+    directed to another webpage as can be seen on the screenshot below:
+
+STEP 9 (new client workflow) 🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘SEND A CONFIRMATION’ }).click();
+await expect(page.getByText(/Pick an item of
+stationary/i)).toBeVisible();
+
+1.  Your next task will be sending the confirmation messages to the
+    client to confirm the booking. You will need to click on the “SEND A
+    CONFIRMATION” button as can be seen on the next picture.
+
+2.  After that, you will be transferred to another page called “Pick an
+    item of stationary to send to”. On this page, your next task is to
+    find the template called “ITM / Gear Conversion confirmation” and
+    then click on it, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘Preview’ }).click(); await
+page.waitForTimeout(1000);
+
+3.  Then, your next task is to click on the “Preview” button located at
+    the bottom of the screen, please see screenshot below:
+
+4.  Then, on the previous “Stationery Preview Area” located on the
+    right-hand side of the screen, a PREVIEW of the email that you are
+    about to send will show up, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘Send’ }).click(); await
+expect(page.getByText(‘Email has been sent’)).toBeVisible();
+
+5.  Then, your next task is to click on the button “Send” and wait for a
+    success message to be displayed on the top of the screen. The
+    success message should say “Email has been sent”, please see
+    screenshot below:
+
+STEP 10 (new client workflow)
+
+Now your next task is to send the email of our Terms and Conditions to
+the client.
+
+1.  You will firstly need to click on the “Back” button located at the
+    bottom of the screen.
+
+2.  Then, your next task is to click on the button “Send a
+    confirmation”, please see screenshot below:
+
+3.  Then, you will be transferred to the “Pick an item of stationary to
+    send to” page again. On this page, your task is to find the template
+    called “Terms & Conditions” and then click on it.
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘Preview’ }).click(); await
+page.waitForTimeout(1000);
+
+4.  Then, your next task is to press the “Preview” button located at the
+    bottom of the screen, please see screenshot below:
+
+5.  Then, on the previous “Stationery Preview Area” located on the
+    right-hand side of the screen, a PREVIEW of the email that you are
+    about to send will show up, please see screenshot below:
+
+🎭 PLAYWRIGHT CODE:
+
+await page.getByRole(‘button’, { name: ‘Send’ }).click(); await
+expect(page.getByText(‘Email has been sent’)).toBeVisible();
+
+6.  Then, your next task is to click on the button “Send” and wait for a
+    success message to be displayed on the top of the screen. The
+    success message should say “Email has been sent”, please see
+    screenshot below:
+
+STEP 11 (new client workflow)
+
+Now your next task is to send a SMS to the client to the client.
+
+1.  You will firstly need to click on the “Back” button at the bottom of
+    the screen.
+
+2.  Then, your next task is to click on the button “Send SMS”, please
+    see screenshot below:
+
+3.  Then, on the “(optional) Choose a preset” field, you will choose the
+    following option from the dropdown list “ITM / Gear Conversion /
+    Private Motorcycling SMS Booking Confirmation”, please see
+    screenshots below:
+
+4.  Then, on the “(optional) Choose a course”, please ensure that the
+    already agreed and booked course date and time is correct. You’ll
+    need to pay attention as some clients may have more than one
+    training booked on the system and you’ll need to select the correct
+    text message to send, please see screenshot below:
+
+5.  Then, click on the “Send the message” button on the bottom of the
+    screen, please see screenshot below:
+
+6.  The next step is to advise the client that their booking has been
+    made successfully and that you have sent both an email and an SMS
+    confirmation to him/her. Please say the following:
+
+“I am pleased to confirm that your booking has now been made
+successfully, and that I have also sent you both an email confirmation
+and a text message confirmation to you, which contains the full booking
+confirmation and the payment receipt. Is there anything else that I can
+help you with?”
+
+If the client says: “No”, please say thank you for choosing Universal
+Motorcycle Training, goodbye. Then, proceed to terminate the call.
+
+If the client says, “Yes”, please proceed in answering the client to the
+best of your ability, until the client is satisfied, so that you can
+terminate the call.
+
+*** This is the end of the procedure under the existing client workflow.
+You have finished everything successfully ***
