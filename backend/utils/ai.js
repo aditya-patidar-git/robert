@@ -83,7 +83,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "crm_browser",
-      description: "Perform CRM tasks like bookings, changes, cancellations",
+      description: "Perform CRM tasks like bookings, changes, cancellations. For create_booking, courseType is required in args.",
       parameters: {
         type: "object",
         properties: {
@@ -94,6 +94,47 @@ const TOOLS = [
           },
           args: {
             type: "object",
+            properties: {
+              courseType: {
+                type: "string",
+                enum: ["ITM", "CBT", "CBT Executive", "Private Lesson", "Gear Conversion"],
+                description: "Required for create_booking: Type of course to book (ITM, CBT, CBT Executive, Private Lesson, or Gear Conversion)"
+              },
+              customerEmail: {
+                type: "string",
+                description: "Customer email address (required for bookings)"
+              },
+              customerPhone: {
+                type: "string",
+                description: "Customer phone number"
+              },
+              preferredDate: {
+                type: "string",
+                description: "Preferred booking date"
+              },
+              preferredTime: {
+                type: "string",
+                description: "Preferred booking time"
+              },
+              location: {
+                type: "string",
+                description: "Preferred training location"
+              },
+              bikeType: {
+                type: "string",
+                description: "Bike type preference (e.g., '125cc automatic', '50cc automatic', '125cc manual', '500cc restricted', '600cc')"
+              },
+              cbtType: {
+                type: "string",
+                enum: ["standard", "renewal"],
+                description: "For CBT bookings: 'standard' for new riders or 'renewal' for experienced riders"
+              },
+              duration: {
+                type: "string",
+                enum: ["2", "3", "4"],
+                description: "For Gear Conversion bookings: Training duration in hours ('2', '3', or '4')"
+              }
+            },
             description: "Task-specific arguments"
           }
         },
@@ -400,7 +441,16 @@ async function executeWebSearch(args, callContext) {
 
 async function executeCRMBrowser(args, callContext) {
     // Import browser agent service
-    const browserAgentService = (await import('../services/browserAgentService.js')).default;
+    const browserAgentService = (await import('../../robert-agent-service/src/services/browserAgentService.js')).default;
+    
+    // Log tool invocation
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`🔧 [CRM BROWSER TOOL] Executing at ${new Date().toISOString()}`);
+    console.log(`📞 Call SID: ${callContext.callSid || 'unknown'}`);
+    console.log(`📋 Task: ${args.task}`);
+    console.log(`📋 Course Type: ${args.args?.courseType || 'not specified'}`);
+    console.log(`📋 Customer Email: ${args.args?.customerEmail || 'not specified'}`);
+    console.log(`${'='.repeat(80)}\n`);
     
     const result = await browserAgentService.executeTask(args.task, args.args, callContext);
     
@@ -408,7 +458,8 @@ async function executeCRMBrowser(args, callContext) {
         success: result.success,
         result: result.result,
         dryRun: result.dryRun,
-        requiresConfirmation: result.requiresConfirmation
+        requiresConfirmation: result.requiresConfirmation,
+        courseType: args.args?.courseType || null
     };
 }
 
