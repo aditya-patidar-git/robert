@@ -57,7 +57,7 @@ function Home() {
         try {
             // Disable retries for this long-running operation
             const res = await authenticatedApiClient.post('/api/itm-booking/test-booking', {}, {
-                timeout: 300000, // 5 minutes timeout
+                timeout: 360000, // 6 minutes timeout (matches backend timeout)
                 metadata: {
                     disableRetries: true // Custom flag to disable retries
                 }

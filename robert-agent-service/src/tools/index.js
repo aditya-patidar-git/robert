@@ -2,6 +2,7 @@ import webSearchTool from './webSearch.js';
 import calendarTool from './calendar.js';
 import emailTool from './email.js';
 import crmTool from './crm.js';
+import crmBrowserTool from './crmBrowserTool.js';
 import paymentsTool from './payments.js';
 import fileSearchTool from './fileSearch.js';
 import transferCallTool from './transferCall.js';
@@ -28,6 +29,7 @@ class ToolExecutor {
     this.tools.set('calendar', calendarTool);
     this.tools.set('email', emailTool);
     this.tools.set('crm', crmTool);
+    this.tools.set('crm_browser', crmBrowserTool);
     this.tools.set('payments', paymentsTool);
     this.tools.set('file_search', fileSearchTool);
     this.tools.set('transfer_call', transferCallTool);
@@ -145,6 +147,103 @@ class ToolExecutor {
             }
           },
           required: ['action']
+        }
+      },
+      {
+        type: 'function',
+        name: 'crm_browser',
+        description: 'Perform CRM tasks using browser automation (bookings, changes, cancellations). For create_booking, courseType is required in args. This tool opens a browser and performs the actual CRM operations.',
+        parameters: {
+          type: 'object',
+          properties: {
+            task: {
+              type: 'string',
+              enum: ['create_booking', 'reschedule_booking', 'cancel_booking', 'update_customer', 'check_availability'],
+              description: 'Type of CRM task to perform'
+            },
+            args: {
+              type: 'object',
+              properties: {
+                courseType: {
+                  type: 'string',
+                  enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion'],
+                  description: 'Required for create_booking: Type of course to book'
+                },
+                customerEmail: {
+                  type: 'string',
+                  description: 'Customer email address (optional - will be collected during booking if not provided)'
+                },
+                customerPhone: {
+                  type: 'string',
+                  description: 'Customer phone number (optional - will be collected during booking if not provided)'
+                },
+                preferredDate: {
+                  type: 'string',
+                  description: 'Preferred booking date'
+                },
+                preferredTime: {
+                  type: 'string',
+                  description: 'Preferred booking time'
+                },
+                location: {
+                  type: 'string',
+                  description: 'Preferred training location'
+                },
+                bikeType: {
+                  type: 'string',
+                  description: 'Bike type preference (e.g., "125cc automatic", "50cc automatic", "125cc manual", "500cc restricted", "600cc")'
+                },
+                cbtType: {
+                  type: 'string',
+                  enum: ['standard', 'renewal'],
+                  description: 'For CBT courses: "standard" for new riders, "renewal" for existing CBT holders'
+                },
+                duration: {
+                  type: 'string',
+                  enum: ['2', '3', '4'],
+                  description: 'For Gear Conversion: duration in hours ("2", "3", or "4")'
+                },
+                bookingId: {
+                  type: 'string',
+                  description: 'Booking ID for reschedule or cancellation tasks'
+                },
+                newDate: {
+                  type: 'string',
+                  description: 'New date for rescheduling'
+                },
+                reason: {
+                  type: 'string',
+                  description: 'Reason for cancellation'
+                },
+                customerId: {
+                  type: 'string',
+                  description: 'Customer ID for updating customer records'
+                },
+                email: {
+                  type: 'string',
+                  description: 'Email for customer updates'
+                },
+                phone: {
+                  type: 'string',
+                  description: 'Phone for customer updates'
+                },
+                address: {
+                  type: 'string',
+                  description: 'Address for customer updates'
+                },
+                date: {
+                  type: 'string',
+                  description: 'Date for availability check'
+                },
+                time: {
+                  type: 'string',
+                  description: 'Time for availability check'
+                }
+              },
+              required: []
+            }
+          },
+          required: ['task', 'args']
         }
       },
       {
@@ -284,6 +383,12 @@ class ToolExecutor {
     if (!this.tools.has(toolName)) {
       console.error(`❌ [${callSid}] Tool not found: ${toolName}`);
       throw new Error(`Unknown tool: ${toolName}`);
+    }
+
+    // Increase timeout for browser automation tools - they need more time
+    if (toolName === 'crm_browser') {
+      timeout = 360000; // 360 seconds (6 minutes) for browser operations (launch, navigate, login, booking workflow, etc.) - extended for development
+      console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
     }
 
     const tool = this.tools.get(toolName);

@@ -408,9 +408,26 @@ async findAndVerifyClient(page, email) {
       await page.waitForTimeout(2000);
     }
     
-    // WAIT FOR SEARCH RESULTS - 5 seconds (increased)
-    console.log('⏳ [STEP 3-5] Waiting for search results...');
-    await page.waitForTimeout(5000);
+    // WAIT FOR SEARCH RESULTS - Verify actual results appear, not just timeout
+    console.log('⏳ [STEP 3-5] Waiting for search results to appear...');
+    
+    // Wait for search results to actually appear (email text or result elements)
+    try {
+      // Wait for either:
+      // 1. The email address to appear in results
+      // 2. Search result elements to appear (table rows, list items, etc.)
+      await Promise.race([
+        // Option 1: Email appears in results
+        iframe.locator(`*:has-text("${email}")`).first().waitFor({ state: 'visible', timeout: 15000 }),
+        // Option 2: Search results container appears (table, list, etc.)
+        iframe.locator('table tbody tr, .dx-datagrid-rowsview tr, [role="row"], .search-result, .result-item').first().waitFor({ state: 'visible', timeout: 15000 })
+      ]);
+      console.log('✅ Search results appeared');
+    } catch (waitError) {
+      console.log('⚠️ [STEP 3-5] Search results did not appear within timeout, but continuing to check...');
+      // Give it a bit more time in case results are loading slowly
+      await page.waitForTimeout(3000);
+    }
     
     // Take screenshot after search
     await this.takeScreenshot(page, 'search-results.png');

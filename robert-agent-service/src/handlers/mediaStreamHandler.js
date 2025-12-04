@@ -62,6 +62,7 @@ export const handleMediaStreamConnection = (ws, req) => {
     
     let errorCount = 0;
     let audioChunkCount = 0;
+    let audioChunkWarningLogged = false; // Track if we've already logged the warning for this threshold breach
     let callStartTime = Date.now();
     let startTimeout = null;
     let durationTimer = null;
@@ -993,10 +994,14 @@ ${config.instructions}`;
                         audioMetrics.responseTimestamps.push(responseTime);
                         audioMetrics.lastResponseTime = responseTime;
                         
-                        if (audioChunkCount > MAX_AUDIO_BUFFER_SIZE * 100) {
-                            console.error(`❌ Too many audio chunks (${audioChunkCount}), closing`);
-                            cleanup('audio_limit');
-                            return;
+                        // DISABLED FOR DEVELOPMENT/TESTING: Audio chunk limit check
+                        // Still track the count for logging, but don't enforce limit during development
+                        // Only log warning once per threshold breach to reduce log noise
+                        if (audioChunkCount > MAX_AUDIO_BUFFER_SIZE * 100 && !audioChunkWarningLogged) {
+                            console.warn(`⚠️ [DEV] Audio chunk count exceeded limit (${audioChunkCount} > ${MAX_AUDIO_BUFFER_SIZE * 100}), but continuing for development/testing. This warning will not repeat.`);
+                            audioChunkWarningLogged = true;
+                            // cleanup('audio_limit'); // DISABLED FOR DEVELOPMENT
+                            // return; // DISABLED FOR DEVELOPMENT
                         }
                         
                         // CRITICAL: Get response ID from event if available, otherwise use activeResponseId

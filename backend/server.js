@@ -8,6 +8,7 @@ import { Server } from "socket.io";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import itmBookingRoutes from "./routes/itmBookingRoutes.js";
 import openaiKbRoutes from "./routes/openaiKbRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
 import voiceRoutes from "./routes/voiceRoutes.js";
@@ -80,6 +81,9 @@ app.use("/api/admin", adminRoutes);
 
 // Booking Routes
 app.use("/api/booking", bookingRoutes);
+
+// ITM Booking Routes
+app.use("/api/itm-booking", itmBookingRoutes);
 
 // Knowledge Base Routes (OpenAI-based)
 app.use("/api/kb", openaiKbRoutes);
