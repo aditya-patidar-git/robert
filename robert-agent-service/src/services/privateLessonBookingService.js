@@ -69,6 +69,43 @@ class PrivateLessonBookingService {
       screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-final-contact-page.png', this.screenshotsDir));
       console.log('✅ Step 9 completed: Contact lookup done, waiting 10 seconds...');
 
+      // STEP 10: Select payment option
+      console.log('💳 Step 10: Selecting payment option...');
+      await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+      screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-payment-selected.png', this.screenshotsDir));
+      console.log('✅ Step 10 completed: Payment option selected');
+
+      // STEP 11: Select payment method
+      console.log('💳 Step 11: Selecting payment method...');
+      await page.waitForTimeout(2000); // Wait for payment method dropdown to appear
+      await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
+      screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-payment-method-selected.png', this.screenshotsDir));
+      console.log('✅ Step 11 completed: Payment method selected');
+
+      // STEP 12: Fill card details
+      console.log('💳 Step 12: Filling card details...');
+      await page.waitForTimeout(2000); // Wait for card fields to appear
+      await commonSteps.fillCardDetails(page, this.screenshotsDir);
+      screenshots.push(await commonSteps.takeScreenshot(page, 'step-12-card-details-filled.png', this.screenshotsDir));
+      console.log('✅ Step 12 completed: Card details filled');
+
+      // STEP 13: Accept terms and make booking
+      console.log('📋 Step 13: Accepting terms and making booking...');
+      // Note: termsAccepted should be set by voice agent based on client response
+      const termsAccepted = bookingArgs.termsAccepted || false; // Default to false
+      const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted);
+      if (!bookingResult.success) {
+        if (!bookingResult.termsAccepted) {
+          // Terms not accepted - workflow should stop or handle accordingly
+          throw new Error('Client did not accept terms - booking cancelled');
+        } else {
+          // Terms accepted but booking failed
+          throw new Error(`Failed to complete booking: ${bookingResult.error}`);
+        }
+      }
+      screenshots.push(await commonSteps.takeScreenshot(page, 'step-13-booking-completed.png', this.screenshotsDir));
+      console.log('✅ Step 13 completed: Booking made successfully');
+
       console.log('🎉 Service: All steps completed successfully!');
       return {
         success: true,
