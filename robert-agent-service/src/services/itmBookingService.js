@@ -143,8 +143,19 @@ class ITMBookingService {
       console.error('❌ Service: Error stack:', error.stack);
       screenshots.push(await commonSteps.takeScreenshot(page, 'error-state.png', this.screenshotsDir));
       
-      // STOP EXECUTION - don't continue
-      throw error;
+      // Return error gracefully with user-friendly message
+      const clientEmail = bookingArgs?.customerEmail || process.env.CLIENT_EMAIL_ADDRESS;
+      const errorContext = getErrorContext(error, 'create_booking');
+      const userFriendlyError = formatUserFriendlyError(error, errorContext);
+      
+      return {
+        success: false,
+        error: userFriendlyError,
+        technicalError: error.message, // Keep technical error for logging
+        sessionDetails: sessionDetails,
+        screenshots: screenshots,
+        clientEmail: clientEmail
+      };
     }
   }
 

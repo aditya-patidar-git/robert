@@ -1,4 +1,5 @@
 import browserAgentService from '../services/browserAgentService.js';
+import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
 
 class CRMBrowserTool {
   async execute(parameters, callContext = {}) {
@@ -13,6 +14,29 @@ class CRMBrowserTool {
       // Call browser agent service with callContext
       const result = await browserAgentService.executeTask(task, args, callContext);
       
+      // If the result already indicates failure, return it gracefully
+      if (!result.success) {
+        const errorContext = getErrorContext(
+          result.error ? new Error(result.error) : new Error('Unknown error'),
+          task
+        );
+        const userFriendlyError = formatUserFriendlyError(
+          result.error ? new Error(result.error) : new Error('Unknown error'),
+          errorContext
+        );
+        
+        return {
+          success: false,
+          error: userFriendlyError,
+          technicalError: result.error, // Keep technical error for logging
+          dryRun: result.dryRun || false,
+          requiresConfirmation: false,
+          auditId: result.auditId,
+          screenshots: result.screenshots || [],
+          courseType: result.courseType
+        };
+      }
+      
       return {
         success: result.success,
         result: result.result,
@@ -25,7 +49,18 @@ class CRMBrowserTool {
       };
     } catch (error) {
       console.error(`❌ [${callSid}] CRM Browser Tool error:`, error);
-      throw new Error(`CRM browser operation failed: ${error.message}`);
+      
+      // Return error gracefully instead of throwing
+      const errorContext = getErrorContext(error, task);
+      const userFriendlyError = formatUserFriendlyError(error, errorContext);
+      
+      return {
+        success: false,
+        error: userFriendlyError,
+        technicalError: error.message, // Keep technical error for logging
+        dryRun: true,
+        requiresConfirmation: false
+      };
     }
   }
 }

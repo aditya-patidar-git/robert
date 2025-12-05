@@ -10,13 +10,28 @@ const MetricCard = ({
   change,
   changeType = 'positive',
   onClick,
-  loading = false
+  loading = false,
+  comparisonPeriod = 'last week'
 }) => {
   const getTrendIcon = () => {
     if (!change) return null;
     return changeType === 'positive' ?
       <TrendingUp sx={{ fontSize: 14, mr: 0.5 }} /> :
       <TrendingDown sx={{ fontSize: 14, mr: 0.5 }} />;
+  };
+
+  const formatComparisonPeriod = (period) => {
+    if (typeof period === 'string' && period !== 'last week') {
+      // Handle period strings like '7d', '30d', etc.
+      if (period.endsWith('d')) {
+        const days = parseInt(period);
+        if (days === 7) return 'vs last 7 days';
+        if (days === 30) return 'vs last month';
+        return `vs last ${days} days`;
+      }
+      return `vs ${period}`;
+    }
+    return 'vs last week'; // Default fallback
   };
 
   return (
@@ -27,10 +42,10 @@ const MetricCard = ({
         cursor: onClick ? 'pointer' : 'default',
         transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
         borderRadius: 2,
-        '&:hover': onClick ? {
+        '&:hover': {
           transform: 'translateY(-2px)',
           boxShadow: 3
-        } : {},
+        },
         position: 'relative',
         overflow: 'hidden'
       }}
@@ -117,7 +132,7 @@ const MetricCard = ({
                     ml: 0.5
                   }}
                 >
-                  vs last week
+                  {formatComparisonPeriod(comparisonPeriod)}
                 </Typography>
               </Box>
             )}

@@ -234,7 +234,11 @@ class ProvenanceService {
   // Export provenance data for DSAR
   async exportProvenanceData(userId, startDate, endDate) {
     try {
-      const query = { userId };
+      const query = {};
+      // Only filter by userId if provided
+      if (userId) {
+        query.userId = userId;
+      }
       if (startDate && endDate) {
         query.timestamp = { $gte: startDate, $lte: endDate };
       }

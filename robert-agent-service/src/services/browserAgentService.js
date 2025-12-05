@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
+import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
 
 class BrowserAgentService {
   constructor() {
@@ -504,7 +505,15 @@ class BrowserAgentService {
       const serviceLoader = courseServiceMap[courseType];
 
       if (!serviceLoader) {
-        throw new Error(`Unknown course type: ${courseType}. Supported: ${Object.keys(courseServiceMap).join(', ')}`);
+        return {
+          success: false,
+          error: `I'm sorry, but "${courseType}" is not a recognized course type. Please specify a valid course type.`,
+          dryRun: true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: [],
+          courseType: args.courseType
+        };
       }
 
       console.log(`📚 Loading booking service for course type: ${courseType}`);
@@ -529,9 +538,22 @@ class BrowserAgentService {
       // For ITM, use executeITMBookingDemo, for others use executeBookingWorkflow
       let result;
       if (courseType === 'ITM' || courseType === 'Introduction to Motorcycling') {
-        result = await bookingService.executeITMBookingDemo(page);
+        result = await bookingService.executeITMBookingDemo(page, bookingArgs, callContext);
       } else {
         result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext);
+      }
+
+      // If result indicates failure, return it gracefully
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || 'An unexpected error occurred during booking',
+          dryRun: result.dryRun !== undefined ? result.dryRun : true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: result.screenshots || [],
+          courseType: args.courseType
+        };
       }
 
       return {
@@ -547,7 +569,21 @@ class BrowserAgentService {
     } catch (error) {
       console.error('❌ Course booking execution failed:', error);
       await this.takeScreenshot(page, `${auditId}_course_booking_error.png`);
-      throw error;
+      
+      // Return error gracefully with user-friendly message
+      const errorContext = getErrorContext(error, 'create_booking');
+      const userFriendlyError = formatUserFriendlyError(error, errorContext);
+      
+      return {
+        success: false,
+        error: userFriendlyError,
+        technicalError: error.message, // Keep technical error for logging
+        dryRun: true,
+        requiresConfirmation: false,
+        auditId,
+        screenshots: [],
+        courseType: args.courseType
+      };
     }
   }
 

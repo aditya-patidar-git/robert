@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import * as commonSteps from './commonBookingSteps/index.js';
+import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
 
 class CBTBookingService {
   constructor() {
@@ -80,7 +81,19 @@ class CBTBookingService {
       console.error('❌ CBT booking failed at step:', error.message);
       console.error('❌ Service: Error stack:', error.stack);
       screenshots.push(await commonSteps.takeScreenshot(page, 'error-state.png', this.screenshotsDir));
-      throw error;
+      
+      // Return error gracefully with user-friendly message
+      const errorContext = getErrorContext(error, 'create_booking');
+      const userFriendlyError = formatUserFriendlyError(error, errorContext);
+      
+      return {
+        success: false,
+        error: userFriendlyError,
+        technicalError: error.message, // Keep technical error for logging
+        sessionDetails: sessionDetails,
+        screenshots: screenshots,
+        clientEmail: bookingArgs.customerEmail || process.env.CLIENT_EMAIL_ADDRESS
+      };
     }
   }
 

@@ -50,7 +50,7 @@ const LoginPage = () => {
       setLoginError(errorMessage);
       showError(errorMessage);
     } finally {
-      // setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -77,12 +77,6 @@ const LoginPage = () => {
               Sign in to your Robert Voice Agent account
             </Typography>
           </Box>
-
-          {loginError && (
-            <Alert severity={loginError.includes('blocked') ? 'error' : 'warning'} sx={{ mb: 3 }}>
-              {loginError}
-            </Alert>
-          )}
 
           {/* <-- Use actual form element --> */}
           <form onSubmit={handleSubmit(onSubmit)} noValidate>

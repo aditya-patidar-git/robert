@@ -28,10 +28,12 @@ import {
   CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
 import { useToast } from '../../components/common/ToastProvider';
+import { useAuth } from '../../context/AuthContext';
 import userService from '../../services/userService';
 
 const UsersPage = () => {
   const { showSuccess, showError } = useToast();
+  const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   
   const [roleFilter, setRoleFilter] = useState('');
@@ -46,6 +48,9 @@ const UsersPage = () => {
   const users = usersResponse?.success && usersResponse?.data 
     ? (Array.isArray(usersResponse.data) ? usersResponse.data : usersResponse.data.users || [])
     : [];
+
+  // Filter out deleted users from the list
+  const activeUsers = users.filter(user => user.status !== 'deleted');
 
   const updateUserMutation = useMutation({
     mutationFn: async ({ userId, data }) => {
@@ -83,11 +88,18 @@ const UsersPage = () => {
     }
   });
 
-  const filteredUsers = users.filter(user => {
+  const filteredUsers = activeUsers.filter(user => {
     const matchesRole = !roleFilter || user.role === roleFilter;
     const matchesStatus = !statusFilter || user.status === statusFilter;
     return matchesRole && matchesStatus;
   });
+
+  // Check if user is the currently logged-in user
+  const isCurrentUser = (user) => {
+    const userId = user.id || user._id;
+    const currentUserId = currentUser?.id || currentUser?._id;
+    return userId && currentUserId && userId.toString() === currentUserId.toString();
+  };
 
   const handleAction = (user, action) => {
     setConfirmDialog({ open: true, user, action });
@@ -182,7 +194,6 @@ const UsersPage = () => {
             <MenuItem value="">All Roles</MenuItem>
             <MenuItem value="owner">Owner</MenuItem>
             <MenuItem value="admin">Admin</MenuItem>
-            <MenuItem value="user">User</MenuItem>
           </TextField>
           <TextField
             select
@@ -302,6 +313,7 @@ const UsersPage = () => {
                           size="small"
                           onClick={() => handleAction(user, 'deactivate')}
                           color="warning"
+                          disabled={isCurrentUser(user)}
                           sx={{
                             '&:hover': {
                               backgroundColor: 'warning.lighter'
@@ -315,6 +327,7 @@ const UsersPage = () => {
                           size="small"
                           onClick={() => handleAction(user, 'activate')}
                           color="success"
+                          disabled={isCurrentUser(user)}
                           sx={{
                             '&:hover': {
                               backgroundColor: 'success.lighter'
@@ -328,6 +341,7 @@ const UsersPage = () => {
                         size="small"
                         onClick={() => handleAction(user, 'delete')}
                         color="error"
+                        disabled={isCurrentUser(user)}
                         sx={{
                           '&:hover': {
                             backgroundColor: 'error.lighter'

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Box, Paper, Typography, Button, FormControl, InputLabel, Select, MenuItem, List, ListItem, ListItemText, Alert } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Paper, Typography, Button, FormControl, InputLabel, Select, MenuItem, List, ListItem, ListItemText, Alert, CircularProgress, LinearProgress } from '@mui/material';
 import { PlayArrow, FileDownload } from '@mui/icons-material';
 import testRetrievalService from '../../../services/testRetrievalService';
 import provenanceService from '../../../services/provenanceService';
@@ -7,6 +7,7 @@ import { useToast } from '../../../components/common/ToastProvider';
 
 const AnalyticsMonitoringTab = ({ state, handlers }) => {
   const { showSuccess, showError } = useToast();
+  const [isTestRunning, setIsTestRunning] = useState(false);
   const {
     testResults,
     setTestResults,
@@ -17,12 +18,17 @@ const AnalyticsMonitoringTab = ({ state, handlers }) => {
   } = state;
 
   const handleRunTest = async () => {
+    setIsTestRunning(true);
     try {
       const result = await testRetrievalService.testRetrieval();
-      setTestResults(result);
+      // Extract data from normalized response, or use result directly if not normalized
+      const testData = result.data || result;
+      setTestResults(testData);
       showSuccess('Retrieval test completed');
     } catch (error) {
       showError('Failed to run retrieval test');
+    } finally {
+      setIsTestRunning(false);
     }
   };
 
@@ -37,7 +43,9 @@ const AnalyticsMonitoringTab = ({ state, handlers }) => {
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString()
       });
-      setProvenanceData(result.analytics || result);
+      // Extract data from normalized response, or use result directly if not normalized
+      const analyticsData = result.data?.analytics || result.analytics || result.data || result;
+      setProvenanceData(analyticsData);
       showSuccess('Provenance analytics loaded');
     } catch (error) {
       showError('Failed to load provenance analytics');
@@ -57,7 +65,8 @@ const AnalyticsMonitoringTab = ({ state, handlers }) => {
         endDate.toISOString()
       );
       
-      const exportData = result.data || result;
+      // Extract data from normalized response, or use result directly if not normalized
+      const exportData = result.data?.data || result.data || result;
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -85,14 +94,25 @@ const AnalyticsMonitoringTab = ({ state, handlers }) => {
           Test the knowledge base search functionality with various queries to ensure proper operation.
         </Typography>
 
-        <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-          <Button
-            variant="contained"
-            startIcon={<PlayArrow />}
-            onClick={handleRunTest}
-          >
-            Run Comprehensive Test
-          </Button>
+        <Box sx={{ display: 'flex', gap: 2, mb: 3, flexDirection: 'column' }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <Button
+              variant="contained"
+              startIcon={isTestRunning ? <CircularProgress size={20} color="inherit" /> : <PlayArrow />}
+              onClick={handleRunTest}
+              disabled={isTestRunning}
+            >
+              {isTestRunning ? 'Running Tests...' : 'Run Comprehensive Test'}
+            </Button>
+          </Box>
+          {isTestRunning && (
+            <Box sx={{ mt: 1 }}>
+              <Alert severity="info" sx={{ mb: 1 }}>
+                Running comprehensive retrieval tests. This may take a few moments...
+              </Alert>
+              <LinearProgress />
+            </Box>
+          )}
         </Box>
 
         {testResults && (

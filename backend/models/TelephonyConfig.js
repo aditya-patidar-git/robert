@@ -146,6 +146,10 @@ const TelephonyConfigSchema = new mongoose.Schema({
     type: Boolean, 
     default: true
   },
+  routingEnabled: {
+    type: Boolean,
+    default: true
+  },
   createdBy: { 
     type: String, 
     default: "admin"

@@ -33,36 +33,10 @@ const Dashboard = () => {
     users: 0
   });
   const [activeCalls, setActiveCalls] = useState([]);
-  const [alerts, setAlerts] = useState([
-    {
-      id: '1',
-      timestamp: new Date(Date.now() - 300000).toISOString(),
-      level: 'error',
-      message: 'Database connection timeout',
-      context: { service: 'database', retryCount: 3 },
-      service: 'robert-ai'
-    },
-    {
-      id: '2',
-      timestamp: new Date(Date.now() - 600000).toISOString(),
-      level: 'warning',
-      message: 'High memory usage detected',
-      context: { memoryUsage: '85%', threshold: '80%' },
-      service: 'robert-ai'
-    },
-    {
-      id: '3',
-      timestamp: new Date(Date.now() - 900000).toISOString(),
-      level: 'error',
-      message: 'AI service response timeout',
-      context: { service: 'openai', timeout: '30s' },
-      service: 'robert-ai'
-    }
-  ]);
-  const [systemStatus, setSystemStatus] = useState({
-    routingEnabled: true,
-    mcpToolsActive: false
-  });
+  const [alerts, setAlerts] = useState([]);
+  const [systemStatus, setSystemStatus] = useState(null);
+  const [metricChanges, setMetricChanges] = useState(null);
+  const [comparisonPeriod, setComparisonPeriod] = useState('7d');
   const [loading, setLoading] = useState({
     metrics: true,
     calls: true,
@@ -93,6 +67,18 @@ const Dashboard = () => {
           // Update active calls
           setActiveCalls(data.liveCalls || []);
 
+          // Update alerts from API
+          setAlerts(data.alerts || []);
+
+          // Update system status from API
+          setSystemStatus(data.systemStatus || null);
+
+          // Update metric changes from API
+          setMetricChanges(data.metrics?.metricChanges || null);
+
+          // Update comparison period from API
+          setComparisonPeriod(data.comparisonPeriod || '7d');
+
         } else {
           console.error('❌ Dashboard API returned error:', dashboardData.error);
           showError('Failed to load dashboard data');
@@ -109,6 +95,9 @@ const Dashboard = () => {
           users: 0
         });
         setActiveCalls([]);
+        setAlerts([]);
+        setSystemStatus(null);
+        setMetricChanges(null);
       } finally {
         setLoading({ metrics: false, calls: false, alerts: false });
       }
@@ -153,12 +142,15 @@ const Dashboard = () => {
 
   const handlePauseRouting = async () => {
     try {
-      // Simulate API call
-      setSystemStatus(prev => ({
-        ...prev,
-        routingEnabled: !prev.routingEnabled
-      }));
+      const response = await dashboardService.toggleRouting();
+      if (response.success && response.data) {
+        setSystemStatus(response.data.systemStatus);
+        showSuccess(response.data.message || 'Routing status updated successfully');
+      } else {
+        showError('Failed to toggle routing status');
+      }
     } catch (error) {
+      console.error('❌ Error toggling routing:', error);
       showError('Failed to toggle routing status');
     }
   };
@@ -183,6 +175,18 @@ const Dashboard = () => {
         // Update active calls
         setActiveCalls(data.liveCalls || []);
 
+        // Update alerts from API
+        setAlerts(data.alerts || []);
+
+        // Update system status from API
+        setSystemStatus(data.systemStatus || null);
+
+        // Update metric changes from API
+        setMetricChanges(data.metrics?.metricChanges || null);
+
+        // Update comparison period from API
+        setComparisonPeriod(data.comparisonPeriod || '7d');
+
         showSuccess('Dashboard refreshed successfully');
       } else {
         showError('Failed to refresh dashboard data');
@@ -202,36 +206,36 @@ const Dashboard = () => {
       value: metrics.totalCalls,
       icon: <PhoneCallback />,
       color: 'primary',
-      change: '+12',
-      changeType: 'positive',
-      onClick: () => handleMetricCardClick('totalCalls')
+      change: metricChanges?.totalCalls ? `${metricChanges.totalCalls.changeType === 'positive' ? '+' : metricChanges.totalCalls.changeType === 'negative' ? '-' : ''}${metricChanges.totalCalls.change}` : null,
+      changeType: metricChanges?.totalCalls?.changeType || 'neutral',
+      onClick: null
     },
     {
       title: 'Active Calls',
       value: metrics.activeCalls,
       icon: <Phone />,
       color: 'primary',
-      change: '+2',
-      changeType: 'positive',
-      onClick: () => handleMetricCardClick('activeCalls')
+      change: metricChanges?.activeCalls ? `${metricChanges.activeCalls.changeType === 'positive' ? '+' : metricChanges.activeCalls.changeType === 'negative' ? '-' : ''}${metricChanges.activeCalls.change}` : null,
+      changeType: metricChanges?.activeCalls?.changeType || 'neutral',
+      onClick: null
     },
     {
       title: 'Bookings',
       value: metrics.bookings,
       icon: <Event />,
       color: 'primary',
-      change: '+5',
-      changeType: 'positive',
-      onClick: () => handleMetricCardClick('bookings')
+      change: metricChanges?.bookings ? `${metricChanges.bookings.changeType === 'positive' ? '+' : metricChanges.bookings.changeType === 'negative' ? '-' : ''}${metricChanges.bookings.change}` : null,
+      changeType: metricChanges?.bookings?.changeType || 'neutral',
+      onClick: null
     },
     {
       title: 'Users',
       value: metrics.users,
       icon: <People />,
       color: 'primary',
-      change: '+3',
-      changeType: 'positive',
-      onClick: () => handleMetricCardClick('users')
+      change: metricChanges?.users ? `${metricChanges.users.changeType === 'positive' ? '+' : metricChanges.users.changeType === 'negative' ? '-' : ''}${metricChanges.users.change}` : null,
+      changeType: metricChanges?.users?.changeType || 'neutral',
+      onClick: null
     }
   ];
 
@@ -286,6 +290,7 @@ const Dashboard = () => {
             changeType={metric.changeType}
             onClick={metric.onClick}
             loading={loading.metrics}
+            comparisonPeriod={comparisonPeriod}
           />
         ))}
       </Box>
@@ -398,7 +403,7 @@ const Dashboard = () => {
               onToggleMCPTools={handleToggleMCPTools}
               onPauseRouting={handlePauseRouting}
               onRefreshSystem={handleRefreshSystem}
-              systemStatus={systemStatus}
+              systemStatus={systemStatus || { routingEnabled: true, mcpToolsActive: false }}
             />
           </Paper>
         )}
