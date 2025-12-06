@@ -93,7 +93,8 @@ class CBTBookingService {
       console.log('📋 Step 13: Accepting terms and making booking...');
       // Note: termsAccepted should be set by voice agent based on client response
       const termsAccepted = bookingArgs.termsAccepted || false; // Default to false
-      const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted);
+      // TODO: Remove skipMakeBooking parameter once ready to click the button
+      const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true); // skipMakeBooking=true for now
       if (!bookingResult.success) {
         if (!bookingResult.termsAccepted) {
           // Terms not accepted - workflow should stop or handle accordingly
