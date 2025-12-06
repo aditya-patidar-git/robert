@@ -12,6 +12,18 @@ import { takeScreenshot } from './utils.js';
  */
 export async function loginToCRM(page, credentials, screenshotsDir) {
   try {
+    // Check if already logged in (persistent auth may have already authenticated)
+    await page.goto('https://takeabyte.co.uk/InContact');
+    await page.waitForLoadState('networkidle');
+    
+    const isAlreadyLoggedIn = await page.locator('text=/Dashboard|Contacts|Diaries/i').first().isVisible({ timeout: 5000 }).catch(() => false);
+    
+    if (isAlreadyLoggedIn) {
+      console.log('✅ [STEP 2] Already logged in (using persistent authentication)');
+      await takeScreenshot(page, 'step-2-already-logged-in.png', screenshotsDir);
+      return; // Skip login
+    }
+    
     console.log('🔐 [STEP 2] Navigating to CRM login page...');
     
     await page.goto(credentials.loginUrl);

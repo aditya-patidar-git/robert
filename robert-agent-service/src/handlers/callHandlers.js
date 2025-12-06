@@ -23,7 +23,7 @@ export const makeCall = async (req, res) => {
             console.log(`📞 Initiating call: to=${to}, from=${process.env.TWILIO_NUMBER}, method=${useSip ? 'SIP' : 'Media Streams'}`);
             
             // Use agent service domain for WebSocket URL
-            const baseUrl = process.env.DOMAIN ? `https://${process.env.DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
+            const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
             const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
             const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
             
@@ -97,7 +97,7 @@ export const aiIntro = async (req, res) => {
 
     // Start Media Stream FIRST (before any Say commands)
     // Determine WebSocket URL - use agent service domain
-    const baseUrl = process.env.DOMAIN ? `https://${process.env.DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
+    const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const wsUrl = `${wsProtocol}://${wsHost}/media-stream?callSid=${CallSid}`;
@@ -164,7 +164,7 @@ export const handleIncomingCall = async (req, res) => {
 
     // Start Media Stream FIRST (before any Say commands)
     // Determine WebSocket URL - use agent service domain
-    const baseUrl = process.env.DOMAIN ? `https://${process.env.DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
+    const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const wsUrl = `${wsProtocol}://${wsHost}/media-stream?callSid=${CallSid}`;

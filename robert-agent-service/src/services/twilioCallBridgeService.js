@@ -17,7 +17,7 @@ class TwilioCallBridgeService {
   async initiateAgentCall(callSid, targetNumber = null) {
     try {
       const target = targetNumber || this.defaultTargetNumber;
-      const baseUrl = process.env.DOMAIN ? `https://${process.env.DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
+      const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
 
       console.log(`📞 [${callSid}] Initiating outbound call to agent: ${target}`);
 

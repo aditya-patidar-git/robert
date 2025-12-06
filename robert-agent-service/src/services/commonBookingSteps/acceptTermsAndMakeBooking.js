@@ -250,13 +250,15 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
       }
       
       // Multiple selector strategy for "Finish and close" (try in order, stop when found)
+      // Based on image structure: list-menu-item > list-menu-item-heading (title) + subtitle
       const finishSelectors = [
+        '.list-menu-item-heading:has-text("Finish")', // Heading text (prioritized based on image structure)
+        '.list-menu-item:has(.list-menu-item-heading:has-text("Finish"))', // Nested structure from image
+        '.list-menu-item:has-text("Finish and close")', // Class + text
         'text="Finish and close"', // Exact text match
         'text=/Finish and close/i', // Case-insensitive regex
-        '.list-menu-item:has-text("Finish and close")', // Class + text
         '.list-menu-item-text:has-text("Finish and close")', // Specific class
         '[role="option"]:has-text("Finish and close")', // Role + text
-        '.list-menu-item-heading:has-text("Finish")', // Heading text
         'div.dx-list-item:has-text("Finish and close")', // DevExtreme list item
       ];
       

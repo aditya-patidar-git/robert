@@ -13,6 +13,7 @@ import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
 import sipRoutes from '../routes/sipRoutes.js';
 import secretsManager from '../services/secretsManager.js';
+import browserAgentService from '../services/browserAgentService.js';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -37,7 +38,7 @@ const {
   TWILIO_SID,
   TWILIO_AUTH_TOKEN,
   TWILIO_NUMBER,
-  DOMAIN,
+  TUNNEL_DOMAIN,
   OPENAI_API_KEY,
   MONGO_URI,
   PORT = 3002
@@ -70,7 +71,7 @@ app.get('/', (_, res) => res.json({
     telephony: configManager.getTelephonyConfig() ? 'loaded' : 'not loaded'
   },
   websocket: {
-    url: DOMAIN ? `wss://${DOMAIN}/media-stream` : `ws://localhost:${PORT}/media-stream`,
+    url: TUNNEL_DOMAIN ? `wss://${TUNNEL_DOMAIN}/media-stream` : `ws://localhost:${PORT}/media-stream`,
     status: 'ready'
   }
 }));
@@ -85,7 +86,7 @@ app.get('/test-websocket', (_, res) => {
         <div id="status">Connecting...</div>
         <div id="messages"></div>
         <script>
-          const ws = new WebSocket('${DOMAIN ? `wss://${DOMAIN}` : `ws://localhost:${PORT}`}/media-stream');
+          const ws = new WebSocket('${TUNNEL_DOMAIN ? `wss://${TUNNEL_DOMAIN}` : `ws://localhost:${PORT}`}/media-stream');
           const status = document.getElementById('status');
           const messages = document.getElementById('messages');
           
@@ -186,7 +187,7 @@ app.get('/call', async (req, res) => {
   try {
     console.log(`📞 [DEBUG] Call request received for: ${to}`);
     const client = twilio(TWILIO_SID, TWILIO_AUTH_TOKEN);
-    const baseUrl = DOMAIN ? `https://${DOMAIN}` : `http://localhost:${PORT}`;
+    const baseUrl = TUNNEL_DOMAIN ? `https://${TUNNEL_DOMAIN}` : `http://localhost:${PORT}`;
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const wsUrl = `${wsProtocol}://${wsHost}/media-stream`;
@@ -194,8 +195,8 @@ app.get('/call', async (req, res) => {
     console.log(`📞 [DEBUG] Creating Twilio call with WebSocket URL: ${wsUrl}`);
     
     // Build status callback URL
-    const statusCallbackUrl = DOMAIN 
-      ? `https://${DOMAIN}/api/outbound/call-status`
+    const statusCallbackUrl = TUNNEL_DOMAIN 
+      ? `https://${TUNNEL_DOMAIN}/api/outbound/call-status`
       : `http://localhost:${PORT}/api/outbound/call-status`;
     
     console.log(`📞 [DEBUG] Status callback URL: ${statusCallbackUrl}`);
@@ -224,22 +225,24 @@ app.get('/call', async (req, res) => {
 server.listen(PORT, () => {
   console.log(`\n🤖 ROBERT VOICE AGENT SERVICE READY`);
   console.log(`📍 Port: ${PORT}`);
-  console.log(`🌐 Tunnel URL: https://${DOMAIN}`);
+  console.log(`🌐 Tunnel URL: https://${TUNNEL_DOMAIN}`);
   console.log(`📋 Configs: AI=${configManager.getAIConfig() ? '✅' : '❌'}, Audio=${configManager.getAudioConfig() ? '✅' : '❌'}, Telephony=${configManager.getTelephonyConfig() ? '✅' : '❌'}`);
   console.log(`CALL NOW → http://localhost:${PORT}/call?to=+918120523400\n`);
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  await browserAgentService.cleanup();
   configManager.destroy();
   server.close(() => {
     process.exit(0);
   });
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  await browserAgentService.cleanup();
   configManager.destroy();
   server.close(() => {
     process.exit(0);

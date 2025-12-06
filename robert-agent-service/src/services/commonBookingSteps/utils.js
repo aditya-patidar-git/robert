@@ -31,24 +31,33 @@ export async function takeScreenshot(page, filename, screenshotsDir) {
 
 /**
  * Extract location identifier from location text
+ * Handles all 7 training centres:
+ * - Alperton (HA0 4LR)
+ * - Croydon (CR0 4WT)
+ * - Edgware (HA8 6AG)
+ * - Eltham (SE3 8NB)
+ * - Wimbledon (KT3 4PH)
+ * - Dagenham (RM9 6XW)
+ * - Hoddesdon (EN11 0EH)
  * @param {string} locationText - Location text to parse
  * @returns {string|null} Location identifier or null if not found
  */
 export function extractLocationIdentifier(locationText) {
   if (!locationText) return null;
   
-  // Step 1: Try to extract UK postcode (format: HA8 6AG, EN11 0EH, etc.)
-  const postcodeRegex = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s+\d[A-Z]{2})\b/i;
+  // Step 1: Try to extract UK postcode prefix (format: HA8 6AG, EN11 0EH, etc.)
+  // Improved regex to handle all postcode formats: 1-2 letters, 1-2 digits/letters, space, digit, 2 letters
+  // Examples: HA0 4LR, CR0 4WT, HA8 6AG, SE3 8NB, KT3 4PH, RM9 6XW, EN11 0EH
+  const postcodeRegex = /\b([A-Z]{1,2}[0-9R][0-9A-Z]?)\s+[0-9][A-Z]{2}\b/i;
   const postcodeMatch = locationText.match(postcodeRegex);
-  if (postcodeMatch) {
-    const postcode = postcodeMatch[1];
-    // Extract postcode prefix (e.g., "HA8" from "HA8 6AG")
-    const postcodePrefix = postcode.split(/\s+/)[0];
+  if (postcodeMatch && postcodeMatch[1]) {
+    const postcodePrefix = postcodeMatch[1];
     console.log(`📍 Postcode extracted: "${postcodePrefix}"`);
     return postcodePrefix;
   }
   
-  // Step 2: Try to match known city names
+  // Step 2: Try to match known city names (all 7 training centres)
+  // Priority order: check city names to avoid partial word matches
   const cityNames = ['Edgware', 'Hoddesdon', 'Alperton', 'Croydon', 'Dagenham', 'Eltham', 'Wimbledon'];
   
   for (const city of cityNames) {

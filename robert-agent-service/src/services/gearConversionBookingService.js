@@ -7,9 +7,9 @@ class GearConversionBookingService {
   constructor() {
     this.crmCredentials = {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
-      loginName: 'universalmct',
-      username: 'auagent',
-      password: 'Robert2025!',
+      loginName: process.env.CRM_LOGIN || 'universalmct',
+      username: process.env.CRM_USERNAME || 'auagent',
+      password: process.env.CRM_PASSWORD || 'Robert2025!',
       availabilityUrl: 'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=C07F8089718288E3'
     };
     this.screenshotsDir = './screenshots/gear-conversion-booking';
@@ -25,93 +25,183 @@ class GearConversionBookingService {
   async executeBookingWorkflow(page, bookingArgs, callContext = {}) {
     const screenshots = [];
     let sessionDetails = null;
+    const workflowType = bookingArgs.workflowType || 'existing';
 
     try {
-      console.log('🚀 Starting Gear Conversion booking workflow...');
+      console.log(`🚀 Starting Gear Conversion booking workflow (${workflowType} client)...`);
       console.log('🔍 Service: Current page URL:', page.url());
       console.log('🔍 Service: Page title:', await page.title());
 
-      // STEP 1: Check availability and note details
+      // STEP 1: Check availability and note details (for all workflows)
       console.log('📅 Step 1: Checking Gear Conversion availability...');
       sessionDetails = await this.checkAvailabilityAndNoteDetails(page);
       screenshots.push(await commonSteps.takeScreenshot(page, 'step-1-availability.png', this.screenshotsDir));
       console.log('✅ Step 1 completed:', sessionDetails);
 
-      // STEP 2: Login to CRM
+      // STEP 2: Login to CRM (for all workflows)
       console.log('🔐 Step 2: Logging into CRM...');
       await commonSteps.loginToCRM(page, this.crmCredentials, this.screenshotsDir);
       screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-login-success.png', this.screenshotsDir));
       console.log('✅ Step 2 completed: Login successful');
 
-      // STEP 3-5: Find and verify existing client
-      console.log('👤 Step 3-5: Finding and verifying client...');
-      const clientEmail = bookingArgs.customerEmail || process.env.CLIENT_EMAIL_ADDRESS;
-      console.log('🔍 Service: Using client email:', clientEmail);
-      await commonSteps.findAndVerifyClient(page, clientEmail, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-3-5-client-found.png', this.screenshotsDir));
-      console.log('✅ Step 3-5 completed: Client verified');
+      // STEP 3: Ask "Have you done training with us before?" (handled by voice agent)
+      // workflowType is already determined and passed in bookingArgs
 
-      // STEP 6-7: Navigate to Diaries and select session
-      console.log('📅 Step 6-7: Navigating to Diaries and selecting session...');
-      await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-7-session-selected.png', this.screenshotsDir));
-      console.log('✅ Step 6-7 completed: Session selected');
-
-      // STEP 8: Select booking options
-      console.log('⚙️ Step 8: Selecting Gear Conversion booking options...');
-      await this.selectBookingOptions(page, bookingArgs);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-options-selected.png', this.screenshotsDir));
-      console.log('✅ Step 8 completed: Booking options selected');
-
-      // STEP 9: Lookup contact and wait
-      console.log('🔍 Step 9: Looking up contact and waiting...');
-      await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-final-contact-page.png', this.screenshotsDir));
-      console.log('✅ Step 9 completed: Contact lookup done, waiting 10 seconds...');
-
-      // STEP 10: Select payment option
-      console.log('💳 Step 10: Selecting payment option...');
-      await commonSteps.selectPaymentOption(page, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-payment-selected.png', this.screenshotsDir));
-      console.log('✅ Step 10 completed: Payment option selected');
-
-      // STEP 11: Select payment method
-      console.log('💳 Step 11: Selecting payment method...');
-      await page.waitForTimeout(2000); // Wait for payment method dropdown to appear
-      await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-payment-method-selected.png', this.screenshotsDir));
-      console.log('✅ Step 11 completed: Payment method selected');
-
-      // STEP 12: Fill card details
-      console.log('💳 Step 12: Filling card details...');
-      await page.waitForTimeout(2000); // Wait for card fields to appear
-      await commonSteps.fillCardDetails(page, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-12-card-details-filled.png', this.screenshotsDir));
-      console.log('✅ Step 12 completed: Card details filled');
-
-      // STEP 13: Accept terms and make booking
-      console.log('📋 Step 13: Accepting terms and making booking...');
-      // Note: termsAccepted should be set by voice agent based on client response
-      const termsAccepted = bookingArgs.termsAccepted || false; // Default to false
-      const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted);
-      if (!bookingResult.success) {
-        if (!bookingResult.termsAccepted) {
-          // Terms not accepted - workflow should stop or handle accordingly
-          throw new Error('Client did not accept terms - booking cancelled');
-        } else {
-          // Terms accepted but booking failed
-          throw new Error(`Failed to complete booking: ${bookingResult.error}`);
+      if (workflowType === 'existing') {
+        // EXISTING CLIENT WORKFLOW
+        // STEP 4: Click CONTACTS tab
+        console.log('👤 Step 4: Finding and verifying existing client...');
+        const clientEmail = bookingArgs.customerEmail;
+        if (!clientEmail) {
+          throw new Error('customerEmail is required for existing client workflow');
         }
+        console.log('🔍 Service: Using client email:', clientEmail);
+        await commonSteps.findAndVerifyClient(page, clientEmail, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
+        console.log('✅ Step 4-5 completed: Client verified');
+
+        // STEP 6: Navigate to Diaries and select session
+        console.log('📅 Step 6: Navigating to Diaries and selecting session...');
+        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
+        console.log('✅ Step 6 completed: Session selected');
+
+        // STEP 7: Select booking options
+        console.log('⚙️ Step 7: Selecting Gear Conversion booking options...');
+        const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
+        
+        // Check if preferences are required
+        if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
+          return {
+            success: false,
+            requiresPreferences: true,
+            missingPreferences: bookingOptionsResult.missingPreferences,
+            message: bookingOptionsResult.message,
+            validOptions: bookingOptionsResult.validOptions,
+            sessionDetails,
+            screenshots,
+            clientEmail: bookingArgs.customerEmail
+          };
+        }
+        
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-options-selected.png', this.screenshotsDir));
+        console.log('✅ Step 7 completed: Booking options selected');
+
+        // STEP 8: Contact details - fill MISSING fields only
+        console.log('🔍 Step 8: Looking up contact and filling missing details...');
+        await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
+        console.log('✅ Step 8 completed: Contact details updated');
+
+        // STEP 9: Payment
+        console.log('💳 Step 9: Processing payment...');
+        await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-option-selected.png', this.screenshotsDir));
+        await page.waitForTimeout(2000);
+        await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-method-selected.png', this.screenshotsDir));
+        await page.waitForTimeout(2000);
+        await commonSteps.fillCardDetails(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-card-details-filled.png', this.screenshotsDir));
+        const termsAccepted = bookingArgs.termsAccepted || false;
+        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true);
+        if (!bookingResult.success) {
+          if (!bookingResult.termsAccepted) {
+            throw new Error('Client did not accept terms - booking cancelled');
+          } else {
+            throw new Error(`Failed to complete booking: ${bookingResult.error}`);
+          }
+        }
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-booking-completed.png', this.screenshotsDir));
+        console.log('✅ Step 9 completed: Payment processed and booking made');
+
+      } else {
+        // NEW CLIENT WORKFLOW
+        // STEP 4: Navigate to Diaries and select session
+        console.log('📅 Step 4: Navigating to Diaries and selecting session...');
+        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-session-selected.png', this.screenshotsDir));
+        console.log('✅ Step 4 completed: Session selected');
+
+        // STEP 5: Select booking options
+        console.log('⚙️ Step 5: Selecting Gear Conversion booking options...');
+        const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
+        
+        // Check if preferences are required
+        if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
+          return {
+            success: false,
+            requiresPreferences: true,
+            missingPreferences: bookingOptionsResult.missingPreferences,
+            message: bookingOptionsResult.message,
+            validOptions: bookingOptionsResult.validOptions,
+            sessionDetails,
+            screenshots
+          };
+        }
+        
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-5-options-selected.png', this.screenshotsDir));
+        console.log('✅ Step 5 completed: Booking options selected');
+
+        // STEP 6: Click "New contact" button
+        console.log('👤 Step 6: Creating new contact...');
+        await commonSteps.createNewContact(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-new-contact-created.png', this.screenshotsDir));
+        console.log('✅ Step 6 completed: New contact created');
+
+        // STEP 7: Fill ALL contact details from scratch
+        console.log('📝 Step 7: Filling all contact details...');
+        const contactDetails = {
+          title: bookingArgs.title,
+          firstNames: bookingArgs.firstNames,
+          surname: bookingArgs.surname,
+          mobileNumber: bookingArgs.customerPhone,
+          email: bookingArgs.customerEmail,
+          dateOfBirth: bookingArgs.dateOfBirth,
+          postcode: bookingArgs.postcode,
+          houseNumberOrName: bookingArgs.houseNumberOrName,
+          licenceHeld: bookingArgs.licenceHeld,
+          nationalInsuranceNumber: bookingArgs.nationalInsuranceNumber,
+          drivingLicenceNumber: bookingArgs.drivingLicenceNumber,
+          licenceFormat: bookingArgs.licenceFormat,
+          hearAboutUs: bookingArgs.hearAboutUs,
+          ridingExperience: bookingArgs.ridingExperience,
+          marketingConsent: bookingArgs.marketingConsent,
+          dataSharing: bookingArgs.dataSharing
+        };
+        await commonSteps.fillContactDetails(page, contactDetails, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-contact-details-filled.png', this.screenshotsDir));
+        console.log('✅ Step 7 completed: All contact details filled');
+
+        // STEP 8: Payment
+        console.log('💳 Step 8: Processing payment...');
+        await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-payment-option-selected.png', this.screenshotsDir));
+        await page.waitForTimeout(2000);
+        await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-payment-method-selected.png', this.screenshotsDir));
+        await page.waitForTimeout(2000);
+        await commonSteps.fillCardDetails(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-card-details-filled.png', this.screenshotsDir));
+        const termsAccepted = bookingArgs.termsAccepted || false;
+        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true);
+        if (!bookingResult.success) {
+          if (!bookingResult.termsAccepted) {
+            throw new Error('Client did not accept terms - booking cancelled');
+          } else {
+            throw new Error(`Failed to complete booking: ${bookingResult.error}`);
+          }
+        }
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-booking-completed.png', this.screenshotsDir));
+        console.log('✅ Step 8 completed: Payment processed and booking made');
       }
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-13-booking-completed.png', this.screenshotsDir));
-      console.log('✅ Step 13 completed: Booking made successfully');
 
       console.log('🎉 Service: All steps completed successfully!');
       return {
         success: true,
         sessionDetails,
         screenshots,
-        clientEmail
+        clientEmail: bookingArgs.customerEmail
       };
 
     } catch (error) {
@@ -129,7 +219,7 @@ class GearConversionBookingService {
         technicalError: error.message, // Keep technical error for logging
         sessionDetails: sessionDetails,
         screenshots: screenshots,
-        clientEmail: bookingArgs.customerEmail || process.env.CLIENT_EMAIL_ADDRESS
+        clientEmail: bookingArgs.customerEmail
       };
     }
   }
@@ -189,6 +279,48 @@ class GearConversionBookingService {
     try {
       console.log('⚙️ [STEP 8] Selecting Gear Conversion booking options...');
       
+      // Step 1: Validate provided preferences (if any)
+      const validDurations = ['2', '3', '4'];
+      const invalidPreferences = [];
+      
+      if (bookingArgs.duration) {
+        // Normalize duration - convert to string and trim
+        const normalizedDuration = String(bookingArgs.duration).trim();
+        const isValid = validDurations.includes(normalizedDuration);
+        if (!isValid) {
+          invalidPreferences.push({
+            preference: 'duration',
+            providedValue: bookingArgs.duration,
+            validOptions: validDurations
+          });
+        }
+      }
+      
+      if (invalidPreferences.length > 0) {
+        const invalidPref = invalidPreferences[0];
+        return {
+          requiresPreferences: true,
+          invalidPreferences: invalidPreferences.map(p => p.preference),
+          message: `I'm sorry, but "${invalidPref.providedValue}" is not a valid duration for the Gear Conversion course. Please choose one of: "${validDurations.join('", "')}" hours.`,
+          validOptions: validDurations
+        };
+      }
+      
+      // Step 2: Check for missing required preferences
+      const missingPreferences = [];
+      if (!bookingArgs.duration) {
+        missingPreferences.push('duration');
+      }
+      
+      if (missingPreferences.length > 0) {
+        return {
+          requiresPreferences: true,
+          missingPreferences: missingPreferences,
+          message: `I need to know your preferred duration for the Gear Conversion course. Would you like a 2-hour, 3-hour, or 4-hour session?`,
+          validOptions: validDurations
+        };
+      }
+      
       await page.waitForTimeout(5000);
       
       const pages = page.context().pages();
@@ -225,7 +357,7 @@ class GearConversionBookingService {
       await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
       await page.waitForTimeout(2000);
       
-      const duration = bookingArgs.duration || '2'; // '2', '3', or '4' hours
+      const duration = bookingArgs.duration; // Already validated above
       
       const durationMap = {
         '2': /2 hours/i,

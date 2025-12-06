@@ -6,9 +6,9 @@ class ITMBookingService {
   constructor() {
     this.crmCredentials = {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
-      loginName: 'universalmct',
-      username: 'auagent',
-      password: 'Robert2025!',
+      loginName: process.env.CRM_LOGIN || 'universalmct',
+      username: process.env.CRM_USERNAME || 'auagent',
+      password: process.env.CRM_PASSWORD || 'Robert2025!',
       availabilityUrl: 'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=C9170432CA66685F'
     };
     this.screenshotsDir = './screenshots/itm-booking';
@@ -21,160 +21,186 @@ class ITMBookingService {
     }
   }
 
-  // Helper method to extract location identifier from location text
-  extractLocationIdentifier(locationText) {
-    if (!locationText) return null;
-    
-    // Step 1: Try to extract UK postcode (e.g., "HA8" from "HA8 6AG")
-    // Improved regex: Match first part of postcode pattern
-    // Pattern: 1-2 letters + 1-2 digits/letters, followed by space + digit + 2 letters
-    const postcodePattern = /\b([A-Z]{1,2}[0-9R][0-9A-Z]?)\s+[0-9][A-Z]{2}\b/i;
-    const postcodeMatch = locationText.match(postcodePattern);
-    if (postcodeMatch && postcodeMatch[1]) {
-      const postcode = postcodeMatch[1];
-      console.log(`📍 Postcode extracted: "${postcode}"`);
-      return postcode; // Return first part of postcode (e.g., "HA8", "EN11", "RM9")
-    }
-    
-    // Step 2: Extract city names (common locations in the system)
-    // Priority: check for city names to avoid partial word matches
-    const cityNames = ['Edgware', 'Hoddesdon', 'Alperton', 'Croydon', 'Dagenham', 'Eltham', 'Wimbledon'];
-    
-    for (const city of cityNames) {
-      // Use word boundary to avoid matching partial words (e.g., "Barnet" containing "Barn")
-      const cityRegex = new RegExp(`\\b${city}\\b`, 'i');
-      if (cityRegex.test(locationText)) {
-        console.log(`📍 City name extracted: "${city}"`);
-        return city;
-      }
-    }
-    
-    // Step 3: Fallback - extract first significant word after comma
-    // Skip common words and words with special characters
-    const skipWords = ['universal', 'motorcycle', 'training', 'london', 'the', 'hive', 'barnet', 'fc', 'barn', 'nw', 'north', 'west', 'south', 'east', 'greater'];
-    
-    // Split by commas and spaces, but handle parentheses properly
-    // First, remove parentheses and their contents to avoid "(Barnet FC)" splitting issues
-    const cleanedText = locationText.replace(/\([^)]*\)/g, '').trim();
-    const words = cleanedText.split(/[,\s]+/)
-      .map(w => w.trim())
-      .filter(w => w.length > 0)
-      .filter(w => {
-        // Filter out words that start with special characters
-        const firstChar = w[0];
-        return /[A-Za-z]/.test(firstChar);
-      });
-    
-    for (const word of words) {
-      const wordLower = word.toLowerCase();
-      // Return first meaningful word that's not in skip list and is capitalized (likely a city name)
-      if (!skipWords.includes(wordLower) && word[0] === word[0].toUpperCase() && word.length > 2) {
-        console.log(`📍 Fallback word extracted: "${word}"`);
-        return word;
-      }
-    }
-    
-    // Last resort: return first non-empty word (if it exists)
-    if (words.length > 0) {
-      console.log(`📍 Last resort word extracted: "${words[0]}"`);
-      return words[0];
-    }
-    
-    console.log(`⚠️ No location identifier could be extracted from: "${locationText}"`);
-    return null;
-  }
-
   async executeITMBookingDemo(page, bookingArgs = {}, callContext = {}) {
     const screenshots = [];
     let sessionDetails = null;
+    const workflowType = bookingArgs.workflowType || 'existing';
 
     try {
-      console.log('🚀 Starting ITM booking demo workflow...');
+      console.log(`🚀 Starting ITM booking demo workflow (${workflowType} client)...`);
       console.log('🔍 Service: Current page URL:', page.url());
       console.log('🔍 Service: Page title:', await page.title());
 
-      // STEP 1: Check availability and note details (ITM-specific)
+      // STEP 1: Check availability and note details (for all workflows)
       console.log('📅 Step 1: Checking ITM availability...');
       sessionDetails = await this.checkAvailabilityAndNoteDetails(page);
       screenshots.push(await commonSteps.takeScreenshot(page, 'step-1-availability.png', this.screenshotsDir));
       console.log('✅ Step 1 completed:', sessionDetails);
 
-      // STEP 2: Login to CRM (common)
+      // STEP 2: Login to CRM (for all workflows)
       console.log('🔐 Step 2: Logging into CRM...');
       await commonSteps.loginToCRM(page, this.crmCredentials, this.screenshotsDir);
       screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-login-success.png', this.screenshotsDir));
       console.log('✅ Step 2 completed: Login successful');
 
-      // STEP 3-5: Find and verify existing client (common)
-      console.log('👤 Step 3-5: Finding and verifying client...');
-      const clientEmail = bookingArgs.customerEmail || process.env.CLIENT_EMAIL_ADDRESS;
-      console.log('🔍 Service: Using client email:', clientEmail);
-      await commonSteps.findAndVerifyClient(page, clientEmail, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-3-5-client-found.png', this.screenshotsDir));
-      console.log('✅ Step 3-5 completed: Client verified');
+      // STEP 3: Ask "Have you done training with us before?" (handled by voice agent)
+      // workflowType is already determined and passed in bookingArgs
 
-      // STEP 6-7: Navigate to Diaries and select session (common)
-      console.log('📅 Step 6-7: Navigating to Diaries and selecting session...');
-      await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-7-session-selected.png', this.screenshotsDir));
-      console.log('✅ Step 6-7 completed: Session selected');
-
-      // STEP 8: Select booking options (ITM-specific)
-      console.log('⚙️ Step 8: Selecting ITM booking options...');
-      await this.selectBookingOptions(page, bookingArgs);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-options-selected.png', this.screenshotsDir));
-      console.log('✅ Step 8 completed: Booking options selected');
-
-      // STEP 9: Lookup contact and wait (common)
-      console.log('🔍 Step 9: Looking up contact and waiting...');
-      await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-final-contact-page.png', this.screenshotsDir));
-      console.log('✅ Step 9 completed: Contact lookup done, waiting 10 seconds...');
-
-      // STEP 10: Select payment option
-      console.log('💳 Step 10: Selecting payment option...');
-      await commonSteps.selectPaymentOption(page, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-payment-selected.png', this.screenshotsDir));
-      console.log('✅ Step 10 completed: Payment option selected');
-
-      // STEP 11: Select payment method
-      console.log('💳 Step 11: Selecting payment method...');
-      await page.waitForTimeout(2000); // Wait for payment method dropdown to appear
-      await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-payment-method-selected.png', this.screenshotsDir));
-      console.log('✅ Step 11 completed: Payment method selected');
-
-      // STEP 12: Fill card details
-      console.log('💳 Step 12: Filling card details...');
-      await page.waitForTimeout(2000); // Wait for card fields to appear
-      await commonSteps.fillCardDetails(page, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-12-card-details-filled.png', this.screenshotsDir));
-      console.log('✅ Step 12 completed: Card details filled');
-
-      // STEP 13: Accept terms and make booking
-      console.log('📋 Step 13: Accepting terms and making booking...');
-      // Note: termsAccepted should be set by voice agent based on client response
-      const termsAccepted = bookingArgs.termsAccepted || false; // Default to false
-      // TODO: Remove skipMakeBooking parameter once ready to click the button
-      const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true); // skipMakeBooking=true for now
-      if (!bookingResult.success) {
-        if (!bookingResult.termsAccepted) {
-          // Terms not accepted - workflow should stop or handle accordingly
-          throw new Error('Client did not accept terms - booking cancelled');
-        } else {
-          // Terms accepted but booking failed
-          throw new Error(`Failed to complete booking: ${bookingResult.error}`);
+      if (workflowType === 'existing') {
+        // EXISTING CLIENT WORKFLOW
+        // STEP 4: Click CONTACTS tab
+        console.log('👤 Step 4: Finding and verifying existing client...');
+        const clientEmail = bookingArgs.customerEmail;
+        if (!clientEmail) {
+          throw new Error('customerEmail is required for existing client workflow');
         }
+        console.log('🔍 Service: Using client email:', clientEmail);
+        await commonSteps.findAndVerifyClient(page, clientEmail, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
+        console.log('✅ Step 4-5 completed: Client verified');
+
+        // STEP 6: Navigate to Diaries and select session
+        console.log('📅 Step 6: Navigating to Diaries and selecting session...');
+        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
+        console.log('✅ Step 6 completed: Session selected');
+
+        // STEP 7: Select booking options
+        console.log('⚙️ Step 7: Selecting ITM booking options...');
+        const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
+        
+        // Check if preferences are required
+        if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
+          return {
+            success: false,
+            requiresPreferences: true,
+            missingPreferences: bookingOptionsResult.missingPreferences,
+            message: bookingOptionsResult.message,
+            validOptions: bookingOptionsResult.validOptions,
+            sessionDetails,
+            screenshots,
+            clientEmail: bookingArgs.customerEmail
+          };
+        }
+        
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-options-selected.png', this.screenshotsDir));
+        console.log('✅ Step 7 completed: Booking options selected');
+
+        // STEP 8: Contact details - fill MISSING fields only
+        console.log('🔍 Step 8: Looking up contact and filling missing details...');
+        await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
+        console.log('✅ Step 8 completed: Contact details updated');
+
+        // STEP 9: Payment
+        console.log('💳 Step 9: Processing payment...');
+        await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-option-selected.png', this.screenshotsDir));
+        await page.waitForTimeout(2000);
+        await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-method-selected.png', this.screenshotsDir));
+        await page.waitForTimeout(2000);
+        await commonSteps.fillCardDetails(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-card-details-filled.png', this.screenshotsDir));
+        const termsAccepted = bookingArgs.termsAccepted || false;
+        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true);
+        if (!bookingResult.success) {
+          if (!bookingResult.termsAccepted) {
+            throw new Error('Client did not accept terms - booking cancelled');
+          } else {
+            throw new Error(`Failed to complete booking: ${bookingResult.error}`);
+          }
+        }
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-booking-completed.png', this.screenshotsDir));
+        console.log('✅ Step 9 completed: Payment processed and booking made');
+
+      } else {
+        // NEW CLIENT WORKFLOW
+        // STEP 4: Navigate to Diaries and select session
+        console.log('📅 Step 4: Navigating to Diaries and selecting session...');
+        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-session-selected.png', this.screenshotsDir));
+        console.log('✅ Step 4 completed: Session selected');
+
+        // STEP 5: Select booking options
+        console.log('⚙️ Step 5: Selecting ITM booking options...');
+        const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
+        
+        // Check if preferences are required
+        if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
+          return {
+            success: false,
+            requiresPreferences: true,
+            missingPreferences: bookingOptionsResult.missingPreferences,
+            message: bookingOptionsResult.message,
+            validOptions: bookingOptionsResult.validOptions,
+            sessionDetails,
+            screenshots
+          };
+        }
+        
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-5-options-selected.png', this.screenshotsDir));
+        console.log('✅ Step 5 completed: Booking options selected');
+
+        // STEP 6: Click "New contact" button
+        console.log('👤 Step 6: Creating new contact...');
+        await commonSteps.createNewContact(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-new-contact-created.png', this.screenshotsDir));
+        console.log('✅ Step 6 completed: New contact created');
+
+        // STEP 7: Fill ALL contact details from scratch
+        console.log('📝 Step 7: Filling all contact details...');
+        const contactDetails = {
+          title: bookingArgs.title,
+          firstNames: bookingArgs.firstNames,
+          surname: bookingArgs.surname,
+          mobileNumber: bookingArgs.customerPhone,
+          email: bookingArgs.customerEmail,
+          dateOfBirth: bookingArgs.dateOfBirth,
+          postcode: bookingArgs.postcode,
+          houseNumberOrName: bookingArgs.houseNumberOrName,
+          licenceHeld: bookingArgs.licenceHeld,
+          nationalInsuranceNumber: bookingArgs.nationalInsuranceNumber,
+          drivingLicenceNumber: bookingArgs.drivingLicenceNumber,
+          licenceFormat: bookingArgs.licenceFormat,
+          hearAboutUs: bookingArgs.hearAboutUs,
+          ridingExperience: bookingArgs.ridingExperience,
+          marketingConsent: bookingArgs.marketingConsent,
+          dataSharing: bookingArgs.dataSharing
+        };
+        await commonSteps.fillContactDetails(page, contactDetails, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-contact-details-filled.png', this.screenshotsDir));
+        console.log('✅ Step 7 completed: All contact details filled');
+
+        // STEP 8: Payment
+        console.log('💳 Step 8: Processing payment...');
+        await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-payment-option-selected.png', this.screenshotsDir));
+        await page.waitForTimeout(2000);
+        await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-payment-method-selected.png', this.screenshotsDir));
+        await page.waitForTimeout(2000);
+        await commonSteps.fillCardDetails(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-card-details-filled.png', this.screenshotsDir));
+        const termsAccepted = bookingArgs.termsAccepted || false;
+        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true);
+        if (!bookingResult.success) {
+          if (!bookingResult.termsAccepted) {
+            throw new Error('Client did not accept terms - booking cancelled');
+          } else {
+            throw new Error(`Failed to complete booking: ${bookingResult.error}`);
+          }
+        }
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-booking-completed.png', this.screenshotsDir));
+        console.log('✅ Step 8 completed: Payment processed and booking made');
       }
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-13-booking-completed.png', this.screenshotsDir));
-      console.log('✅ Step 13 completed: Booking made successfully');
 
       console.log('🎉 Service: All steps completed successfully!');
       return {
         success: true,
         sessionDetails,
         screenshots,
-        clientEmail
+        clientEmail: bookingArgs.customerEmail
       };
 
     } catch (error) {
@@ -183,7 +209,7 @@ class ITMBookingService {
       screenshots.push(await commonSteps.takeScreenshot(page, 'error-state.png', this.screenshotsDir));
       
       // Return error gracefully with user-friendly message
-      const clientEmail = bookingArgs?.customerEmail || process.env.CLIENT_EMAIL_ADDRESS;
+      const clientEmail = bookingArgs?.customerEmail;
       const errorContext = getErrorContext(error, 'create_booking');
       const userFriendlyError = formatUserFriendlyError(error, errorContext);
       
@@ -232,21 +258,24 @@ async checkAvailabilityAndNoteDetails(page) {
     
     console.log(`📊 Total data rows found: ${rowCount}`);
     
-    // Get the LAST data row (most recent entry from latest month)
-    const lastDataRow = allDataRows.last();
-    await lastDataRow.waitFor({ state: 'visible' });
+    // Get the SECOND-TO-LAST data row (for testing)
+    if (rowCount < 2) {
+      throw new Error('Not enough availability entries found. Need at least 2 entries.');
+    }
+    const secondLastDataRow = allDataRows.nth(rowCount - 2);
+    await secondLastDataRow.waitFor({ state: 'visible' });
     
     // Extract details from columns based on actual table structure
     // Column order: 0=date, 1=course, 2=location, 3=time, 4=price, 5=spaces button, 6=instructor
     const sessionDetails = {
-      date: (await lastDataRow.locator('td').nth(0).textContent()).trim(),
-      course: (await lastDataRow.locator('td').nth(1).textContent()).trim(),
-      location: (await lastDataRow.locator('td').nth(2).textContent()).trim(), // Fixed: was incorrectly mapped to time
-      time: (await lastDataRow.locator('td').nth(3).textContent()).trim(), // Fixed: was incorrectly mapped to location
-      price: (await lastDataRow.locator('td').nth(4).textContent()).trim(), // Added: price field
-      instructor: (await lastDataRow.locator('td').nth(6).textContent()).trim().replace(/^Instructor:\s*/i, ''), // Fixed: column 5 is "Spaces" button, instructor is in column 6, remove "Instructor: " prefix
+      date: (await secondLastDataRow.locator('td').nth(0).textContent()).trim(),
+      course: (await secondLastDataRow.locator('td').nth(1).textContent()).trim(),
+      location: (await secondLastDataRow.locator('td').nth(2).textContent()).trim(), // Fixed: was incorrectly mapped to time
+      time: (await secondLastDataRow.locator('td').nth(3).textContent()).trim(), // Fixed: was incorrectly mapped to location
+      price: (await secondLastDataRow.locator('td').nth(4).textContent()).trim(), // Added: price field
+      instructor: (await secondLastDataRow.locator('td').nth(6).textContent()).trim().replace(/^Instructor:\s*/i, ''), // Fixed: column 5 is "Spaces" button, instructor is in column 6, remove "Instructor: " prefix
       // Extract precise date from data attribute for calendar selection
-      startDate: await lastDataRow.getAttribute('data-start_date'),
+      startDate: await secondLastDataRow.getAttribute('data-start_date'),
       // Use the latest month/year we extracted
       monthYear: latestMonthYear
     };
@@ -264,6 +293,47 @@ async checkAvailabilityAndNoteDetails(page) {
   async selectBookingOptions(page, bookingArgs = {}) {
     try {
       console.log('⚙️ [STEP 8] Selecting ITM booking options...');
+      
+      // Step 1: Validate provided preferences (if any)
+      const validBikeTypes = ['125cc automatic', '50cc automatic', '125cc manual'];
+      const invalidPreferences = [];
+      
+      if (bookingArgs.bikeType) {
+        const normalizedBikeType = bookingArgs.bikeType.trim().toLowerCase();
+        const isValid = validBikeTypes.some(valid => valid.toLowerCase() === normalizedBikeType);
+        if (!isValid) {
+          invalidPreferences.push({
+            preference: 'bikeType',
+            providedValue: bookingArgs.bikeType,
+            validOptions: validBikeTypes
+          });
+        }
+      }
+      
+      if (invalidPreferences.length > 0) {
+        const invalidPref = invalidPreferences[0];
+        return {
+          requiresPreferences: true,
+          invalidPreferences: invalidPreferences.map(p => p.preference),
+          message: `I'm sorry, but "${invalidPref.providedValue}" is not a valid bike type for the ITM course. Please choose one of: "${validBikeTypes.join('", "')}".`,
+          validOptions: validBikeTypes
+        };
+      }
+      
+      // Step 2: Check for missing required preferences
+      const missingPreferences = [];
+      if (!bookingArgs.bikeType) {
+        missingPreferences.push('bikeType');
+      }
+      
+      if (missingPreferences.length > 0) {
+        return {
+          requiresPreferences: true,
+          missingPreferences: missingPreferences,
+          message: `I need to know your bike type preference for the ITM course. Would you like to do the course on a "125cc automatic (scooter)", a "50cc automatic", or a "125cc manual (geared)"?`,
+          validOptions: validBikeTypes
+        };
+      }
       
       // WAIT FOR PRICE PAGE TO LOAD - 5 seconds (increased for iframe/popup loading)
       console.log('⏳ [STEP 8] Waiting for price page to load...');
@@ -670,105 +740,45 @@ async checkAvailabilityAndNoteDetails(page) {
       console.log('⏳ [STEP 8] Waiting for booking options to be visible...');
       await page.waitForTimeout(2000);
       
-      // Find and select one option from EACH of the three sections:
-      // 1. CBT course type
-      // 2. Full Licence courses
-      // 3. Booking options
-      console.log('🚲 [STEP 8] Selecting options from all required sections...');
+      // Select bike type from Booking options (ITM only offers 3 options as per documents)
+      console.log('🚲 [STEP 8] Selecting bike type from Booking options...');
+      await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(2000);
       
-      // Strategy: Find all option groups and select first option from each
-      const optionGroups = searchContext.locator('.jqxInputBookingOptionsSelectGroup');
-      const groupCount = await optionGroups.count();
-      console.log(`📊 [STEP 8] Found ${groupCount} option groups`);
+      const bikeType = bookingArgs.bikeType || '125cc automatic';
       
-      let selectedCount = 0;
+      const bikeTypeMap = {
+        '125cc automatic': /125cc automatic.*scooter/i,
+        '50cc automatic': /50cc automatic/i,
+        '125cc manual': /125cc manual.*geared/i
+      };
       
-      // Select first option from each group
-      for (let i = 0; i < groupCount; i++) {
-        const group = optionGroups.nth(i);
-        const firstOptionInGroup = group.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-        
-        if (await firstOptionInGroup.count() > 0) {
-          try {
-            await firstOptionInGroup.waitFor({ state: 'visible', timeout: 3000 });
-            
-            // Try clicking the check div first (most reliable)
-            const checkDiv = firstOptionInGroup.locator('.jqx_inputBookingOptionsSelect_check').first();
-            if (await checkDiv.count() > 0) {
-              await checkDiv.click();
-              selectedCount++;
-              console.log(`✅ [STEP 8] Selected option from group ${i + 1}`);
-            } else {
-              // Fallback: click the row itself
-              await firstOptionInGroup.click();
-              selectedCount++;
-              console.log(`✅ [STEP 8] Selected option from group ${i + 1} (fallback)`);
-            }
-            
-            // Small delay between selections
-            await page.waitForTimeout(500);
-          } catch (e) {
-            console.log(`⚠️ [STEP 8] Error selecting option from group ${i + 1}: ${e.message}`);
-          }
-        }
-      }
+      const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
+      console.log(`✅ [STEP 8] Selecting bike type: ${bikeType}`);
       
-      // Validate that we selected at least one option
-      if (selectedCount === 0) {
-        console.log('⚠️ [STEP 8] No options selected from groups, trying fallback...');
-        // Fallback: Try selecting first available option (old behavior)
-        let firstOptionRow = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-        
-        // FALLBACK STRATEGY: If not found in current context, try alternative contexts
-        if (await firstOptionRow.count() === 0) {
-          console.log('⚠️ [STEP 8] Booking options not found in current context, trying fallback contexts...');
-          
-          // Try eventNewBooking2_iframe first
-          const eventBookingIframeExists = await targetPage.locator('#eventNewBooking2_iframe').count() > 0;
-          if (eventBookingIframeExists) {
-            const eventBookingIframe = targetPage.frameLocator('#eventNewBooking2_iframe');
-            firstOptionRow = eventBookingIframe.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-            if (await firstOptionRow.count() > 0) {
-              searchContext = eventBookingIframe;
-              bookingIframe = eventBookingIframe;
-            }
-          }
-          
-          // Try main page
-          if (await firstOptionRow.count() === 0) {
-            firstOptionRow = targetPage.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-            if (await firstOptionRow.count() > 0) {
-              searchContext = targetPage;
-            }
-          }
-        }
-        
-        if (await firstOptionRow.count() > 0) {
-          await firstOptionRow.waitFor({ state: 'visible', timeout: 5000 });
-          
-          // Try clicking the check div first (most reliable)
-          const checkDiv = firstOptionRow.locator('.jqx_inputBookingOptionsSelect_check').first();
+      // Find and select the bike type option
+      const bikeOption = searchContext.locator(`[role="radio"]:has-text("${bikePattern.source}"), input[type="radio"]`).filter({ hasText: bikePattern }).first();
+      
+      if (await bikeOption.count() === 0) {
+        // Fallback: try selecting first available option
+        const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
+        if (await firstOption.count() > 0) {
+          const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
           if (await checkDiv.count() > 0) {
             await checkDiv.click();
-            selectedCount++;
-            console.log('✅ [STEP 8] Selected fallback option');
           } else {
-            // Fallback: click the row itself
-            await firstOptionRow.click();
-            selectedCount++;
-            console.log('✅ [STEP 8] Selected fallback option (fallback)');
+            await firstOption.click();
           }
+        } else {
+          throw new Error('No selectable booking options found on price page');
         }
+      } else {
+        await bikeOption.check();
       }
       
-      // Final validation
-      if (selectedCount === 0) {
-        console.log('⚠️ [STEP 8] No selectable booking options found in any context');
-        await commonSteps.takeScreenshot(targetPage, this.screenshotsDir, 'booking-options-not-found.png');
-        throw new Error('No selectable booking options found on price page');
-      }
+      await page.waitForTimeout(1000);
       
-      console.log(`✅ [STEP 8] Selected ${selectedCount} option(s) from booking form`);
+      console.log(`✅ [STEP 8] Selected bike type option from booking form`);
       
       // Wait for selection to register
       await page.waitForTimeout(1000);
