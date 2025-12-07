@@ -42,6 +42,8 @@ class CRMBrowserTool {
         result: result.result,
         dryRun: result.dryRun || false,
         requiresConfirmation: result.requiresConfirmation || false,
+        requiresVerification: result.requiresVerification || false,
+        clientDetails: result.clientDetails,
         auditId: result.auditId,
         screenshots: result.screenshots || [],
         courseType: result.courseType,

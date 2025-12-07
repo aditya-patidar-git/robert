@@ -918,6 +918,14 @@ ${config.instructions}`;
                         // Note: item_id comes from conversation.item.created, not response.created
                         responseStartTime = Date.now(); // Track when this response was created
                         
+                        // Log response creation details for debugging
+                        console.log(`📝 [${callSid}] Response created - ID: ${activeResponseId}, modalities: ${JSON.stringify(event.response?.modalities || [])}, isResponding: ${isResponding}`);
+                        
+                        // Check if response has any errors or warnings
+                        if (event.response?.error) {
+                            console.error(`❌ [${callSid}] Response created with error:`, JSON.stringify(event.response.error, null, 2));
+                        }
+                        
                         // CRITICAL: Block automatic responses that we didn't explicitly request
                         // BUT: Distinguish between barge-in (block) and normal user input (allow)
                         if (!explicitResponseRequested) {
@@ -1043,7 +1051,18 @@ ${config.instructions}`;
                     if (event.type === 'response.done') {
                         const status = event.response?.status || 'completed';
                         const responseId = event.response?.id;
-                        console.log(`✅ [${callSid}] Response done - ID: ${responseId}, status: ${status}`);
+                        const error = event.response?.error;
+                        
+                        // Log error details if response failed
+                        if (status === 'failed') {
+                            console.error(`❌ [${callSid}] Response failed - ID: ${responseId}`);
+                            if (error) {
+                                console.error(`❌ [${callSid}] Response error details:`, JSON.stringify(error, null, 2));
+                            }
+                            console.error(`❌ [${callSid}] Full response.done event:`, JSON.stringify(event, null, 2));
+                        } else {
+                            console.log(`✅ [${callSid}] Response done - ID: ${responseId}, status: ${status}`);
+                        }
                         
                         // Clean up cancelled response tracking after grace period
                         if (responseId && cancelledResponseIds.has(responseId)) {
@@ -1839,15 +1858,49 @@ ${config.instructions}`;
                         }
                         
                         // Execute tool asynchronously
+                        // Include client details and verification status from conversation state
+                        const conversation = conversations[callSid] || {};
                         const callContext = {
                             callSid: callSid,
-                            phoneNumber: phoneNumber
+                            phoneNumber: phoneNumber,
+                            clientDetails: conversation.clientDetails,
+                            clientVerified: conversation.clientVerified || false
                         };
                         
                         toolExecutor.execute(name, parameters, callContext)
                             .then(async (executionResult) => {
                                 if (isClosed || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
                                     return;
+                                }
+                                
+                                // Store client details in conversation if returned from CRM browser tool
+                                if (name === 'crm_browser' && executionResult.success && executionResult.result) {
+                                    if (executionResult.result.clientDetails) {
+                                        if (!conversations[callSid]) {
+                                            conversations[callSid] = {};
+                                        }
+                                        conversations[callSid].clientDetails = executionResult.result.clientDetails;
+                                        console.log(`💾 [${callSid}] Stored client details in conversation state`);
+                                    }
+                                    
+                                    // Store availability data if returned from check_availability
+                                    if (executionResult.result.sessionDetails || executionResult.result.availableSlots) {
+                                        if (!conversations[callSid]) {
+                                            conversations[callSid] = {};
+                                        }
+                                        conversations[callSid].lastAvailabilityCheck = executionResult.result.sessionDetails || executionResult.result;
+                                        console.log(`💾 [${callSid}] Stored availability data in conversation state`);
+                                    }
+                                }
+                                
+                                // Store client verification status if returned from client_verification tool
+                                if (name === 'client_verification' && executionResult.success && executionResult.verified) {
+                                    if (!conversations[callSid]) {
+                                        conversations[callSid] = {};
+                                    }
+                                    conversations[callSid].clientVerified = true;
+                                    conversations[callSid].clientVerifiedAt = new Date();
+                                    console.log(`✅ [${callSid}] Client verified - stored in conversation state`);
                                 }
                                 
                                 // Remove from pending
@@ -1859,6 +1912,16 @@ ${config.instructions}`;
                                 const output = executionResult.success 
                                     ? executionResult.result 
                                     : { success: false, error: executionResult.error };
+                                
+                                // Include clientDetails in output if available
+                                if (executionResult.clientDetails) {
+                                    output.clientDetails = executionResult.clientDetails;
+                                }
+                                
+                                // Include verification status if available
+                                if (executionResult.requiresVerification !== undefined) {
+                                    output.requiresVerification = executionResult.requiresVerification;
+                                }
                                 
                                 console.log(`\n✅ [${callSid}] ========================================`);
                                 console.log(`✅ [${callSid}] TOOL EXECUTION COMPLETED`);

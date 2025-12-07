@@ -12,19 +12,39 @@ import { takeScreenshot } from './utils.js';
  */
 export async function loginToCRM(page, credentials, screenshotsDir) {
   try {
-    // Check if already logged in (persistent auth may have already authenticated)
-    await page.goto('https://takeabyte.co.uk/InContact');
-    await page.waitForLoadState('networkidle');
-    
-    const isAlreadyLoggedIn = await page.locator('text=/Dashboard|Contacts|Diaries/i').first().isVisible({ timeout: 5000 }).catch(() => false);
-    
-    if (isAlreadyLoggedIn) {
-      console.log('✅ [STEP 2] Already logged in (using persistent authentication)');
-      await takeScreenshot(page, 'step-2-already-logged-in.png', screenshotsDir);
-      return; // Skip login
+    // If page is at about:blank or not on CRM, navigate first
+    const currentUrl = page.url();
+    if (currentUrl === 'about:blank' || !currentUrl.includes('takeabyte.co.uk/InContact')) {
+      console.log('🔐 [STEP 2] Page not on CRM, navigating to CRM...');
+      await page.goto('https://takeabyte.co.uk/InContact');
+      await page.waitForLoadState('networkidle');
     }
     
-    console.log('🔐 [STEP 2] Navigating to CRM login page...');
+    // Check if already logged in
+    const loginIndicators = [
+      'text=/Dashboard|Contacts|Diaries/i',
+      'h3.list-menu-item-heading:has-text("Contacts")',
+      'h3.list-menu-item-heading:has-text("Dashboard")'
+    ];
+    
+    let isAlreadyLoggedIn = false;
+    for (const selector of loginIndicators) {
+      try {
+        isAlreadyLoggedIn = await page.locator(selector).first().isVisible({ timeout: 5000 }).catch(() => false);
+        if (isAlreadyLoggedIn) break;
+      } catch (e) {
+        // Continue to next indicator
+      }
+    }
+    
+    if (isAlreadyLoggedIn) {
+      if (currentUrl.includes('/Account/Login')) {
+        await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
+        await page.waitForTimeout(2000);
+      }
+      await takeScreenshot(page, 'step-2-already-logged-in.png', screenshotsDir);
+      return;
+    }
     
     await page.goto(credentials.loginUrl);
     await page.waitForLoadState('networkidle');
@@ -32,24 +52,21 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     // Take screenshot of login page
     await takeScreenshot(page, 'login-page-loaded.png', screenshotsDir);
     
-    // Fill login form with correct selectors
-    console.log('📝 Filling login form...');
-    
-    // Login Name field
+    // Fill login form
     const loginNameField = page.locator('#Loginname input.dx-texteditor-input');
     await loginNameField.fill(credentials.loginName);
+    await page.waitForTimeout(1000);
     
-    // Username field
     const usernameField = page.locator('#Username input.dx-texteditor-input');
     await usernameField.fill(credentials.username);
+    await page.waitForTimeout(1000);
     
-    // Password field
     const passwordField = page.locator('#UserPassword input.dx-texteditor-input');
     await passwordField.fill(credentials.password);
+    await page.waitForTimeout(1000);
     
-    // Wait for form fields to sync before clicking login button
-    console.log('⏳ Waiting for form fields to sync...');
-    await page.waitForTimeout(2500); // 2.5 seconds to allow form fields to sync
+    await page.locator('body').click({ position: { x: 100, y: 100 } });
+    await page.waitForTimeout(2000);
     
     // Click Login button
     const loginButton = page.locator('#btnLogin');

@@ -8,6 +8,7 @@ import fileSearchTool from './fileSearch.js';
 import transferCallTool from './transferCall.js';
 import kbaVerificationTool from './kbaVerification.js';
 import complaintSubmissionTool from './complaintSubmission.js';
+import clientVerificationTool from './clientVerification.js';
 
 /**
  * Tool Executor for OpenAI Realtime API
@@ -35,6 +36,7 @@ class ToolExecutor {
     this.tools.set('transfer_call', transferCallTool);
     this.tools.set('kba_verification', kbaVerificationTool);
     this.tools.set('complaint_submission', complaintSubmissionTool);
+    this.tools.set('client_verification', clientVerificationTool);
     
     // Log registered tools
     console.log('📋 [TOOL EXECUTOR] Registered tools:', Array.from(this.tools.keys()).join(', '));
@@ -338,6 +340,29 @@ class ToolExecutor {
             }
           },
           required: ['email', 'postcode']
+        }
+      },
+      {
+        type: 'function',
+        name: 'client_verification',
+        description: 'Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system. The caller must verbally confirm these three pieces of information match what is on file. Allow up to 7 attempts per field before offering to create a new profile.',
+        parameters: {
+          type: 'object',
+          properties: {
+            fullName: {
+              type: 'string',
+              description: 'Full name as spoken by the caller (including title if provided, e.g., "Mr John Smith")'
+            },
+            postcode: {
+              type: 'string',
+              description: 'Postcode as spoken by the caller (UK format, e.g., "HA8 6AG")'
+            },
+            telephoneNumber: {
+              type: 'string',
+              description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07)'
+            }
+          },
+          required: ['fullName', 'postcode', 'telephoneNumber']
         }
       },
       {

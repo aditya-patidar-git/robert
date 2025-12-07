@@ -32,11 +32,16 @@ class GearConversionBookingService {
       console.log('🔍 Service: Current page URL:', page.url());
       console.log('🔍 Service: Page title:', await page.title());
 
-      // STEP 1: Check availability and note details (for all workflows)
-      console.log('📅 Step 1: Checking Gear Conversion availability...');
-      sessionDetails = await this.checkAvailabilityAndNoteDetails(page);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-1-availability.png', this.screenshotsDir));
-      console.log('✅ Step 1 completed:', sessionDetails);
+      // STEP 1: Check availability and note details
+      if (bookingArgs.sessionDetails) {
+        sessionDetails = bookingArgs.sessionDetails;
+        console.log('✅ Step 1: Using existing availability data');
+      } else {
+        console.log('📅 Step 1: Checking availability...');
+        sessionDetails = await this.checkAvailabilityAndNoteDetails(page);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-1-availability.png', this.screenshotsDir));
+        console.log('✅ Step 1 completed');
+      }
 
       // STEP 2: Login to CRM (for all workflows)
       console.log('🔐 Step 2: Logging into CRM...');
@@ -49,16 +54,76 @@ class GearConversionBookingService {
 
       if (workflowType === 'existing') {
         // EXISTING CLIENT WORKFLOW
-        // STEP 4: Click CONTACTS tab
-        console.log('👤 Step 4: Finding and verifying existing client...');
-        const clientEmail = bookingArgs.customerEmail;
-        if (!clientEmail) {
-          throw new Error('customerEmail is required for existing client workflow');
+        // STEP 4-5: Search for existing client (mobile first, then email fallback)
+        console.log('👤 Step 4-5: Finding existing client...');
+        
+        // Check if we have customer info to search
+        if (!bookingArgs.customerMobile && !bookingArgs.customerPhone && !bookingArgs.customerEmail) {
+          // Return graceful error asking agent to collect customer info
+          console.log('⚠️ Step 4-5: Customer info missing - asking agent to collect');
+          return {
+            success: false,
+            requiresCustomerInfo: true,
+            message: 'To search for your existing profile, I need either your mobile number or email address. Could you please provide one of these?',
+            workflowType: 'existing'
+          };
         }
-        console.log('🔍 Service: Using client email:', clientEmail);
-        await commonSteps.findAndVerifyClient(page, clientEmail, this.screenshotsDir);
+        
+        // Determine search type and value - mobile number takes priority
+        let searchType = 'email';
+        let searchValue = bookingArgs.customerEmail;
+        
+        if (bookingArgs.customerMobile || bookingArgs.customerPhone) {
+          searchType = 'mobile';
+          searchValue = bookingArgs.customerMobile || bookingArgs.customerPhone;
+          console.log('🔍 Service: Searching by mobile number first:', searchValue);
+        } else if (bookingArgs.customerEmail) {
+          searchType = 'email';
+          searchValue = bookingArgs.customerEmail;
+          console.log('🔍 Service: Searching by email:', searchValue);
+        }
+        
+        // Search for client
+        const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
-        console.log('✅ Step 4-5 completed: Client verified');
+        
+        if (!searchResult.found) {
+          // If mobile search failed and we haven't tried email yet, try email
+          if (searchType === 'mobile' && bookingArgs.customerEmail) {
+            console.log('⚠️ Mobile search failed, trying email search...');
+            const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir);
+            if (emailSearchResult.found) {
+              // Store client details for verification
+              if (emailSearchResult.clientDetails) {
+                callContext.clientDetails = emailSearchResult.clientDetails;
+                bookingArgs.clientDetails = emailSearchResult.clientDetails;
+              }
+              console.log('✅ Step 4-5 completed: Client found via email - requires verbal verification');
+            } else {
+              throw new Error('Could not find client with mobile number or email address');
+            }
+          } else {
+            throw new Error('Could not find client in CRM');
+          }
+        } else {
+          // Store client details for verification
+          if (searchResult.clientDetails) {
+            callContext.clientDetails = searchResult.clientDetails;
+            bookingArgs.clientDetails = searchResult.clientDetails;
+          }
+          console.log('✅ Step 4-5 completed: Client found - requires verbal verification');
+        }
+        
+        // IMPORTANT: Do not proceed to booking until verbal verification is complete
+        // The agent must call the clientVerification tool first
+        if (searchResult.requiresVerification || (searchResult.found && !callContext.clientVerified)) {
+          return {
+            success: false,
+            requiresVerification: true,
+            clientDetails: searchResult.clientDetails || callContext.clientDetails,
+            message: 'Client found but requires verbal verification before proceeding with booking'
+          };
+        }
 
         // STEP 6: Navigate to Diaries and select session
         console.log('📅 Step 6: Navigating to Diaries and selecting session...');
