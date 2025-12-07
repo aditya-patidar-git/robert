@@ -3,10 +3,12 @@ import { takeScreenshot } from './utils.js';
 /**
  * Steps 3-5: Find and verify existing client
  * @param {Page} page - Playwright page object
- * @param {string} email - Client email address to search for
+ * @param {string} searchType - 'mobile' or 'email' - type of search to perform
+ * @param {string} searchValue - Mobile number or email address to search for
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @returns {Promise<{found: boolean, clientDetails?: {fullName: string, postcode: string, telephoneNumber: string, email: string}, requiresVerification: boolean}>}
  */
-export async function findAndVerifyClient(page, email, screenshotsDir) {
+export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir) {
   try {
     console.log('👤 [STEP 3-5] Navigating to Contacts tab...');
     
@@ -107,9 +109,10 @@ export async function findAndVerifyClient(page, email, screenshotsDir) {
     // Wait for the search field to be visible
     await searchField.waitFor({ state: 'visible', timeout: 10000 });
     
-    // STEP 4: Enter email address in search field
-    console.log(`📧 [STEP 3-5] Searching for client: ${email}`);
-    await searchField.fill(email);
+    // STEP 4: Enter search value (mobile or email) in search field
+    const searchLabel = searchType === 'mobile' ? 'mobile number' : 'email';
+    console.log(`🔍 [STEP 3-5] Searching for client by ${searchLabel}: ${searchValue}`);
+    await searchField.fill(searchValue);
     
     // NEW: Try multiple approaches to trigger the search
     console.log('🔍 [STEP 3-5] Triggering search...');
@@ -147,66 +150,191 @@ export async function findAndVerifyClient(page, email, screenshotsDir) {
     // Take screenshot after search
     await takeScreenshot(page, 'search-results.png', screenshotsDir);
     
-    // STEP 5: Click on found client (should be the first result)
+    // STEP 5: Click on found client - prioritize exact matches
     console.log('👆 [STEP 3-5] Clicking on found client...');
 
-    // Try to find and click the client
+    // Try to find and click the client - prioritize exact matches
     let clientClicked = false;
 
     try {
-      // Approach 1: Look for visible text
-      const visibleClient = iframe.locator(`text=${email}`).filter({ hasText: email }).first();
-      if (await visibleClient.count() > 0 && await visibleClient.isVisible()) {
-        console.log('✅ Found visible client text');
-        await visibleClient.click();
+      // First, wait for search results to appear
+      await page.waitForTimeout(3000);
+      
+      // Approach 1: Look for exact match - find rows/items that contain the exact search value
+      // For email: look for exact email match
+      // For mobile: look for exact phone number match
+      let exactMatch = null;
+      
+      if (searchType === 'email') {
+        // Normalize email for comparison (lowercase, trim)
+        const normalizedSearch = searchValue.toLowerCase().trim();
+        
+        // Look for table rows or result items
+        const resultRows = iframe.locator('tr, .result-item, .search-result, [role="row"]');
+        const rowCount = await resultRows.count();
+        
+        console.log(`🔍 [STEP 3-5] Found ${rowCount} search result rows, looking for exact email match...`);
+        
+        // Check each row for exact email match
+        for (let i = 0; i < rowCount; i++) {
+          const row = resultRows.nth(i);
+          const rowText = await row.textContent();
+          
+          // Extract email from row text (look for email pattern)
+          const emailMatch = rowText.match(/[\w\.-]+@[\w\.-]+\.\w+/gi);
+          if (emailMatch) {
+            const foundEmail = emailMatch.find(email => email.toLowerCase().trim() === normalizedSearch);
+            if (foundEmail) {
+              console.log(`✅ [STEP 3-5] Found exact email match in row ${i + 1}: ${foundEmail}`);
+              exactMatch = row;
+              break;
+            }
+          }
+        }
+        
+        // If no exact match found, try to find element with exact text
+        if (!exactMatch) {
+          const exactEmailElement = iframe.locator(`text=/^${searchValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$/i`).first();
+          if (await exactEmailElement.count() > 0) {
+            console.log('✅ [STEP 3-5] Found exact email match via text locator');
+            // Find the parent row/clickable element
+            exactMatch = exactEmailElement.locator('xpath=ancestor::tr | ancestor::a | ancestor::[role="row"]').first();
+            if (await exactMatch.count() === 0) {
+              exactMatch = exactEmailElement;
+            }
+          }
+        }
+      } else if (searchType === 'mobile') {
+        // Normalize phone number for comparison (remove spaces, dashes, parentheses)
+        const normalizedSearch = searchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+        
+        // Look for table rows or result items
+        const resultRows = iframe.locator('tr, .result-item, .search-result, [role="row"]');
+        const rowCount = await resultRows.count();
+        
+        console.log(`🔍 [STEP 3-5] Found ${rowCount} search result rows, looking for exact phone match...`);
+        
+        // Check each row for exact phone match
+        for (let i = 0; i < rowCount; i++) {
+          const row = resultRows.nth(i);
+          const rowText = await row.textContent();
+          
+          // Extract phone numbers from row text (look for phone patterns)
+          const phoneMatch = rowText.match(/[\d\s\-\(\)\+]+/g);
+          if (phoneMatch) {
+            const foundPhone = phoneMatch.find(phone => {
+              const normalizedPhone = phone.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+              return normalizedPhone === normalizedSearch || normalizedPhone.endsWith(normalizedSearch) || normalizedSearch.endsWith(normalizedPhone);
+            });
+            if (foundPhone) {
+              console.log(`✅ [STEP 3-5] Found exact phone match in row ${i + 1}: ${foundPhone}`);
+              exactMatch = row;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Click exact match if found
+      if (exactMatch && await exactMatch.count() > 0) {
+        console.log('✅ [STEP 3-5] Clicking exact match...');
+        await exactMatch.click();
         clientClicked = true;
       } else {
-        // Approach 2: Look for any element containing the email
-        const anyClient = iframe.locator(`*:has-text("${email}")`).first();
-        if (await anyClient.count() > 0) {
-          console.log('✅ Found client in any element');
-          await anyClient.click();
+        // Fallback: Look for visible text containing search value (but be more specific)
+        console.log('⚠️ [STEP 3-5] No exact match found, trying fallback approaches...');
+        
+        // Approach 2: Look for clickable elements (links, buttons) with exact search value
+        const clickableClient = iframe.locator(`a:has-text("${searchValue}"), button:has-text("${searchValue}"), [role="button"]:has-text("${searchValue}")`).first();
+        if (await clickableClient.count() > 0 && await clickableClient.isVisible()) {
+          console.log('✅ [STEP 3-5] Found clickable client element with search value');
+          await clickableClient.click();
           clientClicked = true;
         } else {
-          // Approach 3: Look for clickable elements with email
-          const clickableClient = iframe.locator(`a:has-text("${email}"), button:has-text("${email}"), [role="button"]:has-text("${email}")`).first();
-          if (await clickableClient.count() > 0) {
-            console.log('✅ Found clickable client element');
-            await clickableClient.click();
-            clientClicked = true;
+          // Approach 3: Look for first result row but verify it contains the search value
+          const resultRows = iframe.locator('tr, .result-item, .search-result, [role="row"]');
+          const firstResult = resultRows.first();
+          
+          if (await firstResult.count() > 0) {
+            const firstResultText = await firstResult.textContent();
+            if (firstResultText && firstResultText.includes(searchValue)) {
+              console.log('✅ [STEP 3-5] Clicking first search result (contains search value)');
+              await firstResult.click();
+              clientClicked = true;
+            } else {
+              console.log('⚠️ [STEP 3-5] First result does not contain search value, skipping...');
+            }
           }
         }
       }
     } catch (clickError) {
       console.log('❌ Failed to click client, but continuing to check if page navigation occurred...');
+      console.log('❌ Click error:', clickError.message);
     }
     
     // CRITICAL: Check if we're already on the client details page BEFORE waiting (robust verification)
     console.log('🔍 [STEP 3-5] Checking if client details page is already loaded...');
     
-    // Look for client name "Mr Robert Smith" or "Robert Smith"
-    const clientNameVisible = await iframe.locator('text=Mr Robert Smith, text=Robert Smith').count() > 0;
-    
-    // Look for the email in the contact details section
-    const clientEmailVisible = await iframe.locator(`text=${email}`).count() > 0;
-    
     // Look for "First Names" and "Surname" fields which indicate we're on the client details page
-    const firstNameField = await iframe.locator('text=First Names').count() > 0;
-    const surnameField = await iframe.locator('text=Surname').count() > 0;
+    const firstNameField = await iframe.locator('text=First Names, label:has-text("First Names")').count() > 0;
+    const surnameField = await iframe.locator('text=Surname, label:has-text("Surname")').count() > 0;
     
     // Look for "Contact e-mail" field
-    const contactEmailField = await iframe.locator('text=Contact e-mail').count() > 0;
+    const contactEmailField = await iframe.locator('text=Contact e-mail, label:has-text("Contact e-mail")').count() > 0;
     
-    if (clientNameVisible || clientEmailVisible || firstNameField || surnameField || contactEmailField) {
-      console.log('✅ [STEP 3-5] Client details page is already loaded - no need to wait for navigation');
+    const isOnClientDetailsPage = firstNameField || surnameField || contactEmailField;
+    
+    if (isOnClientDetailsPage) {
+      console.log('✅ [STEP 3-5] Client details page is already loaded');
       
       // Take screenshot of the already loaded page
       await takeScreenshot(page, 'client-selected.png', screenshotsDir);
       
-      console.log('✅ [STEP 3-5] Client found and selected - considering VERIFIED for demo');
+      // Extract client details from the page
+      const clientDetails = await extractClientDetails(iframe);
       
-      // EXIT THE FUNCTION - Step 3-5 is complete
-      return;
+      if (clientDetails) {
+        // Verify the extracted details match what we searched for
+        let matchesSearch = false;
+        
+        if (searchType === 'email') {
+          const extractedEmail = clientDetails.email?.toLowerCase().trim();
+          const searchEmail = searchValue.toLowerCase().trim();
+          matchesSearch = extractedEmail === searchEmail;
+          if (!matchesSearch) {
+            console.log(`⚠️ [STEP 3-5] Email mismatch: searched for "${searchEmail}", found "${extractedEmail}"`);
+          }
+        } else if (searchType === 'mobile') {
+          const extractedPhone = clientDetails.telephoneNumber?.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+          const searchPhone = searchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+          matchesSearch = extractedPhone === searchPhone || extractedPhone?.endsWith(searchPhone) || searchPhone.endsWith(extractedPhone);
+          if (!matchesSearch) {
+            console.log(`⚠️ [STEP 3-5] Phone mismatch: searched for "${searchPhone}", found "${extractedPhone}"`);
+          }
+        }
+        
+        if (!matchesSearch) {
+          console.log('❌ [STEP 3-5] Selected client does not match search criteria');
+          return {
+            found: false,
+            requiresVerification: false,
+            error: `Selected client does not match search criteria. Searched for ${searchType}: ${searchValue}`
+          };
+        }
+        
+        console.log('✅ [STEP 3-5] Client found and details extracted - requires verbal verification');
+        return {
+          found: true,
+          clientDetails,
+          requiresVerification: true
+        };
+      } else {
+        console.log('⚠️ [STEP 3-5] Client found but could not extract all details');
+        return {
+          found: true,
+          requiresVerification: true
+        };
+      }
     } else {
       // Only wait for navigation if we're not already on the client details page
       if (clientClicked) {
@@ -220,38 +348,173 @@ export async function findAndVerifyClient(page, email, screenshotsDir) {
         // Verify we're on the client details page
         console.log('🔍 [STEP 3-5] Verifying client details page...');
         
-        // Look for client name "Mr Robert Smith" or "Robert Smith"
-        const clientNameVisibleAfterWait = await iframe.locator('text=Mr Robert Smith, text=Robert Smith').count() > 0;
-        
-        // Look for the email in the contact details section
-        const clientEmailVisibleAfterWait = await iframe.locator(`text=${email}`).count() > 0;
-        
         // Look for "First Names" and "Surname" fields which indicate we're on the client details page
-        const firstNameFieldAfterWait = await iframe.locator('text=First Names').count() > 0;
-        const surnameFieldAfterWait = await iframe.locator('text=Surname').count() > 0;
+        const firstNameFieldAfterWait = await iframe.locator('text=First Names, label:has-text("First Names")').count() > 0;
+        const surnameFieldAfterWait = await iframe.locator('text=Surname, label:has-text("Surname")').count() > 0;
         
         // Look for "Contact e-mail" field
-        const contactEmailFieldAfterWait = await iframe.locator('text=Contact e-mail').count() > 0;
+        const contactEmailFieldAfterWait = await iframe.locator('text=Contact e-mail, label:has-text("Contact e-mail")').count() > 0;
         
-        if (clientNameVisibleAfterWait || clientEmailVisibleAfterWait || firstNameFieldAfterWait || surnameFieldAfterWait || contactEmailFieldAfterWait) {
+        if (firstNameFieldAfterWait || surnameFieldAfterWait || contactEmailFieldAfterWait) {
           console.log('✅ [STEP 3-5] Client details page loaded successfully');
-          console.log(`🔍 Verification details: name=${clientNameVisibleAfterWait}, email=${clientEmailVisibleAfterWait}, firstName=${firstNameFieldAfterWait}, surname=${surnameFieldAfterWait}, contactEmail=${contactEmailFieldAfterWait}`);
           
-          console.log('✅ [STEP 3-5] Client found and selected - considering VERIFIED for demo');
+          // Extract client details from the page
+          const clientDetails = await extractClientDetails(iframe);
+          
+          if (clientDetails) {
+            // Verify the extracted details match what we searched for
+            let matchesSearch = false;
+            
+            if (searchType === 'email') {
+              const extractedEmail = clientDetails.email?.toLowerCase().trim();
+              const searchEmail = searchValue.toLowerCase().trim();
+              matchesSearch = extractedEmail === searchEmail;
+              if (!matchesSearch) {
+                console.log(`⚠️ [STEP 3-5] Email mismatch: searched for "${searchEmail}", found "${extractedEmail}"`);
+              }
+            } else if (searchType === 'mobile') {
+              const extractedPhone = clientDetails.telephoneNumber?.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+              const searchPhone = searchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+              matchesSearch = extractedPhone === searchPhone || extractedPhone?.endsWith(searchPhone) || searchPhone.endsWith(extractedPhone);
+              if (!matchesSearch) {
+                console.log(`⚠️ [STEP 3-5] Phone mismatch: searched for "${searchPhone}", found "${extractedPhone}"`);
+              }
+            }
+            
+            if (!matchesSearch) {
+              console.log('❌ [STEP 3-5] Selected client does not match search criteria');
+              return {
+                found: false,
+                requiresVerification: false,
+                error: `Selected client does not match search criteria. Searched for ${searchType}: ${searchValue}`
+              };
+            }
+            
+            console.log('✅ [STEP 3-5] Client found and details extracted - requires verbal verification');
+            return {
+              found: true,
+              clientDetails,
+              requiresVerification: true
+            };
+          } else {
+            console.log('⚠️ [STEP 3-5] Client found but could not extract all details');
+            return {
+              found: true,
+              requiresVerification: true
+            };
+          }
         } else {
           console.log('❌ [STEP 3-5] Client details page verification failed');
-          throw new Error(`Could not verify client details page. Expected to find client name, email, or form fields.`);
+          return {
+            found: false,
+            requiresVerification: false
+          };
         }
       } else {
         console.log('❌ [STEP 3-5] Could not click client and page navigation did not occur');
-        throw new Error(`Could not find or click client element with email: ${email}`);
+        return {
+          found: false,
+          requiresVerification: false
+        };
       }
     }
     
   } catch (error) {
     console.error('❌ [STEP 3-5] Client search failed:', error);
     await takeScreenshot(page, 'client-search-error.png', screenshotsDir);
-    throw new Error(`[STEP 3-5] Failed to find client: ${error.message}`);
+    return {
+      found: false,
+      requiresVerification: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Extract client details from the CRM contact details page
+ * @param {FrameLocator} iframe - Frame locator for the contact details iframe
+ * @returns {Promise<{fullName: string, postcode: string, telephoneNumber: string, email: string} | null>}
+ */
+async function extractClientDetails(iframe) {
+  try {
+    console.log('🔍 [STEP 3-5] Extracting client details from CRM page...');
+    
+    // Extract First Names
+    let firstNames = '';
+    try {
+      const firstNameField = iframe.locator('input[id*="cnt_first_names"], input[name*="first_names"], label:has-text("First Names") + input, label:has-text("First Names") ~ input').first();
+      if (await firstNameField.count() > 0) {
+        firstNames = await firstNameField.inputValue() || '';
+        console.log(`📝 Extracted First Names: ${firstNames}`);
+      }
+    } catch (e) {
+      console.log('⚠️ Could not extract First Names');
+    }
+    
+    // Extract Surname
+    let surname = '';
+    try {
+      const surnameField = iframe.locator('input[id*="cnt_surname"], input[name*="surname"], label:has-text("Surname") + input, label:has-text("Surname") ~ input').first();
+      if (await surnameField.count() > 0) {
+        surname = await surnameField.inputValue() || '';
+        console.log(`📝 Extracted Surname: ${surname}`);
+      }
+    } catch (e) {
+      console.log('⚠️ Could not extract Surname');
+    }
+    
+    // Construct full name
+    const fullName = `${firstNames} ${surname}`.trim();
+    
+    // Extract Postcode
+    let postcode = '';
+    try {
+      const postcodeField = iframe.locator('input[id*="post_code"], input[id*="postcode"], input[name*="post_code"], input[name*="postcode"], label:has-text("Post code") + input, label:has-text("Post code") ~ input, label:has-text("Post Code") + input, label:has-text("Post Code") ~ input').first();
+      if (await postcodeField.count() > 0) {
+        postcode = await postcodeField.inputValue() || '';
+        console.log(`📝 Extracted Postcode: ${postcode}`);
+      }
+    } catch (e) {
+      console.log('⚠️ Could not extract Postcode');
+    }
+    
+    // Extract Contact mobile number
+    let telephoneNumber = '';
+    try {
+      const mobileField = iframe.locator('input[id*="mobile_number"], input[id*="mobile"], input[name*="mobile_number"], input[name*="mobile"], label:has-text("Contact mobile number") + input, label:has-text("Contact mobile number") ~ input').first();
+      if (await mobileField.count() > 0) {
+        telephoneNumber = await mobileField.inputValue() || '';
+        console.log(`📝 Extracted Telephone Number: ${telephoneNumber}`);
+      }
+    } catch (e) {
+      console.log('⚠️ Could not extract Telephone Number');
+    }
+    
+    // Extract Contact e-mail
+    let email = '';
+    try {
+      const emailField = iframe.locator('input[id*="email"], input[name*="email"], input[type="email"], label:has-text("Contact e-mail") + input, label:has-text("Contact e-mail") ~ input').first();
+      if (await emailField.count() > 0) {
+        email = await emailField.inputValue() || '';
+        console.log(`📝 Extracted Email: ${email}`);
+      }
+    } catch (e) {
+      console.log('⚠️ Could not extract Email');
+    }
+    
+    if (fullName || postcode || telephoneNumber || email) {
+      return {
+        fullName: fullName || 'Not found',
+        postcode: postcode || 'Not found',
+        telephoneNumber: telephoneNumber || 'Not found',
+        email: email || 'Not found'
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('❌ [STEP 3-5] Error extracting client details:', error);
+    return null;
   }
 }
 

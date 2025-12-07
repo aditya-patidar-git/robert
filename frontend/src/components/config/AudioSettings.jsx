@@ -4,7 +4,6 @@ import {
   Box,
   Paper,
   Typography,
-  Grid,
   Slider,
   FormControl,
   InputLabel,
@@ -47,8 +46,8 @@ const AudioSettings = ({
           Configure voice activity detection, audio quality, and barge-in settings
         </Typography>
 
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 3 }}>
+          <Box>
             <Typography variant="subtitle2" gutterBottom>
               VAD Threshold: {watch('vadThreshold')}ms
             </Typography>
@@ -69,12 +68,13 @@ const AudioSettings = ({
                   ]}
                   valueLabelDisplay="auto"
                   disabled={readOnly}
+                  aria-label="Voice Activity Detection Threshold"
                 />
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Typography variant="subtitle2" gutterBottom>
               Start Padding: {watch('startPadding')}ms
             </Typography>
@@ -95,12 +95,13 @@ const AudioSettings = ({
                   ]}
                   valueLabelDisplay="auto"
                   disabled={readOnly}
+                  aria-label="Start Padding"
                 />
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Typography variant="subtitle2" gutterBottom>
               End Padding: {watch('endPadding')}ms
             </Typography>
@@ -121,12 +122,13 @@ const AudioSettings = ({
                   ]}
                   valueLabelDisplay="auto"
                   disabled={readOnly}
+                  aria-label="End Padding"
                 />
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Controller
               name="bargeInPolicy"
               control={control}
@@ -140,9 +142,9 @@ const AudioSettings = ({
                 </FormControl>
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Controller
               name="noiseSuppression"
               control={control}
@@ -153,9 +155,9 @@ const AudioSettings = ({
                 />
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Controller
               name="noiseSuppressionAlgorithm"
               control={control}
@@ -170,9 +172,9 @@ const AudioSettings = ({
                 </FormControl>
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Controller
               name="echoCancellation"
               control={control}
@@ -183,9 +185,9 @@ const AudioSettings = ({
                 />
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Controller
               name="automaticGainControl"
               control={control}
@@ -196,9 +198,9 @@ const AudioSettings = ({
                 />
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Controller
               name="audioQuality"
               control={control}
@@ -213,9 +215,9 @@ const AudioSettings = ({
                 </FormControl>
               )}
             />
-          </Grid>
+          </Box>
 
-          <Grid item xs={12} md={6}>
+          <Box>
             <Controller
               name="energyThresholdAutoCalibrate"
               control={control}
@@ -226,8 +228,8 @@ const AudioSettings = ({
                 />
               )}
             />
-          </Grid>
-        </Grid>
+          </Box>
+        </Box>
       </Paper>
     );
   }
@@ -272,6 +274,7 @@ const AudioSettings = ({
                       ]}
                       valueLabelDisplay="auto"
                       disabled={readOnly}
+                      aria-label="Voice Activity Detection Threshold"
                     />
                   )}
                 />
@@ -369,9 +372,9 @@ const AudioSettings = ({
         </Box>
       </Box>
 
-      <Grid container spacing={3}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 3 }}>
         {/* Audio Quality */}
-        <Grid item xs={12} md={6}>
+        <Box>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -449,10 +452,10 @@ const AudioSettings = ({
               </Stack>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
 
         {/* Padding Settings */}
-        <Grid item xs={12} md={6}>
+        <Box>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
@@ -471,6 +474,7 @@ const AudioSettings = ({
                         {...field}
                         type="number"
                         fullWidth
+                        label="Start Padding (ms)"
                         inputProps={{ min: 0, max: 1000, step: 50 }}
                         helperText="Audio capture padding before speech detection"
                         disabled={readOnly}
@@ -490,6 +494,7 @@ const AudioSettings = ({
                         {...field}
                         type="number"
                         fullWidth
+                        label="End Padding (ms)"
                         inputProps={{ min: 0, max: 1500, step: 50 }}
                         helperText="Audio capture padding after speech ends"
                         disabled={readOnly}
@@ -500,8 +505,8 @@ const AudioSettings = ({
               </Stack>
             </CardContent>
           </Card>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
     </Paper>
   );
 };

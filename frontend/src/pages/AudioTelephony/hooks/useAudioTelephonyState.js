@@ -19,7 +19,7 @@ export const useAudioTelephonyState = () => {
   const queryClient = useQueryClient();
 
   // Form state
-  const { control, handleSubmit, watch, setValue } = useForm({
+  const { control, handleSubmit, watch, setValue, reset, getValues } = useForm({
     defaultValues: {
       vadThreshold: 500,
       startPadding: 250,
@@ -87,7 +87,7 @@ export const useAudioTelephonyState = () => {
   const [callQualityFilter, setCallQualityFilter] = useState('');
 
   // Use custom hooks
-  const { isLoading: audioLoading } = useAudioConfig({ setValue, watch });
+  const { isLoading: audioLoading } = useAudioConfig({ setValue, watch, reset, getValues });
   const { isLoading: telephonyLoading } = useTelephonyConfig({ setValue, watch });
   const { models: availableModels } = useAIModels();
   const { mappings: languageMappings, isLoading: mappingsLoading, previewingVoice, setPreviewingVoice } = useLanguageVoiceMappings();

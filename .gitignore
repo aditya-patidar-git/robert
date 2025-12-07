@@ -5,6 +5,7 @@ docs/
 logs
 .cursor
 *.log
+auth.json
 prompt_1.txt
 prompt_2.txt
 1_Introduction_to_Motorcycling_ITM.txt

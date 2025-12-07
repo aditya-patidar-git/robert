@@ -5,8 +5,15 @@ import { hashPassword } from "../utils/hash.js";
 export const getUsers = async (req, res) => {
     const { status, role, page = 1, limit = 20 } = req.query;
     const filter = {};
-    if (status) filter.status = status;
+    
     if (role) filter.role = role;
+    
+    // Exclude deleted users from results unless specifically filtering by deleted status
+    if (status) {
+        filter.status = status;
+    } else {
+        filter.status = { $ne: 'deleted' };
+    }
 
     const users = await User.find(filter)
         .skip((page - 1) * limit)
@@ -59,6 +66,13 @@ export const updateUser = async (req, res) => {
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
 
+        // Prevent users from modifying their own status
+        const currentUserId = req.user?._id?.toString() || req.user?.id?.toString();
+        const targetUserId = user._id.toString();
+        if (currentUserId === targetUserId && req.body.status !== undefined) {
+            return res.status(403).json({ message: "You cannot modify your own status" });
+        }
+
         const { email, username, role, status, password } = req.body;
 
         // Update fields if provided
@@ -80,16 +94,23 @@ export const updateUser = async (req, res) => {
 
 // DELETE /admin/users/:id
 export const deleteUser = async (req, res) => {
-    const { hard } = req.query;
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (hard === "true") {
-        await user.remove();
-    } else {
-        user.status = "deleted";
-        await user.save();
+        // Prevent users from deleting themselves
+        const currentUserId = req.user?._id?.toString() || req.user?.id?.toString();
+        const targetUserId = user._id.toString();
+        if (currentUserId === targetUserId) {
+            return res.status(403).json({ message: "You cannot delete yourself" });
+        }
+
+        // Perform hard delete - actually remove from database
+        await User.findByIdAndDelete(req.params.id);
+
+        res.json({ message: "User deleted successfully" });
+    } catch (error) {
+        console.error("Error deleting user:", error);
+        res.status(500).json({ message: "Internal server error" });
     }
-
-    res.json({ message: "User deleted" });
 };

@@ -1,20 +1,32 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
+import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
+import { 
+  getRealisticUserAgent, 
+  getStealthBrowserArgs, 
+  getStealthInitScript,
+  generateBezierPath 
+} from '../utils/stealthUtils.js';
 
 class BrowserAgentService {
   constructor() {
     this.crmCredentials = {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
-      loginName: 'universalmct',
-      username: 'auagent',
-      password: 'Robert2025!',
+      loginName: process.env.CRM_LOGIN || 'universalmct',
+      username: process.env.CRM_USERNAME || 'auagent',
+      password: process.env.CRM_PASSWORD || 'Robert2025!',
       userAgent: 'auagent'
     };
     this.screenshotsDir = './screenshots';
     this.auditDir = './audit-logs';
     // Lock mechanism to prevent concurrent executions per call
     this.activeExecutions = new Map(); // Map<callSid, { task, startTime }>
+    // Browser pooling instance variables
+    this.browserInstance = null;
+    this.browserContext = null;
+    this.browserInitialized = false;
+    this.authenticatedPage = null; // Store the authenticated page for reuse
     this.ensureDirectories();
   }
 
@@ -27,6 +39,779 @@ class BrowserAgentService {
     }
   }
 
+  async getBrowser() {
+    // Return existing browser if connected, otherwise launch new one
+    if (this.browserInstance && this.browserInstance.isConnected()) {
+      return this.browserInstance;
+    }
+    
+    // Launch new browser with stealth arguments
+    console.log('🌐 Launching new browser instance with stealth mode...');
+    this.browserInstance = await chromium.launch({ 
+      headless: false,
+      args: getStealthBrowserArgs()
+    });
+    
+    return this.browserInstance;
+  }
+
+  async getContext() {
+    // Check if existing context is still valid
+    if (this.browserContext) {
+      try {
+        // Verify the context is still connected - trust that cookies persist
+        const browser = this.browserContext.browser();
+        if (browser && browser.isConnected()) {
+          // Trust that cookies in context are valid - no need to verify with test page
+          // Session expiration will be detected when we get redirected to login page
+          console.log('✅ Reusing existing browser context (cookies persist in context)');
+          return this.browserContext;
+        } else {
+          console.log('⚠️ Existing context is disconnected, will create new one');
+          this.browserContext = null;
+        }
+      } catch (error) {
+        console.log('⚠️ Error checking existing context, will create new one:', error.message);
+        this.browserContext = null;
+      }
+    }
+    
+    // No valid context exists - try to load from storageState first, then login if needed
+    const authFilePath = './auth.json';
+    let shouldLoadFromStorage = false;
+    
+    // Try to load from auth.json if it exists (for browser restarts)
+    if (fs.existsSync(authFilePath)) {
+      try {
+        const authData = JSON.parse(fs.readFileSync(authFilePath, 'utf8'));
+        if (authData.cookies && authData.cookies.length > 0) {
+          shouldLoadFromStorage = true;
+          console.log('📂 Found auth.json, attempting to load session...');
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not read auth.json:', e.message);
+      }
+    }
+    
+    // Get or create browser
+    const browser = await this.getBrowser();
+    
+    // Create context - try loading from storageState first
+    const contextOptions = {
+      userAgent: getRealisticUserAgent(),
+      viewport: { width: 1280, height: 720 },
+      locale: 'en-GB',
+      timezoneId: 'Europe/London',
+      permissions: [],
+      colorScheme: 'light'
+    };
+    
+    if (shouldLoadFromStorage) {
+      try {
+        this.browserContext = await browser.newContext({
+          ...contextOptions,
+          storageState: authFilePath
+        });
+        console.log('📂 Loaded browser context from auth.json');
+        
+        // Verify the loaded session by checking if we get redirected to login
+        const testPage = await this.browserContext.newPage();
+        try {
+          await testPage.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded', 
+            timeout: 15000 
+          });
+          await testPage.waitForTimeout(2000); // Wait for any redirects
+          
+          // Check if we're redirected to login page (session expired indicator)
+          const currentUrl = testPage.url();
+          const isOnLoginPage = currentUrl.includes('/Account/Login');
+          await testPage.close();
+          
+          if (isOnLoginPage) {
+            console.log('⚠️ Loaded session from auth.json expired (redirected to login), will re-login');
+            await this.browserContext.close();
+            this.browserContext = null;
+            shouldLoadFromStorage = false; // Force fresh login
+          } else {
+            console.log('✅ Loaded session from auth.json is valid');
+            // Inject stealth script
+            await this.browserContext.addInitScript(getStealthInitScript());
+            return this.browserContext;
+          }
+        } catch (error) {
+          await testPage.close().catch(() => {});
+          console.log('⚠️ Could not verify loaded session, will re-login');
+          await this.browserContext.close().catch(() => {});
+          this.browserContext = null;
+          shouldLoadFromStorage = false;
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to load from auth.json, will create fresh context:', error.message);
+        this.browserContext = null;
+        shouldLoadFromStorage = false;
+      }
+    }
+    
+    // Create fresh context and login
+    if (!this.browserContext) {
+      console.log('🔐 Creating new browser context and logging in...');
+      this.browserContext = await browser.newContext(contextOptions);
+      
+      // Inject stealth script to remove automation indicators
+      await this.browserContext.addInitScript(getStealthInitScript());
+      
+      // Perform login and save authentication state with retry logic
+      console.log('🔐 Performing login and saving authentication state...');
+      const loginPage = await this.browserContext.newPage();
+    let loginAttempt = 0;
+    const maxAttempts = 2;
+    let lastError = null;
+    
+    while (loginAttempt < maxAttempts) {
+      loginAttempt++;
+      const isRetry = loginAttempt > 1;
+      
+      try {
+        if (isRetry) {
+          console.log(`🔄 [RETRY ${loginAttempt}/${maxAttempts}] Retrying login with enhanced field handling...`);
+          // On retry, navigate to login page again
+          await loginPage.goto(this.crmCredentials.loginUrl);
+          await loginPage.waitForLoadState('networkidle');
+          await loginPage.waitForTimeout(2000); // Extra wait on retry
+        } else {
+          await loginPage.goto(this.crmCredentials.loginUrl);
+          await loginPage.waitForLoadState('networkidle');
+          await loginPage.waitForTimeout(3000);
+          
+          // Simulate reading the page (human-like pause)
+          const readingTime = 2000 + Math.random() * 3000; // 2-5 seconds
+          await loginPage.waitForTimeout(readingTime);
+          
+          // Random small scroll to simulate reading
+          await loginPage.evaluate(() => {
+            window.scrollBy(0, Math.random() * 100);
+          });
+          await loginPage.waitForTimeout(500 + Math.random() * 500);
+          
+          // Initial natural mouse movements using Bezier curves
+          const viewport = loginPage.viewportSize() || { width: 1280, height: 720 };
+          const startX = Math.random() * viewport.width;
+          const startY = Math.random() * viewport.height;
+          const endX = 200 + Math.random() * 200;
+          const endY = 200 + Math.random() * 200;
+          
+          const bezierPath = generateBezierPath(startX, startY, endX, endY, 15);
+          for (const point of bezierPath) {
+            await loginPage.mouse.move(point.x, point.y);
+            await loginPage.waitForTimeout(50 + Math.random() * 100);
+          }
+        }
+        
+        await loginPage.waitForLoadState('domcontentloaded');
+        await loginPage.waitForTimeout(1000);
+        await loginPage.waitForSelector('#Loginname input.dx-texteditor-input', { 
+          state: 'visible',
+          timeout: 15000 
+        });
+        await loginPage.waitForSelector('#Username input.dx-texteditor-input', { 
+          state: 'visible',
+          timeout: 15000 
+        });
+        await loginPage.waitForSelector('#UserPassword input.dx-texteditor-input', { 
+          state: 'visible',
+          timeout: 15000 
+        });
+        
+        // Wait for login button to be visible and enabled
+        const loginButton = loginPage.locator('#btnLogin');
+        await loginButton.waitFor({ state: 'visible', timeout: 15000 });
+        
+        // Additional wait to ensure JavaScript is fully initialized
+        await loginPage.waitForTimeout(1000);
+        
+        console.log(`🔐 Login form ready, filling fields${isRetry ? ' (RETRY with enhanced handling)' : ''}...`);
+        
+        // Get field locators
+        const loginNameField = loginPage.locator('#Loginname input.dx-texteditor-input');
+        const usernameField = loginPage.locator('#Username input.dx-texteditor-input');
+        const passwordField = loginPage.locator('#UserPassword input.dx-texteditor-input');
+        
+        // Clear any existing values first (in case of stale state or previous failed attempt)
+        console.log('🧹 Clearing any existing field values...');
+        await loginNameField.waitFor({ state: 'visible' });
+        await loginNameField.click({ clickCount: 3 }); // Triple-click to select all
+        await loginNameField.press('Backspace');
+        await loginPage.waitForTimeout(500);
+        
+        await usernameField.waitFor({ state: 'visible' });
+        await usernameField.click({ clickCount: 3 });
+        await usernameField.press('Backspace');
+        await loginPage.waitForTimeout(500);
+        
+        await passwordField.waitFor({ state: 'visible' });
+        await passwordField.click({ clickCount: 3 });
+        await passwordField.press('Backspace');
+        await loginPage.waitForTimeout(500);
+        
+        // Fill login form fields with human-like behavior
+        // Move mouse to first field using Bezier curve
+        const loginNameBox = await loginNameField.boundingBox().catch(() => null);
+        if (loginNameBox) {
+          const viewportSize = loginPage.viewportSize() || { width: 1280, height: 720 };
+          const currentMousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
+          const fieldPath = generateBezierPath(
+            currentMousePos.x, currentMousePos.y,
+            loginNameBox.x + loginNameBox.width / 2,
+            loginNameBox.y + loginNameBox.height / 2,
+            10
+          );
+          for (const point of fieldPath) {
+            await loginPage.mouse.move(point.x, point.y);
+            await loginPage.waitForTimeout(30 + Math.random() * 50);
+          }
+        }
+        
+        await loginNameField.click();
+        await loginPage.waitForTimeout(200 + Math.random() * 200);
+        // Type with variable speed (faster for common words)
+        await loginNameField.type(this.crmCredentials.loginName, { delay: 30 + Math.random() * 50 });
+        await loginNameField.blur();
+        await loginPage.waitForTimeout(isRetry ? 2000 : 1500);
+        
+        const loginNameValue = await loginNameField.inputValue();
+        if (loginNameValue !== this.crmCredentials.loginName) {
+          await loginNameField.click({ clickCount: 3 });
+          await loginNameField.press('Backspace');
+          await loginPage.waitForTimeout(500);
+          await loginNameField.type(this.crmCredentials.loginName, { delay: 50 });
+          await loginNameField.blur();
+          await loginPage.waitForTimeout(1000);
+          const retryValue = await loginNameField.inputValue();
+          if (retryValue !== this.crmCredentials.loginName) {
+            throw new Error(`Login name not filled correctly. Expected: "${this.crmCredentials.loginName}", Got: "${retryValue}"`);
+          }
+        }
+        
+        // Move to username field using Tab key (more natural)
+        await loginPage.keyboard.press('Tab');
+        await loginPage.waitForTimeout(200 + Math.random() * 200);
+        // Small random micro-movement while hovering
+        const usernameBox = await usernameField.boundingBox().catch(() => null);
+        if (usernameBox) {
+          await loginPage.mouse.move(
+            usernameBox.x + usernameBox.width / 2 + (Math.random() * 10 - 5),
+            usernameBox.y + usernameBox.height / 2 + (Math.random() * 10 - 5)
+          );
+          await loginPage.waitForTimeout(100 + Math.random() * 100);
+        }
+        await usernameField.click();
+        await loginPage.waitForTimeout(200 + Math.random() * 200);
+        await usernameField.type(this.crmCredentials.username, { delay: 30 + Math.random() * 50 });
+        await usernameField.blur();
+        await loginPage.waitForTimeout(isRetry ? 2000 : 1500);
+        
+        const usernameValue = await usernameField.inputValue();
+        if (usernameValue !== this.crmCredentials.username) {
+          await usernameField.click({ clickCount: 3 });
+          await usernameField.press('Backspace');
+          await loginPage.waitForTimeout(500);
+          await usernameField.type(this.crmCredentials.username, { delay: 50 });
+          await usernameField.blur();
+          await loginPage.waitForTimeout(1000);
+          const retryValue = await usernameField.inputValue();
+          if (retryValue !== this.crmCredentials.username) {
+            throw new Error(`Username not filled correctly. Expected: "${this.crmCredentials.username}", Got: "${retryValue}"`);
+          }
+        }
+        
+        // Move to password field using Tab key
+        await loginPage.keyboard.press('Tab');
+        await loginPage.waitForTimeout(200 + Math.random() * 200);
+        // Small random micro-movement
+        const passwordBox = await passwordField.boundingBox().catch(() => null);
+        if (passwordBox) {
+          await loginPage.mouse.move(
+            passwordBox.x + passwordBox.width / 2 + (Math.random() * 10 - 5),
+            passwordBox.y + passwordBox.height / 2 + (Math.random() * 10 - 5)
+          );
+          await loginPage.waitForTimeout(100 + Math.random() * 100);
+        }
+        await passwordField.click();
+        await loginPage.waitForTimeout(200 + Math.random() * 200);
+        // Type password slower (more careful with sensitive data)
+        await passwordField.type(this.crmCredentials.password, { delay: 50 + Math.random() * 100 });
+        await passwordField.blur();
+        await loginPage.waitForTimeout(isRetry ? 2000 : 1500);
+        
+        const passwordLength = (await passwordField.inputValue()).length;
+        if (passwordLength !== this.crmCredentials.password.length) {
+          await passwordField.click({ clickCount: 3 });
+          await passwordField.press('Backspace');
+          await loginPage.waitForTimeout(500);
+          await passwordField.type(this.crmCredentials.password, { delay: 50 });
+          await passwordField.blur();
+          await loginPage.waitForTimeout(1000);
+          const retryLength = (await passwordField.inputValue()).length;
+          if (retryLength !== this.crmCredentials.password.length) {
+            throw new Error(`Password not filled correctly. Expected length: ${this.crmCredentials.password.length}, Got: ${retryLength}`);
+          }
+        }
+        
+        // Trigger form events and wait for validation
+        await loginPage.locator('body').click({ position: { x: 100, y: 100 } });
+        await loginPage.waitForTimeout(1500);
+        
+        await loginNameField.dispatchEvent('input');
+        await loginNameField.dispatchEvent('change');
+        await loginNameField.dispatchEvent('blur');
+        await usernameField.dispatchEvent('input');
+        await usernameField.dispatchEvent('change');
+        await usernameField.dispatchEvent('blur');
+        await passwordField.dispatchEvent('input');
+        await passwordField.dispatchEvent('change');
+        await passwordField.dispatchEvent('blur');
+        
+        await loginPage.waitForTimeout(isRetry ? 2500 : 2000);
+        
+        // Verify login button is enabled
+        let buttonEnabled = false;
+        let buttonCheckAttempts = 0;
+        const maxButtonChecks = 5;
+        
+        while (buttonCheckAttempts < maxButtonChecks && !buttonEnabled) {
+          buttonCheckAttempts++;
+          buttonEnabled = await loginButton.isEnabled();
+          if (buttonEnabled) break;
+          if (buttonCheckAttempts < maxButtonChecks) {
+            await loginPage.waitForTimeout(1000);
+          }
+        }
+        
+        if (!buttonEnabled) {
+          throw new Error(`Login button is disabled after ${maxButtonChecks} checks - form may not be ready`);
+        }
+        
+        // Enhanced human-like behavior for reCAPTCHA with Bezier curves
+        const viewport = loginPage.viewportSize() || { width: 1280, height: 720 };
+        const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
+        
+        // Natural mouse movement pattern before clicking login
+        const formBox = await loginPage.locator('form').first().boundingBox().catch(() => null);
+        if (formBox) {
+          // Move to form area using Bezier curve
+          const formPath = generateBezierPath(
+            currentPos.x, currentPos.y,
+            formBox.x + formBox.width / 2,
+            formBox.y + formBox.height / 2,
+            20
+          );
+          for (const point of formPath) {
+            await loginPage.mouse.move(point.x, point.y);
+            await loginPage.waitForTimeout(40 + Math.random() * 60);
+          }
+          await loginPage.waitForTimeout(300 + Math.random() * 200);
+          
+          // Small random micro-movements (human-like jitter)
+          for (let i = 0; i < 3; i++) {
+            await loginPage.mouse.move(
+              formBox.x + formBox.width / 2 + (Math.random() * 20 - 10),
+              formBox.y + formBox.height / 2 + (Math.random() * 20 - 10)
+            );
+            await loginPage.waitForTimeout(100 + Math.random() * 150);
+          }
+        }
+        
+        // Move to login button using Bezier curve
+        const loginButtonBox = await loginButton.boundingBox().catch(() => null);
+        if (loginButtonBox) {
+          // Use form center or viewport center as starting point
+          const startX = formBox ? formBox.x + formBox.width / 2 : viewport.width / 2;
+          const startY = formBox ? formBox.y + formBox.height / 2 : viewport.height / 2;
+          
+          const buttonPath = generateBezierPath(
+            startX,
+            startY,
+            loginButtonBox.x + loginButtonBox.width / 2,
+            loginButtonBox.y + loginButtonBox.height / 2,
+            15
+          );
+          
+          for (const point of buttonPath) {
+            await loginPage.mouse.move(point.x, point.y);
+            await loginPage.waitForTimeout(50 + Math.random() * 80);
+          }
+          
+          // Hover over button with slight movements (human hesitation)
+          await loginPage.waitForTimeout(400 + Math.random() * 300);
+          await loginPage.mouse.move(
+            loginButtonBox.x + loginButtonBox.width / 2 + (Math.random() * 5 - 2.5),
+            loginButtonBox.y + loginButtonBox.height / 2 + (Math.random() * 5 - 2.5)
+          );
+          await loginPage.waitForTimeout(200 + Math.random() * 300);
+        }
+        
+        // Reading pause before clicking (human hesitation)
+        const preClickDelay = 1500 + Math.random() * 2000;
+        await loginPage.waitForTimeout(preClickDelay);
+        
+        console.log(`🔐 Submitting login form${isRetry ? ' (RETRY)' : ''}...`);
+        
+        // Intercept request for error analysis only
+        let interceptedRequestData = null;
+        const requestHandler = (request) => {
+          const url = request.url();
+          if (url.includes('/Account/Login') && (url.includes('handler=Wm_TryLogin') || url.includes('Wm_TryLogin'))) {
+            interceptedRequestData = request.postData();
+          }
+        };
+        loginPage.on('request', requestHandler);
+        
+        // Try multiple submission methods
+        let submissionSuccessful = false;
+        let lastResponse = null;
+        
+        // Method 1: Form submit
+        try {
+          const formElement = await loginPage.locator('form').first();
+          const formExists = await formElement.count() > 0;
+          
+          if (formExists) {
+            const [response] = await Promise.all([
+              loginPage.waitForResponse(
+                response => {
+                  const url = response.url();
+                  return url.includes('/Account/Login') || url.includes('/InContact/Account');
+                },
+                { timeout: 15000 }
+              ).catch(() => null),
+              loginPage.evaluate(() => {
+                const form = document.querySelector('form');
+                if (form) {
+                  form.submit();
+                  return true;
+                }
+                return false;
+              })
+            ]);
+            
+            if (response) {
+              lastResponse = response;
+              submissionSuccessful = true;
+            }
+          }
+        } catch (formSubmitError) {
+          // Continue to next method
+        }
+        
+        // Method 2: Enter key
+        if (!submissionSuccessful) {
+          try {
+            await passwordField.focus();
+            await loginPage.waitForTimeout(500);
+            
+            const [response] = await Promise.all([
+              loginPage.waitForResponse(
+                response => {
+                  const url = response.url();
+                  return url.includes('/Account/Login') && url.includes('handler=Wm_TryLogin');
+                },
+                { timeout: 20000 }
+              ).catch(() => null),
+              passwordField.press('Enter', { delay: 100 + Math.random() * 100 })
+            ]);
+            
+            if (response) {
+              lastResponse = response;
+              submissionSuccessful = true;
+            }
+          } catch (enterError) {
+            // Continue to next method
+          }
+        }
+        
+        // Method 3: Button click
+        if (!submissionSuccessful) {
+          try {
+            const [response] = await Promise.all([
+              loginPage.waitForResponse(
+                response => {
+                  const url = response.url();
+                  return url.includes('/Account/Login') && url.includes('handler=Wm_TryLogin');
+                },
+                { timeout: 20000 }
+              ).catch(() => null),
+              loginButton.click({ delay: 100 + Math.random() * 100 })
+            ]);
+            
+            if (response) {
+              lastResponse = response;
+              submissionSuccessful = true;
+            }
+          } catch (buttonError) {
+            // All methods failed
+          }
+        }
+        
+        loginPage.off('request', requestHandler);
+        
+        // CRITICAL: Parse JSON response body immediately to check for errors
+        if (lastResponse) {
+          try {
+            const responseBody = await lastResponse.text().catch(() => '');
+            
+            if (responseBody) {
+              try {
+                const jsonResponse = JSON.parse(responseBody);
+                
+                // Check for error message in JSON response
+                if (jsonResponse.errorMessage) {
+                  console.error(`❌ Login failed: ${jsonResponse.errorMessage}`);
+                  
+                  // Analyze gToken only if error occurred
+                  if (interceptedRequestData) {
+                    const hasGToken = interceptedRequestData.includes('gToken=');
+                    if (hasGToken) {
+                      const tokenMatch = interceptedRequestData.match(/gToken=([^&]+)/);
+                      if (tokenMatch && tokenMatch[1]) {
+                        const tokenValue = decodeURIComponent(tokenMatch[1]);
+                        const tokenLength = tokenValue.length;
+                        if (tokenLength < 100 || tokenValue === '0' || tokenValue === '' || tokenValue === 'null') {
+                          console.error(`❌ reCAPTCHA token invalid (length: ${tokenLength})`);
+                        } else {
+                          console.error(`⚠️ reCAPTCHA token present but rejected - likely automation detected`);
+                        }
+                      }
+                    } else {
+                      console.error(`❌ reCAPTCHA token missing from request`);
+                    }
+                  }
+                  
+                  throw new Error(`Login failed: ${jsonResponse.errorMessage}`);
+                }
+                
+                // Check for success indicators in JSON response
+                if (jsonResponse.newPage || jsonResponse.login_token) {
+                  console.log('✅ Login successful according to JSON response');
+                  console.log(`📡 JSON response:`, JSON.stringify(jsonResponse, null, 2));
+                  // Continue to DOM verification below
+                } else {
+                  // No error but also no success indicators - log for debugging
+                  console.log(`⚠️ JSON response has no error but also no success indicators:`, JSON.stringify(jsonResponse, null, 2));
+                }
+              } catch (jsonParseError) {
+                // Not JSON, log as text
+                if (responseBody.length < 1000) {
+                  console.log(`📡 Response body (not JSON): ${responseBody.substring(0, 500)}`);
+                } else {
+                  console.log(`📡 Response body preview: ${responseBody.substring(0, 200)}...`);
+                }
+              }
+            }
+          } catch (bodyError) {
+            console.log('⚠️ Could not read response body:', bodyError.message);
+          }
+        }
+        
+        // Wait for either success or error (don't just wait for networkidle)
+        console.log('🔐 Waiting for login response to process...');
+        await loginPage.waitForTimeout(3000); // Give time for error messages to appear
+        
+        // Check for error messages first (before waiting for success)
+        const errorIndicators = [
+          loginPage.locator('text=/invalid/i'),
+          loginPage.locator('text=/incorrect/i'),
+          loginPage.locator('text=/error/i'),
+          loginPage.locator('.dx-error-message'),
+          loginPage.locator('[class*="error"]'),
+          loginPage.locator('.alert-danger'),
+          loginPage.locator('.validation-summary-errors'),
+          loginPage.locator('[role="alert"]')
+        ];
+        
+        for (const errorLocator of errorIndicators) {
+          try {
+            const isVisible = await errorLocator.first().isVisible({ timeout: 2000 }).catch(() => false);
+            if (isVisible) {
+              const errorText = await errorLocator.first().textContent().catch(() => '');
+              if (errorText && errorText.trim().length > 0) {
+                console.error(`❌ Login error detected: ${errorText}`);
+                // Take screenshot when error is detected
+                try {
+                  await loginPage.screenshot({ path: `./screenshots/login-error-detected-${Date.now()}.png` });
+                  console.log('📸 Screenshot saved: login-error-detected-*.png');
+                } catch (screenshotError) {
+                  console.warn('⚠️ Could not take error screenshot:', screenshotError.message);
+                }
+                throw new Error(`Login failed: ${errorText.trim()}`);
+              }
+            }
+          } catch (e) {
+            // Continue checking other indicators
+            if (e.message.includes('Login failed')) {
+              throw e; // Re-throw if it's our error
+            }
+          }
+        }
+        
+        // Check if still on login page (another indicator of failure)
+        const stillOnLoginPage = await loginPage.locator('#Loginname').isVisible({ timeout: 3000 }).catch(() => false);
+        if (stillOnLoginPage) {
+          // Wait a bit more and check again - sometimes the page takes time to redirect
+          await loginPage.waitForTimeout(3000);
+          const stillOnLoginPage2 = await loginPage.locator('#Loginname').isVisible({ timeout: 2000 }).catch(() => false);
+          if (stillOnLoginPage2) {
+            // Check one more time after waiting for network idle
+            await loginPage.waitForLoadState('networkidle').catch(() => {});
+            await loginPage.waitForTimeout(2000);
+            const stillOnLoginPage3 = await loginPage.locator('#Loginname').isVisible({ timeout: 2000 }).catch(() => false);
+            if (stillOnLoginPage3) {
+              // Take screenshot before throwing error
+              try {
+                await loginPage.screenshot({ path: `./screenshots/login-still-on-page-${Date.now()}.png` });
+                console.log('📸 Screenshot saved: login-still-on-page-*.png');
+              } catch (screenshotError) {
+                console.warn('⚠️ Could not take screenshot:', screenshotError.message);
+              }
+              throw new Error('Login failed - still on login page after submission');
+            }
+          }
+        }
+        
+        // Wait for successful login
+        await loginPage.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 30000 });
+        console.log(`✅ Login successful${isRetry ? ' (RETRY)' : ''}`);
+        
+        // Don't navigate if already on dashboard - cookies are already in context
+        const currentUrl = loginPage.url();
+        if (!currentUrl.includes('/InContact') || currentUrl.includes('/Account/Login')) {
+          // Navigate to CRM dashboard - cookies in context will persist
+          await loginPage.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          await loginPage.waitForTimeout(2000); // Allow page to settle
+        }
+        
+        // Trust that cookies in context work - no need to verify
+        // Session expiration will be detected if we get redirected to login page
+        
+        // Save authentication state for future browser restarts
+        await this.browserContext.storageState({ path: authFilePath });
+        this.authenticatedPage = loginPage;
+        console.log('✅ Session established and saved (cookies persist in context)');
+        
+        // Success! Break out of retry loop
+        break;
+        
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ Login attempt ${loginAttempt}/${maxAttempts} failed:`, error.message);
+        
+        // Take a screenshot for debugging
+        try {
+          await loginPage.screenshot({ path: `./screenshots/login-error-attempt-${loginAttempt}-${Date.now()}.png` });
+        } catch (screenshotError) {
+          console.warn('⚠️ Could not take screenshot:', screenshotError.message);
+        }
+        
+        // If this was the last attempt, throw the error
+        if (loginAttempt >= maxAttempts) {
+          console.error(`❌ All ${maxAttempts} login attempts failed`);
+          // Close login page before throwing
+          try {
+            if (!loginPage.isClosed()) {
+              await loginPage.close();
+            }
+          } catch (closeError) {
+            console.warn('⚠️ Error closing login page after failure:', closeError.message);
+          }
+          
+          // Close the context since login failed - this allows retry with fresh context
+          if (this.browserContext) {
+            try {
+              await this.browserContext.close();
+              console.log('🧹 Closed browser context after login failure');
+            } catch (closeError) {
+              console.warn('⚠️ Error closing context after login failure:', closeError.message);
+            }
+            this.browserContext = null;
+          }
+          
+          throw new Error(`Failed to login after ${maxAttempts} attempts: ${error.message}`);
+        } else {
+          // Wait a bit before retrying
+          console.log(`⏳ Waiting 2 seconds before retry attempt ${loginAttempt + 1}...`);
+          await loginPage.waitForTimeout(2000);
+        }
+      }
+    }
+    }
+    
+    // Keep authenticated page open for reuse (session cookies remain active)
+    this.browserInitialized = true;
+    return this.browserContext;
+  }
+
+  async getPublicContext() {
+    // Get or create browser
+    const browser = await this.getBrowser();
+    
+    // Create a new context without authentication (for public pages)
+    const context = await browser.newContext({
+      userAgent: this.crmCredentials.userAgent,
+      viewport: { width: 1280, height: 720 }
+    });
+    
+    return context;
+  }
+
+  async cleanup() {
+    try {
+      if (this.browserContext) {
+        // Check if browser is still connected before trying to close context
+        try {
+          const browser = this.browserContext.browser();
+          if (browser && browser.isConnected()) {
+            await this.browserContext.close();
+            console.log('🧹 Browser context closed');
+          } else {
+            console.log('🧹 Browser context already closed or disconnected');
+          }
+        } catch (error) {
+          // Context might already be closed
+          if (error.message.includes('closed') || error.message.includes('Target page')) {
+            console.log('🧹 Browser context was already closed');
+          } else {
+            throw error;
+          }
+        }
+        this.browserContext = null;
+      }
+      if (this.browserInstance) {
+        try {
+          if (this.browserInstance.isConnected()) {
+            await this.browserInstance.close();
+            console.log('🧹 Browser instance closed');
+          } else {
+            console.log('🧹 Browser instance already closed or disconnected');
+          }
+        } catch (error) {
+          // Browser might already be closed
+          if (error.message.includes('closed') || error.message.includes('Target page')) {
+            console.log('🧹 Browser instance was already closed');
+          } else {
+            throw error;
+          }
+        }
+        this.browserInstance = null;
+      }
+      this.browserInitialized = false;
+    } catch (error) {
+      console.error('❌ Error cleaning up browser:', error);
+    }
+  }
+
   async executeTask(task, args, callContext = {}) {
     const callSid = callContext.callSid || 'unknown';
     const executionKey = `${callSid}_${task}`;
@@ -35,12 +820,19 @@ class BrowserAgentService {
     if (this.activeExecutions.has(executionKey)) {
       const activeExecution = this.activeExecutions.get(executionKey);
       const elapsedTime = Date.now() - activeExecution.startTime;
-      console.log(`⚠️ [${callSid}] Task "${task}" is already running (started ${Math.round(elapsedTime / 1000)}s ago). Rejecting concurrent execution.`);
-      return {
-        success: false,
-        error: `Task "${task}" is already in progress for this call. Please wait for it to complete.`,
-        dryRun: false
-      };
+      
+      // If execution is stuck for more than 5 minutes, force clear it to allow retry
+      if (elapsedTime > 300000) {
+        console.warn(`⚠️ [${callSid}] Execution lock was stuck for ${Math.round(elapsedTime / 1000)}s, force clearing to allow retry`);
+        this.activeExecutions.delete(executionKey);
+      } else {
+        console.log(`⚠️ [${callSid}] Task "${task}" is already running (started ${Math.round(elapsedTime / 1000)}s ago). Rejecting concurrent execution.`);
+        return {
+          success: false,
+          error: `Task "${task}" is already in progress for this call. Please wait for it to complete.`,
+          dryRun: false
+        };
+      }
     }
     
     // Mark execution as active
@@ -49,20 +841,97 @@ class BrowserAgentService {
       startTime: Date.now()
     });
     
-    const browser = await chromium.launch({ 
-      headless: false,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    // Check if this is an availability check (public page, no auth needed)
+    // All availability checks use public URLs, so they don't need authentication
+    const isAvailabilityCheck = (task === 'check_availability');
     
-    const context = await browser.newContext({
-      userAgent: this.crmCredentials.userAgent,
-      viewport: { width: 1280, height: 720 }
-    });
-
-    const page = await context.newPage();
+    let context;
+    let shouldCloseContext = false; // Track if we need to close this context (not the pooled one)
+    let page = null;
     const auditId = `audit_${Date.now()}_${callSid}`;
     
     try {
+      // Get context - wrap in try-catch to handle errors early
+      if (isAvailabilityCheck) {
+        // For availability checks, use a browser context without authentication (public page)
+        console.log('🌐 [Availability Check] Using browser without authentication for public availability page');
+        context = await this.getPublicContext();
+        shouldCloseContext = true; // Mark this context for cleanup since it's not the pooled one
+      } else {
+        // For other tasks (create_booking, reschedule, cancel, update_customer), use authenticated context
+        context = await this.getContext();
+      }
+      
+      // Track all pages for cleanup
+      let testPage = null;
+      let loginPage = null;
+      
+      // CRITICAL: For authenticated tasks, reuse authenticated page OR create new page from context
+      // Both will have session cookies because cookies are stored in the browser context
+      if (!isAvailabilityCheck && this.authenticatedPage && !this.authenticatedPage.isClosed()) {
+        console.log('✅ Reusing authenticated page (cookies persist in context)');
+        page = this.authenticatedPage;
+        
+        // Navigate if needed - cookies in context will persist
+        const currentUrl = page.url();
+        if (!currentUrl.includes('takeabyte.co.uk/InContact')) {
+          await page.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          await page.waitForTimeout(2000);
+          
+          // Check if redirected to login (session expired indicator)
+          const newUrl = page.url();
+          if (newUrl.includes('/Account/Login')) {
+            console.warn('⚠️ Session expired - redirected to login, will re-login');
+            await page.close();
+            this.authenticatedPage = null;
+            this.browserContext = null;
+            // Re-get context (will trigger re-login)
+            context = await this.getContext();
+            page = await context.newPage();
+            await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
+          }
+        }
+      } else {
+        // Create new page from context
+        if (isAvailabilityCheck) {
+          // For availability checks, just create page - service will navigate to availability URL
+          console.log('📄 Creating new page for availability check (will navigate to availability URL)');
+          page = await context.newPage();
+          // Don't navigate here - let the ITM service navigate to availability URL
+        } else {
+          // For authenticated tasks, create page and navigate to CRM
+          console.log('📄 Creating new page from authenticated context (cookies inherited from context)');
+          page = await context.newPage();
+          
+          // Navigate to CRM - cookies from context will be used
+          await page.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          await page.waitForTimeout(2000);
+          
+          // Check if redirected to login (session expired indicator)
+          const currentUrl = page.url();
+          if (currentUrl.includes('/Account/Login')) {
+            console.warn('⚠️ Session expired - new page redirected to login, will re-login');
+            await page.close();
+            this.browserContext = null;
+            this.authenticatedPage = null;
+            // Re-get context (will trigger re-login)
+            context = await this.getContext();
+            page = await context.newPage();
+            await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
+          } else {
+            // Session is valid - store as authenticated page for future reuse
+            if (!this.authenticatedPage) {
+              this.authenticatedPage = page;
+            }
+          }
+        }
+      }
       // 🔍 VISIBILITY: Log tool invocation
       console.log(`\n${'='.repeat(80)}`);
       console.log(`🔧 [CRM BROWSER TOOL] Invoked at ${new Date().toISOString()}`);
@@ -121,10 +990,45 @@ class BrowserAgentService {
         dryRun: true
       };
     } finally {
-      // Always remove from active executions and close browser
-      this.activeExecutions.delete(executionKey);
-      await browser.close();
-      console.log(`🧹 [${callSid}] Cleaned up execution lock for task: ${task}`);
+      // ALWAYS clean up pages and execution lock, even on error
+      try {
+        if (page && !page.isClosed()) {
+          // CRITICAL: Do NOT close the authenticated page - we need to keep it open for session persistence
+          if (page === this.authenticatedPage) {
+            console.log(`✅ [${callSid}] Keeping authenticated page open for session persistence`);
+          } else if (process.env.KEEP_BROWSER_OPEN !== 'true') {
+            // Only close non-authenticated pages if not in debug mode
+            await page.close();
+          } else {
+            console.log(`🔍 [${callSid}] Keeping page open for debugging (KEEP_BROWSER_OPEN=true)`);
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ [${callSid}] Error closing page:`, error.message);
+      }
+      
+      // Close the context if it was created for availability check (not the pooled one)
+      if (shouldCloseContext && context) {
+        try {
+          await context.close();
+          console.log(`🧹 [${callSid}] Closed public availability context`);
+        } catch (error) {
+          console.warn(`⚠️ [${callSid}] Error closing public availability context:`, error.message);
+        }
+      }
+      
+      // ALWAYS remove from active executions, even on error - this allows retries
+      const execution = this.activeExecutions.get(executionKey);
+      if (execution) {
+        const elapsed = Date.now() - execution.startTime;
+        if (elapsed > 60000) {
+          console.warn(`⚠️ [${callSid}] Execution lock was stuck for ${Math.round(elapsed / 1000)}s, force releasing`);
+        }
+        this.activeExecutions.delete(executionKey);
+        console.log(`🧹 [${callSid}] Cleaned up execution lock and pages for task: ${task} (duration: ${Math.round(elapsed / 1000)}s)`);
+      } else {
+        console.warn(`⚠️ [${callSid}] Execution lock not found for key: ${executionKey}`);
+      }
     }
   }
 
@@ -182,12 +1086,19 @@ class BrowserAgentService {
             const screenshot = await this.takeScreenshot(page, `${auditId}_itm_availability_check.png`);
             return {
               success: true,
-              result: availability,
+              result: {
+                sessionDetails: availability, // Store as sessionDetails for consistency
+                ...availability // Also include all fields directly
+              },
               screenshots: [screenshot]
             };
           }
           // For other courses, use generic check
-          return await this.checkAvailability(page, args, auditId);
+          const genericAvailability = await this.checkAvailability(page, args, auditId);
+          if (genericAvailability.success && genericAvailability.result) {
+            genericAvailability.result.sessionDetails = genericAvailability.result;
+          }
+          return genericAvailability;
         default:
           throw new Error(`Unknown task: ${task}`);
       }
@@ -215,18 +1126,29 @@ class BrowserAgentService {
       // Login Name field
       const loginNameField = page.locator('#Loginname input.dx-texteditor-input');
       await loginNameField.fill(this.crmCredentials.loginName);
+      console.log('⏳ Waiting 1 second after filling login name...');
+      await page.waitForTimeout(1000); // 1 second wait after filling login name
       
       // Username field
       const usernameField = page.locator('#Username input.dx-texteditor-input');
       await usernameField.fill(this.crmCredentials.username);
+      console.log('⏳ Waiting 1 second after filling username...');
+      await page.waitForTimeout(1000); // 1 second wait after filling username
       
       // Password field
       const passwordField = page.locator('#UserPassword input.dx-texteditor-input');
       await passwordField.fill(this.crmCredentials.password);
+      console.log('⏳ Waiting 1 second after filling password...');
+      await page.waitForTimeout(1000); // 1 second wait after filling password
+      
+      // Click out of the form (blur) to ensure form is ready
+      console.log('⏳ Clicking out of form to ensure it\'s ready...');
+      await page.locator('body').click({ position: { x: 100, y: 100 } });
+      await page.waitForTimeout(1000); // 1 second wait after clicking out
       
       // Wait for form fields to sync before clicking login button
-      console.log('⏳ Waiting for form fields to sync...');
-      await page.waitForTimeout(2500); // 2.5 seconds to allow form fields to sync
+      console.log('⏳ Waiting for form fields to sync before clicking login...');
+      await page.waitForTimeout(1000); // Additional 1 second to ensure form is ready
       
       // Click Login button
       const loginButton = page.locator('#btnLogin');
@@ -504,34 +1426,223 @@ class BrowserAgentService {
       const serviceLoader = courseServiceMap[courseType];
 
       if (!serviceLoader) {
-        throw new Error(`Unknown course type: ${courseType}. Supported: ${Object.keys(courseServiceMap).join(', ')}`);
+        return {
+          success: false,
+          error: `I'm sorry, but "${courseType}" is not a recognized course type. Please specify a valid course type.`,
+          dryRun: true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: [],
+          courseType: args.courseType
+        };
       }
 
       console.log(`📚 Loading booking service for course type: ${courseType}`);
+      
+      // CRITICAL: Reuse authenticated page OR create new page from context
+      // Both will have session cookies because cookies are stored in browser context
+      if (this.authenticatedPage && !this.authenticatedPage.isClosed()) {
+        console.log('✅ Reusing authenticated page for booking (cookies persist in context)');
+        page = this.authenticatedPage;
+        
+        // Navigate if needed - cookies in context will persist
+        const currentUrl = page.url();
+        if (!currentUrl.includes('takeabyte.co.uk/InContact')) {
+          await page.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          await page.waitForTimeout(2000);
+          
+          // Check if redirected to login (session expired indicator)
+          const newUrl = page.url();
+          if (newUrl.includes('/Account/Login')) {
+            console.warn('⚠️ Session expired - redirected to login, will re-login');
+            await page.close();
+            this.authenticatedPage = null;
+            this.browserContext = null;
+            // Re-get context (will trigger re-login)
+            const context = await this.getContext();
+            page = await context.newPage();
+            await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
+          }
+        }
+      } else {
+        // Create new page from context - it automatically inherits cookies from context
+        console.log('📄 Creating new page from authenticated context (cookies inherited)');
+        await page.goto('https://takeabyte.co.uk/InContact', { 
+          waitUntil: 'domcontentloaded',
+          timeout: 30000 
+        });
+        await page.waitForTimeout(2000);
+        
+        // Check if redirected to login (session expired indicator)
+        const currentUrl = page.url();
+        if (currentUrl.includes('/Account/Login')) {
+          console.warn('⚠️ Session expired - new page redirected to login, will re-login');
+          await page.close();
+          this.browserContext = null;
+          this.authenticatedPage = null;
+          // Re-get context (will trigger re-login)
+          const context = await this.getContext();
+          page = await context.newPage();
+          await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
+        } else {
+          // Session is valid - store as authenticated page for future reuse
+          if (!this.authenticatedPage) {
+            this.authenticatedPage = page;
+          }
+        }
+      }
+      
+      // Trust that cookies in context work - no need to verify login status
+      // Session expiration is detected by login redirect above
+      
+      for (const selector of loginIndicators) {
+        try {
+          isAlreadyLoggedIn = await page.locator(selector).first().isVisible({ timeout: 5000 }).catch(() => false);
+          if (isAlreadyLoggedIn) {
+            console.log(`✅ Found login indicator: ${selector}`);
+            break;
+          }
+        } catch (e) {
+          // Continue to next indicator
+        }
+      }
+      
+      if (!isAlreadyLoggedIn) {
+        // This should not happen if getContext() worked correctly
+        console.warn('⚠️ Page appears not logged in, but context should be authenticated. Reloading page and waiting longer...');
+        
+        // Reload the page to ensure cookies are loaded
+        await page.reload({ waitUntil: 'networkidle' });
+        await page.waitForTimeout(3000);
+        
+        // Check again with longer timeout
+        for (const selector of loginIndicators) {
+          try {
+            isAlreadyLoggedIn = await page.locator(selector).first().isVisible({ timeout: 10000 }).catch(() => false);
+            if (isAlreadyLoggedIn) {
+              console.log(`✅ Found login indicator after reload: ${selector}`);
+              break;
+            }
+          } catch (e) {
+            // Continue to next indicator
+          }
+        }
+        
+        if (!isAlreadyLoggedIn) {
+          // Last resort: check if we're redirected to login page
+          const isOnLoginPage = await page.locator('#Loginname').isVisible({ timeout: 3000 }).catch(() => false);
+          if (isOnLoginPage) {
+            throw new Error('Context should be authenticated but page redirected to login. This indicates the session expired or cookies were not saved properly.');
+          }
+          throw new Error('Context should be authenticated but page is not logged in. This indicates an issue with getContext().');
+        }
+      } else {
+        console.log('✅ Page confirmed logged in via authenticated context');
+      }
       
       // Load course-specific service
       const serviceModule = await serviceLoader();
       const bookingService = serviceModule.default;
 
+      // Determine workflowType intelligently
+      let workflowType = args.workflowType;
+      if (!workflowType) {
+        // If customer info is available, assume existing; otherwise assume new
+        if (args.customerMobile || args.customerPhone || args.customerEmail) {
+          workflowType = 'existing';
+          console.log('📋 WorkflowType determined: existing (customer info available)');
+        } else {
+          workflowType = 'new';
+          console.log('📋 WorkflowType determined: new (no customer info available)');
+        }
+      } else {
+        console.log(`📋 WorkflowType explicitly set: ${workflowType}`);
+      }
+      
       // Prepare booking arguments
       const bookingArgs = {
         customerEmail: args.customerEmail,
         customerPhone: args.customerPhone,
+        customerMobile: args.customerMobile || args.customerPhone, // Support both field names
         preferredDate: args.preferredDate,
         preferredTime: args.preferredTime,
         location: args.location,
         bikeType: args.bikeType,
         cbtType: args.cbtType, // For CBT: 'standard' or 'renewal'
-        duration: args.duration // For Gear Conversion: '2', '3', or '4'
+        duration: args.duration, // For Gear Conversion: '2', '3', or '4'
+        workflowType: workflowType
       };
+      
+      // Retrieve availability data from conversation if available
+      const { conversations } = await import('../shared/state.js');
+      const conversation = conversations[callContext.callSid] || {};
+      if (conversation.lastAvailabilityCheck) {
+        bookingArgs.sessionDetails = conversation.lastAvailabilityCheck;
+        console.log('📅 Using availability data from previous check');
+      }
+      
+      // Ensure callContext has clientDetails if available from previous search
+      if (args.clientDetails) {
+        callContext.clientDetails = args.clientDetails;
+      }
 
-      // Execute workflow
-      // For ITM, use executeITMBookingDemo, for others use executeBookingWorkflow
-      let result;
-      if (courseType === 'ITM' || courseType === 'Introduction to Motorcycling') {
-        result = await bookingService.executeITMBookingDemo(page);
-      } else {
-        result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext);
+      // Check if client verification is required (for existing clients)
+      if (bookingArgs.workflowType === 'existing' && callContext.clientDetails && !callContext.clientVerified) {
+        return {
+          success: false,
+          requiresVerification: true,
+          clientDetails: callContext.clientDetails,
+          message: 'Client found but requires verbal verification before proceeding with booking. Please use the client_verification tool first.',
+          dryRun: true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: [],
+          courseType: args.courseType
+        };
+      }
+
+      // Execute workflow - all services now use executeBookingWorkflow
+      const result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext);
+
+      // If result indicates verification is required, return it
+      if (result.requiresVerification) {
+        return {
+          success: false,
+          requiresVerification: true,
+          clientDetails: result.clientDetails || callContext.clientDetails,
+          message: result.message || 'Client found but requires verbal verification before proceeding with booking.',
+          dryRun: true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: result.screenshots || [],
+          courseType: args.courseType
+        };
+      }
+
+      // If result indicates failure, return it gracefully
+      if (!result.success) {
+        // Log the actual error for debugging
+        console.error(`❌ [${auditId}] Course booking failed:`, result.error);
+        if (result.technicalError) {
+          console.error(`❌ [${auditId}] Technical error:`, result.technicalError);
+        }
+        if (result.error && result.error.stack) {
+          console.error(`❌ [${auditId}] Error stack:`, result.error.stack);
+        }
+        
+        return {
+          success: false,
+          error: result.error || 'An unexpected error occurred during booking',
+          technicalError: result.technicalError || result.error,
+          dryRun: result.dryRun !== undefined ? result.dryRun : true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: result.screenshots || [],
+          courseType: args.courseType
+        };
       }
 
       return {
@@ -547,7 +1658,21 @@ class BrowserAgentService {
     } catch (error) {
       console.error('❌ Course booking execution failed:', error);
       await this.takeScreenshot(page, `${auditId}_course_booking_error.png`);
-      throw error;
+      
+      // Return error gracefully with user-friendly message
+      const errorContext = getErrorContext(error, 'create_booking');
+      const userFriendlyError = formatUserFriendlyError(error, errorContext);
+      
+      return {
+        success: false,
+        error: userFriendlyError,
+        technicalError: error.message, // Keep technical error for logging
+        dryRun: true,
+        requiresConfirmation: false,
+        auditId,
+        screenshots: [],
+        courseType: args.courseType
+      };
     }
   }
 

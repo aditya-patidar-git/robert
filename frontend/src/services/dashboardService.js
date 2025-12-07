@@ -20,6 +20,14 @@ class DashboardService extends BaseService {
   async getDashboardAnalytics() {
     return this.get('/analytics');
   }
+
+  /**
+   * Toggle routing enabled status
+   * @returns {Promise<Object>} Updated system status
+   */
+  async toggleRouting() {
+    return this.post('/routing/toggle');
+  }
 }
 
 // Export singleton instance
