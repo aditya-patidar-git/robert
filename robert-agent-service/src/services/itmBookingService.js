@@ -21,7 +21,7 @@ class ITMBookingService {
     }
   }
 
-  async executeITMBookingDemo(page, bookingArgs = {}, callContext = {}) {
+  async executeBookingWorkflow(page, bookingArgs = {}, callContext = {}) {
     const screenshots = [];
     let sessionDetails = null;
     const workflowType = bookingArgs.workflowType || 'existing';
@@ -175,6 +175,10 @@ class ITMBookingService {
 
         // STEP 8: Contact details - fill MISSING fields only
         console.log('🔍 Step 8: Looking up contact and filling missing details...');
+        const clientEmail = bookingArgs.customerEmail || callContext.clientDetails?.email || bookingArgs.clientDetails?.email;
+        if (!clientEmail) {
+          throw new Error('Client email is required for contact lookup');
+        }
         await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
         console.log('✅ Step 8 completed: Contact details updated');

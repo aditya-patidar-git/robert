@@ -43,11 +43,39 @@ class CBTBookingService {
         console.log('✅ Step 1 completed');
       }
 
-      // STEP 2: Login to CRM (for all workflows)
-      console.log('🔐 Step 2: Logging into CRM...');
-      await commonSteps.loginToCRM(page, this.crmCredentials, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-login-success.png', this.screenshotsDir));
-      console.log('✅ Step 2 completed: Login successful');
+      // STEP 2: Login to CRM
+      const loginIndicators = [
+        'text=/Dashboard|Contacts|Diaries/i',
+        'h3.list-menu-item-heading:has-text("Contacts")',
+        'h3.list-menu-item-heading:has-text("Dashboard")'
+      ];
+      
+      let isAlreadyLoggedIn = false;
+      for (const selector of loginIndicators) {
+        try {
+          isAlreadyLoggedIn = await page.locator(selector).first().isVisible({ timeout: 3000 }).catch(() => false);
+          if (isAlreadyLoggedIn) break;
+        } catch (e) {
+          // Continue to next indicator
+        }
+      }
+      
+      if (!isAlreadyLoggedIn) {
+        console.log('🔐 Step 2: Logging into CRM...');
+        await commonSteps.loginToCRM(page, this.crmCredentials, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-login-success.png', this.screenshotsDir));
+        console.log('✅ Step 2 completed: Login successful');
+      } else {
+        const currentUrl = page.url();
+        if (currentUrl.includes('/Account/Login')) {
+          await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
+          await page.waitForTimeout(2000);
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-already-logged-in.png', this.screenshotsDir));
+        } else {
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-already-logged-in.png', this.screenshotsDir));
+        }
+        console.log('✅ Step 2: Already authenticated');
+      }
 
       // STEP 3: Ask "Have you done training with us before?" (handled by voice agent)
       // workflowType is already determined and passed in bookingArgs
@@ -154,6 +182,10 @@ class CBTBookingService {
 
         // STEP 8: Contact details - fill MISSING fields only
         console.log('🔍 Step 8: Looking up contact and filling missing details...');
+        const clientEmail = bookingArgs.customerEmail || callContext.clientDetails?.email || bookingArgs.clientDetails?.email;
+        if (!clientEmail) {
+          throw new Error('Client email is required for contact lookup');
+        }
         await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
         console.log('✅ Step 8 completed: Contact details updated');

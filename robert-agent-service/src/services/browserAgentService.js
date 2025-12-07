@@ -59,39 +59,13 @@ class BrowserAgentService {
     // Check if existing context is still valid
     if (this.browserContext) {
       try {
-        // Verify the context is still connected and valid
+        // Verify the context is still connected - trust that cookies persist
         const browser = this.browserContext.browser();
         if (browser && browser.isConnected()) {
-          // Quick check: try to verify we're still logged in
-          const testPage = await this.browserContext.newPage();
-          try {
-            await testPage.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded', timeout: 10000 });
-            const isLoggedIn = await testPage.locator('text=/Dashboard|Contacts|Diaries/i').first().isVisible({ timeout: 3000 }).catch(() => false);
-            await testPage.close();
-            
-            if (isLoggedIn) {
-              console.log('✅ Reusing existing authenticated browser context');
-              return this.browserContext;
-            } else {
-              console.log('⚠️ Existing context is no longer logged in, will re-login');
-              // Context exists but session expired - close it and create new one
-              try {
-                await this.browserContext.close();
-              } catch (closeError) {
-                console.warn('⚠️ Error closing expired context:', closeError.message);
-              }
-              this.browserContext = null;
-            }
-          } catch (error) {
-            await testPage.close().catch(() => {});
-            console.log('⚠️ Could not verify existing context, will create new one');
-            try {
-              await this.browserContext.close();
-            } catch (closeError) {
-              console.warn('⚠️ Error closing invalid context:', closeError.message);
-            }
-            this.browserContext = null;
-          }
+          // Trust that cookies in context are valid - no need to verify with test page
+          // Session expiration will be detected when we get redirected to login page
+          console.log('✅ Reusing existing browser context (cookies persist in context)');
+          return this.browserContext;
         } else {
           console.log('⚠️ Existing context is disconnected, will create new one');
           this.browserContext = null;
@@ -102,34 +76,94 @@ class BrowserAgentService {
       }
     }
     
-    // No valid context exists - create a new one and login
-    // Note: We don't load from auth.json because session cookies (expires: -1) 
-    // are tied to the browser context and won't work in a new context.
-    // We'll create a fresh context and login, which will create new session cookies.
-    console.log('🔐 Creating new browser context and logging in...');
+    // No valid context exists - try to load from storageState first, then login if needed
+    const authFilePath = './auth.json';
+    let shouldLoadFromStorage = false;
+    
+    // Try to load from auth.json if it exists (for browser restarts)
+    if (fs.existsSync(authFilePath)) {
+      try {
+        const authData = JSON.parse(fs.readFileSync(authFilePath, 'utf8'));
+        if (authData.cookies && authData.cookies.length > 0) {
+          shouldLoadFromStorage = true;
+          console.log('📂 Found auth.json, attempting to load session...');
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not read auth.json:', e.message);
+      }
+    }
     
     // Get or create browser
     const browser = await this.getBrowser();
     
-    // Create a fresh context with stealth settings
-    this.browserContext = await browser.newContext({
+    // Create context - try loading from storageState first
+    const contextOptions = {
       userAgent: getRealisticUserAgent(),
       viewport: { width: 1280, height: 720 },
       locale: 'en-GB',
       timezoneId: 'Europe/London',
       permissions: [],
       colorScheme: 'light'
-    });
+    };
     
-    // Inject stealth script to remove automation indicators
-    await this.browserContext.addInitScript(getStealthInitScript());
+    if (shouldLoadFromStorage) {
+      try {
+        this.browserContext = await browser.newContext({
+          ...contextOptions,
+          storageState: authFilePath
+        });
+        console.log('📂 Loaded browser context from auth.json');
+        
+        // Verify the loaded session by checking if we get redirected to login
+        const testPage = await this.browserContext.newPage();
+        try {
+          await testPage.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded', 
+            timeout: 15000 
+          });
+          await testPage.waitForTimeout(2000); // Wait for any redirects
+          
+          // Check if we're redirected to login page (session expired indicator)
+          const currentUrl = testPage.url();
+          const isOnLoginPage = currentUrl.includes('/Account/Login');
+          await testPage.close();
+          
+          if (isOnLoginPage) {
+            console.log('⚠️ Loaded session from auth.json expired (redirected to login), will re-login');
+            await this.browserContext.close();
+            this.browserContext = null;
+            shouldLoadFromStorage = false; // Force fresh login
+          } else {
+            console.log('✅ Loaded session from auth.json is valid');
+            // Inject stealth script
+            await this.browserContext.addInitScript(getStealthInitScript());
+            return this.browserContext;
+          }
+        } catch (error) {
+          await testPage.close().catch(() => {});
+          console.log('⚠️ Could not verify loaded session, will re-login');
+          await this.browserContext.close().catch(() => {});
+          this.browserContext = null;
+          shouldLoadFromStorage = false;
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to load from auth.json, will create fresh context:', error.message);
+        this.browserContext = null;
+        shouldLoadFromStorage = false;
+      }
+    }
     
-    // Save auth.json path for later (we'll save it after login)
-    const authFilePath = './auth.json';
-    
-    // Perform login and save authentication state with retry logic
-    console.log('🔐 Performing login and saving authentication state...');
-    const loginPage = await this.browserContext.newPage();
+    // Create fresh context and login
+    if (!this.browserContext) {
+      console.log('🔐 Creating new browser context and logging in...');
+      this.browserContext = await browser.newContext(contextOptions);
+      
+      // Inject stealth script to remove automation indicators
+      await this.browserContext.addInitScript(getStealthInitScript());
+      
+      // Perform login and save authentication state with retry logic
+      console.log('🔐 Performing login and saving authentication state...');
+      const loginPage = await this.browserContext.newPage();
     let loginAttempt = 0;
     const maxAttempts = 2;
     let lastError = null;
@@ -648,20 +682,24 @@ class BrowserAgentService {
         await loginPage.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 30000 });
         console.log(`✅ Login successful${isRetry ? ' (RETRY)' : ''}`);
         
-        // Navigate to CRM dashboard to establish session
-        await loginPage.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
-        await loginPage.waitForTimeout(2000);
-        
-        // Verify session is still active (non-blocking - cookies are in context)
-        const stillLoggedIn = await loginPage.locator('h3.list-menu-item-heading:has-text("Contacts")').isVisible({ timeout: 5000 }).catch(() => false);
-        if (!stillLoggedIn) {
-          console.warn('⚠️ Session check failed after navigation, but continuing (cookies are in browser context)...');
-          // Don't reload - cookies are still in context, subsequent operations will work
+        // Don't navigate if already on dashboard - cookies are already in context
+        const currentUrl = loginPage.url();
+        if (!currentUrl.includes('/InContact') || currentUrl.includes('/Account/Login')) {
+          // Navigate to CRM dashboard - cookies in context will persist
+          await loginPage.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          await loginPage.waitForTimeout(2000); // Allow page to settle
         }
         
-        // Save authentication state
+        // Trust that cookies in context work - no need to verify
+        // Session expiration will be detected if we get redirected to login page
+        
+        // Save authentication state for future browser restarts
         await this.browserContext.storageState({ path: authFilePath });
         this.authenticatedPage = loginPage;
+        console.log('✅ Session established and saved (cookies persist in context)');
         
         // Success! Break out of retry loop
         break;
@@ -708,9 +746,9 @@ class BrowserAgentService {
         }
       }
     }
+    }
     
     // Keep authenticated page open for reuse (session cookies remain active)
-    
     this.browserInitialized = true;
     return this.browserContext;
   }
@@ -828,14 +866,71 @@ class BrowserAgentService {
       let testPage = null;
       let loginPage = null;
       
-      // CRITICAL: For authenticated tasks, try to reuse the authenticated page if available
-      // This ensures session cookies remain active
+      // CRITICAL: For authenticated tasks, reuse authenticated page OR create new page from context
+      // Both will have session cookies because cookies are stored in the browser context
       if (!isAvailabilityCheck && this.authenticatedPage && !this.authenticatedPage.isClosed()) {
-        console.log('✅ Reusing authenticated page from login (session cookies active)');
+        console.log('✅ Reusing authenticated page (cookies persist in context)');
         page = this.authenticatedPage;
+        
+        // Navigate if needed - cookies in context will persist
+        const currentUrl = page.url();
+        if (!currentUrl.includes('takeabyte.co.uk/InContact')) {
+          await page.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          await page.waitForTimeout(2000);
+          
+          // Check if redirected to login (session expired indicator)
+          const newUrl = page.url();
+          if (newUrl.includes('/Account/Login')) {
+            console.warn('⚠️ Session expired - redirected to login, will re-login');
+            await page.close();
+            this.authenticatedPage = null;
+            this.browserContext = null;
+            // Re-get context (will trigger re-login)
+            context = await this.getContext();
+            page = await context.newPage();
+            await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
+          }
+        }
       } else {
-        // Create a new page (for availability checks or if no authenticated page exists)
-        page = await context.newPage();
+        // Create new page from context
+        if (isAvailabilityCheck) {
+          // For availability checks, just create page - service will navigate to availability URL
+          console.log('📄 Creating new page for availability check (will navigate to availability URL)');
+          page = await context.newPage();
+          // Don't navigate here - let the ITM service navigate to availability URL
+        } else {
+          // For authenticated tasks, create page and navigate to CRM
+          console.log('📄 Creating new page from authenticated context (cookies inherited from context)');
+          page = await context.newPage();
+          
+          // Navigate to CRM - cookies from context will be used
+          await page.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          await page.waitForTimeout(2000);
+          
+          // Check if redirected to login (session expired indicator)
+          const currentUrl = page.url();
+          if (currentUrl.includes('/Account/Login')) {
+            console.warn('⚠️ Session expired - new page redirected to login, will re-login');
+            await page.close();
+            this.browserContext = null;
+            this.authenticatedPage = null;
+            // Re-get context (will trigger re-login)
+            context = await this.getContext();
+            page = await context.newPage();
+            await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
+          } else {
+            // Session is valid - store as authenticated page for future reuse
+            if (!this.authenticatedPage) {
+              this.authenticatedPage = page;
+            }
+          }
+        }
       }
       // 🔍 VISIBILITY: Log tool invocation
       console.log(`\n${'='.repeat(80)}`);
@@ -1344,49 +1439,64 @@ class BrowserAgentService {
 
       console.log(`📚 Loading booking service for course type: ${courseType}`);
       
-      // CRITICAL: Try to reuse the authenticated page if available
-      // This ensures session cookies remain active
+      // CRITICAL: Reuse authenticated page OR create new page from context
+      // Both will have session cookies because cookies are stored in browser context
       if (this.authenticatedPage && !this.authenticatedPage.isClosed()) {
-        console.log('✅ Reusing authenticated page for booking operation...');
-        // Navigate the authenticated page to CRM if not already there
-        const currentUrl = this.authenticatedPage.url();
-        if (!currentUrl.includes('takeabyte.co.uk/InContact')) {
-          await this.authenticatedPage.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
-          await this.authenticatedPage.waitForTimeout(2000);
-        }
-        // Use the authenticated page instead of the new page
+        console.log('✅ Reusing authenticated page for booking (cookies persist in context)');
         page = this.authenticatedPage;
-        console.log('✅ Using authenticated page - session cookies are active');
+        
+        // Navigate if needed - cookies in context will persist
+        const currentUrl = page.url();
+        if (!currentUrl.includes('takeabyte.co.uk/InContact')) {
+          await page.goto('https://takeabyte.co.uk/InContact', { 
+            waitUntil: 'domcontentloaded',
+            timeout: 30000 
+          });
+          await page.waitForTimeout(2000);
+          
+          // Check if redirected to login (session expired indicator)
+          const newUrl = page.url();
+          if (newUrl.includes('/Account/Login')) {
+            console.warn('⚠️ Session expired - redirected to login, will re-login');
+            await page.close();
+            this.authenticatedPage = null;
+            this.browserContext = null;
+            // Re-get context (will trigger re-login)
+            const context = await this.getContext();
+            page = await context.newPage();
+            await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
+          }
+        }
       } else {
-        // No authenticated page available, use the new page from context
-        // The context should have the session cookies
-        console.log('🔐 Navigating to CRM (context is already authenticated)...');
-        await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
+        // Create new page from context - it automatically inherits cookies from context
+        console.log('📄 Creating new page from authenticated context (cookies inherited)');
+        await page.goto('https://takeabyte.co.uk/InContact', { 
+          waitUntil: 'domcontentloaded',
+          timeout: 30000 
+        });
+        await page.waitForTimeout(2000);
         
-        // CRITICAL: Wait longer for cookies to be available and session to be active
-        console.log('⏳ Waiting for session cookies to be available on new page...');
-        await page.waitForTimeout(3000); // Increased wait time for session cookies
-        
-        // Verify cookies are present in the page context
-        const cookies = await page.context().cookies();
-        const hasAuthCookie = cookies.some(cookie => cookie.name === '.AspNetCore.Cookies');
-        console.log(`🔍 [DEBUG] Auth cookie present: ${hasAuthCookie}, Total cookies: ${cookies.length}`);
-        
-        if (!hasAuthCookie) {
-          console.warn('⚠️ Auth cookie not found in page context - session may not be active');
+        // Check if redirected to login (session expired indicator)
+        const currentUrl = page.url();
+        if (currentUrl.includes('/Account/Login')) {
+          console.warn('⚠️ Session expired - new page redirected to login, will re-login');
+          await page.close();
+          this.browserContext = null;
+          this.authenticatedPage = null;
+          // Re-get context (will trigger re-login)
+          const context = await this.getContext();
+          page = await context.newPage();
+          await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
+        } else {
+          // Session is valid - store as authenticated page for future reuse
+          if (!this.authenticatedPage) {
+            this.authenticatedPage = page;
+          }
         }
       }
       
-      // Optional: Quick verification that we're logged in (but don't login again)
-      // Try multiple login indicators with longer timeout
-      let isAlreadyLoggedIn = false;
-      
-      // Try checking for login indicators with multiple approaches
-      const loginIndicators = [
-        'text=/Dashboard|Contacts|Diaries/i',
-        'h3.list-menu-item-heading:has-text("Contacts")',
-        'h3.list-menu-item-heading:has-text("Dashboard")'
-      ];
+      // Trust that cookies in context work - no need to verify login status
+      // Session expiration is detected by login redirect above
       
       for (const selector of loginIndicators) {
         try {
@@ -1494,14 +1604,8 @@ class BrowserAgentService {
         };
       }
 
-      // Execute workflow
-      // For ITM, use executeITMBookingDemo, for others use executeBookingWorkflow
-      let result;
-      if (courseType === 'ITM' || courseType === 'Introduction to Motorcycling') {
-        result = await bookingService.executeITMBookingDemo(page, bookingArgs, callContext);
-      } else {
-        result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext);
-      }
+      // Execute workflow - all services now use executeBookingWorkflow
+      const result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext);
 
       // If result indicates verification is required, return it
       if (result.requiresVerification) {
