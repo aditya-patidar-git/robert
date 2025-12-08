@@ -29,18 +29,26 @@ class CBTExecutiveBookingService {
 
     try {
       console.log(`🚀 Starting CBT Executive booking workflow (${workflowType} client)...`);
-      console.log('🔍 Service: Current page URL:', page.url());
-      console.log('🔍 Service: Page title:', await page.title());
 
-      // STEP 1: Check availability and note details
-      if (bookingArgs.sessionDetails) {
-        sessionDetails = bookingArgs.sessionDetails;
-        console.log('✅ Step 1: Using existing availability data');
+      // Session details should be provided from the availability tool call
+      // Retrieve from bookingArgs (set by browserAgentService from conversation state)
+      sessionDetails = bookingArgs.sessionDetails;
+      if (!sessionDetails) {
+        console.warn('⚠️ No availability data found - creating default sessionDetails to continue workflow');
+        // Create default sessionDetails to allow workflow to continue
+        sessionDetails = {
+          date: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBD',
+          course: 'CBT Executive',
+          location: bookingArgs.location || 'TBD',
+          time: bookingArgs.preferredTime || 'TBD',
+          price: '£250.00',
+          instructor: 'TBD',
+          startDate: bookingArgs.preferredDate || new Date().toISOString().split('T')[0],
+          monthYear: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+        };
+        console.warn('⚠️ Using default sessionDetails - workflow will continue but may need manual session selection');
       } else {
-        console.log('📅 Step 1: Checking availability...');
-        sessionDetails = await this.checkAvailabilityAndNoteDetails(page);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-1-availability.png', this.screenshotsDir));
-        console.log('✅ Step 1 completed');
+        console.log('✅ Using availability data from previous check');
       }
 
       // STEP 2: Login to CRM
@@ -62,18 +70,36 @@ class CBTExecutiveBookingService {
       
       if (!isAlreadyLoggedIn) {
         console.log('🔐 Step 2: Logging into CRM...');
-        await commonSteps.loginToCRM(page, this.crmCredentials, this.screenshotsDir);
+        const loginSuccess = await commonSteps.loginToCRM(page, this.crmCredentials, this.screenshotsDir);
+        
+        if (!loginSuccess) {
+          throw new Error('Step 2: Login verification failed');
+        }
+        
+        // CRITICAL: Ensure we're on CRM dashboard, not on availability URL
+        const currentUrl = page.url();
+        if (currentUrl.includes('bookcbtnow.com') || currentUrl.includes('gateway.aspx')) {
+          console.log('🔐 Step 2: Navigating to CRM dashboard (page was on availability URL)...');
+          await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
+          await page.waitForTimeout(2000);
+          await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
+          console.log('✅ Step 2: Confirmed on CRM dashboard');
+        }
+        
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-login-success.png', this.screenshotsDir));
         console.log('✅ Step 2 completed: Login successful');
       } else {
+        // Already logged in - ensure we're on CRM dashboard
         const currentUrl = page.url();
-        if (currentUrl.includes('/Account/Login')) {
+        if (currentUrl.includes('bookcbtnow.com') || currentUrl.includes('gateway.aspx')) {
+          console.log('🔐 Step 2: Navigating to CRM dashboard (page was on availability URL)...');
           await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
           await page.waitForTimeout(2000);
-          screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-already-logged-in.png', this.screenshotsDir));
-        } else {
-          screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-already-logged-in.png', this.screenshotsDir));
+        } else if (currentUrl.includes('/Account/Login')) {
+          await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
+          await page.waitForTimeout(2000);
         }
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-already-logged-in.png', this.screenshotsDir));
         console.log('✅ Step 2: Already authenticated');
       }
 
@@ -112,14 +138,15 @@ class CBTExecutiveBookingService {
         }
         
         // Search for client
-        const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir);
+        // Search for client - pass email so Smart search always uses email
+        const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, bookingArgs.customerEmail);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
         
         if (!searchResult.found) {
           // If mobile search failed and we haven't tried email yet, try email
           if (searchType === 'mobile' && bookingArgs.customerEmail) {
             console.log('⚠️ Mobile search failed, trying email search...');
-            const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir);
+            const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir, bookingArgs.customerEmail);
             if (emailSearchResult.found) {
               // Store client details for verification
               if (emailSearchResult.clientDetails) {

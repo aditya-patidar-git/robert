@@ -1,13 +1,14 @@
 import { takeScreenshot } from './utils.js';
 
 /**
- * Step 10: Select payment option - "Take a payment now"
+ * Step 10: Select payment option
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @param {string} paymentType - Payment type: 'now' (default) for "Take a payment now", 'none' for "No payment required"
  */
-export async function selectPaymentOption(page, screenshotsDir) {
+export async function selectPaymentOption(page, screenshotsDir, paymentType = 'now') {
   try {
-    console.log('💳 [STEP 10] Selecting payment option...');
+    console.log(`💳 [STEP 10] Selecting payment option (type: ${paymentType})...`);
     
     // Wait for payment page to load
     console.log('⏳ [STEP 10] Waiting for payment page to load...');
@@ -66,9 +67,9 @@ export async function selectPaymentOption(page, screenshotsDir) {
     const optionCount = await paymentOptions.count();
     console.log(`📊 [STEP 10] Found ${optionCount} payment options in dropdown`);
     
-    // Find matching option - "Take a payment now"
+    // Determine target option text based on paymentType
     let matchingOption = null;
-    const targetOptionText = 'Take a payment now';
+    const targetOptionText = paymentType === 'none' ? 'No payment required' : 'Take a payment now';
     
     for (let i = 0; i < optionCount; i++) {
       const option = paymentOptions.nth(i);
@@ -77,8 +78,8 @@ export async function selectPaymentOption(page, screenshotsDir) {
       
       console.log(`   Option ${i + 1}: "${optionTextTrimmed}"`);
       
-      // Check if option text matches "Take a payment now" (exact match)
-      if (optionTextTrimmed === targetOptionText) {
+      // Check if option text matches target (exact match, case-insensitive)
+      if (optionTextTrimmed.toLowerCase() === targetOptionText.toLowerCase()) {
         console.log(`✅ [STEP 10] Found matching payment option: "${optionTextTrimmed}"`);
         matchingOption = option;
         break;

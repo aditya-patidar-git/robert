@@ -9,8 +9,9 @@ import { takeScreenshot, extractLocationIdentifier } from './utils.js';
  * @param {string} sessionDetails.instructor - Instructor name
  * @param {string} sessionDetails.time - Session time
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @param {string} diaryType - Optional diary type: 'TfL Diary' for TfL courses, undefined/default for standard 'Day planner'
  */
-export async function navigateToDiariesAndSelectSession(page, sessionDetails, screenshotsDir) {
+export async function navigateToDiariesAndSelectSession(page, sessionDetails, screenshotsDir, diaryType = undefined) {
   try {
     console.log('📅 [STEP 6-7] Navigating to Diaries tab...');
     
@@ -434,8 +435,10 @@ export async function navigateToDiariesAndSelectSession(page, sessionDetails, sc
       const optionCount = await calendarTypeOptions.count();
       console.log(`📊 [STEP 6-7] Found ${optionCount} calendar type options in dropdown`);
       
-      // Find "Day planner" option (exact match, case-insensitive)
-      const targetOptionText = 'Day planner';
+      // Determine target option text based on diaryType parameter
+      // Default to "Day planner" for backward compatibility
+      const targetOptionText = diaryType === 'TfL Diary' ? 'TfL Diary' : 'Day planner';
+      console.log(`📅 [STEP 6-7] Looking for calendar type: "${targetOptionText}"`);
       let matchingOption = null;
       
       for (let i = 0; i < optionCount; i++) {
@@ -484,7 +487,7 @@ export async function navigateToDiariesAndSelectSession(page, sessionDetails, sc
         
         // Take screenshot after calendar type selection
         await takeScreenshot(page, 'calendar-type-selected.png', screenshotsDir);
-        console.log('✅ [STEP 6-7] Calendar type "Day planner" selected successfully');
+        console.log(`✅ [STEP 6-7] Calendar type "${targetOptionText}" selected successfully`);
       } else {
         console.log(`⚠️ [STEP 6-7] No matching calendar type option found for "${targetOptionText}"`);
         console.log(`⚠️ [STEP 6-7] Available options were checked, but none matched. Continuing without calendar type selection...`);

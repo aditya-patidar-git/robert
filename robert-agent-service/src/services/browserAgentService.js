@@ -65,7 +65,7 @@ class BrowserAgentService {
           // Trust that cookies in context are valid - no need to verify with test page
           // Session expiration will be detected when we get redirected to login page
           console.log('✅ Reusing existing browser context (cookies persist in context)');
-          return this.browserContext;
+      return this.browserContext;
         } else {
           console.log('⚠️ Existing context is disconnected, will create new one');
           this.browserContext = null;
@@ -108,15 +108,15 @@ class BrowserAgentService {
     
     if (shouldLoadFromStorage) {
       try {
-        this.browserContext = await browser.newContext({
+      this.browserContext = await browser.newContext({
           ...contextOptions,
           storageState: authFilePath
-        });
+      });
         console.log('📂 Loaded browser context from auth.json');
-        
+      
         // Verify the loaded session by checking if we get redirected to login
-        const testPage = await this.browserContext.newPage();
-        try {
+      const testPage = await this.browserContext.newPage();
+      try {
           await testPage.goto('https://takeabyte.co.uk/InContact', { 
             waitUntil: 'domcontentloaded', 
             timeout: 15000 
@@ -130,7 +130,7 @@ class BrowserAgentService {
           
           if (isOnLoginPage) {
             console.log('⚠️ Loaded session from auth.json expired (redirected to login), will re-login');
-            await this.browserContext.close();
+              await this.browserContext.close();
             this.browserContext = null;
             shouldLoadFromStorage = false; // Force fresh login
           } else {
@@ -138,8 +138,8 @@ class BrowserAgentService {
             // Inject stealth script
             await this.browserContext.addInitScript(getStealthInitScript());
             return this.browserContext;
-          }
-        } catch (error) {
+        }
+      } catch (error) {
           await testPage.close().catch(() => {});
           console.log('⚠️ Could not verify loaded session, will re-login');
           await this.browserContext.close().catch(() => {});
@@ -148,13 +148,13 @@ class BrowserAgentService {
         }
       } catch (error) {
         console.warn('⚠️ Failed to load from auth.json, will create fresh context:', error.message);
-        this.browserContext = null;
+          this.browserContext = null;
         shouldLoadFromStorage = false;
       }
     }
     
     // Create fresh context and login
-    if (!this.browserContext) {
+      if (!this.browserContext) {
       console.log('🔐 Creating new browser context and logging in...');
       this.browserContext = await browser.newContext(contextOptions);
       
@@ -176,7 +176,7 @@ class BrowserAgentService {
         if (isRetry) {
           console.log(`🔄 [RETRY ${loginAttempt}/${maxAttempts}] Retrying login with enhanced field handling...`);
           // On retry, navigate to login page again
-          await loginPage.goto(this.crmCredentials.loginUrl);
+        await loginPage.goto(this.crmCredentials.loginUrl);
           await loginPage.waitForLoadState('networkidle');
           await loginPage.waitForTimeout(2000); // Extra wait on retry
         } else {
@@ -290,7 +290,7 @@ class BrowserAgentService {
           const retryValue = await loginNameField.inputValue();
           if (retryValue !== this.crmCredentials.loginName) {
             throw new Error(`Login name not filled correctly. Expected: "${this.crmCredentials.loginName}", Got: "${retryValue}"`);
-          }
+        }
         }
         
         // Move to username field using Tab key (more natural)
@@ -322,7 +322,7 @@ class BrowserAgentService {
           const retryValue = await usernameField.inputValue();
           if (retryValue !== this.crmCredentials.username) {
             throw new Error(`Username not filled correctly. Expected: "${this.crmCredentials.username}", Got: "${retryValue}"`);
-          }
+        }
         }
         
         // Move to password field using Tab key
@@ -411,7 +411,7 @@ class BrowserAgentService {
             await loginPage.waitForTimeout(40 + Math.random() * 60);
           }
           await loginPage.waitForTimeout(300 + Math.random() * 200);
-          
+        
           // Small random micro-movements (human-like jitter)
           for (let i = 0; i < 3; i++) {
             await loginPage.mouse.move(
@@ -449,6 +449,51 @@ class BrowserAgentService {
             loginButtonBox.y + loginButtonBox.height / 2 + (Math.random() * 5 - 2.5)
           );
           await loginPage.waitForTimeout(200 + Math.random() * 300);
+        }
+        
+        // Check for reCAPTCHA elements on the page before submission
+        console.log('🔍 Checking for reCAPTCHA elements on page...');
+        try {
+          const recaptchaChecks = {
+            iframe: await loginPage.locator('iframe[src*="recaptcha"]').count(),
+            grecaptchaDiv: await loginPage.locator('.g-recaptcha').count(),
+            grecaptchaScript: await loginPage.locator('script[src*="recaptcha"]').count(),
+            recaptchaBadge: await loginPage.locator('[class*="recaptcha"]').count()
+          };
+
+          console.log('📊 reCAPTCHA Detection Results:');
+          console.log(`   - reCAPTCHA iframes found: ${recaptchaChecks.iframe}`);
+          console.log(`   - .g-recaptcha divs found: ${recaptchaChecks.grecaptchaDiv}`);
+          console.log(`   - reCAPTCHA scripts found: ${recaptchaChecks.grecaptchaScript}`);
+          console.log(`   - reCAPTCHA badges/classes found: ${recaptchaChecks.recaptchaBadge}`);
+
+          if (recaptchaChecks.iframe > 0 || recaptchaChecks.grecaptchaDiv > 0) {
+            console.log('✅ reCAPTCHA is present on the login page');
+            
+            // Try to get reCAPTCHA status
+            try {
+              const recaptchaStatus = await loginPage.evaluate(() => {
+                if (window.grecaptcha) {
+                  return {
+                    ready: window.grecaptcha.ready !== undefined,
+                    getResponse: typeof window.grecaptcha.getResponse === 'function'
+                  };
+                }
+                return null;
+              });
+              if (recaptchaStatus) {
+                console.log(`   - grecaptcha object available: ${recaptchaStatus.ready}`);
+                console.log(`   ⚠️ Note: Actual score (0.0-1.0) is only available server-side`);
+                console.log(`   The server verifies the token with Google and receives the score`);
+              }
+            } catch (e) {
+              console.log('   - Could not check grecaptcha object:', e.message);
+            }
+          } else {
+            console.log('⚠️ No reCAPTCHA elements detected on page (may be invisible or loaded dynamically)');
+          }
+        } catch (e) {
+          console.log('⚠️ Could not check for reCAPTCHA elements:', e.message);
         }
         
         // Reading pause before clicking (human hesitation)
@@ -564,27 +609,68 @@ class BrowserAgentService {
               try {
                 const jsonResponse = JSON.parse(responseBody);
                 
+                // Check for reCAPTCHA score in response (if server includes it)
+                if (jsonResponse.recaptchaScore !== undefined || jsonResponse.score !== undefined) {
+                  const score = jsonResponse.recaptchaScore || jsonResponse.score;
+                  console.log(`📊 reCAPTCHA Score from server: ${score}`);
+                  if (score < 0.5) {
+                    console.error(`🚨 LOW reCAPTCHA SCORE (${score}) - Likely detected as bot!`);
+                    console.error(`   Score interpretation: ${score >= 0.9 ? 'Human' : score >= 0.7 ? 'Likely Human' : score >= 0.5 ? 'Suspicious' : 'Bot'}`);
+                  } else if (score < 0.7) {
+                    console.warn(`⚠️ MODERATE reCAPTCHA SCORE (${score}) - May be flagged`);
+                  } else {
+                    console.log(`✅ GOOD reCAPTCHA SCORE (${score})`);
+                  }
+                }
+                
                 // Check for error message in JSON response
                 if (jsonResponse.errorMessage) {
                   console.error(`❌ Login failed: ${jsonResponse.errorMessage}`);
                   
-                  // Analyze gToken only if error occurred
+                  // ENHANCED: Check for reCAPTCHA-specific error messages
+                  const errorMsg = jsonResponse.errorMessage.toLowerCase();
+                  const isRecaptchaError = 
+                    errorMsg.includes('recaptcha') || 
+                    errorMsg.includes('captcha') ||
+                    errorMsg.includes('robot') ||
+                    errorMsg.includes('automation') ||
+                    errorMsg.includes('verification') ||
+                    errorMsg.includes('suspicious');
+                  
+                  if (isRecaptchaError) {
+                    console.error('🚨 CONFIRMED: This is a reCAPTCHA-related error!');
+                    console.error(`   Error message: "${jsonResponse.errorMessage}"`);
+                  }
+                  
+                  // ENHANCED: Analyze gToken with detailed logging
                   if (interceptedRequestData) {
                     const hasGToken = interceptedRequestData.includes('gToken=');
+                    console.log(`📊 Request Analysis:`);
+                    console.log(`   - gToken present: ${hasGToken}`);
+                    
                     if (hasGToken) {
                       const tokenMatch = interceptedRequestData.match(/gToken=([^&]+)/);
                       if (tokenMatch && tokenMatch[1]) {
                         const tokenValue = decodeURIComponent(tokenMatch[1]);
                         const tokenLength = tokenValue.length;
+                        console.log(`   - gToken length: ${tokenLength}`);
+                        console.log(`   - gToken value (first 50 chars): ${tokenValue.substring(0, 50)}...`);
+                        
                         if (tokenLength < 100 || tokenValue === '0' || tokenValue === '' || tokenValue === 'null') {
                           console.error(`❌ reCAPTCHA token invalid (length: ${tokenLength})`);
+                          console.error('🚨 CONFIRMED: Invalid reCAPTCHA token - this is a reCAPTCHA issue!');
                         } else {
                           console.error(`⚠️ reCAPTCHA token present but rejected - likely automation detected`);
+                          console.error('🚨 CONFIRMED: Valid token but rejected - reCAPTCHA detected automation!');
+                          console.error(`   This suggests the reCAPTCHA score was too low (< 0.5 typically)`);
                         }
                       }
                     } else {
                       console.error(`❌ reCAPTCHA token missing from request`);
+                      console.error('🚨 CONFIRMED: Missing reCAPTCHA token - this is a reCAPTCHA issue!');
                     }
+                  } else {
+                    console.warn('⚠️ Could not analyze request data - interceptedRequestData is missing');
                   }
                   
                   throw new Error(`Login failed: ${jsonResponse.errorMessage}`);
@@ -622,6 +708,10 @@ class BrowserAgentService {
           loginPage.locator('text=/invalid/i'),
           loginPage.locator('text=/incorrect/i'),
           loginPage.locator('text=/error/i'),
+          loginPage.locator('text=/recaptcha/i'),
+          loginPage.locator('text=/captcha/i'),
+          loginPage.locator('text=/robot/i'),
+          loginPage.locator('text=/verification/i'),
           loginPage.locator('.dx-error-message'),
           loginPage.locator('[class*="error"]'),
           loginPage.locator('.alert-danger'),
@@ -636,6 +726,14 @@ class BrowserAgentService {
               const errorText = await errorLocator.first().textContent().catch(() => '');
               if (errorText && errorText.trim().length > 0) {
                 console.error(`❌ Login error detected: ${errorText}`);
+                
+                // ENHANCED: Check if it's a reCAPTCHA error
+                const errorLower = errorText.toLowerCase();
+                if (errorLower.includes('recaptcha') || errorLower.includes('captcha') || 
+                    errorLower.includes('robot') || errorLower.includes('verification')) {
+                  console.error('🚨 CONFIRMED: Error message indicates reCAPTCHA issue!');
+                }
+                
                 // Take screenshot when error is detected
                 try {
                   await loginPage.screenshot({ path: `./screenshots/login-error-detected-${Date.now()}.png` });
@@ -673,7 +771,7 @@ class BrowserAgentService {
               } catch (screenshotError) {
                 console.warn('⚠️ Could not take screenshot:', screenshotError.message);
               }
-              throw new Error('Login failed - still on login page after submission');
+            throw new Error('Login failed - still on login page after submission');
             }
           }
         }
@@ -721,8 +819,8 @@ class BrowserAgentService {
           // Close login page before throwing
           try {
             if (!loginPage.isClosed()) {
-              await loginPage.close();
-            }
+        await loginPage.close();
+      }
           } catch (closeError) {
             console.warn('⚠️ Error closing login page after failure:', closeError.message);
           }
@@ -826,12 +924,12 @@ class BrowserAgentService {
         console.warn(`⚠️ [${callSid}] Execution lock was stuck for ${Math.round(elapsedTime / 1000)}s, force clearing to allow retry`);
         this.activeExecutions.delete(executionKey);
       } else {
-        console.log(`⚠️ [${callSid}] Task "${task}" is already running (started ${Math.round(elapsedTime / 1000)}s ago). Rejecting concurrent execution.`);
-        return {
-          success: false,
-          error: `Task "${task}" is already in progress for this call. Please wait for it to complete.`,
-          dryRun: false
-        };
+      console.log(`⚠️ [${callSid}] Task "${task}" is already running (started ${Math.round(elapsedTime / 1000)}s ago). Rejecting concurrent execution.`);
+      return {
+        success: false,
+        error: `Task "${task}" is already in progress for this call. Please wait for it to complete.`,
+        dryRun: false
+      };
       }
     }
     
@@ -852,19 +950,19 @@ class BrowserAgentService {
     
     try {
       // Get context - wrap in try-catch to handle errors early
-      if (isAvailabilityCheck) {
-        // For availability checks, use a browser context without authentication (public page)
-        console.log('🌐 [Availability Check] Using browser without authentication for public availability page');
-        context = await this.getPublicContext();
-        shouldCloseContext = true; // Mark this context for cleanup since it's not the pooled one
-      } else {
-        // For other tasks (create_booking, reschedule, cancel, update_customer), use authenticated context
-        context = await this.getContext();
-      }
-      
-      // Track all pages for cleanup
-      let testPage = null;
-      let loginPage = null;
+    if (isAvailabilityCheck) {
+      // For availability checks, use a browser context without authentication (public page)
+      console.log('🌐 [Availability Check] Using browser without authentication for public availability page');
+      context = await this.getPublicContext();
+      shouldCloseContext = true; // Mark this context for cleanup since it's not the pooled one
+    } else {
+      // For other tasks (create_booking, reschedule, cancel, update_customer), use authenticated context
+      context = await this.getContext();
+    }
+    
+    // Track all pages for cleanup
+    let testPage = null;
+    let loginPage = null;
       
       // CRITICAL: For authenticated tasks, reuse authenticated page OR create new page from context
       // Both will have session cookies because cookies are stored in the browser context
@@ -890,7 +988,7 @@ class BrowserAgentService {
             this.browserContext = null;
             // Re-get context (will trigger re-login)
             context = await this.getContext();
-            page = await context.newPage();
+    page = await context.newPage();
             await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'domcontentloaded' });
           }
         }
@@ -1084,6 +1182,25 @@ class BrowserAgentService {
             const itmBookingService = (await import('./itmBookingService.js')).default;
             const availability = await itmBookingService.checkAvailabilityAndNoteDetails(page);
             const screenshot = await this.takeScreenshot(page, `${auditId}_itm_availability_check.png`);
+            
+            // Store availability data to file as fallback (for development/debugging)
+            const availabilityCachePath = './availability-cache.json';
+            try {
+              // Extract callSid from auditId (format: audit_${timestamp}_${callSid})
+              const callSidFromAuditId = auditId.split('_').slice(2).join('_') || 'unknown';
+              
+              const cacheData = {
+                courseType: courseType,
+                sessionDetails: availability,
+                timestamp: new Date().toISOString(),
+                callSid: callSidFromAuditId
+              };
+              fs.writeFileSync(availabilityCachePath, JSON.stringify(cacheData, null, 2));
+              console.log(`💾 [${auditId}] Stored availability data to ${availabilityCachePath} as fallback`);
+            } catch (error) {
+              console.warn(`⚠️ [${auditId}] Could not save availability cache:`, error.message);
+            }
+            
             return {
               success: true,
               result: {
@@ -1097,6 +1214,24 @@ class BrowserAgentService {
           const genericAvailability = await this.checkAvailability(page, args, auditId);
           if (genericAvailability.success && genericAvailability.result) {
             genericAvailability.result.sessionDetails = genericAvailability.result;
+            
+            // Store availability data to file as fallback
+            const availabilityCachePath = './availability-cache.json';
+            try {
+              // Extract callSid from auditId (format: audit_${timestamp}_${callSid})
+              const callSidFromAuditId = auditId.split('_').slice(2).join('_') || 'unknown';
+              
+              const cacheData = {
+                courseType: args.courseType,
+                sessionDetails: genericAvailability.result.sessionDetails || genericAvailability.result,
+                timestamp: new Date().toISOString(),
+                callSid: callSidFromAuditId
+              };
+              fs.writeFileSync(availabilityCachePath, JSON.stringify(cacheData, null, 2));
+              console.log(`💾 [${auditId}] Stored availability data to ${availabilityCachePath} as fallback`);
+            } catch (error) {
+              console.warn(`⚠️ [${auditId}] Could not save availability cache:`, error.message);
+            }
           }
           return genericAvailability;
         default:
@@ -1419,7 +1554,13 @@ class BrowserAgentService {
         'CBT Executive': () => import('./cbtExecutiveBookingService.js'),
         'CBT Executive 1-2-1': () => import('./cbtExecutiveBookingService.js'),
         'Private Lesson': () => import('./privateLessonBookingService.js'),
-        'Gear Conversion': () => import('./gearConversionBookingService.js')
+        'Gear Conversion': () => import('./gearConversionBookingService.js'),
+        'TfL 1-2-1': () => import('./tflOneToOneBookingService.js'),
+        'TfL 1-2-1 Motorcycle Skills': () => import('./tflOneToOneBookingService.js'),
+        'TfL Beyond CBT': () => import('./tflBeyondCbtBookingService.js'),
+        'TfL - Beyond CBT - Skills for Delivery Riders': () => import('./tflBeyondCbtBookingService.js'),
+        'Full Licence Assessment': () => import('./fullLicenceAssessmentBookingService.js'),
+        'Full Motorcycle Licence Assessment': () => import('./fullLicenceAssessmentBookingService.js')
       };
 
       const courseType = args.courseType;
@@ -1498,6 +1639,15 @@ class BrowserAgentService {
       // Trust that cookies in context work - no need to verify login status
       // Session expiration is detected by login redirect above
       
+      // Define login indicators for checking authentication status
+      const loginIndicators = [
+        'text=/Dashboard|Contacts|Diaries/i',
+        'h3.list-menu-item-heading:has-text("Contacts")',
+        'h3.list-menu-item-heading:has-text("Dashboard")'
+      ];
+      
+      let isAlreadyLoggedIn = false;
+      
       for (const selector of loginIndicators) {
         try {
           isAlreadyLoggedIn = await page.locator(selector).first().isVisible({ timeout: 5000 }).catch(() => false);
@@ -1561,7 +1711,7 @@ class BrowserAgentService {
       } else {
         console.log(`📋 WorkflowType explicitly set: ${workflowType}`);
       }
-      
+
       // Prepare booking arguments
       const bookingArgs = {
         customerEmail: args.customerEmail,
@@ -1581,7 +1731,38 @@ class BrowserAgentService {
       const conversation = conversations[callContext.callSid] || {};
       if (conversation.lastAvailabilityCheck) {
         bookingArgs.sessionDetails = conversation.lastAvailabilityCheck;
-        console.log('📅 Using availability data from previous check');
+        console.log('📅 Using availability data from previous check (conversation state)');
+      } else {
+        // FALLBACK: Try to load from file cache (for development/debugging)
+        const availabilityCachePath = './availability-cache.json';
+        if (fs.existsSync(availabilityCachePath)) {
+          try {
+            const cacheData = JSON.parse(fs.readFileSync(availabilityCachePath, 'utf8'));
+            // Check if cache is recent (within last 1 hour) and matches course type
+            const cacheAge = Date.now() - new Date(cacheData.timestamp).getTime();
+            const oneHour = 60 * 60 * 1000;
+            
+            if (cacheAge < oneHour && cacheData.sessionDetails) {
+              // Optionally check if course type matches (for multi-course scenarios)
+              if (!cacheData.courseType || cacheData.courseType === args.courseType || 
+                  args.courseType === 'Introduction to Motorcycling' && cacheData.courseType === 'ITM') {
+                bookingArgs.sessionDetails = cacheData.sessionDetails;
+                console.log(`📅 Using availability data from file cache (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
+                console.log(`📅 Cache course type: ${cacheData.courseType}, Requested: ${args.courseType}`);
+              } else {
+                console.warn(`⚠️ [${auditId}] Cache exists but course type mismatch: cache=${cacheData.courseType}, requested=${args.courseType}`);
+              }
+            } else {
+              console.warn(`⚠️ [${auditId}] Cache exists but is too old (${Math.round(cacheAge / 1000 / 60)} minutes)`);
+            }
+          } catch (error) {
+            console.warn(`⚠️ [${auditId}] Could not read availability cache:`, error.message);
+          }
+        }
+        
+        if (!bookingArgs.sessionDetails) {
+          console.warn(`⚠️ [${auditId}] No availability data found in conversation state or file cache`);
+        }
       }
       
       // Ensure callContext has clientDetails if available from previous search
