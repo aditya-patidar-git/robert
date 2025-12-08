@@ -1,10 +1,8 @@
 import React from 'react';
 import {
-  
   Typography,
   Box,
   Paper,
-  Grid,
   FormControl,
   InputLabel,
   Select,
@@ -143,21 +141,31 @@ const ObservabilityPage = () => {
       </Paper>
 
       {/* Summary Metrics */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: '1fr',
+            sm: 'repeat(2, 1fr)',
+            md: 'repeat(4, 1fr)'
+          },
+          gap: 3,
+          mb: 4
+        }}
+      >
         {summaryMetrics.map((metric, index) => (
-          <Grid item xs={12} sm={6} md={3} key={index}>
-            <MetricCard
-              title={metric.title}
-              value={metric.value}
-              icon={metric.icon}
-              color={metric.color}
-              change={metric.change}
-              changeType={metric.changeType}
-              loading={metricsLoading}
-            />
-          </Grid>
+          <MetricCard
+            key={index}
+            title={metric.title}
+            value={metric.value}
+            icon={metric.icon}
+            color={metric.color}
+            change={metric.change}
+            changeType={metric.changeType}
+            loading={metricsLoading}
+          />
         ))}
-      </Grid>
+      </Box>
 
       {/* Tabs for different views */}
       <Paper 
