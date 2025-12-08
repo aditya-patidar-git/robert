@@ -1188,65 +1188,43 @@ class BrowserAgentService {
         case 'update_customer':
           return await this.updateCustomer(page, args, auditId);
         case 'check_availability':
-          // Route to ITM service if courseType is ITM
+          // Use common availability check for all course types
           const courseType = args.courseType || '';
-          if (courseType === 'ITM' || courseType === 'Introduction to Motorcycling') {
-            console.log(`📚 [${auditId}] Routing check_availability to ITM service...`);
-            const itmBookingService = (await import('./itmBookingService.js')).default;
-            const availability = await itmBookingService.checkAvailabilityAndNoteDetails(page);
-            const screenshot = await this.takeScreenshot(page, `${auditId}_itm_availability_check.png`);
+          if (!courseType) {
+            throw new Error('Course type is required for availability check');
+          }
+          
+          console.log(`📚 [${auditId}] Checking availability for ${courseType}...`);
+          const commonSteps = await import('./commonBookingSteps/index.js');
+          const availability = await commonSteps.checkAvailabilityAndNoteDetails(page, courseType, this.screenshotsDir);
+          const screenshot = await this.takeScreenshot(page, `${auditId}_${courseType.toLowerCase().replace(/\s+/g, '-')}_availability_check.png`);
+          
+          // Store availability data to file as fallback (for development/debugging)
+          const availabilityCachePath = './availability-cache.json';
+          try {
+            // Extract callSid from auditId (format: audit_${timestamp}_${callSid})
+            const callSidFromAuditId = auditId.split('_').slice(2).join('_') || 'unknown';
             
-            // Store availability data to file as fallback (for development/debugging)
-            const availabilityCachePath = './availability-cache.json';
-            try {
-              // Extract callSid from auditId (format: audit_${timestamp}_${callSid})
-              const callSidFromAuditId = auditId.split('_').slice(2).join('_') || 'unknown';
-              
-              const cacheData = {
-                courseType: courseType,
-                sessionDetails: availability,
-                timestamp: new Date().toISOString(),
-                callSid: callSidFromAuditId
-              };
-              fs.writeFileSync(availabilityCachePath, JSON.stringify(cacheData, null, 2));
-              console.log(`💾 [${auditId}] Stored availability data to ${availabilityCachePath} as fallback`);
-            } catch (error) {
-              console.warn(`⚠️ [${auditId}] Could not save availability cache:`, error.message);
-            }
-            
-            return {
-              success: true,
-              result: {
-                sessionDetails: availability, // Store as sessionDetails for consistency
-                ...availability // Also include all fields directly
-              },
-              screenshots: [screenshot]
+            const cacheData = {
+              courseType: courseType,
+              sessionDetails: availability,
+              timestamp: new Date().toISOString(),
+              callSid: callSidFromAuditId
             };
+            fs.writeFileSync(availabilityCachePath, JSON.stringify(cacheData, null, 2));
+            console.log(`💾 [${auditId}] Stored availability data to ${availabilityCachePath} as fallback`);
+          } catch (error) {
+            console.warn(`⚠️ [${auditId}] Could not save availability cache:`, error.message);
           }
-          // For other courses, use generic check
-          const genericAvailability = await this.checkAvailability(page, args, auditId);
-          if (genericAvailability.success && genericAvailability.result) {
-            genericAvailability.result.sessionDetails = genericAvailability.result;
-            
-            // Store availability data to file as fallback
-            const availabilityCachePath = './availability-cache.json';
-            try {
-              // Extract callSid from auditId (format: audit_${timestamp}_${callSid})
-              const callSidFromAuditId = auditId.split('_').slice(2).join('_') || 'unknown';
-              
-              const cacheData = {
-                courseType: args.courseType,
-                sessionDetails: genericAvailability.result.sessionDetails || genericAvailability.result,
-                timestamp: new Date().toISOString(),
-                callSid: callSidFromAuditId
-              };
-              fs.writeFileSync(availabilityCachePath, JSON.stringify(cacheData, null, 2));
-              console.log(`💾 [${auditId}] Stored availability data to ${availabilityCachePath} as fallback`);
-            } catch (error) {
-              console.warn(`⚠️ [${auditId}] Could not save availability cache:`, error.message);
-            }
-          }
-          return genericAvailability;
+          
+          return {
+            success: true,
+            result: {
+              sessionDetails: availability, // Store as sessionDetails for consistency
+              ...availability // Also include all fields directly
+            },
+            screenshots: [screenshot]
+          };
         default:
           throw new Error(`Unknown task: ${task}`);
       }
@@ -1465,35 +1443,86 @@ class BrowserAgentService {
 
   async dryRunRescheduleBooking(page, args, auditId) {
     try {
-      console.log('🔍 Dry run: Reschedule booking');
+      console.log(`🔍 [${auditId}] Dry run: Reschedule booking`);
       
-      // Navigate to booking management
-      await page.goto(`${this.crmCredentials.loginUrl}/bookings/${args.bookingId}`);
-      await page.waitForLoadState('networkidle');
+      // Import common steps
+      const commonSteps = await import('./commonBookingSteps/index.js');
+      const feeCalculationService = (await import('./feeCalculationService.js')).default;
       
-      // Check if booking exists
-      const bookingExists = await page.locator(`text=${args.bookingId}`).isVisible();
-      
-      if (!bookingExists) {
-        throw new Error('Booking not found');
+      // Step 1: Find customer and booking
+      if (!args.customerEmail && !args.customerMobile && !args.customerPhone) {
+        return {
+          success: false,
+          error: 'Customer email or mobile number is required to find booking'
+        };
       }
       
-      // Navigate to reschedule
-      await page.click('button[data-action="reschedule"]');
-      await page.waitForLoadState('networkidle');
+      // Find customer first
+      const searchType = args.customerMobile || args.customerPhone ? 'mobile' : 'email';
+      const searchValue = args.customerMobile || args.customerPhone || args.customerEmail;
       
-      // Fill new date
-      await page.fill('input[name="newDate"]', args.newDate);
+      const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, args.customerEmail);
       
-      await this.takeScreenshot(page, `${auditId}_reschedule_form.png`);
+      if (!searchResult.found) {
+        return {
+          success: false,
+          error: 'Customer not found. Please verify customer details.'
+        };
+      }
+      
+      // Find booking
+      const iframe = page.frameLocator('#contactLookup_iframe');
+      const bookingResult = await commonSteps.findBooking(page, iframe, this.screenshotsDir, args.bookingReference);
+      
+      if (!bookingResult.found || !bookingResult.bookings || bookingResult.bookings.length === 0) {
+        return {
+          success: false,
+          error: args.bookingReference 
+            ? `Booking with reference ${args.bookingReference} not found`
+            : 'No bookings found for this customer'
+        };
+      }
+      
+      const existingBooking = args.bookingReference 
+        ? bookingResult.bookings.find(b => b.bookingReference === args.bookingReference)
+        : bookingResult.bookings[0];
+      
+      if (!existingBooking) {
+        return {
+          success: false,
+          error: `Booking with reference ${args.bookingReference} not found`
+        };
+      }
+      
+      // Calculate reschedule fee
+      const bookingPrice = this.extractPriceFromBooking(existingBooking) || 125; // Default price if not found
+      const feeResult = feeCalculationService.calculateRescheduleFee(
+        existingBooking.date,
+        args.newDate,
+        bookingPrice,
+        existingBooking.courseType
+      );
+      
+      await this.takeScreenshot(page, `${auditId}_reschedule_dryrun.png`);
       
       return {
         success: true,
         result: {
           action: 'reschedule_booking',
-          bookingId: args.bookingId,
-          newDate: args.newDate,
-          currentDate: await page.inputValue('input[name="currentDate"]')
+          bookingReference: existingBooking.bookingReference,
+          currentBooking: {
+            date: existingBooking.date,
+            time: existingBooking.time,
+            location: existingBooking.location,
+            courseType: existingBooking.courseType
+          },
+          newBooking: {
+            date: args.newDate,
+            time: args.newTime || existingBooking.time,
+            location: args.newLocation || existingBooking.location
+          },
+          fee: feeResult.fee,
+          feePolicy: feeResult.policy
         },
         requiresConfirmation: true
       };
@@ -1505,30 +1534,103 @@ class BrowserAgentService {
       };
     }
   }
+  
+  extractPriceFromBooking(booking) {
+    // Try to extract price from booking object or use default
+    if (booking.price) {
+      const match = String(booking.price).match(/[\d,]+\.?\d*/);
+      if (match) {
+        return parseFloat(match[0].replace(/,/g, ''));
+      }
+    }
+    return null;
+  }
 
   async dryRunCancelBooking(page, args, auditId) {
     try {
-      console.log('🔍 Dry run: Cancel booking');
+      console.log(`🔍 [${auditId}] Dry run: Cancel booking`);
       
-      // Navigate to booking
-      await page.goto(`${this.crmCredentials.loginUrl}/bookings/${args.bookingId}`);
-      await page.waitForLoadState('networkidle');
+      // Import common steps
+      const commonSteps = await import('./commonBookingSteps/index.js');
+      const feeCalculationService = (await import('./feeCalculationService.js')).default;
       
-      // Check booking status
-      const status = await page.textContent('.booking-status');
-      
-      if (status === 'cancelled') {
-        throw new Error('Booking already cancelled');
+      // Step 1: Find customer and booking
+      if (!args.customerEmail && !args.customerMobile && !args.customerPhone) {
+        return {
+          success: false,
+          error: 'Customer email or mobile number is required to find booking'
+        };
       }
       
-      await this.takeScreenshot(page, `${auditId}_cancel_booking.png`);
+      // Find customer first
+      const searchType = args.customerMobile || args.customerPhone ? 'mobile' : 'email';
+      const searchValue = args.customerMobile || args.customerPhone || args.customerEmail;
+      
+      const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, args.customerEmail);
+      
+      if (!searchResult.found) {
+        return {
+          success: false,
+          error: 'Customer not found. Please verify customer details.'
+        };
+      }
+      
+      // Find booking
+      const iframe = page.frameLocator('#contactLookup_iframe');
+      const bookingResult = await commonSteps.findBooking(page, iframe, this.screenshotsDir, args.bookingReference);
+      
+      if (!bookingResult.found || !bookingResult.bookings || bookingResult.bookings.length === 0) {
+        return {
+          success: false,
+          error: args.bookingReference 
+            ? `Booking with reference ${args.bookingReference} not found`
+            : 'No bookings found for this customer'
+        };
+      }
+      
+      const existingBooking = args.bookingReference 
+        ? bookingResult.bookings.find(b => b.bookingReference === args.bookingReference)
+        : bookingResult.bookings[0];
+      
+      if (!existingBooking) {
+        return {
+          success: false,
+          error: `Booking with reference ${args.bookingReference} not found`
+        };
+      }
+      
+      // Check if already cancelled
+      if (existingBooking.status === 'cancelled') {
+        return {
+          success: false,
+          error: 'Booking is already cancelled'
+        };
+      }
+      
+      // Calculate cancellation fee
+      const bookingPrice = this.extractPriceFromBooking(existingBooking) || 125; // Default price if not found
+      const feeResult = feeCalculationService.calculateCancellationFee(
+        existingBooking.date,
+        bookingPrice
+      );
+      
+      await this.takeScreenshot(page, `${auditId}_cancel_booking_dryrun.png`);
       
       return {
         success: true,
         result: {
           action: 'cancel_booking',
-          bookingId: args.bookingId,
-          currentStatus: status,
+          bookingReference: existingBooking.bookingReference,
+          bookingDetails: {
+            date: existingBooking.date,
+            time: existingBooking.time,
+            location: existingBooking.location,
+            courseType: existingBooking.courseType,
+            status: existingBooking.status
+          },
+          cancellationFee: feeResult.fee,
+          refundAmount: feeResult.refundAmount,
+          feePolicy: feeResult.policy,
           reason: args.reason || 'Customer request'
         },
         requiresConfirmation: true
@@ -1544,36 +1646,81 @@ class BrowserAgentService {
 
   async dryRunUpdateCustomer(page, args, auditId) {
     try {
-      console.log('🔍 Dry run: Update customer');
+      console.log(`🔍 [${auditId}] Dry run: Update customer`);
       
-      // Navigate to customer record
-      await page.goto(`${this.crmCredentials.loginUrl}/customers/${args.customerId}`);
-      await page.waitForLoadState('networkidle');
+      // Import common steps
+      const commonSteps = await import('./commonBookingSteps/index.js');
       
-      // Check if customer exists
-      const customerExists = await page.locator(`text=${args.customerId}`).isVisible();
-      
-      if (!customerExists) {
-        throw new Error('Customer not found');
+      // Step 1: Find customer
+      if (!args.customerEmail && !args.customerMobile && !args.customerPhone) {
+        return {
+          success: false,
+          error: 'Customer email or mobile number is required to find customer'
+        };
       }
       
-      // Navigate to edit
-      await page.click('button[data-action="edit"]');
-      await page.waitForLoadState('networkidle');
+      // Find customer
+      const searchType = args.customerMobile || args.customerPhone ? 'mobile' : 'email';
+      const searchValue = args.customerMobile || args.customerPhone || args.customerEmail;
       
-      // Show what will be updated
+      const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, args.customerEmail);
+      
+      if (!searchResult.found) {
+        return {
+          success: false,
+          error: 'Customer not found. Please verify customer details.'
+        };
+      }
+      
+      // Extract current values from client details
+      const iframe = page.frameLocator('#contactLookup_iframe');
+      const currentValues = {};
+      
+      if (args.email) {
+        const emailField = iframe.locator('input[id*="email"], input[name*="email"], input[type="email"]').first();
+        if (await emailField.count() > 0) {
+          currentValues.email = await emailField.inputValue().catch(() => '');
+        }
+      }
+      
+      if (args.mobile || args.phone) {
+        const mobileField = iframe.locator('input[id*="mobile_number"], input[id*="mobile"], input[name*="mobile"]').first();
+        if (await mobileField.count() > 0) {
+          currentValues.mobile = await mobileField.inputValue().catch(() => '');
+        }
+      }
+      
+      if (args.postcode) {
+        const postcodeField = iframe.locator('input[id*="post_code"], input[id*="postcode"], input[name*="postcode"]').first();
+        if (await postcodeField.count() > 0) {
+          currentValues.postcode = await postcodeField.inputValue().catch(() => '');
+        }
+      }
+      
+      // Build updates list
       const updates = [];
-      if (args.email) updates.push(`Email: ${args.email}`);
-      if (args.phone) updates.push(`Phone: ${args.phone}`);
-      if (args.address) updates.push(`Address: ${args.address}`);
+      if (args.email) updates.push(`Email: ${currentValues.email || 'N/A'} → ${args.email}`);
+      if (args.mobile || args.phone) updates.push(`Mobile: ${currentValues.mobile || 'N/A'} → ${args.mobile || args.phone}`);
+      if (args.postcode) updates.push(`Postcode: ${currentValues.postcode || 'N/A'} → ${args.postcode}`);
+      if (args.firstName) updates.push(`First Name: → ${args.firstName}`);
+      if (args.surname) updates.push(`Surname: → ${args.surname}`);
+      if (args.address) updates.push(`Address: → ${args.address}`);
       
-      await this.takeScreenshot(page, `${auditId}_update_customer.png`);
+      await this.takeScreenshot(page, `${auditId}_update_customer_dryrun.png`);
       
       return {
         success: true,
         result: {
           action: 'update_customer',
-          customerId: args.customerId,
+          currentValues: currentValues,
+          newValues: {
+            email: args.email,
+            mobile: args.mobile || args.phone,
+            postcode: args.postcode,
+            firstName: args.firstName,
+            surname: args.surname,
+            address: args.address
+          },
           updates: updates
         },
         requiresConfirmation: true
@@ -1593,32 +1740,24 @@ class BrowserAgentService {
       
       const courseType = args.courseType || '';
       
-      // For ITM, use the ITM service's checkAvailabilityAndNoteDetails (no login needed)
-      if (courseType === 'ITM' || courseType === 'Introduction to Motorcycling') {
-        console.log(`📚 [${auditId}] Using ITM availability check (public page, no login required)`);
-        const itmBookingService = (await import('./itmBookingService.js')).default;
-        const availability = await itmBookingService.checkAvailabilityAndNoteDetails(page);
-        await this.takeScreenshot(page, `${auditId}_itm_availability_dryrun.png`);
-        
+      if (!courseType) {
         return {
-          success: true,
-          result: {
-            action: 'check_availability',
-            courseType: courseType,
-            availability: availability
-          },
-          requiresConfirmation: false
+          success: false,
+          error: 'Course type is required for availability check'
         };
       }
       
-      // For other courses, use generic validation
-      // Note: This is a placeholder - actual implementation would depend on course-specific logic
+      // Use common availability check function for all course types
+      const commonSteps = await import('./commonBookingSteps/index.js');
+      const availability = await commonSteps.checkAvailabilityAndNoteDetails(page, courseType, this.screenshotsDir);
+      await this.takeScreenshot(page, `${auditId}_${courseType.toLowerCase().replace(/\s+/g, '-')}_availability_dryrun.png`);
+      
       return {
         success: true,
         result: {
           action: 'check_availability',
           courseType: courseType,
-          message: `Dry-run validated for ${courseType} availability check (implementation pending)`
+          availability: availability
         },
         requiresConfirmation: false
       };
@@ -1953,24 +2092,170 @@ class BrowserAgentService {
   }
 
   async rescheduleBooking(page, args, auditId) {
-    // Implementation for actual booking reschedule
-    console.log('✅ Rescheduling booking...');
-    // Add actual implementation here
-    return { success: true, result: 'Booking rescheduled successfully' };
+    try {
+      console.log(`✅ [${auditId}] Rescheduling booking...`);
+      
+      // Import common steps
+      const commonSteps = await import('./commonBookingSteps/index.js');
+      
+      // Find customer and booking (same as dry-run)
+      if (!args.customerEmail && !args.customerMobile && !args.customerPhone) {
+        throw new Error('Customer email or mobile number is required');
+      }
+      
+      const searchType = args.customerMobile || args.customerPhone ? 'mobile' : 'email';
+      const searchValue = args.customerMobile || args.customerPhone || args.customerEmail;
+      
+      const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, args.customerEmail);
+      
+      if (!searchResult.found) {
+        throw new Error('Customer not found');
+      }
+      
+      const iframe = page.frameLocator('#contactLookup_iframe');
+      const bookingResult = await commonSteps.findBooking(page, iframe, this.screenshotsDir, args.bookingReference);
+      
+      if (!bookingResult.found || !bookingResult.bookings || bookingResult.bookings.length === 0) {
+        throw new Error(args.bookingReference ? `Booking ${args.bookingReference} not found` : 'No bookings found');
+      }
+      
+      const existingBooking = args.bookingReference 
+        ? bookingResult.bookings.find(b => b.bookingReference === args.bookingReference)
+        : bookingResult.bookings[0];
+      
+      if (!existingBooking) {
+        throw new Error(`Booking ${args.bookingReference} not found`);
+      }
+      
+      // Execute reschedule
+      const result = await commonSteps.rescheduleBooking(page, iframe, args, existingBooking, this.screenshotsDir);
+      
+      if (result.success) {
+        await this.takeScreenshot(page, `${auditId}_reschedule_success.png`);
+        return {
+          success: true,
+          result: result.result,
+          screenshots: [`${auditId}_reschedule_success.png`]
+        };
+      } else {
+        throw new Error(result.error || 'Reschedule failed');
+      }
+      
+    } catch (error) {
+      console.error(`❌ [${auditId}] Reschedule booking error:`, error);
+      await this.takeScreenshot(page, `${auditId}_reschedule_error.png`);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
 
   async cancelBooking(page, args, auditId) {
-    // Implementation for actual booking cancellation
-    console.log('✅ Cancelling booking...');
-    // Add actual implementation here
-    return { success: true, result: 'Booking cancelled successfully' };
+    try {
+      console.log(`✅ [${auditId}] Cancelling booking...`);
+      
+      // Import common steps
+      const commonSteps = await import('./commonBookingSteps/index.js');
+      
+      // Find customer and booking (same as dry-run)
+      if (!args.customerEmail && !args.customerMobile && !args.customerPhone) {
+        throw new Error('Customer email or mobile number is required');
+      }
+      
+      const searchType = args.customerMobile || args.customerPhone ? 'mobile' : 'email';
+      const searchValue = args.customerMobile || args.customerPhone || args.customerEmail;
+      
+      const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, args.customerEmail);
+      
+      if (!searchResult.found) {
+        throw new Error('Customer not found');
+      }
+      
+      const iframe = page.frameLocator('#contactLookup_iframe');
+      const bookingResult = await commonSteps.findBooking(page, iframe, this.screenshotsDir, args.bookingReference);
+      
+      if (!bookingResult.found || !bookingResult.bookings || bookingResult.bookings.length === 0) {
+        throw new Error(args.bookingReference ? `Booking ${args.bookingReference} not found` : 'No bookings found');
+      }
+      
+      const existingBooking = args.bookingReference 
+        ? bookingResult.bookings.find(b => b.bookingReference === args.bookingReference)
+        : bookingResult.bookings[0];
+      
+      if (!existingBooking) {
+        throw new Error(`Booking ${args.bookingReference} not found`);
+      }
+      
+      // Execute cancellation
+      const result = await commonSteps.cancelBooking(page, iframe, args, existingBooking, this.screenshotsDir);
+      
+      if (result.success) {
+        await this.takeScreenshot(page, `${auditId}_cancel_success.png`);
+        return {
+          success: true,
+          result: result.result,
+          screenshots: [`${auditId}_cancel_success.png`]
+        };
+      } else {
+        throw new Error(result.error || 'Cancellation failed');
+      }
+      
+    } catch (error) {
+      console.error(`❌ [${auditId}] Cancel booking error:`, error);
+      await this.takeScreenshot(page, `${auditId}_cancel_error.png`);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
 
   async updateCustomer(page, args, auditId) {
-    // Implementation for actual customer update
-    console.log('✅ Updating customer...');
-    // Add actual implementation here
-    return { success: true, result: 'Customer updated successfully' };
+    try {
+      console.log(`✅ [${auditId}] Updating customer...`);
+      
+      // Import common steps
+      const commonSteps = await import('./commonBookingSteps/index.js');
+      
+      // Find customer
+      if (!args.customerEmail && !args.customerMobile && !args.customerPhone) {
+        throw new Error('Customer email or mobile number is required');
+      }
+      
+      const searchType = args.customerMobile || args.customerPhone ? 'mobile' : 'email';
+      const searchValue = args.customerMobile || args.customerPhone || args.customerEmail;
+      
+      const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, args.customerEmail);
+      
+      if (!searchResult.found) {
+        throw new Error('Customer not found');
+      }
+      
+      const iframe = page.frameLocator('#contactLookup_iframe');
+      
+      // Execute update
+      const result = await commonSteps.updateCustomer(page, iframe, args, this.screenshotsDir);
+      
+      if (result.success) {
+        await this.takeScreenshot(page, `${auditId}_update_customer_success.png`);
+        return {
+          success: true,
+          result: result.result,
+          screenshots: [`${auditId}_update_customer_success.png`]
+        };
+      } else {
+        throw new Error(result.error || 'Update failed');
+      }
+      
+    } catch (error) {
+      console.error(`❌ [${auditId}] Update customer error:`, error);
+      await this.takeScreenshot(page, `${auditId}_update_customer_error.png`);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
 
   async checkAvailability(page, args, auditId) {

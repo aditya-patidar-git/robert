@@ -154,7 +154,7 @@ class ToolExecutor {
       {
         type: 'function',
         name: 'crm_browser',
-        description: 'Perform CRM tasks using browser automation (bookings, changes, cancellations). For create_booking, courseType is required in args. This tool opens a browser and performs the actual CRM operations.',
+        description: 'Perform CRM tasks using browser automation (bookings, reschedules, cancellations, customer updates, availability checks). For create_booking, courseType is required. For reschedule_booking and cancel_booking, bookingReference and customerEmail/customerMobile are required. For update_customer, customerEmail/customerMobile and at least one field to update are required. For check_availability, courseType is required. This tool opens a browser and performs the actual CRM operations.',
         parameters: {
           type: 'object',
           properties: {
@@ -168,8 +168,8 @@ class ToolExecutor {
               properties: {
                 courseType: {
                   type: 'string',
-                  enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion'],
-                  description: 'Required for create_booking: Type of course to book'
+                  enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment'],
+                  description: 'Required for create_booking and check_availability: Type of course to book or check availability for'
                 },
                 customerEmail: {
                   type: 'string',
@@ -205,41 +205,53 @@ class ToolExecutor {
                   enum: ['2', '3', '4'],
                   description: 'For Gear Conversion: duration in hours ("2", "3", or "4")'
                 },
-                bookingId: {
+                bookingReference: {
                   type: 'string',
-                  description: 'Booking ID for reschedule or cancellation tasks'
+                  description: 'Booking reference (alphanumeric code like "BK-2025-ABC123") for reschedule or cancellation tasks. Required for reschedule_booking and cancel_booking.'
                 },
                 newDate: {
                   type: 'string',
-                  description: 'New date for rescheduling'
+                  description: 'New date for rescheduling (ISO format or DD/MM/YYYY). Required for reschedule_booking.'
+                },
+                newTime: {
+                  type: 'string',
+                  description: 'New time for rescheduling (HH:MM format). Optional for reschedule_booking.'
+                },
+                newLocation: {
+                  type: 'string',
+                  description: 'New location for rescheduling. Optional for reschedule_booking.'
                 },
                 reason: {
                   type: 'string',
-                  description: 'Reason for cancellation'
+                  description: 'Reason for cancellation. Optional for cancel_booking.'
                 },
-                customerId: {
+                customerMobile: {
                   type: 'string',
-                  description: 'Customer ID for updating customer records'
+                  description: 'Customer mobile number. Used for finding customer for reschedule/cancel/update operations.'
                 },
                 email: {
                   type: 'string',
-                  description: 'Email for customer updates'
+                  description: 'New email address for customer updates. Used for update_customer task.'
                 },
-                phone: {
+                mobile: {
                   type: 'string',
-                  description: 'Phone for customer updates'
+                  description: 'New mobile number for customer updates. Used for update_customer task.'
+                },
+                postcode: {
+                  type: 'string',
+                  description: 'New postcode for customer updates. Used for update_customer task.'
+                },
+                firstName: {
+                  type: 'string',
+                  description: 'New first name for customer updates. Used for update_customer task.'
+                },
+                surname: {
+                  type: 'string',
+                  description: 'New surname for customer updates. Used for update_customer task.'
                 },
                 address: {
                   type: 'string',
-                  description: 'Address for customer updates'
-                },
-                date: {
-                  type: 'string',
-                  description: 'Date for availability check'
-                },
-                time: {
-                  type: 'string',
-                  description: 'Time for availability check'
+                  description: 'New address for customer updates. Used for update_customer task.'
                 }
               },
               required: []
