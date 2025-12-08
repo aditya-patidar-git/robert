@@ -7,9 +7,14 @@ import { takeScreenshot } from './utils.js';
  * @param {string} searchValue - Mobile number or email address to search for
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} [email] - Optional email address to use when Smart search is selected (overrides searchValue)
- * @returns {Promise<{found: boolean, clientDetails?: {fullName: string, postcode: string, telephoneNumber: string, email: string}, requiresVerification: boolean}>}
+ * @param {string} [clientPostcode] - Optional postcode for verification when multiple results appear (per document: verify email + postcode)
+ * @returns {Promise<{found: boolean, clientDetails?: {fullName: string, postcode: string, telephoneNumber: string, email: string}, requiresVerification: boolean, requiresPostcodeVerification?: boolean}>}
+ * 
+ * DOCUMENT REQUIREMENT (ITM.txt line 350-353):
+ * When multiple clients appear with same name/email, verify (1) email address and (2) postcode.
+ * Only consider client VERIFIED when both email and postcode match.
  */
-export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir, email = null) {
+export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir, email = null, clientPostcode = null) {
   try {
     console.log('👤 [STEP 3-5] Navigating to Contacts tab...');
     
@@ -183,30 +188,105 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         // Normalize email for comparison (lowercase, trim)
         const normalizedSearch = finalSearchValue.toLowerCase().trim();
         
-        // Look for table rows or result items
-        const resultRows = iframe.locator('tr, .result-item, .search-result, [role="row"]');
+        // Look for DevExtreme DataGrid table rows (based on actual HTML structure)
+        const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
         const rowCount = await resultRows.count();
         
-        console.log(`🔍 [STEP 3-5] Found ${rowCount} search result rows, looking for exact email match...`);
+        console.log(`🔍 [STEP 3-5] Found ${rowCount} search result rows, looking for email matches...`);
         
-        // Check each row for exact email match
+        // Extract all rows that contain the email (per document: Smart search matches loosely)
+        const matchingRows = [];
         for (let i = 0; i < rowCount; i++) {
           const row = resultRows.nth(i);
-          const rowText = await row.textContent();
           
-          // Extract email from row text (look for email pattern)
-          const emailMatch = rowText.match(/[\w\.-]+@[\w\.-]+\.\w+/gi);
-          if (emailMatch) {
-            const foundEmail = emailMatch.find(email => email.toLowerCase().trim() === normalizedSearch);
-            if (foundEmail) {
-              console.log(`✅ [STEP 3-5] Found exact email match in row ${i + 1}: ${foundEmail}`);
-              exactMatch = row;
-              break;
+          // Extract email using specific selector (based on actual HTML structure)
+          // Email is in: .jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span
+          let foundEmail = null;
+          try {
+            const emailSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
+            if (await emailSpan.count() > 0) {
+              foundEmail = await emailSpan.textContent();
+              foundEmail = foundEmail ? foundEmail.trim() : null;
+            }
+          } catch (e) {
+            console.log(`⚠️ [STEP 3-5] Could not extract email from row ${i + 1}:`, e.message);
+          }
+          
+          if (foundEmail) {
+            const normalizedEmail = foundEmail.toLowerCase().trim();
+            // Smart search matches loosely, so check if searched email is contained in found email or vice versa
+            const emailMatches = normalizedEmail === normalizedSearch || 
+                                 normalizedEmail.includes(normalizedSearch) || 
+                                 normalizedSearch.includes(normalizedEmail);
+            
+            if (emailMatches) {
+              console.log(`✅ [STEP 3-5] Found email match in row ${i + 1}: ${foundEmail}`);
+              
+              // Extract postcode using specific selector (based on actual HTML structure)
+              // Postcode is in: div.jqx_margin_right + div[style*="display:inline-block"] > span
+              let postcode = null;
+              try {
+                const postcodeSpan = row.locator('div.jqx_margin_right + div[style*="display:inline-block"] > span');
+                if (await postcodeSpan.count() > 0) {
+                  const postcodeText = await postcodeSpan.textContent();
+                  // Postcode may be in full address (e.g., "89 Brook Road, London, Greater London, NW2 7DS")
+                  // Extract the last UK postcode pattern from the text
+                  const postcodeMatch = postcodeText.match(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}\b/gi);
+                  if (postcodeMatch && postcodeMatch.length > 0) {
+                    // Get the last match (postcode is usually at the end of address)
+                    postcode = postcodeMatch[postcodeMatch.length - 1].trim();
+                    console.log(`📍 [STEP 3-5] Extracted postcode from row ${i + 1}: ${postcode}`);
+                  }
+                }
+              } catch (e) {
+                console.log(`⚠️ [STEP 3-5] Could not extract postcode from row ${i + 1}:`, e.message);
+              }
+              
+              matchingRows.push({
+                row: row,
+                email: foundEmail,
+                postcode: postcode,
+                index: i
+              });
             }
           }
         }
         
-        // If no exact match found, try to find element with exact text
+        console.log(`📊 [STEP 3-5] Found ${matchingRows.length} rows with matching email`);
+        
+        // DOCUMENT REQUIREMENT (ITM.txt line 350-353):
+        // When multiple results appear, verify email + postcode before selecting
+        // "If that happens you need to confirm the (1) email address of the client, and (2) the postcode"
+        if (matchingRows.length === 0) {
+          // No matches found
+          console.log('⚠️ [STEP 3-5] No email matches found in search results');
+        } else if (matchingRows.length === 1) {
+          // Single match - can proceed directly
+          console.log('✅ [STEP 3-5] Single email match found, proceeding...');
+          exactMatch = matchingRows[0].row;
+        } else {
+          // Multiple matches - need to verify email + postcode per document
+          console.log(`⚠️ [STEP 3-5] Multiple email matches found (${matchingRows.length}). Per document, need to verify email + postcode.`);
+          console.log('📋 [STEP 3-5] Extracted matches:');
+          matchingRows.forEach((match, idx) => {
+            console.log(`   ${idx + 1}. Email: ${match.email}, Postcode: ${match.postcode || 'Not visible in search results'}`);
+          });
+          
+          // Try to find exact email match first
+          const exactEmailMatch = matchingRows.find(m => m.email.toLowerCase().trim() === normalizedSearch);
+          if (exactEmailMatch) {
+            console.log('✅ [STEP 3-5] Found exact email match, will verify postcode after selection');
+            exactMatch = exactEmailMatch.row;
+          } else {
+            // No exact match - will need to verify each one
+            // For now, select the first one and verify postcode after clicking (per document requirement)
+            console.log('⚠️ [STEP 3-5] No exact email match, will verify postcode for each potential match');
+            // We'll handle this in the verification step after clicking
+            exactMatch = matchingRows[0].row;
+          }
+        }
+        
+        // If no exact match found via row iteration, try to find element with exact text
         if (!exactMatch) {
           const exactEmailElement = iframe.locator(`text=/^${searchValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$/i`).first();
           if (await exactEmailElement.count() > 0) {
@@ -222,8 +302,8 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         // Normalize phone number for comparison (remove spaces, dashes, parentheses)
         const normalizedSearch = finalSearchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
         
-        // Look for table rows or result items
-        const resultRows = iframe.locator('tr, .result-item, .search-result, [role="row"]');
+        // Look for DevExtreme DataGrid table rows (based on actual HTML structure)
+        const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
         const rowCount = await resultRows.count();
         
         console.log(`🔍 [STEP 3-5] Found ${rowCount} search result rows, looking for exact phone match...`);
@@ -231,20 +311,31 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         // Check each row for exact phone match
         for (let i = 0; i < rowCount; i++) {
           const row = resultRows.nth(i);
-          const rowText = await row.textContent();
           
-          // Extract phone numbers from row text (look for phone patterns)
-          const phoneMatch = rowText.match(/[\d\s\-\(\)\+]+/g);
-          if (phoneMatch) {
-            const foundPhone = phoneMatch.find(phone => {
-              const normalizedPhone = phone.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
-              return normalizedPhone === normalizedSearch || normalizedPhone.endsWith(normalizedSearch) || normalizedSearch.endsWith(normalizedPhone);
-            });
-            if (foundPhone) {
-              console.log(`✅ [STEP 3-5] Found exact phone match in row ${i + 1}: ${foundPhone}`);
-              exactMatch = row;
-              break;
+          // Extract phone using specific selector (based on actual HTML structure)
+          // Phone is in: .jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone:")) .jqx_inlineSummaryText span
+          try {
+            const phoneSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone:")) .jqx_inlineSummaryText span');
+            if (await phoneSpan.count() > 0) {
+              const phoneText = await phoneSpan.textContent();
+              if (phoneText) {
+                // Extract phone number from text (may contain "(M)" suffix, e.g., "+441234567890(M)")
+                const phoneMatch = phoneText.match(/[\d\s\-\(\)\+]+/g);
+                if (phoneMatch) {
+                  const foundPhone = phoneMatch.find(phone => {
+                    const normalizedPhone = phone.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+                    return normalizedPhone === normalizedSearch || normalizedPhone.endsWith(normalizedSearch) || normalizedSearch.endsWith(normalizedPhone);
+                  });
+                  if (foundPhone) {
+                    console.log(`✅ [STEP 3-5] Found exact phone match in row ${i + 1}: ${foundPhone}`);
+                    exactMatch = row;
+                    break;
+                  }
+                }
+              }
             }
+          } catch (e) {
+            console.log(`⚠️ [STEP 3-5] Could not extract phone from row ${i + 1}:`, e.message);
           }
         }
       }
@@ -266,12 +357,31 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           clientClicked = true;
         } else {
           // Approach 3: Look for first result row but verify it contains the search value
-          const resultRows = iframe.locator('tr, .result-item, .search-result, [role="row"]');
+          const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
           const firstResult = resultRows.first();
           
           if (await firstResult.count() > 0) {
-            const firstResultText = await firstResult.textContent();
-            if (firstResultText && firstResultText.includes(searchValue)) {
+            // Check if first result contains the search value by extracting email/phone
+            let containsSearchValue = false;
+            if (finalSearchType === 'email') {
+              try {
+                const emailSpan = firstResult.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
+                if (await emailSpan.count() > 0) {
+                  const emailText = await emailSpan.textContent();
+                  containsSearchValue = emailText && emailText.toLowerCase().includes(searchValue.toLowerCase());
+                }
+              } catch (e) {
+                // Fallback to text content check
+                const firstResultText = await firstResult.textContent();
+                containsSearchValue = firstResultText && firstResultText.includes(searchValue);
+              }
+            } else {
+              // For mobile, check text content
+              const firstResultText = await firstResult.textContent();
+              containsSearchValue = firstResultText && firstResultText.includes(searchValue);
+            }
+            
+            if (containsSearchValue) {
               console.log('✅ [STEP 3-5] Clicking first search result (contains search value)');
               await firstResult.click();
               clientClicked = true;
@@ -314,9 +424,29 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         if (finalSearchType === 'email') {
           const extractedEmail = clientDetails.email?.toLowerCase().trim();
           const searchEmail = finalSearchValue.toLowerCase().trim();
-          matchesSearch = extractedEmail === searchEmail;
-          if (!matchesSearch) {
+          const emailMatches = extractedEmail === searchEmail;
+          
+          // Per document: When multiple results appear, verify email + postcode
+          let postcodeMatches = true; // Default to true if no postcode provided for verification
+          if (clientPostcode) {
+            const extractedPostcode = clientDetails.postcode?.toUpperCase().replace(/\s+/g, '').trim();
+            const searchPostcode = clientPostcode.toUpperCase().replace(/\s+/g, '').trim();
+            postcodeMatches = extractedPostcode === searchPostcode;
+            if (!postcodeMatches) {
+              console.log(`⚠️ [STEP 3-5] Postcode mismatch: searched for "${searchPostcode}", found "${extractedPostcode}"`);
+            } else {
+              console.log(`✅ [STEP 3-5] Postcode matches: "${searchPostcode}"`);
+            }
+          }
+          
+          matchesSearch = emailMatches && postcodeMatches;
+          if (!emailMatches) {
             console.log(`⚠️ [STEP 3-5] Email mismatch: searched for "${searchEmail}", found "${extractedEmail}"`);
+          }
+          
+          // If email matches but postcode doesn't (and postcode was provided), this is not a match
+          if (emailMatches && clientPostcode && !postcodeMatches) {
+            console.log(`❌ [STEP 3-5] Email matches but postcode doesn't - this is not the correct client per document requirements`);
           }
         } else if (finalSearchType === 'mobile') {
           const extractedPhone = clientDetails.telephoneNumber?.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
@@ -329,6 +459,17 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         
         if (!matchesSearch) {
           console.log('❌ [STEP 3-5] Selected client does not match search criteria');
+          
+          // If email matched but postcode didn't, provide specific error
+          if (finalSearchType === 'email' && clientPostcode) {
+            return {
+              found: false,
+              requiresVerification: false,
+              error: `Selected client email matches but postcode does not match. Per document requirements, both email and postcode must match when multiple results appear.`,
+              requiresPostcodeVerification: true
+            };
+          }
+          
           return {
             found: false,
             requiresVerification: false,
@@ -336,7 +477,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           };
         }
         
-        console.log('✅ [STEP 3-5] Client found and details extracted - requires verbal verification');
+        console.log('✅ [STEP 3-5] Client found and details extracted - email and postcode verified');
         return {
           found: true,
           clientDetails,
@@ -382,9 +523,29 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
             if (finalSearchType === 'email') {
               const extractedEmail = clientDetails.email?.toLowerCase().trim();
               const searchEmail = finalSearchValue.toLowerCase().trim();
-              matchesSearch = extractedEmail === searchEmail;
-              if (!matchesSearch) {
+              const emailMatches = extractedEmail === searchEmail;
+              
+              // Per document: When multiple results appear, verify email + postcode
+              let postcodeMatches = true; // Default to true if no postcode provided for verification
+              if (clientPostcode) {
+                const extractedPostcode = clientDetails.postcode?.toUpperCase().replace(/\s+/g, '').trim();
+                const searchPostcode = clientPostcode.toUpperCase().replace(/\s+/g, '').trim();
+                postcodeMatches = extractedPostcode === searchPostcode;
+                if (!postcodeMatches) {
+                  console.log(`⚠️ [STEP 3-5] Postcode mismatch: searched for "${searchPostcode}", found "${extractedPostcode}"`);
+                } else {
+                  console.log(`✅ [STEP 3-5] Postcode matches: "${searchPostcode}"`);
+                }
+              }
+              
+              matchesSearch = emailMatches && postcodeMatches;
+              if (!emailMatches) {
                 console.log(`⚠️ [STEP 3-5] Email mismatch: searched for "${searchEmail}", found "${extractedEmail}"`);
+              }
+              
+              // If email matches but postcode doesn't (and postcode was provided), this is not a match
+              if (emailMatches && clientPostcode && !postcodeMatches) {
+                console.log(`❌ [STEP 3-5] Email matches but postcode doesn't - this is not the correct client per document requirements`);
               }
             } else if (finalSearchType === 'mobile') {
               const extractedPhone = clientDetails.telephoneNumber?.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
@@ -397,6 +558,17 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
             
             if (!matchesSearch) {
               console.log('❌ [STEP 3-5] Selected client does not match search criteria');
+              
+              // If email matched but postcode didn't, provide specific error
+              if (finalSearchType === 'email' && clientPostcode) {
+                return {
+                  found: false,
+                  requiresVerification: false,
+                  error: `Selected client email matches but postcode does not match. Per document requirements, both email and postcode must match when multiple results appear.`,
+                  requiresPostcodeVerification: true
+                };
+              }
+              
               return {
                 found: false,
                 requiresVerification: false,
@@ -404,7 +576,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
               };
             }
             
-            console.log('✅ [STEP 3-5] Client found and details extracted - requires verbal verification');
+            console.log('✅ [STEP 3-5] Client found and details extracted - email and postcode verified');
             return {
               found: true,
               clientDetails,

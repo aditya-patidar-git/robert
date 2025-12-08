@@ -162,6 +162,124 @@ export function getStealthInitScript() {
           configurable: true
         });
       }
+
+      // Override Connection API to return realistic values
+      if ('connection' in navigator) {
+        Object.defineProperty(navigator, 'connection', {
+          get: () => ({
+            effectiveType: '4g',
+            rtt: 50,
+            downlink: 10,
+            saveData: false
+          }),
+          configurable: true
+        });
+      }
+
+      // Override Battery API
+      if ('getBattery' in navigator) {
+        const originalGetBattery = navigator.getBattery;
+        navigator.getBattery = function() {
+          return Promise.resolve({
+            charging: true,
+            chargingTime: 0,
+            dischargingTime: Infinity,
+            level: 0.8 + Math.random() * 0.2
+          });
+        };
+      }
+
+      // Add realistic screen properties
+      Object.defineProperty(screen, 'availWidth', {
+        get: () => 1280,
+        configurable: true
+      });
+      Object.defineProperty(screen, 'availHeight', {
+        get: () => 720,
+        configurable: true
+      });
+
+      // Add realistic touch support
+      Object.defineProperty(navigator, 'maxTouchPoints', {
+        get: () => 0,
+        configurable: true
+      });
+
+      // Override window.chrome to be more realistic
+      if (!window.chrome) {
+        window.chrome = {};
+      }
+      window.chrome.loadTimes = function() {
+        return {
+          commitLoadTime: Date.now() / 1000 - Math.random() * 2,
+          connectionInfo: 'http/1.1',
+          finishDocumentLoadTime: Date.now() / 1000 - Math.random(),
+          finishLoadTime: Date.now() / 1000 - Math.random() * 0.5,
+          firstPaintAfterLoadTime: 0,
+          firstPaintTime: Date.now() / 1000 - Math.random() * 1.5,
+          navigationType: 'Other',
+          npnNegotiatedProtocol: 'unknown',
+          requestTime: Date.now() / 1000 - Math.random() * 3,
+          startLoadTime: Date.now() / 1000 - Math.random() * 2.5,
+          wasAlternateProtocolAvailable: false,
+          wasFetchedViaSpdy: false,
+          wasNpnNegotiated: false
+        };
+      };
+
+      // Override navigator.getGamepads
+      if (navigator.getGamepads) {
+        const originalGetGamepads = navigator.getGamepads;
+        navigator.getGamepads = function() {
+          return [null, null, null, null];
+        };
+      }
+
+      // Override navigator.mediaDevices to return realistic values
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        const originalEnumerateDevices = navigator.mediaDevices.enumerateDevices;
+        navigator.mediaDevices.enumerateDevices = function() {
+          return Promise.resolve([
+            {
+              deviceId: 'default',
+              kind: 'audioinput',
+              label: 'Default - Microphone',
+              groupId: 'group1'
+            },
+            {
+              deviceId: 'default',
+              kind: 'audiooutput',
+              label: 'Default - Speaker',
+              groupId: 'group1'
+            }
+          ]);
+        };
+      }
+
+      // Override Date to prevent timing attacks (keep it realistic)
+      const originalDate = Date;
+      const originalNow = Date.now;
+      Date.now = function() {
+        return originalNow.apply(originalDate);
+      };
+
+      // Add realistic vendor
+      Object.defineProperty(navigator, 'vendor', {
+        get: () => 'Google Inc.',
+        configurable: true
+      });
+
+      // Override navigator.doNotTrack
+      Object.defineProperty(navigator, 'doNotTrack', {
+        get: () => null,
+        configurable: true
+      });
+
+      // Add realistic platform
+      Object.defineProperty(navigator, 'platform', {
+        get: () => 'Win32',
+        configurable: true
+      });
     })();
   `;
 }
@@ -196,5 +314,158 @@ export function generateBezierPath(startX, startY, endX, endY, steps = 20) {
     path.push({ x: Math.round(x), y: Math.round(y) });
   }
   return path;
+}
+
+/**
+ * Waits for reCAPTCHA to execute and generate a token
+ * This gives reCAPTCHA time to analyze user behavior and calculate score
+ * @param {Page} page - Playwright page object
+ * @param {number} maxWaitTime - Maximum time to wait in milliseconds (default: 5000)
+ * @returns {Promise<Object>} Object with ready status and token info
+ */
+export async function waitForRecaptchaReady(page, maxWaitTime = 5000) {
+  try {
+    console.log('⏳ Waiting for reCAPTCHA to execute and calculate score...');
+    
+    // Wait for grecaptcha to be available
+    const recaptchaReady = await page.evaluate(async (maxWait) => {
+      return new Promise((resolve) => {
+        const startTime = Date.now();
+        
+        const checkRecaptcha = () => {
+          if (window.grecaptcha && window.grecaptcha.ready) {
+            window.grecaptcha.ready(() => {
+              // Check if reCAPTCHA has executed
+              const hasRecaptcha = !!(
+                document.querySelector('iframe[src*="recaptcha"]') ||
+                document.querySelector('.g-recaptcha') ||
+                document.querySelector('[data-sitekey]')
+              );
+              
+              // Try to find site key
+              const siteKeyElement = document.querySelector('[data-sitekey]') || 
+                                   document.querySelector('.g-recaptcha');
+              const siteKey = siteKeyElement?.getAttribute('data-sitekey') || null;
+              
+              resolve({
+                ready: true,
+                hasRecaptcha: hasRecaptcha,
+                siteKey: siteKey,
+                timestamp: Date.now()
+              });
+            });
+          } else if (Date.now() - startTime < maxWait) {
+            setTimeout(checkRecaptcha, 100);
+          } else {
+            resolve({
+              ready: false,
+              hasRecaptcha: false,
+              siteKey: null,
+              timestamp: Date.now()
+            });
+          }
+        };
+        
+        checkRecaptcha();
+      });
+    }, maxWaitTime);
+    
+    if (recaptchaReady.ready) {
+      console.log('✅ reCAPTCHA is ready');
+      if (recaptchaReady.hasRecaptcha) {
+        console.log('✅ reCAPTCHA elements detected on page');
+      }
+    } else {
+      console.log('⚠️ reCAPTCHA may not be fully ready, but continuing...');
+    }
+    
+    return recaptchaReady;
+  } catch (error) {
+    console.log(`⚠️ Error checking reCAPTCHA status: ${error.message}`);
+    return { ready: false, hasRecaptcha: false, siteKey: null, timestamp: Date.now() };
+  }
+}
+
+/**
+ * Simulates human-like behavior before form submission
+ * This includes mouse movements, scrolling, and delays to let reCAPTCHA observe behavior
+ * @param {Page} page - Playwright page object
+ * @param {Locator} formLocator - Locator for the form element
+ * @param {Locator} submitButtonLocator - Locator for the submit button
+ */
+export async function simulateHumanBehaviorBeforeSubmit(page, formLocator, submitButtonLocator) {
+  console.log('🤖 Simulating human-like behavior for reCAPTCHA...');
+  
+  const viewport = page.viewportSize() || { width: 1280, height: 720 };
+  
+  // Get form and button bounding boxes
+  const formBox = await formLocator.boundingBox().catch(() => null);
+  const buttonBox = await submitButtonLocator.boundingBox().catch(() => null);
+  
+  // 1. Small random scroll to simulate reading
+  await page.evaluate(() => {
+    window.scrollBy(0, (Math.random() - 0.5) * 100);
+  });
+  await page.waitForTimeout(800 + Math.random() * 1200);
+  
+  // 2. Move mouse around the form area (simulate reading/checking)
+  if (formBox) {
+    const formCenterX = formBox.x + formBox.width / 2;
+    const formCenterY = formBox.y + formBox.height / 2;
+    
+    // Move to form area with natural curve
+    const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
+    const formPath = generateBezierPath(
+      currentPos.x, currentPos.y,
+      formCenterX, formCenterY,
+      15
+    );
+    
+    for (const point of formPath) {
+      await page.mouse.move(point.x, point.y);
+      await page.waitForTimeout(30 + Math.random() * 50);
+    }
+    
+    // Small micro-movements (human jitter)
+    for (let i = 0; i < 3; i++) {
+      await page.mouse.move(
+        formCenterX + (Math.random() * 20 - 10),
+        formCenterY + (Math.random() * 20 - 10)
+      );
+      await page.waitForTimeout(150 + Math.random() * 200);
+    }
+  }
+  
+  // 3. Additional wait to let reCAPTCHA observe behavior
+  await page.waitForTimeout(2000 + Math.random() * 2000);
+  
+  // 4. Move to submit button with natural curve
+  if (buttonBox && formBox) {
+    const formCenterX = formBox.x + formBox.width / 2;
+    const formCenterY = formBox.y + formBox.height / 2;
+    const buttonCenterX = buttonBox.x + buttonBox.width / 2;
+    const buttonCenterY = buttonBox.y + buttonBox.height / 2;
+    
+    const buttonPath = generateBezierPath(
+      formCenterX, formCenterY,
+      buttonCenterX, buttonCenterY,
+      12
+    );
+    
+    for (const point of buttonPath) {
+      await page.mouse.move(point.x, point.y);
+      await page.waitForTimeout(40 + Math.random() * 60);
+    }
+    
+    // Hover over button with slight movements (human hesitation)
+    await page.waitForTimeout(300 + Math.random() * 400);
+    await page.mouse.move(
+      buttonCenterX + (Math.random() * 5 - 2.5),
+      buttonCenterY + (Math.random() * 5 - 2.5)
+    );
+    await page.waitForTimeout(200 + Math.random() * 300);
+  }
+  
+  console.log('✅ Human-like behavior simulation complete');
 }
 
