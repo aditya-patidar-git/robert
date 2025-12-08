@@ -129,7 +129,12 @@ const Dashboard = () => {
   };
 
   const handleCallRowClick = (call) => {
-    navigate(`/transcripts/${call.callSid}`);
+    navigate(`/admin/transcripts`, { 
+      state: { 
+        callSid: call.callSid || call.id,
+        highlightCall: true 
+      } 
+    });
   };
 
   const handleDismissAlert = (alertId) => {
