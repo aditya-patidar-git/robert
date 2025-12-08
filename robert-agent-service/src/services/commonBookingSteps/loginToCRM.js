@@ -1,4 +1,5 @@
 import { takeScreenshot } from './utils.js';
+import { waitForRecaptchaReady, simulateHumanBehaviorBeforeSubmit, generateBezierPath } from '../../utils/stealthUtils.js';
 
 /**
  * Step 2: Login to CRM
@@ -49,27 +50,116 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     await page.goto(credentials.loginUrl);
     await page.waitForLoadState('networkidle');
     
+    // Initial human-like behavior: simulate reading the page
+    console.log('📖 Simulating reading the login page...');
+    await page.waitForTimeout(2000 + Math.random() * 2000);
+    
+    // Small random scroll to simulate reading
+    await page.evaluate(() => {
+      window.scrollBy(0, Math.random() * 50);
+    });
+    await page.waitForTimeout(500 + Math.random() * 500);
+    
     // Take screenshot of login page
     await takeScreenshot(page, 'login-page-loaded.png', screenshotsDir);
     
-    // Fill login form
+    // Wait for form fields to be ready
+    await page.waitForSelector('#Loginname input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
+    await page.waitForSelector('#Username input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
+    await page.waitForSelector('#UserPassword input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
+    await page.waitForTimeout(1000);
+    
+    // Get field locators
     const loginNameField = page.locator('#Loginname input.dx-texteditor-input');
-    await loginNameField.fill(credentials.loginName);
-    await page.waitForTimeout(1000);
-    
     const usernameField = page.locator('#Username input.dx-texteditor-input');
-    await usernameField.fill(credentials.username);
-    await page.waitForTimeout(1000);
-    
     const passwordField = page.locator('#UserPassword input.dx-texteditor-input');
-    await passwordField.fill(credentials.password);
+    const loginButton = page.locator('#btnLogin');
+    
+    // Fill login form with human-like typing
+    console.log('⌨️ Filling login form with human-like behavior...');
+    
+    // Move mouse to first field using Bezier curve
+    const loginNameBox = await loginNameField.boundingBox().catch(() => null);
+    if (loginNameBox) {
+      const viewportSize = page.viewportSize() || { width: 1280, height: 720 };
+      const currentMousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
+      const fieldPath = generateBezierPath(
+        currentMousePos.x, currentMousePos.y,
+        loginNameBox.x + loginNameBox.width / 2,
+        loginNameBox.y + loginNameBox.height / 2,
+        10
+      );
+      for (const point of fieldPath) {
+        await page.mouse.move(point.x, point.y);
+        await page.waitForTimeout(30 + Math.random() * 50);
+      }
+    }
+    
+    // Fill Login Name
+    await loginNameField.click();
+    await page.waitForTimeout(200 + Math.random() * 200);
+    await loginNameField.type(credentials.loginName, { delay: 30 + Math.random() * 50 });
+    await loginNameField.blur();
+    await page.waitForTimeout(1000 + Math.random() * 500);
+    
+    // Move to username field using Tab (more natural)
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(200 + Math.random() * 200);
+    
+    // Small mouse movement
+    const usernameBox = await usernameField.boundingBox().catch(() => null);
+    if (usernameBox) {
+      await page.mouse.move(
+        usernameBox.x + usernameBox.width / 2 + (Math.random() * 10 - 5),
+        usernameBox.y + usernameBox.height / 2 + (Math.random() * 10 - 5)
+      );
+      await page.waitForTimeout(100 + Math.random() * 100);
+    }
+    
+    // Fill Username
+    await usernameField.click();
+    await page.waitForTimeout(200 + Math.random() * 200);
+    await usernameField.type(credentials.username, { delay: 30 + Math.random() * 50 });
+    await usernameField.blur();
+    await page.waitForTimeout(1000 + Math.random() * 500);
+    
+    // Move to password field using Tab
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(200 + Math.random() * 200);
+    
+    // Small mouse movement
+    const passwordBox = await passwordField.boundingBox().catch(() => null);
+    if (passwordBox) {
+      await page.mouse.move(
+        passwordBox.x + passwordBox.width / 2 + (Math.random() * 10 - 5),
+        passwordBox.y + passwordBox.height / 2 + (Math.random() * 10 - 5)
+      );
+      await page.waitForTimeout(100 + Math.random() * 100);
+    }
+    
+    // Fill Password (type slower for sensitive data)
+    await passwordField.click();
+    await page.waitForTimeout(200 + Math.random() * 200);
+    await passwordField.type(credentials.password, { delay: 50 + Math.random() * 100 });
+    await passwordField.blur();
+    await page.waitForTimeout(1500 + Math.random() * 1000);
+    
+    // Trigger form events
+    await page.locator('body').click({ position: { x: 100, y: 100 } });
     await page.waitForTimeout(1000);
     
-    await page.locator('body').click({ position: { x: 100, y: 100 } });
-    await page.waitForTimeout(2000);
+    // Wait for reCAPTCHA to execute and calculate score
+    await waitForRecaptchaReady(page, 5000);
+    
+    // Additional wait to let reCAPTCHA observe more behavior
+    await page.waitForTimeout(2000 + Math.random() * 2000);
+    
+    // Simulate human behavior before clicking login button
+    const formLocator = page.locator('form').first();
+    await simulateHumanBehaviorBeforeSubmit(page, formLocator, loginButton);
     
     // Click Login button
-    const loginButton = page.locator('#btnLogin');
+    console.log('🔐 Clicking login button...');
     await loginButton.click();
     
     await page.waitForLoadState('networkidle');
