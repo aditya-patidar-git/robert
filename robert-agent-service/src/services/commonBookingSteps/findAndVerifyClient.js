@@ -3,12 +3,13 @@ import { takeScreenshot } from './utils.js';
 /**
  * Steps 3-5: Find and verify existing client
  * @param {Page} page - Playwright page object
- * @param {string} searchType - 'mobile' or 'email' - type of search to perform
+ * @param {string} searchType - 'mobile' or 'email' - type of search to perform (deprecated: Smart search always uses email)
  * @param {string} searchValue - Mobile number or email address to search for
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @param {string} [email] - Optional email address to use when Smart search is selected (overrides searchValue)
  * @returns {Promise<{found: boolean, clientDetails?: {fullName: string, postcode: string, telephoneNumber: string, email: string}, requiresVerification: boolean}>}
  */
-export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir) {
+export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir, email = null) {
   try {
     console.log('👤 [STEP 3-5] Navigating to Contacts tab...');
     
@@ -109,10 +110,23 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     // Wait for the search field to be visible
     await searchField.waitFor({ state: 'visible', timeout: 10000 });
     
-    // STEP 4: Enter search value (mobile or email) in search field
-    const searchLabel = searchType === 'mobile' ? 'mobile number' : 'email';
-    console.log(`🔍 [STEP 3-5] Searching for client by ${searchLabel}: ${searchValue}`);
-    await searchField.fill(searchValue);
+    // STEP 4: Enter search value - Smart search always uses email
+    // When Smart search is selected, always use email (not phone number)
+    let finalSearchValue = searchValue;
+    let finalSearchType = searchType;
+    
+    if (email) {
+      // If email is provided, use it for Smart search
+      finalSearchValue = email;
+      finalSearchType = 'email';
+      console.log(`🔍 [STEP 3-5] Smart search selected - using email instead of ${searchType}: ${email}`);
+    } else if (searchType === 'mobile') {
+      // If no email provided but searchType is mobile, warn and use original value
+      console.warn(`⚠️ [STEP 3-5] Smart search selected but no email provided - using mobile number (this may not work correctly)`);
+    }
+    
+    console.log(`🔍 [STEP 3-5] Searching for client by email: ${finalSearchValue}`);
+    await searchField.fill(finalSearchValue);
     
     // NEW: Try multiple approaches to trigger the search
     console.log('🔍 [STEP 3-5] Triggering search...');
@@ -165,9 +179,9 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       // For mobile: look for exact phone number match
       let exactMatch = null;
       
-      if (searchType === 'email') {
+      if (finalSearchType === 'email') {
         // Normalize email for comparison (lowercase, trim)
-        const normalizedSearch = searchValue.toLowerCase().trim();
+        const normalizedSearch = finalSearchValue.toLowerCase().trim();
         
         // Look for table rows or result items
         const resultRows = iframe.locator('tr, .result-item, .search-result, [role="row"]');
@@ -204,9 +218,9 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
             }
           }
         }
-      } else if (searchType === 'mobile') {
+      } else if (finalSearchType === 'mobile') {
         // Normalize phone number for comparison (remove spaces, dashes, parentheses)
-        const normalizedSearch = searchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+        const normalizedSearch = finalSearchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
         
         // Look for table rows or result items
         const resultRows = iframe.locator('tr, .result-item, .search-result, [role="row"]');
@@ -297,16 +311,16 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         // Verify the extracted details match what we searched for
         let matchesSearch = false;
         
-        if (searchType === 'email') {
+        if (finalSearchType === 'email') {
           const extractedEmail = clientDetails.email?.toLowerCase().trim();
-          const searchEmail = searchValue.toLowerCase().trim();
+          const searchEmail = finalSearchValue.toLowerCase().trim();
           matchesSearch = extractedEmail === searchEmail;
           if (!matchesSearch) {
             console.log(`⚠️ [STEP 3-5] Email mismatch: searched for "${searchEmail}", found "${extractedEmail}"`);
           }
-        } else if (searchType === 'mobile') {
+        } else if (finalSearchType === 'mobile') {
           const extractedPhone = clientDetails.telephoneNumber?.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
-          const searchPhone = searchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+          const searchPhone = finalSearchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
           matchesSearch = extractedPhone === searchPhone || extractedPhone?.endsWith(searchPhone) || searchPhone.endsWith(extractedPhone);
           if (!matchesSearch) {
             console.log(`⚠️ [STEP 3-5] Phone mismatch: searched for "${searchPhone}", found "${extractedPhone}"`);
@@ -365,16 +379,16 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
             // Verify the extracted details match what we searched for
             let matchesSearch = false;
             
-            if (searchType === 'email') {
+            if (finalSearchType === 'email') {
               const extractedEmail = clientDetails.email?.toLowerCase().trim();
-              const searchEmail = searchValue.toLowerCase().trim();
+              const searchEmail = finalSearchValue.toLowerCase().trim();
               matchesSearch = extractedEmail === searchEmail;
               if (!matchesSearch) {
                 console.log(`⚠️ [STEP 3-5] Email mismatch: searched for "${searchEmail}", found "${extractedEmail}"`);
               }
-            } else if (searchType === 'mobile') {
+            } else if (finalSearchType === 'mobile') {
               const extractedPhone = clientDetails.telephoneNumber?.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
-              const searchPhone = searchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
+              const searchPhone = finalSearchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
               matchesSearch = extractedPhone === searchPhone || extractedPhone?.endsWith(searchPhone) || searchPhone.endsWith(extractedPhone);
               if (!matchesSearch) {
                 console.log(`⚠️ [STEP 3-5] Phone mismatch: searched for "${searchPhone}", found "${extractedPhone}"`);

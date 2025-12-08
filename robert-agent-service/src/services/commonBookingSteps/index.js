@@ -9,5 +9,9 @@ export { selectPaymentOption } from './selectPaymentOption.js';
 export { selectPaymentMethod } from './selectPaymentMethod.js';
 export { fillCardDetails } from './fillCardDetails.js';
 export { acceptTermsAndMakeBooking } from './acceptTermsAndMakeBooking.js';
+export { sendBookingConfirmationEmail } from './sendBookingConfirmationEmail.js';
+export { sendTermsAndConditionsEmail } from './sendTermsAndConditionsEmail.js';
+export { sendSMSConfirmation } from './sendSMSConfirmation.js';
+export { validateAge } from './validateAge.js';
 export { takeScreenshot, extractLocationIdentifier } from './utils.js';
 

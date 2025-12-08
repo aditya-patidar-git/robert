@@ -3,16 +3,16 @@ import path from 'path';
 import * as commonSteps from './commonBookingSteps/index.js';
 import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
 
-class GearConversionBookingService {
+class FullLicenceAssessmentBookingService {
   constructor() {
     this.crmCredentials = {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
       loginName: process.env.CRM_LOGIN || 'universalmct',
       username: process.env.CRM_USERNAME || 'auagent',
       password: process.env.CRM_PASSWORD || 'Robert2025!',
-      availabilityUrl: 'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=C07F8089718288E3'
+      availabilityUrl: 'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=024D486FF2ED0D87'
     };
-    this.screenshotsDir = './screenshots/gear-conversion-booking';
+    this.screenshotsDir = './screenshots/full-licence-assessment-booking';
     this.ensureDirectories();
   }
 
@@ -28,20 +28,17 @@ class GearConversionBookingService {
     const workflowType = bookingArgs.workflowType || 'existing';
 
     try {
-      console.log(`🚀 Starting Gear Conversion booking workflow (${workflowType} client)...`);
+      console.log(`🚀 Starting Full Licence Assessment booking workflow (${workflowType} client)...`);
 
-      // Session details should be provided from the availability tool call
-      // Retrieve from bookingArgs (set by browserAgentService from conversation state)
       sessionDetails = bookingArgs.sessionDetails;
       if (!sessionDetails) {
         console.warn('⚠️ No availability data found - creating default sessionDetails to continue workflow');
-        // Create default sessionDetails to allow workflow to continue
         sessionDetails = {
           date: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBD',
-          course: 'Gear Conversion',
+          course: 'Full Motorcycle Licence Assessment',
           location: bookingArgs.location || 'TBD',
           time: bookingArgs.preferredTime || 'TBD',
-          price: '£175.00',
+          price: 'TBD',
           instructor: 'TBD',
           startDate: bookingArgs.preferredDate || new Date().toISOString().split('T')[0],
           monthYear: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -76,7 +73,6 @@ class GearConversionBookingService {
           throw new Error('Step 2: Login verification failed');
         }
         
-        // CRITICAL: Ensure we're on CRM dashboard, not on availability URL
         const currentUrl = page.url();
         if (currentUrl.includes('bookcbtnow.com') || currentUrl.includes('gateway.aspx')) {
           console.log('🔐 Step 2: Navigating to CRM dashboard (page was on availability URL)...');
@@ -89,7 +85,6 @@ class GearConversionBookingService {
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-login-success.png', this.screenshotsDir));
         console.log('✅ Step 2 completed: Login successful');
       } else {
-        // Already logged in - ensure we're on CRM dashboard
         const currentUrl = page.url();
         if (currentUrl.includes('bookcbtnow.com') || currentUrl.includes('gateway.aspx')) {
           console.log('🔐 Step 2: Navigating to CRM dashboard (page was on availability URL)...');
@@ -103,17 +98,11 @@ class GearConversionBookingService {
         console.log('✅ Step 2: Already authenticated');
       }
 
-      // STEP 3: Ask "Have you done training with us before?" (handled by voice agent)
-      // workflowType is already determined and passed in bookingArgs
-
       if (workflowType === 'existing') {
         // EXISTING CLIENT WORKFLOW
-        // STEP 4-5: Search for existing client (mobile first, then email fallback)
         console.log('👤 Step 4-5: Finding existing client...');
         
-        // Check if we have customer info to search
         if (!bookingArgs.customerMobile && !bookingArgs.customerPhone && !bookingArgs.customerEmail) {
-          // Return graceful error asking agent to collect customer info
           console.log('⚠️ Step 4-5: Customer info missing - asking agent to collect');
           return {
             success: false,
@@ -123,7 +112,6 @@ class GearConversionBookingService {
           };
         }
         
-        // Determine search type and value - mobile number takes priority
         let searchType = 'email';
         let searchValue = bookingArgs.customerEmail;
         
@@ -137,18 +125,14 @@ class GearConversionBookingService {
           console.log('🔍 Service: Searching by email:', searchValue);
         }
         
-        // Search for client
-        // Search for client - pass email so Smart search always uses email
         const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, bookingArgs.customerEmail);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
         
         if (!searchResult.found) {
-          // If mobile search failed and we haven't tried email yet, try email
           if (searchType === 'mobile' && bookingArgs.customerEmail) {
             console.log('⚠️ Mobile search failed, trying email search...');
             const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir, bookingArgs.customerEmail);
             if (emailSearchResult.found) {
-              // Store client details for verification
               if (emailSearchResult.clientDetails) {
                 callContext.clientDetails = emailSearchResult.clientDetails;
                 bookingArgs.clientDetails = emailSearchResult.clientDetails;
@@ -161,7 +145,6 @@ class GearConversionBookingService {
             throw new Error('Could not find client in CRM');
           }
         } else {
-          // Store client details for verification
           if (searchResult.clientDetails) {
             callContext.clientDetails = searchResult.clientDetails;
             bookingArgs.clientDetails = searchResult.clientDetails;
@@ -169,8 +152,6 @@ class GearConversionBookingService {
           console.log('✅ Step 4-5 completed: Client found - requires verbal verification');
         }
         
-        // IMPORTANT: Do not proceed to booking until verbal verification is complete
-        // The agent must call the clientVerification tool first
         if (searchResult.requiresVerification || (searchResult.found && !callContext.clientVerified)) {
           return {
             success: false,
@@ -180,17 +161,16 @@ class GearConversionBookingService {
           };
         }
 
-        // STEP 6: Navigate to Diaries and select session
+        // STEP 6: Navigate to Diaries and select session (standard diary, not TfL)
         console.log('📅 Step 6: Navigating to Diaries and selecting session...');
         await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
         console.log('✅ Step 6 completed: Session selected');
 
         // STEP 7: Select booking options
-        console.log('⚙️ Step 7: Selecting Gear Conversion booking options...');
+        console.log('⚙️ Step 7: Selecting Full Licence Assessment booking options...');
         const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
         
-        // Check if preferences are required
         if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
           return {
             success: false,
@@ -217,9 +197,9 @@ class GearConversionBookingService {
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
         console.log('✅ Step 8 completed: Contact details updated');
 
-        // STEP 9: Payment
+        // STEP 9: Payment (requires payment for Full Licence Assessment)
         console.log('💳 Step 9: Processing payment...');
-        await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+        await commonSteps.selectPaymentOption(page, this.screenshotsDir, 'now');
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-option-selected.png', this.screenshotsDir));
         await page.waitForTimeout(2000);
         await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
@@ -239,19 +219,36 @@ class GearConversionBookingService {
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-booking-completed.png', this.screenshotsDir));
         console.log('✅ Step 9 completed: Payment processed and booking made');
 
+        // STEP 10: Send booking confirmation email
+        console.log('📧 Step 10: Sending booking confirmation email...');
+        await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'full-licence');
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-confirmation-email-sent.png', this.screenshotsDir));
+        console.log('✅ Step 10 completed: Booking confirmation email sent');
+
+        // STEP 11: Send Terms & Conditions email
+        console.log('📧 Step 11: Sending Terms & Conditions email...');
+        await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-terms-email-sent.png', this.screenshotsDir));
+        console.log('✅ Step 11 completed: Terms & Conditions email sent');
+
+        // STEP 12: Send SMS confirmation
+        console.log('📱 Step 12: Sending SMS confirmation...');
+        await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'full-licence');
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-12-sms-sent.png', this.screenshotsDir));
+        console.log('✅ Step 12 completed: SMS confirmation sent');
+
       } else {
         // NEW CLIENT WORKFLOW
-        // STEP 4: Navigate to Diaries and select session
+        // STEP 4: Navigate to Diaries and select session (standard diary)
         console.log('📅 Step 4: Navigating to Diaries and selecting session...');
         await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-session-selected.png', this.screenshotsDir));
         console.log('✅ Step 4 completed: Session selected');
 
         // STEP 5: Select booking options
-        console.log('⚙️ Step 5: Selecting Gear Conversion booking options...');
+        console.log('⚙️ Step 5: Selecting Full Licence Assessment booking options...');
         const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
         
-        // Check if preferences are required
         if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
           return {
             success: false,
@@ -297,9 +294,27 @@ class GearConversionBookingService {
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-contact-details-filled.png', this.screenshotsDir));
         console.log('✅ Step 7 completed: All contact details filled');
 
-        // STEP 8: Payment
+        // Validate age based on licence category
+        if (contactDetails.dateOfBirth && bookingArgs.licenceCategory) {
+          console.log(`🔍 Step 7: Validating age for ${bookingArgs.licenceCategory} licence...`);
+          let minAge = 24; // Default for A/DAS
+          let courseTypeForValidation = 'full-licence-a';
+          
+          if (bookingArgs.licenceCategory.toLowerCase() === 'a1') {
+            minAge = 17;
+            courseTypeForValidation = 'full-licence-a1';
+          } else if (bookingArgs.licenceCategory.toLowerCase() === 'a2') {
+            minAge = 19;
+            courseTypeForValidation = 'full-licence-a2';
+          }
+          
+          await commonSteps.validateAge(page, this.screenshotsDir, courseTypeForValidation, minAge);
+          console.log(`✅ Step 7: Age validation passed (${minAge}+ required)`);
+        }
+
+        // STEP 8: Payment (requires payment for Full Licence Assessment)
         console.log('💳 Step 8: Processing payment...');
-        await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+        await commonSteps.selectPaymentOption(page, this.screenshotsDir, 'now');
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-payment-option-selected.png', this.screenshotsDir));
         await page.waitForTimeout(2000);
         await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
@@ -318,6 +333,24 @@ class GearConversionBookingService {
         }
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-booking-completed.png', this.screenshotsDir));
         console.log('✅ Step 8 completed: Payment processed and booking made');
+
+        // STEP 9: Send booking confirmation email
+        console.log('📧 Step 9: Sending booking confirmation email...');
+        await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'full-licence');
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-confirmation-email-sent.png', this.screenshotsDir));
+        console.log('✅ Step 9 completed: Booking confirmation email sent');
+
+        // STEP 10: Send Terms & Conditions email
+        console.log('📧 Step 10: Sending Terms & Conditions email...');
+        await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-terms-email-sent.png', this.screenshotsDir));
+        console.log('✅ Step 10 completed: Terms & Conditions email sent');
+
+        // STEP 11: Send SMS confirmation
+        console.log('📱 Step 11: Sending SMS confirmation...');
+        await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'full-licence');
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-sms-sent.png', this.screenshotsDir));
+        console.log('✅ Step 11 completed: SMS confirmation sent');
       }
 
       console.log('🎉 Service: All steps completed successfully!');
@@ -329,18 +362,17 @@ class GearConversionBookingService {
       };
 
     } catch (error) {
-      console.error('❌ Gear Conversion booking failed at step:', error.message);
+      console.error('❌ Full Licence Assessment booking failed at step:', error.message);
       console.error('❌ Service: Error stack:', error.stack);
       screenshots.push(await commonSteps.takeScreenshot(page, 'error-state.png', this.screenshotsDir));
       
-      // Return error gracefully with user-friendly message
       const errorContext = getErrorContext(error, 'create_booking');
       const userFriendlyError = formatUserFriendlyError(error, errorContext);
       
       return {
         success: false,
         error: userFriendlyError,
-        technicalError: error.message, // Keep technical error for logging
+        technicalError: error.message,
         sessionDetails: sessionDetails,
         screenshots: screenshots,
         clientEmail: bookingArgs.customerEmail
@@ -348,10 +380,10 @@ class GearConversionBookingService {
     }
   }
 
-  // STEP 1: Check availability and note details (Gear Conversion-specific)
+  // STEP 1: Check availability and note details (Full Licence Assessment-specific)
   async checkAvailabilityAndNoteDetails(page) {
     try {
-      console.log('📅 Navigating to Gear Conversion availability page...');
+      console.log('📅 Navigating to Full Licence Assessment availability page...');
       
       await page.goto(this.crmCredentials.availabilityUrl);
       await page.waitForLoadState('networkidle');
@@ -389,73 +421,115 @@ class GearConversionBookingService {
         monthYear: latestMonthYear
       };
       
-      console.log('📋 Extracted Gear Conversion session details:', sessionDetails);
+      console.log('📋 Extracted Full Licence Assessment session details:', sessionDetails);
       return sessionDetails;
       
     } catch (error) {
       console.error('Error in checkAvailabilityAndNoteDetails:', error);
-      throw new Error(`Failed to check Gear Conversion availability: ${error.message}`);
+      throw new Error(`Failed to check Full Licence Assessment availability: ${error.message}`);
     }
   }
 
-  // STEP 8: Select booking options (Gear Conversion-specific)
+  // STEP 7/5: Select booking options (Full Licence Assessment-specific)
   async selectBookingOptions(page, bookingArgs) {
     try {
-      console.log('⚙️ [STEP 8] Selecting Gear Conversion booking options...');
+      console.log('⚙️ [STEP 7/5] Selecting Full Licence Assessment booking options...');
       
-      // Step 1: Validate provided preferences (if any)
-      const validDurations = ['2', '3', '4'];
+      // Validate provided licence category and transmission
+      const validLicenceCategories = ['A1', 'A2', 'A', 'DAS'];
+      const validTransmissions = ['automatic', 'manual'];
       const invalidPreferences = [];
       
-      if (bookingArgs.duration) {
-        // Normalize duration - convert to string and trim
-        const normalizedDuration = String(bookingArgs.duration).trim();
-        const isValid = validDurations.includes(normalizedDuration);
+      if (bookingArgs.licenceCategory) {
+        const normalizedCategory = bookingArgs.licenceCategory.trim().toUpperCase();
+        const isValid = validLicenceCategories.some(valid => valid.toUpperCase() === normalizedCategory);
         if (!isValid) {
           invalidPreferences.push({
-            preference: 'duration',
-            providedValue: bookingArgs.duration,
-            validOptions: validDurations
+            preference: 'licenceCategory',
+            providedValue: bookingArgs.licenceCategory,
+            validOptions: validLicenceCategories
+          });
+        }
+      }
+      
+      if (bookingArgs.transmission || bookingArgs.bikeType) {
+        const transmission = (bookingArgs.transmission || bookingArgs.bikeType).trim().toLowerCase();
+        const isValid = validTransmissions.some(valid => valid.toLowerCase() === transmission);
+        if (!isValid) {
+          invalidPreferences.push({
+            preference: 'transmission',
+            providedValue: bookingArgs.transmission || bookingArgs.bikeType,
+            validOptions: validTransmissions
           });
         }
       }
       
       if (invalidPreferences.length > 0) {
         const invalidPref = invalidPreferences[0];
+        let message = `I'm sorry, but "${invalidPref.providedValue}" is not a valid ${invalidPref.preference === 'licenceCategory' ? 'licence category' : 'transmission type'} for the Full Licence Assessment. `;
+        if (invalidPref.preference === 'licenceCategory') {
+          message += `Please choose one of: "${validLicenceCategories.join('", "')}".`;
+        } else {
+          message += `Please choose one of: "${validTransmissions.join('", "')}".`;
+        }
+        
         return {
           requiresPreferences: true,
           invalidPreferences: invalidPreferences.map(p => p.preference),
-          message: `I'm sorry, but "${invalidPref.providedValue}" is not a valid duration for the Gear Conversion course. Please choose one of: "${validDurations.join('", "')}" hours.`,
-          validOptions: validDurations
+          message: message,
+          validOptions: {
+            licenceCategory: validLicenceCategories,
+            transmission: validTransmissions
+          }
         };
       }
       
-      // Step 2: Check for missing required preferences
+      // Check for missing required preferences
       const missingPreferences = [];
-      if (!bookingArgs.duration) {
-        missingPreferences.push('duration');
+      if (!bookingArgs.licenceCategory) {
+        missingPreferences.push('licenceCategory');
+      }
+      if (!bookingArgs.transmission && !bookingArgs.bikeType) {
+        missingPreferences.push('transmission');
       }
       
       if (missingPreferences.length > 0) {
+        let message = 'I need some additional information to proceed with your Full Licence Assessment booking. ';
+        
+        if (missingPreferences.includes('licenceCategory')) {
+          message += 'What licence category are you assessing for: A1, A2, or A/DAS? ';
+        }
+        if (missingPreferences.includes('transmission')) {
+          message += 'Do you prefer automatic or manual bike?';
+        }
+        
         return {
           requiresPreferences: true,
           missingPreferences: missingPreferences,
-          message: `I need to know your preferred duration for the Gear Conversion course. Would you like a 2-hour, 3-hour, or 4-hour session?`,
-          validOptions: validDurations
+          message: message.trim(),
+          validOptions: {
+            licenceCategory: validLicenceCategories,
+            transmission: validTransmissions
+          }
         };
       }
       
+      // Wait for price page to load
+      console.log('⏳ [STEP 7/5] Waiting for price page to load...');
       await page.waitForTimeout(5000);
       
+      // Check for popup windows
       const pages = page.context().pages();
       let targetPage = page;
       if (pages.length > 1) {
+        console.log(`🔍 [STEP 7/5] Found ${pages.length} pages, checking for booking popup...`);
         for (let i = 0; i < pages.length; i++) {
           const pageTitle = await pages[i].title();
           const pageUrl = pages[i].url();
           if (pageTitle.includes('booking') || pageTitle.includes('Booking') || 
               pageUrl.includes('booking') || pageUrl.includes('Booking')) {
             targetPage = pages[i];
+            console.log(`✅ [STEP 7/5] Using popup window for booking form`);
             break;
           }
         }
@@ -471,31 +545,54 @@ class GearConversionBookingService {
         await targetPage.waitForTimeout(2000);
       }
       
+      // Wait for "1. Price" header
+      console.log('🔍 [STEP 7/5] Looking for "1. Price" header...');
       const priceHeader = searchContext.locator('text=1. Price, *:has-text("1. Price")').first();
-      await priceHeader.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+      await priceHeader.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+        console.log('⚠️ [STEP 7/5] Price header visibility check timed out, continuing...');
+      });
       
       await commonSteps.takeScreenshot(targetPage, 'price-page-loaded.png', this.screenshotsDir);
       
-      // Select duration from Booking options (2 hours, 3 hours, or 4 hours)
-      console.log('⏱️ [STEP 8] Selecting duration from Booking options...');
+      // Select bike type from Booking options based on licence category and transmission
+      console.log('🚲 [STEP 7/5] Selecting bike type from Booking options...');
       await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
       await page.waitForTimeout(2000);
       
-      const duration = bookingArgs.duration; // Already validated above
+      const licenceCategory = bookingArgs.licenceCategory.trim().toUpperCase();
+      const transmission = (bookingArgs.transmission || bookingArgs.bikeType || '').trim().toLowerCase();
       
-      const durationMap = {
-        '2': /2 hours/i,
-        '3': /3 hours/i,
-        '4': /4 hours/i
-      };
+      // Build expected option text pattern
+      let expectedOptionPattern = null;
+      if (licenceCategory === 'A1') {
+        expectedOptionPattern = transmission === 'automatic' ? /A1.*125cc.*automatic/i : /A1.*125cc.*manual/i;
+      } else if (licenceCategory === 'A2') {
+        expectedOptionPattern = transmission === 'automatic' ? /A2.*automatic/i : /A2.*manual/i;
+      } else if (licenceCategory === 'A' || licenceCategory === 'DAS') {
+        expectedOptionPattern = transmission === 'automatic' ? /A\/DAS.*automatic/i : /A\/DAS.*manual/i;
+      }
       
-      const durationPattern = durationMap[duration] || durationMap['2'];
-      console.log(`✅ [STEP 8] Selecting duration: ${duration} hours`);
+      console.log(`✅ [STEP 7/5] Selecting option for ${licenceCategory} ${transmission}`);
       
-      // Find and select the duration option
-      const durationOption = searchContext.locator(`[role="radio"]:has-text("${durationPattern.source}"), input[type="radio"]`).filter({ hasText: durationPattern }).first();
-      
-      if (await durationOption.count() === 0) {
+      // Find and select the matching option
+      if (expectedOptionPattern) {
+        const bikeOption = searchContext.locator(`[role="radio"]:has-text("${expectedOptionPattern.source}"), input[type="radio"]`).filter({ hasText: expectedOptionPattern }).first();
+        
+        if (await bikeOption.count() > 0) {
+          await bikeOption.check();
+        } else {
+          // Fallback: try selecting first available option
+          const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
+          if (await firstOption.count() > 0) {
+            const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+            if (await checkDiv.count() > 0) {
+              await checkDiv.click();
+            } else {
+              await firstOption.click();
+            }
+          }
+        }
+      } else {
         // Fallback: try selecting first available option
         const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
         if (await firstOption.count() > 0) {
@@ -506,14 +603,12 @@ class GearConversionBookingService {
             await firstOption.click();
           }
         }
-      } else {
-        await durationOption.check();
       }
       
       await page.waitForTimeout(1000);
       
       // Click NEXT button
-      console.log('➡️ [STEP 8] Clicking NEXT...');
+      console.log('➡️ [STEP 7/5] Clicking NEXT...');
       let nextButton = searchContext.locator('#diaryNewCourseBookingWiz_nextBtn').first();
       
       if (await nextButton.count() === 0) {
@@ -527,23 +622,26 @@ class GearConversionBookingService {
       await nextButton.waitFor({ state: 'visible', timeout: 5000 });
       await nextButton.click();
       
+      console.log('⏳ [STEP 7/5] Waiting for next page to load...');
       await page.waitForTimeout(3000);
       
       if (bookingIframe) {
         await page.waitForTimeout(2000);
         const contactLookupIndicators = bookingIframe.locator('text=lookup, text=contact, text=add new contact').first();
-        await contactLookupIndicators.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+        await contactLookupIndicators.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+          console.log('⚠️ [STEP 7/5] Contact lookup page indicators not found, but continuing...');
+        });
       }
       
-      console.log('✅ [STEP 8] Gear Conversion booking options selected and Next button clicked');
+      console.log('✅ [STEP 7/5] Full Licence Assessment booking options selected and Next button clicked');
       
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);
       await commonSteps.takeScreenshot(page, 'booking-options-error.png', this.screenshotsDir);
-      throw new Error(`Failed to select Gear Conversion booking options: ${error.message}`);
+      throw new Error(`Failed to select Full Licence Assessment booking options: ${error.message}`);
     }
   }
 }
 
-export default new GearConversionBookingService();
+export default new FullLicenceAssessmentBookingService();
 

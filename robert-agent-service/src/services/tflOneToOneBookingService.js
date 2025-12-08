@@ -3,16 +3,16 @@ import path from 'path';
 import * as commonSteps from './commonBookingSteps/index.js';
 import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
 
-class GearConversionBookingService {
+class TfLOneToOneBookingService {
   constructor() {
     this.crmCredentials = {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
       loginName: process.env.CRM_LOGIN || 'universalmct',
       username: process.env.CRM_USERNAME || 'auagent',
       password: process.env.CRM_PASSWORD || 'Robert2025!',
-      availabilityUrl: 'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=C07F8089718288E3'
+      availabilityUrl: 'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=DDAE018B4D15B60A'
     };
-    this.screenshotsDir = './screenshots/gear-conversion-booking';
+    this.screenshotsDir = './screenshots/tfl-one-to-one-booking';
     this.ensureDirectories();
   }
 
@@ -28,20 +28,18 @@ class GearConversionBookingService {
     const workflowType = bookingArgs.workflowType || 'existing';
 
     try {
-      console.log(`🚀 Starting Gear Conversion booking workflow (${workflowType} client)...`);
+      console.log(`🚀 Starting TfL 1-2-1 booking workflow (${workflowType} client)...`);
 
       // Session details should be provided from the availability tool call
-      // Retrieve from bookingArgs (set by browserAgentService from conversation state)
       sessionDetails = bookingArgs.sessionDetails;
       if (!sessionDetails) {
         console.warn('⚠️ No availability data found - creating default sessionDetails to continue workflow');
-        // Create default sessionDetails to allow workflow to continue
         sessionDetails = {
           date: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBD',
-          course: 'Gear Conversion',
+          course: 'TfL 1-2-1 Motorcycle Skills',
           location: bookingArgs.location || 'TBD',
           time: bookingArgs.preferredTime || 'TBD',
-          price: '£175.00',
+          price: 'FREE',
           instructor: 'TBD',
           startDate: bookingArgs.preferredDate || new Date().toISOString().split('T')[0],
           monthYear: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -76,7 +74,6 @@ class GearConversionBookingService {
           throw new Error('Step 2: Login verification failed');
         }
         
-        // CRITICAL: Ensure we're on CRM dashboard, not on availability URL
         const currentUrl = page.url();
         if (currentUrl.includes('bookcbtnow.com') || currentUrl.includes('gateway.aspx')) {
           console.log('🔐 Step 2: Navigating to CRM dashboard (page was on availability URL)...');
@@ -89,7 +86,6 @@ class GearConversionBookingService {
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-login-success.png', this.screenshotsDir));
         console.log('✅ Step 2 completed: Login successful');
       } else {
-        // Already logged in - ensure we're on CRM dashboard
         const currentUrl = page.url();
         if (currentUrl.includes('bookcbtnow.com') || currentUrl.includes('gateway.aspx')) {
           console.log('🔐 Step 2: Navigating to CRM dashboard (page was on availability URL)...');
@@ -108,12 +104,10 @@ class GearConversionBookingService {
 
       if (workflowType === 'existing') {
         // EXISTING CLIENT WORKFLOW
-        // STEP 4-5: Search for existing client (mobile first, then email fallback)
+        // STEP 4-5: Search for existing client
         console.log('👤 Step 4-5: Finding existing client...');
         
-        // Check if we have customer info to search
         if (!bookingArgs.customerMobile && !bookingArgs.customerPhone && !bookingArgs.customerEmail) {
-          // Return graceful error asking agent to collect customer info
           console.log('⚠️ Step 4-5: Customer info missing - asking agent to collect');
           return {
             success: false,
@@ -123,7 +117,6 @@ class GearConversionBookingService {
           };
         }
         
-        // Determine search type and value - mobile number takes priority
         let searchType = 'email';
         let searchValue = bookingArgs.customerEmail;
         
@@ -137,18 +130,14 @@ class GearConversionBookingService {
           console.log('🔍 Service: Searching by email:', searchValue);
         }
         
-        // Search for client
-        // Search for client - pass email so Smart search always uses email
         const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, bookingArgs.customerEmail);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
         
         if (!searchResult.found) {
-          // If mobile search failed and we haven't tried email yet, try email
           if (searchType === 'mobile' && bookingArgs.customerEmail) {
             console.log('⚠️ Mobile search failed, trying email search...');
             const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir, bookingArgs.customerEmail);
             if (emailSearchResult.found) {
-              // Store client details for verification
               if (emailSearchResult.clientDetails) {
                 callContext.clientDetails = emailSearchResult.clientDetails;
                 bookingArgs.clientDetails = emailSearchResult.clientDetails;
@@ -161,7 +150,6 @@ class GearConversionBookingService {
             throw new Error('Could not find client in CRM');
           }
         } else {
-          // Store client details for verification
           if (searchResult.clientDetails) {
             callContext.clientDetails = searchResult.clientDetails;
             bookingArgs.clientDetails = searchResult.clientDetails;
@@ -169,8 +157,6 @@ class GearConversionBookingService {
           console.log('✅ Step 4-5 completed: Client found - requires verbal verification');
         }
         
-        // IMPORTANT: Do not proceed to booking until verbal verification is complete
-        // The agent must call the clientVerification tool first
         if (searchResult.requiresVerification || (searchResult.found && !callContext.clientVerified)) {
           return {
             success: false,
@@ -180,17 +166,16 @@ class GearConversionBookingService {
           };
         }
 
-        // STEP 6: Navigate to Diaries and select session
-        console.log('📅 Step 6: Navigating to Diaries and selecting session...');
-        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
+        // STEP 6: Navigate to Diaries and select session (TfL Diary)
+        console.log('📅 Step 6: Navigating to TfL Diaries and selecting session...');
+        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir, 'TfL Diary');
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
         console.log('✅ Step 6 completed: Session selected');
 
         // STEP 7: Select booking options
-        console.log('⚙️ Step 7: Selecting Gear Conversion booking options...');
+        console.log('⚙️ Step 7: Selecting TfL 1-2-1 booking options...');
         const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
         
-        // Check if preferences are required
         if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
           return {
             success: false,
@@ -217,18 +202,14 @@ class GearConversionBookingService {
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
         console.log('✅ Step 8 completed: Contact details updated');
 
-        // STEP 9: Payment
-        console.log('💳 Step 9: Processing payment...');
-        await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+        // STEP 9: Payment (No payment required for TfL courses)
+        console.log('💳 Step 9: Selecting payment option (No payment required)...');
+        await commonSteps.selectPaymentOption(page, this.screenshotsDir, 'none');
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-option-selected.png', this.screenshotsDir));
         await page.waitForTimeout(2000);
-        await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-method-selected.png', this.screenshotsDir));
-        await page.waitForTimeout(2000);
-        await commonSteps.fillCardDetails(page, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-card-details-filled.png', this.screenshotsDir));
+        
         const termsAccepted = bookingArgs.termsAccepted || false;
-        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true);
+        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, false);
         if (!bookingResult.success) {
           if (!bookingResult.termsAccepted) {
             throw new Error('Client did not accept terms - booking cancelled');
@@ -237,21 +218,38 @@ class GearConversionBookingService {
           }
         }
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-booking-completed.png', this.screenshotsDir));
-        console.log('✅ Step 9 completed: Payment processed and booking made');
+        console.log('✅ Step 9 completed: Booking made (no payment required)');
+
+        // STEP 10: Send booking confirmation email
+        console.log('📧 Step 10: Sending booking confirmation email...');
+        await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'tfl');
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-confirmation-email-sent.png', this.screenshotsDir));
+        console.log('✅ Step 10 completed: Booking confirmation email sent');
+
+        // STEP 11: Send Terms & Conditions email
+        console.log('📧 Step 11: Sending Terms & Conditions email...');
+        await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-terms-email-sent.png', this.screenshotsDir));
+        console.log('✅ Step 11 completed: Terms & Conditions email sent');
+
+        // STEP 12: Send SMS confirmation
+        console.log('📱 Step 12: Sending SMS confirmation...');
+        await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'tfl-one-to-one');
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-12-sms-sent.png', this.screenshotsDir));
+        console.log('✅ Step 12 completed: SMS confirmation sent');
 
       } else {
         // NEW CLIENT WORKFLOW
-        // STEP 4: Navigate to Diaries and select session
-        console.log('📅 Step 4: Navigating to Diaries and selecting session...');
-        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
+        // STEP 4: Navigate to Diaries and select session (TfL Diary)
+        console.log('📅 Step 4: Navigating to TfL Diaries and selecting session...');
+        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir, 'TfL Diary');
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-session-selected.png', this.screenshotsDir));
         console.log('✅ Step 4 completed: Session selected');
 
         // STEP 5: Select booking options
-        console.log('⚙️ Step 5: Selecting Gear Conversion booking options...');
+        console.log('⚙️ Step 5: Selecting TfL 1-2-1 booking options...');
         const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
         
-        // Check if preferences are required
         if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
           return {
             success: false,
@@ -297,18 +295,21 @@ class GearConversionBookingService {
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-contact-details-filled.png', this.screenshotsDir));
         console.log('✅ Step 7 completed: All contact details filled');
 
-        // STEP 8: Payment
-        console.log('💳 Step 8: Processing payment...');
-        await commonSteps.selectPaymentOption(page, this.screenshotsDir);
+        // Validate age (16+ for TfL courses)
+        if (contactDetails.dateOfBirth) {
+          console.log('🔍 Step 7: Validating age (16+ required for TfL 1-2-1)...');
+          await commonSteps.validateAge(page, this.screenshotsDir, 'tfl', 16);
+          console.log('✅ Step 7: Age validation passed');
+        }
+
+        // STEP 8: Payment (No payment required for TfL courses)
+        console.log('💳 Step 8: Selecting payment option (No payment required)...');
+        await commonSteps.selectPaymentOption(page, this.screenshotsDir, 'none');
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-payment-option-selected.png', this.screenshotsDir));
         await page.waitForTimeout(2000);
-        await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-payment-method-selected.png', this.screenshotsDir));
-        await page.waitForTimeout(2000);
-        await commonSteps.fillCardDetails(page, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-card-details-filled.png', this.screenshotsDir));
+        
         const termsAccepted = bookingArgs.termsAccepted || false;
-        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true);
+        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, false);
         if (!bookingResult.success) {
           if (!bookingResult.termsAccepted) {
             throw new Error('Client did not accept terms - booking cancelled');
@@ -317,7 +318,25 @@ class GearConversionBookingService {
           }
         }
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-booking-completed.png', this.screenshotsDir));
-        console.log('✅ Step 8 completed: Payment processed and booking made');
+        console.log('✅ Step 8 completed: Booking made (no payment required)');
+
+        // STEP 9: Send booking confirmation email
+        console.log('📧 Step 9: Sending booking confirmation email...');
+        await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'tfl');
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-confirmation-email-sent.png', this.screenshotsDir));
+        console.log('✅ Step 9 completed: Booking confirmation email sent');
+
+        // STEP 10: Send Terms & Conditions email
+        console.log('📧 Step 10: Sending Terms & Conditions email...');
+        await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-terms-email-sent.png', this.screenshotsDir));
+        console.log('✅ Step 10 completed: Terms & Conditions email sent');
+
+        // STEP 11: Send SMS confirmation
+        console.log('📱 Step 11: Sending SMS confirmation...');
+        await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'tfl-one-to-one');
+        screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-sms-sent.png', this.screenshotsDir));
+        console.log('✅ Step 11 completed: SMS confirmation sent');
       }
 
       console.log('🎉 Service: All steps completed successfully!');
@@ -329,18 +348,17 @@ class GearConversionBookingService {
       };
 
     } catch (error) {
-      console.error('❌ Gear Conversion booking failed at step:', error.message);
+      console.error('❌ TfL 1-2-1 booking failed at step:', error.message);
       console.error('❌ Service: Error stack:', error.stack);
       screenshots.push(await commonSteps.takeScreenshot(page, 'error-state.png', this.screenshotsDir));
       
-      // Return error gracefully with user-friendly message
       const errorContext = getErrorContext(error, 'create_booking');
       const userFriendlyError = formatUserFriendlyError(error, errorContext);
       
       return {
         success: false,
         error: userFriendlyError,
-        technicalError: error.message, // Keep technical error for logging
+        technicalError: error.message,
         sessionDetails: sessionDetails,
         screenshots: screenshots,
         clientEmail: bookingArgs.customerEmail
@@ -348,10 +366,10 @@ class GearConversionBookingService {
     }
   }
 
-  // STEP 1: Check availability and note details (Gear Conversion-specific)
+  // STEP 1: Check availability and note details (TfL 1-2-1-specific)
   async checkAvailabilityAndNoteDetails(page) {
     try {
-      console.log('📅 Navigating to Gear Conversion availability page...');
+      console.log('📅 Navigating to TfL 1-2-1 availability page...');
       
       await page.goto(this.crmCredentials.availabilityUrl);
       await page.waitForLoadState('networkidle');
@@ -389,73 +407,87 @@ class GearConversionBookingService {
         monthYear: latestMonthYear
       };
       
-      console.log('📋 Extracted Gear Conversion session details:', sessionDetails);
+      console.log('📋 Extracted TfL 1-2-1 session details:', sessionDetails);
       return sessionDetails;
       
     } catch (error) {
       console.error('Error in checkAvailabilityAndNoteDetails:', error);
-      throw new Error(`Failed to check Gear Conversion availability: ${error.message}`);
+      throw new Error(`Failed to check TfL 1-2-1 availability: ${error.message}`);
     }
   }
 
-  // STEP 8: Select booking options (Gear Conversion-specific)
+  // STEP 7/5: Select booking options (TfL 1-2-1-specific)
   async selectBookingOptions(page, bookingArgs) {
     try {
-      console.log('⚙️ [STEP 8] Selecting Gear Conversion booking options...');
+      console.log('⚙️ [STEP 7/5] Selecting TfL 1-2-1 booking options...');
       
-      // Step 1: Validate provided preferences (if any)
-      const validDurations = ['2', '3', '4'];
+      // Validate provided bike type
+      const validBikeTypes = ['125cc automatic', '50cc automatic', '125cc manual', 'own bike'];
       const invalidPreferences = [];
       
-      if (bookingArgs.duration) {
-        // Normalize duration - convert to string and trim
-        const normalizedDuration = String(bookingArgs.duration).trim();
-        const isValid = validDurations.includes(normalizedDuration);
+      if (bookingArgs.bikeType) {
+        const normalizedBikeType = bookingArgs.bikeType.trim().toLowerCase();
+        const isValid = validBikeTypes.some(valid => valid.toLowerCase() === normalizedBikeType);
         if (!isValid) {
           invalidPreferences.push({
-            preference: 'duration',
-            providedValue: bookingArgs.duration,
-            validOptions: validDurations
+            preference: 'bikeType',
+            providedValue: bookingArgs.bikeType,
+            validOptions: validBikeTypes
           });
         }
       }
       
       if (invalidPreferences.length > 0) {
         const invalidPref = invalidPreferences[0];
+        let message = `I'm sorry, but "${invalidPref.providedValue}" is not a valid bike type for the TfL 1-2-1 course. `;
+        message += `Please choose one of: "${validBikeTypes.join('", "')}".`;
+        
         return {
           requiresPreferences: true,
           invalidPreferences: invalidPreferences.map(p => p.preference),
-          message: `I'm sorry, but "${invalidPref.providedValue}" is not a valid duration for the Gear Conversion course. Please choose one of: "${validDurations.join('", "')}" hours.`,
-          validOptions: validDurations
+          message: message,
+          validOptions: {
+            bikeType: validBikeTypes
+          }
         };
       }
       
-      // Step 2: Check for missing required preferences
+      // Check for missing required preferences
       const missingPreferences = [];
-      if (!bookingArgs.duration) {
-        missingPreferences.push('duration');
+      if (!bookingArgs.bikeType) {
+        missingPreferences.push('bikeType');
       }
       
       if (missingPreferences.length > 0) {
+        let message = 'I need some additional information to proceed with your TfL 1-2-1 booking. ';
+        message += 'Which bike type would you prefer: "125cc automatic (scooter)", "50cc automatic", "125cc manual (geared)", or "Own bike"?';
+        
         return {
           requiresPreferences: true,
           missingPreferences: missingPreferences,
-          message: `I need to know your preferred duration for the Gear Conversion course. Would you like a 2-hour, 3-hour, or 4-hour session?`,
-          validOptions: validDurations
+          message: message.trim(),
+          validOptions: {
+            bikeType: validBikeTypes
+          }
         };
       }
       
+      // Wait for price page to load
+      console.log('⏳ [STEP 7/5] Waiting for price page to load...');
       await page.waitForTimeout(5000);
       
+      // Check for popup windows
       const pages = page.context().pages();
       let targetPage = page;
       if (pages.length > 1) {
+        console.log(`🔍 [STEP 7/5] Found ${pages.length} pages, checking for booking popup...`);
         for (let i = 0; i < pages.length; i++) {
           const pageTitle = await pages[i].title();
           const pageUrl = pages[i].url();
           if (pageTitle.includes('booking') || pageTitle.includes('Booking') || 
               pageUrl.includes('booking') || pageUrl.includes('Booking')) {
             targetPage = pages[i];
+            console.log(`✅ [STEP 7/5] Using popup window for booking form`);
             break;
           }
         }
@@ -471,31 +503,36 @@ class GearConversionBookingService {
         await targetPage.waitForTimeout(2000);
       }
       
+      // Wait for "1. Price" header
+      console.log('🔍 [STEP 7/5] Looking for "1. Price" header...');
       const priceHeader = searchContext.locator('text=1. Price, *:has-text("1. Price")').first();
-      await priceHeader.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+      await priceHeader.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+        console.log('⚠️ [STEP 7/5] Price header visibility check timed out, continuing...');
+      });
       
       await commonSteps.takeScreenshot(targetPage, 'price-page-loaded.png', this.screenshotsDir);
       
-      // Select duration from Booking options (2 hours, 3 hours, or 4 hours)
-      console.log('⏱️ [STEP 8] Selecting duration from Booking options...');
+      // Select bike type from Booking options
+      console.log('🚲 [STEP 7/5] Selecting bike type from Booking options...');
       await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
       await page.waitForTimeout(2000);
       
-      const duration = bookingArgs.duration; // Already validated above
+      const bikeType = bookingArgs.bikeType.trim().toLowerCase();
       
-      const durationMap = {
-        '2': /2 hours/i,
-        '3': /3 hours/i,
-        '4': /4 hours/i
+      const bikeTypeMap = {
+        '125cc automatic': /125cc automatic.*scooter/i,
+        '50cc automatic': /50cc automatic/i,
+        '125cc manual': /125cc manual.*geared/i,
+        'own bike': /own bike/i
       };
       
-      const durationPattern = durationMap[duration] || durationMap['2'];
-      console.log(`✅ [STEP 8] Selecting duration: ${duration} hours`);
+      const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
+      console.log(`✅ [STEP 7/5] Selecting bike type: ${bikeType}`);
       
-      // Find and select the duration option
-      const durationOption = searchContext.locator(`[role="radio"]:has-text("${durationPattern.source}"), input[type="radio"]`).filter({ hasText: durationPattern }).first();
+      // Find and select the bike type option
+      const bikeOption = searchContext.locator(`[role="radio"]:has-text("${bikePattern.source}"), input[type="radio"]`).filter({ hasText: bikePattern }).first();
       
-      if (await durationOption.count() === 0) {
+      if (await bikeOption.count() === 0) {
         // Fallback: try selecting first available option
         const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
         if (await firstOption.count() > 0) {
@@ -507,13 +544,13 @@ class GearConversionBookingService {
           }
         }
       } else {
-        await durationOption.check();
+        await bikeOption.check();
       }
       
       await page.waitForTimeout(1000);
       
       // Click NEXT button
-      console.log('➡️ [STEP 8] Clicking NEXT...');
+      console.log('➡️ [STEP 7/5] Clicking NEXT...');
       let nextButton = searchContext.locator('#diaryNewCourseBookingWiz_nextBtn').first();
       
       if (await nextButton.count() === 0) {
@@ -527,23 +564,26 @@ class GearConversionBookingService {
       await nextButton.waitFor({ state: 'visible', timeout: 5000 });
       await nextButton.click();
       
+      console.log('⏳ [STEP 7/5] Waiting for next page to load...');
       await page.waitForTimeout(3000);
       
       if (bookingIframe) {
         await page.waitForTimeout(2000);
         const contactLookupIndicators = bookingIframe.locator('text=lookup, text=contact, text=add new contact').first();
-        await contactLookupIndicators.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+        await contactLookupIndicators.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+          console.log('⚠️ [STEP 7/5] Contact lookup page indicators not found, but continuing...');
+        });
       }
       
-      console.log('✅ [STEP 8] Gear Conversion booking options selected and Next button clicked');
+      console.log('✅ [STEP 7/5] TfL 1-2-1 booking options selected and Next button clicked');
       
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);
       await commonSteps.takeScreenshot(page, 'booking-options-error.png', this.screenshotsDir);
-      throw new Error(`Failed to select Gear Conversion booking options: ${error.message}`);
+      throw new Error(`Failed to select TfL 1-2-1 booking options: ${error.message}`);
     }
   }
 }
 
-export default new GearConversionBookingService();
+export default new TfLOneToOneBookingService();
 
