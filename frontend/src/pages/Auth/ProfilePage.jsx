@@ -142,77 +142,173 @@ const ProfilePage = () => {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Profile Settings
-      </Typography>
-      <Typography variant="body1" color="text.secondary" paragraph>
-        Manage your account information and security settings
-      </Typography>
+    <Container maxWidth="lg" disableGutters sx={{ pt: 0, pb: { xs: 3, sm: 4, md: 5 } }}>
+      <Box sx={{ mb: 4 }}>
+        <Typography 
+          variant="h4" 
+          component="h1" 
+          gutterBottom
+          sx={{ 
+            fontWeight: 600,
+            mb: 1
+          }}
+        >
+          Profile Settings
+        </Typography>
+        <Typography 
+          variant="body1" 
+          color="text.secondary"
+          sx={{ 
+            fontSize: '1rem'
+          }}
+        >
+          Manage your account information and security settings
+        </Typography>
+      </Box>
 
-      <Grid container spacing={3}>
+      <Box 
+        sx={{ 
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          gap: 3,
+          width: '100%'
+        }}
+      >
         {/* Profile Overview */}
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+        <Box sx={{ width: { xs: '100%', md: '50%' }, flex: { xs: '0 0 100%', md: '0 0 50%' } }}>
+          <Card 
+            elevation={2}
+            sx={{ 
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            <CardContent 
+              sx={{ 
+                textAlign: 'center', 
+                py: 5,
+                px: 3,
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center'
+              }}
+            >
               <Avatar
                 sx={{
-                  width: 100,
-                  height: 100,
+                  width: 120,
+                  height: 120,
                   mx: 'auto',
-                  mb: 2,
-                  fontSize: 40,
-                  bgcolor: 'primary.main'
+                  mb: 3,
+                  fontSize: 48,
+                  bgcolor: 'primary.main',
+                  boxShadow: 3
                 }}
               >
                 {user?.username?.[0]?.toUpperCase()}
               </Avatar>
               
-              <Typography variant="h5" gutterBottom>
+              <Typography 
+                variant="h5" 
+                gutterBottom
+                sx={{ 
+                  fontWeight: 600,
+                  mb: 1
+                }}
+              >
                 {user?.username}
               </Typography>
               
-              <Typography variant="body2" color="text.secondary" gutterBottom>
+              <Typography 
+                variant="body2" 
+                color="text.secondary" 
+                gutterBottom
+                sx={{ 
+                  mb: 3,
+                  fontSize: '0.95rem'
+                }}
+              >
                 {user?.email}
               </Typography>
               
-              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
+              <Box 
+                sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'center', 
+                  gap: 1.5, 
+                  mt: 'auto',
+                  flexWrap: 'wrap'
+                }}
+              >
                 <Chip
                   icon={<Badge />}
                   label={user?.role}
                   color={getRoleColor(user?.role)}
                   variant="filled"
+                  sx={{ 
+                    fontWeight: 500,
+                    textTransform: 'capitalize'
+                  }}
                 />
                 <Chip
                   label={user?.status}
                   color={getStatusColor(user?.status)}
                   variant="outlined"
+                  sx={{ 
+                    fontWeight: 500,
+                    textTransform: 'capitalize'
+                  }}
                 />
               </Box>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
 
         {/* Profile Information */}
-        <Grid item xs={12} md={8}>
-          <Card>
+        <Box sx={{ width: { xs: '100%', md: '50%' }, flex: { xs: '0 0 100%', md: '0 0 50%' } }}>
+          <Card 
+            elevation={2}
+            sx={{ height: '100%' }}
+          >
             <CardHeader
               title="Profile Information"
               subheader="Update your personal information"
-              avatar={<Person />}
+              avatar={
+                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                  <Person />
+                </Avatar>
+              }
+              sx={{
+                pb: 2,
+                '& .MuiCardHeader-title': {
+                  fontSize: '1.25rem',
+                  fontWeight: 600
+                },
+                '& .MuiCardHeader-subheader': {
+                  fontSize: '0.875rem'
+                }
+              }}
             />
-            <CardContent>
+            <Divider />
+            <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
               <Box component="form" onSubmit={handleProfileSubmit(handleProfileUpdate)}>
-                <Grid container spacing={2}>
+                <Grid container spacing={3}>
                   <Grid item xs={12}>
                     <TextField
                       fullWidth
                       label="Username"
+                      variant="outlined"
                       {...registerProfile('username', {
                         required: 'Username is required'
                       })}
                       error={!!profileErrors.username}
                       helperText={profileErrors.username?.message}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2
+                        }
+                      }}
                     />
                   </Grid>
                   <Grid item xs={12}>
@@ -220,6 +316,7 @@ const ProfilePage = () => {
                       fullWidth
                       label="Email Address"
                       type="email"
+                      variant="outlined"
                       {...registerProfile('email', {
                         required: 'Email is required',
                         pattern: {
@@ -229,53 +326,123 @@ const ProfilePage = () => {
                       })}
                       error={!!profileErrors.email}
                       helperText={profileErrors.email?.message}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2
+                        }
+                      }}
                     />
                   </Grid>
                 </Grid>
 
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={isUpdatingProfile}
-                  startIcon={isUpdatingProfile ? <CircularProgress size={20} /> : <Save />}
-                  sx={{ mt: 3 }}
-                >
-                  {isUpdatingProfile ? 'Updating...' : 'Update Profile'}
-                </Button>
+                <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    size="large"
+                    disabled={isUpdatingProfile}
+                    startIcon={isUpdatingProfile ? <CircularProgress size={20} /> : <Save />}
+                    sx={{ 
+                      minWidth: 160,
+                      borderRadius: 2,
+                      textTransform: 'none',
+                      fontWeight: 500,
+                      py: 1.25
+                    }}
+                  >
+                    {isUpdatingProfile ? 'Updating...' : 'Update Profile'}
+                  </Button>
+                </Box>
               </Box>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
+      </Box>
 
+      <Box 
+        sx={{ 
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          gap: 3,
+          width: '100%',
+          mt: 3
+        }}
+      >
         {/* Security Settings */}
-        <Grid item xs={12} md={6}>
-          <Card>
+        <Box sx={{ width: { xs: '100%', md: '50%' }, flex: { xs: '0 0 100%', md: '0 0 50%' } }}>
+          <Card 
+            elevation={2}
+            sx={{ height: '100%' }}
+          >
             <CardHeader
               title="Security Settings"
               subheader="Manage your account security"
-              avatar={<Security />}
+              avatar={
+                <Avatar sx={{ bgcolor: 'error.main' }}>
+                  <Security />
+                </Avatar>
+              }
+              sx={{
+                pb: 2,
+                '& .MuiCardHeader-title': {
+                  fontSize: '1.25rem',
+                  fontWeight: 600
+                },
+                '& .MuiCardHeader-subheader': {
+                  fontSize: '0.875rem'
+                }
+              }}
             />
-            <CardContent>
+            <Divider />
+            <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
               {/* MFA Toggle */}
-              <Box sx={{ mb: 3 }}>
+              <Box 
+                sx={{ 
+                  mb: 4,
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor: 'action.hover'
+                }}
+              >
                 <FormControlLabel
                   control={
                     <Switch
                       checked={user?.mfaEnabled || false}
                       onChange={(e) => handleMFAToggle(e.target.checked)}
+                      sx={{ mr: 1 }}
                     />
                   }
-                  label="Two-Factor Authentication"
+                  label={
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      Two-Factor Authentication
+                    </Typography>
+                  }
+                  sx={{ mb: 1 }}
                 />
-                <Typography variant="body2" color="text.secondary">
+                <Typography 
+                  variant="body2" 
+                  color="text.secondary"
+                  sx={{ 
+                    ml: 4.5,
+                    fontSize: '0.875rem'
+                  }}
+                >
                   Add an extra layer of security to your account
                 </Typography>
               </Box>
 
-              <Divider sx={{ my: 2 }} />
+              <Divider sx={{ my: 3 }} />
 
               {/* Password Change Form */}
-              <Typography variant="h6" gutterBottom>
+              <Typography 
+                variant="h6" 
+                gutterBottom
+                sx={{ 
+                  mb: 3,
+                  fontWeight: 600,
+                  fontSize: '1.1rem'
+                }}
+              >
                 Change Password
               </Typography>
               
@@ -284,18 +451,26 @@ const ProfilePage = () => {
                   fullWidth
                   label="Current Password"
                   type={showCurrentPassword ? 'text' : 'password'}
+                  variant="outlined"
                   margin="normal"
                   {...registerPassword('currentPassword', {
                     required: 'Current password is required'
                   })}
                   error={!!passwordErrors.currentPassword}
                   helperText={passwordErrors.currentPassword?.message}
+                  sx={{
+                    mb: 2,
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2
+                    }
+                  }}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
                         <IconButton
                           onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                           edge="end"
+                          size="small"
                         >
                           {showCurrentPassword ? <VisibilityOff /> : <Visibility />}
                         </IconButton>
@@ -308,6 +483,7 @@ const ProfilePage = () => {
                   fullWidth
                   label="New Password"
                   type={showNewPassword ? 'text' : 'password'}
+                  variant="outlined"
                   margin="normal"
                   {...registerPassword('newPassword', {
                     required: 'New password is required',
@@ -318,12 +494,19 @@ const ProfilePage = () => {
                   })}
                   error={!!passwordErrors.newPassword}
                   helperText={passwordErrors.newPassword?.message}
+                  sx={{
+                    mb: 2,
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2
+                    }
+                  }}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
                         <IconButton
                           onClick={() => setShowNewPassword(!showNewPassword)}
                           edge="end"
+                          size="small"
                         >
                           {showNewPassword ? <VisibilityOff /> : <Visibility />}
                         </IconButton>
@@ -336,6 +519,7 @@ const ProfilePage = () => {
                   fullWidth
                   label="Confirm New Password"
                   type={showConfirmPassword ? 'text' : 'password'}
+                  variant="outlined"
                   margin="normal"
                   {...registerPassword('confirmPassword', {
                     required: 'Please confirm your new password',
@@ -343,12 +527,19 @@ const ProfilePage = () => {
                   })}
                   error={!!passwordErrors.confirmPassword}
                   helperText={passwordErrors.confirmPassword?.message}
+                  sx={{
+                    mb: 2,
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2
+                    }
+                  }}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
                         <IconButton
                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                           edge="end"
+                          size="small"
                         >
                           {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
                         </IconButton>
@@ -357,45 +548,93 @@ const ProfilePage = () => {
                   }}
                 />
 
-                <Button
-                  type="submit"
-                  variant="outlined"
-                  disabled={isChangingPassword}
-                  startIcon={isChangingPassword ? <CircularProgress size={20} /> : <Lock />}
-                  sx={{ mt: 2 }}
-                >
-                  {isChangingPassword ? 'Changing...' : 'Change Password'}
-                </Button>
+                <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    type="submit"
+                    variant="outlined"
+                    size="large"
+                    disabled={isChangingPassword}
+                    startIcon={isChangingPassword ? <CircularProgress size={20} /> : <Lock />}
+                    sx={{ 
+                      minWidth: 180,
+                      borderRadius: 2,
+                      textTransform: 'none',
+                      fontWeight: 500,
+                      py: 1.25
+                    }}
+                  >
+                    {isChangingPassword ? 'Changing...' : 'Change Password'}
+                  </Button>
+                </Box>
               </Box>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
 
         {/* Appearance Settings */}
-        <Grid item xs={12} md={6}>
-          <Card>
+        <Box sx={{ width: { xs: '100%', md: '50%' }, flex: { xs: '0 0 100%', md: '0 0 50%' } }}>
+          <Card 
+            elevation={2}
+            sx={{ height: '100%' }}
+          >
             <CardHeader
               title="Appearance"
               subheader="Customize your interface"
-              avatar={<Palette />}
-            />
-            <CardContent>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={theme === 'dark'}
-                    onChange={toggleTheme}
-                  />
+              avatar={
+                <Avatar sx={{ bgcolor: 'secondary.main' }}>
+                  <Palette />
+                </Avatar>
+              }
+              sx={{
+                pb: 2,
+                '& .MuiCardHeader-title': {
+                  fontSize: '1.25rem',
+                  fontWeight: 600
+                },
+                '& .MuiCardHeader-subheader': {
+                  fontSize: '0.875rem'
                 }
-                label="Dark Mode"
-              />
-              <Typography variant="body2" color="text.secondary">
-                Switch between light and dark themes
-              </Typography>
+              }}
+            />
+            <Divider />
+            <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
+              <Box
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  bgcolor: 'action.hover'
+                }}
+              >
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={theme === 'dark'}
+                      onChange={toggleTheme}
+                      sx={{ mr: 1 }}
+                    />
+                  }
+                  label={
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      Dark Mode
+                    </Typography>
+                  }
+                  sx={{ mb: 1 }}
+                />
+                <Typography 
+                  variant="body2" 
+                  color="text.secondary"
+                  sx={{ 
+                    ml: 4.5,
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  Switch between light and dark themes
+                </Typography>
+              </Box>
             </CardContent>
           </Card>
-        </Grid>
-      </Grid>
+        </Box>
+      </Box>
     </Container>
   );
 };
