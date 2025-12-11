@@ -243,7 +243,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
               }
               
               matchingRows.push({
-                row: row,
+                rowIndex: i,  // Store index instead of locator to avoid stale locator issues
                 email: foundEmail,
                 postcode: postcode,
                 index: i
@@ -263,7 +263,11 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         } else if (matchingRows.length === 1) {
           // Single match - can proceed directly
           console.log('✅ [STEP 3-5] Single email match found, proceeding...');
-          exactMatch = matchingRows[0].row;
+          // Recreate locator using stored index to avoid stale locator issues
+          exactMatch = {
+            rowIndex: matchingRows[0].rowIndex,
+            locator: resultRows.nth(matchingRows[0].rowIndex)
+          };
         } else {
           // Multiple matches - need to verify email + postcode per document
           console.log(`⚠️ [STEP 3-5] Multiple email matches found (${matchingRows.length}). Per document, need to verify email + postcode.`);
@@ -275,14 +279,21 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           // Try to find exact email match first
           const exactEmailMatch = matchingRows.find(m => m.email.toLowerCase().trim() === normalizedSearch);
           if (exactEmailMatch) {
-            console.log('✅ [STEP 3-5] Found exact email match, will verify postcode after selection');
-            exactMatch = exactEmailMatch.row;
+            console.log(`✅ [STEP 3-5] Found exact email match at row ${exactEmailMatch.rowIndex + 1}, will verify postcode after selection`);
+            // Recreate locator using stored index to avoid stale locator issues
+            exactMatch = {
+              rowIndex: exactEmailMatch.rowIndex,
+              locator: resultRows.nth(exactEmailMatch.rowIndex)
+            };
           } else {
             // No exact match - will need to verify each one
             // For now, select the first one and verify postcode after clicking (per document requirement)
             console.log('⚠️ [STEP 3-5] No exact email match, will verify postcode for each potential match');
             // We'll handle this in the verification step after clicking
-            exactMatch = matchingRows[0].row;
+            exactMatch = {
+              rowIndex: matchingRows[0].rowIndex,
+              locator: resultRows.nth(matchingRows[0].rowIndex)
+            };
           }
         }
         
@@ -328,7 +339,11 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
                   });
                   if (foundPhone) {
                     console.log(`✅ [STEP 3-5] Found exact phone match in row ${i + 1}: ${foundPhone}`);
-                    exactMatch = row;
+                    // Store as object with index and locator for consistency
+                    exactMatch = {
+                      rowIndex: i,
+                      locator: row
+                    };
                     break;
                   }
                 }
@@ -341,11 +356,248 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       }
       
       // Click exact match if found
-      if (exactMatch && await exactMatch.count() > 0) {
-        console.log('✅ [STEP 3-5] Clicking exact match...');
-        await exactMatch.click();
-        clientClicked = true;
-      } else {
+      if (exactMatch) {
+        // Handle both old format (just locator) and new format (object with rowIndex and locator)
+        const rowLocator = exactMatch.locator || exactMatch;
+        const rowIndex = exactMatch.rowIndex !== undefined ? exactMatch.rowIndex : null;
+        
+        if (await rowLocator.count() > 0) {
+          console.log(`✅ [STEP 3-5] Clicking exact match${rowIndex !== null ? ` (row ${rowIndex + 1})` : ''}...`);
+          
+          // CRITICAL: Get the actual frame for JavaScript evaluation
+          // FrameLocator doesn't have evaluate(), we need the actual Frame object
+          let actualFrame = null;
+          try {
+            // Try to get the frame by waiting for it
+            await page.waitForSelector('#contactLookup_iframe', { state: 'attached' });
+            const frameElement = await page.$('#contactLookup_iframe');
+            if (frameElement) {
+              actualFrame = await frameElement.contentFrame();
+            }
+          } catch (e) {
+            console.log(`⚠️ [STEP 3-5] Could not get frame for evaluation: ${e.message}`);
+          }
+          
+          // CRITICAL: Verify we're still on search results page before attempting click
+          // This prevents trying to click when we've already navigated away (e.g., row 1 was clicked)
+          const verifyStillOnSearchPage = async () => {
+            try {
+              const searchTable = await iframe.locator('table.dx-datagrid-table').count();
+              return searchTable > 0;
+            } catch {
+              return false;
+            }
+          };
+          
+          // PRIORITY 1: JavaScript click FIRST (before any scrolling that might click row 1)
+          // This works even if element is not visible and doesn't trigger scroll that might click row 1
+          // Based on HTML structure: all rows exist in DOM, we can click directly by index
+          if (rowIndex !== null && actualFrame) {
+            const stillOnSearchPage = await verifyStillOnSearchPage();
+            if (!stillOnSearchPage) {
+              console.log(`⚠️ [STEP 3-5] Already navigated away from search results - cannot click row ${rowIndex + 1}`);
+            } else {
+              try {
+                console.log(`🔄 [STEP 3-5] Using JavaScript click on row ${rowIndex + 1} FIRST (bypasses visibility, avoids accidental row 1 click)...`);
+                // Use JavaScript to click directly - this won't trigger scroll that might click row 1
+                // HTML structure: table.dx-datagrid-table > tbody > tr.dx-row.dx-data-row[role="row"]
+                await actualFrame.evaluate((index) => {
+                  const rows = document.querySelectorAll('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
+                  if (rows[index]) {
+                    // CRITICAL: Click the TD (cell) inside the row, not the TR itself
+                    // DevExtreme grid requires clicking the cell to trigger navigation
+                    const cell = rows[index].querySelector('td[role="gridcell"]');
+                    if (cell) {
+                      // Verify we're clicking the right row by checking email
+                      const emailSpan = rows[index].querySelector('.jqx_inlineSummary .jqx_inlineSummaryTitle');
+                      let email = '';
+                      if (emailSpan && emailSpan.textContent.includes('Email:')) {
+                        const emailText = emailSpan.nextElementSibling;
+                        if (emailText) {
+                          const emailSpanInner = emailText.querySelector('span');
+                          email = emailSpanInner ? emailSpanInner.textContent.trim() : '';
+                        }
+                      }
+                      // Alternative: find email by looking for span with email pattern
+                      if (!email) {
+                        const allSpans = rows[index].querySelectorAll('span');
+                        for (const span of allSpans) {
+                          if (span.textContent.includes('@')) {
+                            email = span.textContent.trim();
+                            break;
+                          }
+                        }
+                      }
+                      console.log(`[DEBUG] Clicking row ${index + 1}, email: ${email}`);
+                      
+                      // Click the cell
+                      cell.click();
+                    } else {
+                      // Fallback: click the row itself
+                      console.log(`[DEBUG] No cell found, clicking row ${index + 1} directly`);
+                      rows[index].click();
+                    }
+                  }
+                }, rowIndex);
+                await page.waitForTimeout(1500); // Increased wait time for navigation
+                
+                // Verify we successfully navigated (not still on search page)
+                const stillOnSearch = await verifyStillOnSearchPage();
+                if (!stillOnSearch) {
+                  clientClicked = true;
+                  console.log(`✅ [STEP 3-5] Successfully clicked row ${rowIndex + 1} using JavaScript click`);
+                } else {
+                  console.log(`⚠️ [STEP 3-5] JavaScript click didn't trigger navigation - will try other methods`);
+                }
+              } catch (jsErr) {
+                console.log(`⚠️ [STEP 3-5] JavaScript click failed: ${jsErr.message}`);
+              }
+            }
+          }
+          
+          // PRIORITY 2: If JavaScript click didn't work, try scrolling + click (but verify page state)
+          if (!clientClicked && rowIndex !== null && actualFrame) {
+            const stillOnSearchPage = await verifyStillOnSearchPage();
+            if (!stillOnSearchPage) {
+              console.log(`⚠️ [STEP 3-5] Already navigated away - cannot continue with scroll method`);
+            } else {
+              try {
+                console.log(`🔄 [STEP 3-5] Attempting to scroll table to row ${rowIndex + 1}...`);
+                // Scroll row 4 into view
+                await actualFrame.evaluate((index) => {
+                  const rows = document.querySelectorAll('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
+                  if (rows[index]) {
+                    rows[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                }, rowIndex);
+                await page.waitForTimeout(1000);
+                
+                // CRITICAL: Verify we're still on search page after scroll (row 1 didn't get clicked)
+                const stillOnSearch = await verifyStillOnSearchPage();
+                if (!stillOnSearch) {
+                  console.log(`⚠️ [STEP 3-5] Page navigated during scroll - row 1 may have been clicked accidentally`);
+                  // Don't continue - we're on wrong page
+                } else {
+                  // Now try clicking row 4 using JavaScript (after scroll) - click the cell, not the row
+                  await actualFrame.evaluate((index) => {
+                    const rows = document.querySelectorAll('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
+                    if (rows[index]) {
+                      const cell = rows[index].querySelector('td[role="gridcell"]');
+                      if (cell) {
+                        cell.click();
+                      } else {
+                        rows[index].click();
+                      }
+                    }
+                  }, rowIndex);
+                  await page.waitForTimeout(1000);
+                  
+                  const stillOnSearchAfterClick = await verifyStillOnSearchPage();
+                  if (!stillOnSearchAfterClick) {
+                    clientClicked = true;
+                    console.log(`✅ [STEP 3-5] Successfully clicked row ${rowIndex + 1} after scroll`);
+                  }
+                }
+              } catch (e) {
+                console.log(`⚠️ [STEP 3-5] Scroll + click method failed: ${e.message}`);
+              }
+            }
+          }
+          
+          // PRIORITY 3: Fallback to Playwright methods (only if still on search page)
+          if (!clientClicked) {
+            const stillOnSearchPage = await verifyStillOnSearchPage();
+            if (!stillOnSearchPage) {
+              console.log(`⚠️ [STEP 3-5] Already navigated away - cannot use Playwright click methods`);
+            } else {
+              // Method 3: Try JavaScript scroll (don't use scrollIntoViewIfNeeded - it might click row 1)
+              try {
+                // DON'T use scrollIntoViewIfNeeded - it might click row 1
+                // Instead, use JavaScript scroll directly
+                if (rowIndex !== null && actualFrame) {
+                  await actualFrame.evaluate((index) => {
+                    const rows = document.querySelectorAll('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
+                    if (rows[index]) {
+                      rows[index].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }, rowIndex);
+                  await page.waitForTimeout(1000);
+                }
+                
+                // Verify still on search page after scroll
+                const stillOnSearch = await verifyStillOnSearchPage();
+                if (!stillOnSearch) {
+                  console.log(`⚠️ [STEP 3-5] Page navigated during scroll - row 1 may have been clicked`);
+                } else {
+                  // Method 4: Try regular click (with force: false to prevent accidental clicks)
+                  try {
+                    await rowLocator.click({ timeout: 10000, force: false });
+                    clientClicked = true;
+                    console.log(`✅ [STEP 3-5] Successfully clicked row ${rowIndex !== null ? rowIndex + 1 : ''} using regular click`);
+                  } catch (clickErr) {
+                    console.log(`⚠️ [STEP 3-5] Regular click failed: ${clickErr.message}`);
+                    
+                    // Method 5: Try clicking on a cell within the row
+                    try {
+                      const firstCell = rowLocator.locator('td').first();
+                      if (await firstCell.count() > 0) {
+                        await firstCell.click({ timeout: 10000, force: false });
+                        clientClicked = true;
+                        console.log(`✅ [STEP 3-5] Successfully clicked row ${rowIndex !== null ? rowIndex + 1 : ''} using cell click`);
+                      }
+                    } catch (cellErr) {
+                      console.log(`⚠️ [STEP 3-5] Cell click failed: ${cellErr.message}`);
+                      
+                      // Method 6: Try keyboard navigation to select the row
+                      if (rowIndex !== null && rowIndex > 0) {
+                        try {
+                          console.log(`⌨️ [STEP 3-5] Trying keyboard navigation to row ${rowIndex + 1}...`);
+                          // First, focus on the first row to focus the table (but don't click - use focus to avoid navigation)
+                          const firstRow = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]').first();
+                          // IMPORTANT: Don't actually click - just focus without triggering navigation
+                          await firstRow.focus({ timeout: 5000 }).catch(() => {});
+                          await page.waitForTimeout(300);
+                          
+                          // Then use arrow keys to navigate to the target row
+                          for (let i = 0; i < rowIndex; i++) {
+                            await page.keyboard.press('ArrowDown');
+                            await page.waitForTimeout(100);
+                          }
+                          await page.waitForTimeout(300);
+                          
+                          // Press Enter to select
+                          await page.keyboard.press('Enter');
+                          await page.waitForTimeout(1000);
+                          clientClicked = true;
+                          console.log(`✅ [STEP 3-5] Successfully navigated to row ${rowIndex + 1} using keyboard`);
+                        } catch (keyErr) {
+                          console.log(`⚠️ [STEP 3-5] Keyboard navigation failed: ${keyErr.message}`);
+                        }
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                console.log(`⚠️ [STEP 3-5] Could not scroll row into view: ${e.message}`);
+              }
+            }
+          }
+          
+          // Check if we successfully clicked and navigated
+          if (clientClicked) {
+            // Wait a moment to see if navigation occurred
+            await page.waitForTimeout(1000);
+            // Verify we're on the client details page (not still on search results)
+            const isStillOnSearch = await iframe.locator('table.dx-datagrid-table').count() > 0;
+            if (isStillOnSearch) {
+              console.log(`⚠️ [STEP 3-5] Click registered but page didn't navigate - may have clicked wrong row`);
+            }
+          }
+        }
+      }
+      
+      // Only fall back to first row if we don't have an exact match
+      if (!clientClicked && !exactMatch) {
         // Fallback: Look for visible text containing search value (but be more specific)
         console.log('⚠️ [STEP 3-5] No exact match found, trying fallback approaches...');
         

@@ -1014,6 +1014,31 @@ async checkAvailabilityAndNoteDetails(page) {
       throw new Error(`Failed to select booking options: ${error.message}`);
     }
   }
+
+  async executeITMBookingDemo(page) {
+    // This method is for testing/demo purposes
+    // Uses existing client email from environment
+    const clientEmail = process.env.CLIENT_EMAIL_ADDRESS;
+    
+    if (!clientEmail) {
+      throw new Error('CLIENT_EMAIL_ADDRESS environment variable is not set');
+    }
+
+    // Execute the booking workflow with demo/test parameters
+    const bookingArgs = {
+      workflowType: 'existing',
+      customerEmail: clientEmail,
+      // Add other default parameters as needed
+    };
+
+    const result = await this.executeBookingWorkflow(page, bookingArgs, {});
+    
+    return {
+      sessionDetails: result.sessionDetails,
+      screenshots: result.screenshots,
+      clientEmail: result.clientEmail || clientEmail
+    };
+  }
 }
 
 export default new ITMBookingService();
