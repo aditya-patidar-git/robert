@@ -37,7 +37,15 @@ class TokenManagementService extends BaseService {
     if (modelId) params.modelId = modelId;
     
     const response = await this.get('/stats', params);
-    return response.data?.stats || response.data;
+    // Backend returns: { status: "success", stats: {...} }
+    // Handle both normalized and raw response structures
+    if (response?.data?.stats) {
+      return response.data.stats;
+    }
+    if (response?.stats) {
+      return response.stats;
+    }
+    return response?.data || response || {};
   }
 
   /**
@@ -56,7 +64,10 @@ class TokenManagementService extends BaseService {
    * @returns {Promise<Object>} Context limit data
    */
   async getContextLimit(modelId) {
-    return this.get(`/context-limit/${modelId}`);
+    const response = await this.get(`/context-limit/${modelId}`);
+    // Backend returns: { status: "success", modelId, contextLimit, warningThreshold, criticalThreshold, emergencyThreshold }
+    // Return the data directly (BaseService normalizes it)
+    return response?.data || response || {};
   }
 }
 

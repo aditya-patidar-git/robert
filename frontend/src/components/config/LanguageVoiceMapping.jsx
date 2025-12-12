@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -37,11 +37,12 @@ const LanguageVoiceMapping = ({
   
   const [languageMappings, setLanguageMappings] = useState([]);
   const [previewingVoice, setPreviewingVoice] = useState(null);
+  const lastProcessedMappingsRef = useRef(null);
 
   // Fetch language/voice mappings
   const { data: fetchedMappings = [], isLoading: mappingsLoading } = useQuery({
     queryKey: ['language-voice-mappings'],
-    queryFn: languageVoiceService.getLanguageMappings
+    queryFn: () => languageVoiceService.getLanguageMappings()
   });
 
   // Fetch available voices
@@ -52,8 +53,33 @@ const LanguageVoiceMapping = ({
 
   // Update local state when mappings are fetched
   useEffect(() => {
-    if (fetchedMappings && fetchedMappings.length > 0) {
-      setLanguageMappings(fetchedMappings);
+    if (fetchedMappings) {
+      // Ensure fetchedMappings is an array
+      const mappingsArray = Array.isArray(fetchedMappings) 
+        ? fetchedMappings 
+        : (fetchedMappings.mappings || fetchedMappings.data || []);
+      
+      // Compare with last processed data to avoid infinite loops
+      const currentStr = JSON.stringify(mappingsArray);
+      if (lastProcessedMappingsRef.current === currentStr) {
+        // Already processed this data, skip update
+        return;
+      }
+      
+      // Update ref to track what we've processed
+      lastProcessedMappingsRef.current = currentStr;
+      
+      // Only update if we have mappings or if we haven't initialized yet
+      setLanguageMappings(prev => {
+        if (mappingsArray.length > 0) {
+          return mappingsArray;
+        } else if (prev.length === 0) {
+          // Only set empty array if we haven't set anything yet (to avoid clearing user edits)
+          return [];
+        }
+        // Don't update if we have existing mappings and new ones are empty (preserve user edits)
+        return prev;
+      });
     }
   }, [fetchedMappings]);
 

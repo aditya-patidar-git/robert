@@ -55,6 +55,15 @@ class PromptVersionService extends BaseService {
   }
 
   /**
+   * Activate a specific version
+   * @param {string} versionId - Version ID to activate
+   * @returns {Promise<Object>} Activation result
+   */
+  async activateVersion(versionId) {
+    return this.put(`/${versionId}/activate`);
+  }
+
+  /**
    * Rollback to specific version
    * @param {string} versionId - Version ID to rollback to
    * @param {string} changeReason - Reason for rollback (default: '')
@@ -62,6 +71,15 @@ class PromptVersionService extends BaseService {
    */
   async rollbackToVersion(versionId, changeReason = '') {
     return this.post(`/${versionId}/rollback`, { changeReason });
+  }
+
+  /**
+   * Clear all inactive versions
+   * @param {string} promptId - Prompt ID (default: 'global')
+   * @returns {Promise<Object>} Clear result
+   */
+  async clearInactiveVersions(promptId = 'global') {
+    return this.delete('/clear-inactive', { params: { promptId } });
   }
 }
 

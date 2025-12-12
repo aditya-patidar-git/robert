@@ -9,13 +9,9 @@ class TransferCallTool {
     const { target, reason = 'user_request' } = parameters;
     const { callSid, phoneNumber } = callContext;
 
-    if (!target) {
-      // Use default target number from documentation
-      const defaultTarget = '+442036918807';
-      console.log(`📞 [${callSid}] No target specified, using default: ${defaultTarget}`);
-    }
-
-    const targetNumber = target || '+442036918807';
+    // Use hardcoded agent number for all transfers
+    const targetNumber = '+918717914659';
+    console.log(`📞 [${callSid}] Using hardcoded agent number: ${targetNumber}`);
 
     if (!callSid) {
       throw new Error('Call SID is required for transfer. This tool must be called during an active call.');

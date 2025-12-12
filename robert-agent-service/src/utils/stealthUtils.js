@@ -406,7 +406,7 @@ export async function simulateHumanBehaviorBeforeSubmit(page, formLocator, submi
   await page.evaluate(() => {
     window.scrollBy(0, (Math.random() - 0.5) * 100);
   });
-  await page.waitForTimeout(800 + Math.random() * 1200);
+  await page.waitForTimeout(500 + Math.random() * 500); // Reduced from 800-2000ms
   
   // 2. Move mouse around the form area (simulate reading/checking)
   if (formBox) {
@@ -437,7 +437,7 @@ export async function simulateHumanBehaviorBeforeSubmit(page, formLocator, submi
   }
   
   // 3. Additional wait to let reCAPTCHA observe behavior
-  await page.waitForTimeout(2000 + Math.random() * 2000);
+  await page.waitForTimeout(1000 + Math.random() * 1000); // Reduced from 2000-4000ms
   
   // 4. Move to submit button with natural curve
   if (buttonBox && formBox) {

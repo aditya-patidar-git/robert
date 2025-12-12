@@ -1,4 +1,5 @@
 import twilioClient from '../utils/twilioClient.js';
+import configManager from '../agent/configManager.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -19,19 +20,32 @@ class TwilioCallBridgeService {
       const target = targetNumber || this.defaultTargetNumber;
       const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
 
-      console.log(`📞 [${callSid}] Initiating outbound call to agent: ${target}`);
+      // Get outboundCallerId from telephony config
+      const telephonyConfig = configManager.getTelephonyConfig();
+      const callerId = telephonyConfig?.outboundCallerId;
 
-      // Create outbound call to agent
+      if (!callerId) {
+        const errorMsg = 'outboundCallerId not configured. Please set it in Telephony Routing settings.';
+        console.error(`❌ [${callSid}] ${errorMsg}`);
+        return {
+          success: false,
+          error: errorMsg
+        };
+      }
+
+      console.log(`📞 [${callSid}] Initiating outbound call to agent: ${target} (from: ${callerId})`);
+
+      // Create outbound call to agent using outboundCallerId from database config
       const agentCall = await twilioClient.calls.create({
         to: target,
-        from: process.env.TWILIO_NUMBER,
+        from: callerId,
         url: `${baseUrl}/api/sip/agent-call-handler?originalCallSid=${callSid}`,
         statusCallback: `${baseUrl}/api/outbound/call-status`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         statusCallbackMethod: 'POST'
       });
 
-      console.log(`✅ [${callSid}] Agent call initiated: ${agentCall.sid}`);
+      console.log(`✅ [${callSid}] Agent call initiated: ${agentCall.sid} (using caller ID: ${callerId})`);
 
       return {
         success: true,

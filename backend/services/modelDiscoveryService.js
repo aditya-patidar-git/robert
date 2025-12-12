@@ -222,11 +222,20 @@ class ModelDiscoveryService {
       throw new Error(`Model ${modelId} not found`);
     }
 
+    // Determine if this is a realtime model
+    const isRealtimeModel = this.supportsRealtime(modelId);
+    
+    // For max_tokens, use reasonable response generation limits
+    // Realtime models typically have lower response limits
+    const maxTokensLimit = isRealtimeModel 
+      ? Math.min(4096, model.contextLimit || 128000)
+      : Math.min(8192, model.contextLimit || 128000);
+
     return {
       temperature: {
         default: model.defaultTemperature || 0.4,
         min: 0,
-        max: 2,
+        max: 1,
         step: 0.1
       },
       top_p: {
@@ -238,7 +247,7 @@ class ModelDiscoveryService {
       max_tokens: {
         default: Math.min(150, Math.floor((model.contextLimit || 128000) * 0.1)),
         min: 1,
-        max: model.contextLimit || 128000,
+        max: maxTokensLimit,
         step: 1
       },
       context_limit: model.contextLimit || 128000

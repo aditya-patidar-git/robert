@@ -8,10 +8,51 @@ export const getPromptVersions = async (req, res) => {
       .sort({ version: -1 })
       .select('-__v');
     
-    res.json({
-      status: "success",
-      versions
-    });
+    // Populate author names if User model is available
+    try {
+      const User = (await import("../models/User.js")).default;
+      const versionsWithAuthors = await Promise.all(
+        versions.map(async (version) => {
+          const versionObj = version.toObject();
+          if (version.createdBy) {
+            try {
+              // Try to find user by ID first, then by username/email
+              let user = await User.findById(version.createdBy);
+              if (!user) {
+                user = await User.findOne({ 
+                  $or: [
+                    { username: version.createdBy },
+                    { email: version.createdBy }
+                  ]
+                });
+              }
+              if (user) {
+                versionObj.createdByName = user.username || user.email || user.name || version.createdBy;
+              } else {
+                versionObj.createdByName = version.createdBy;
+              }
+            } catch (userError) {
+              // If user lookup fails, use createdBy as fallback
+              versionObj.createdByName = version.createdBy;
+            }
+          } else {
+            versionObj.createdByName = 'admin';
+          }
+          return versionObj;
+        })
+      );
+      
+      res.json({
+        status: "success",
+        versions: versionsWithAuthors
+      });
+    } catch (populateError) {
+      // If User model is not available or populate fails, return versions as-is
+      res.json({
+        status: "success",
+        versions
+      });
+    }
   } catch (error) {
     console.error("Error fetching prompt versions:", error);
     res.status(500).json({
@@ -200,6 +241,82 @@ export const rollbackToVersion = async (req, res) => {
   }
 };
 
+// Activate a specific version
+export const activateVersion = async (req, res) => {
+  try {
+    const { versionId } = req.params;
+    
+    const targetVersion = await PromptVersion.findById(versionId);
+    
+    if (!targetVersion) {
+      return res.status(404).json({
+        status: "error",
+        message: "Version not found"
+      });
+    }
+
+    const promptId = targetVersion.promptId;
+
+    // Mark all other versions as inactive
+    await PromptVersion.updateMany(
+      { promptId, isActive: true },
+      { isActive: false }
+    );
+
+    // Mark the selected version as active
+    targetVersion.isActive = true;
+    await targetVersion.save();
+
+    // Update AIConfig.globalPrompt to match the activated version's content
+    const AIConfig = (await import("../models/AIConfig.js")).default;
+    let config = await AIConfig.findOne({ isActive: true });
+    if (!config) {
+      config = new AIConfig();
+    }
+    config.globalPrompt = targetVersion.content;
+    config.createdBy = req.user?.id || req.user?.username || 'admin';
+    await config.save();
+
+    res.json({
+      status: "success",
+      message: `Version ${targetVersion.version} activated successfully`,
+      version: targetVersion,
+      promptContent: targetVersion.content
+    });
+  } catch (error) {
+    console.error("Error activating version:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error"
+    });
+  }
+};
+
+// Clear all inactive versions
+export const clearInactiveVersions = async (req, res) => {
+  try {
+    const promptId = req.query.promptId || 'global';
+    
+    // Find and delete all inactive versions
+    const result = await PromptVersion.deleteMany({
+      promptId,
+      isActive: false
+    });
+
+    res.json({
+      status: "success",
+      message: `Cleared ${result.deletedCount} inactive version(s)`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error("Error clearing inactive versions:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error"
+    });
+  }
+};
+
 // Helper function to calculate simple diff
 function calculateSimpleDiff(text1, text2) {
   const lines1 = text1.split('\n');
@@ -207,7 +324,7 @@ function calculateSimpleDiff(text1, text2) {
   
   const maxLines = Math.max(lines1.length, lines2.length);
   const differences = [];
-  
+
   for (let i = 0; i < maxLines; i++) {
     const line1 = lines1[i] || '';
     const line2 = lines2[i] || '';

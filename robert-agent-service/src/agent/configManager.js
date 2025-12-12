@@ -2,6 +2,7 @@ import { connectDB } from '../database/connection.js';
 import AIConfig from '../database/models/AIConfig.js';
 import AudioConfig from '../database/models/AudioConfig.js';
 import TelephonyConfig from '../database/models/TelephonyConfig.js';
+import ToolConfig from '../database/models/ToolConfig.js';
 import multilingualService from '../services/multilingualService.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
@@ -17,12 +18,14 @@ class ConfigManager {
     this.cache = {
       ai: null,
       audio: null,
-      telephony: null
+      telephony: null,
+      tools: null
     };
     this.lastFetch = {
       ai: 0,
       audio: 0,
-      telephony: 0
+      telephony: 0,
+      tools: 0
     };
     this.cacheTTL = 30000; // 30 seconds
     this.pollInterval = null;
@@ -41,7 +44,8 @@ class ConfigManager {
       await Promise.all([
         this.refreshAIConfig(),
         this.refreshAudioConfig(),
-        this.refreshTelephonyConfig()
+        this.refreshTelephonyConfig(),
+        this.refreshToolConfig()
       ]);
     } catch (error) {
       console.error('Error refreshing configs:', error);
@@ -101,6 +105,49 @@ class ConfigManager {
 
   getTelephonyConfig() {
     return this.cache.telephony || {};
+  }
+
+  async refreshToolConfig() {
+    const now = Date.now();
+    if (this.cache.tools && (now - this.lastFetch.tools) < this.cacheTTL) {
+      return this.cache.tools;
+    }
+
+    try {
+      const toolConfigs = await ToolConfig.find({}).lean();
+      // Convert array to Map for faster lookup
+      const toolsMap = new Map();
+      toolConfigs.forEach(config => {
+        toolsMap.set(config.toolName, config);
+      });
+      
+      this.cache.tools = toolsMap;
+      this.lastFetch.tools = now;
+      
+      if (toolConfigs.length > 0) {
+        console.log(`✅ Tool Config refreshed: ${toolConfigs.length} tools configured`);
+      }
+      return toolsMap;
+    } catch (error) {
+      console.error('Error refreshing tool config:', error);
+      return this.cache.tools || new Map();
+    }
+  }
+
+  getToolConfig(toolName) {
+    const toolsMap = this.cache.tools || new Map();
+    return toolsMap.get(toolName) || {
+      toolName,
+      enabled: true,
+      rateLimit: { limit: 100, windowMs: 60000 },
+      domains: [],
+      maxTime: null
+    };
+  }
+
+  getAllToolConfigs() {
+    const toolsMap = this.cache.tools || new Map();
+    return Array.from(toolsMap.values());
   }
 
   // Get merged config for a specific phone number (supports per-number profiles)

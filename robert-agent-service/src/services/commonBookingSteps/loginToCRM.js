@@ -142,17 +142,17 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     await page.waitForTimeout(200 + Math.random() * 200);
     await passwordField.type(credentials.password, { delay: 50 + Math.random() * 100 });
     await passwordField.blur();
-    await page.waitForTimeout(1500 + Math.random() * 1000);
+    await page.waitForTimeout(1000 + Math.random() * 500); // Reduced from 1500-2500ms
     
     // Trigger form events
     await page.locator('body').click({ position: { x: 100, y: 100 } });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(500); // Reduced from 1000ms
     
     // Wait for reCAPTCHA to execute and calculate score
-    await waitForRecaptchaReady(page, 5000);
+    await waitForRecaptchaReady(page, 3000); // Reduced from 5000ms (usually ready faster)
     
     // Additional wait to let reCAPTCHA observe more behavior
-    await page.waitForTimeout(2000 + Math.random() * 2000);
+    await page.waitForTimeout(1000 + Math.random() * 1000); // Reduced from 2000-4000ms
     
     // Simulate human behavior before clicking login button
     const formLocator = page.locator('form').first();

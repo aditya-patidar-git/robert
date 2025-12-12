@@ -36,15 +36,18 @@ class ITMBookingService {
         console.warn('⚠️ No availability data found - creating default sessionDetails to continue workflow');
         // Create default sessionDetails to allow workflow to continue
         // This will be used when navigating to Diaries, but may need manual selection
+        const defaultPreferredDate = '2026-03-29'; // 29/03/2026
+        const defaultLocation = 'Croydon, South London, CR0';
+        const preferredDate = bookingArgs.preferredDate || defaultPreferredDate;
         sessionDetails = {
-          date: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBD',
+          date: new Date(preferredDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
           course: 'ITM - Introduction to Motorcycle',
-          location: bookingArgs.location || 'TBD',
+          location: bookingArgs.location || defaultLocation,
           time: bookingArgs.preferredTime || 'TBD',
           price: '£125.00',
           instructor: 'TBD',
-          startDate: bookingArgs.preferredDate || new Date().toISOString().split('T')[0],
-          monthYear: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+          startDate: preferredDate,
+          monthYear: new Date(preferredDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
         };
         console.warn('⚠️ Using default sessionDetails - workflow will continue but may need manual session selection');
       } else {
@@ -1031,7 +1034,7 @@ async checkAvailabilityAndNoteDetails(page) {
       // Add other default parameters as needed
     };
 
-    const result = await this.executeBookingWorkflow(page, bookingArgs, {});
+    const result = await this.executeBookingWorkflow(page, bookingArgs, { clientVerified: true });
     
     return {
       sessionDetails: result.sessionDetails,

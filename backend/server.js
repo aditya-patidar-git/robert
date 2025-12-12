@@ -33,6 +33,10 @@ import tokenManagementRoutes from "./routes/tokenManagementRoutes.js";
 import observabilityRoutes from "./routes/observabilityRoutes.js";
 import systemRoutes from "./routes/systemRoutes.js";
 import memoryRoutes from "./routes/memoryRoutes.js";
+import toolConfigRoutes from "./routes/toolConfigRoutes.js";
+import callCleanupService from "./services/callCleanupService.js";
+import { proxyRecording } from "./controllers/outboundController.js";
+import { protect as authenticateToken } from "./middleware/authMiddleware.js";
 
 dotenv.config();
 
@@ -56,9 +60,23 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // MongoDB connection
-mongoose.connect(process.env.MONGO_URI)
+const mongoUri = process.env.MONGO_URI;
+if (!mongoUri) {
+  console.error("❌ [backend] MONGO_URI environment variable is not set");
+  process.exit(1);
+}
+
+// Extract database name from URI for logging
+const dbNameMatch = mongoUri.match(/\/([^/?]+)(\?|$)/);
+const dbName = dbNameMatch ? dbNameMatch[1] : 'unknown';
+
+console.log(`🔌 [backend] Connecting to MongoDB database: ${dbName}`);
+console.log(`🔌 [backend] MongoDB URI: ${mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials
+
+mongoose.connect(mongoUri)
   .then(async () => {
-    console.log("✅ Connected to MongoDB");
+    console.log(`✅ [backend] Connected to MongoDB database: ${mongoose.connection.db.databaseName}`);
+    console.log(`✅ [backend] MongoDB connection state: ${mongoose.connection.readyState} (1=connected)`);
 
     // Initialize services after MongoDB connection
     try {
@@ -68,7 +86,10 @@ mongoose.connect(process.env.MONGO_URI)
       console.error("❌ Service initialization error:", error);
     }
   })
-  .catch(err => console.error("❌ MongoDB connection error:", err));
+  .catch(err => {
+    console.error("❌ [backend] MongoDB connection error:", err);
+    process.exit(1);
+  });
 
 // Health check
 app.get("/", (req, res) => res.send("Robert AI backend alive"));
@@ -137,6 +158,17 @@ app.use("/api/observability", observabilityRoutes);
 // System Routes
 app.use("/api/system", systemRoutes);
 
+// Tool Configuration Routes
+app.use("/api/admin/tools", toolConfigRoutes);
+
+// Outbound Routes (Recording proxy) - requires authentication
+app.get("/api/outbound/recording/:callSid", authenticateToken, proxyRecording);
+
 // Start server
 const PORT = process.env.PORT || 5000;
-httpServer.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+httpServer.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  
+  // Start call cleanup service after server starts
+  callCleanupService.start();
+});

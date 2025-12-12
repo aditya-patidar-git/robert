@@ -14,6 +14,7 @@ import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.j
 import sipRoutes from '../routes/sipRoutes.js';
 import secretsManager from '../services/secretsManager.js';
 import browserAgentService from '../services/browserAgentService.js';
+import toolExecutor from '../tools/index.js';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -68,7 +69,8 @@ app.get('/', (_, res) => res.json({
   configs: {
     ai: configManager.getAIConfig() ? 'loaded' : 'not loaded',
     audio: configManager.getAudioConfig() ? 'loaded' : 'not loaded',
-    telephony: configManager.getTelephonyConfig() ? 'loaded' : 'not loaded'
+    telephony: configManager.getTelephonyConfig() ? 'loaded' : 'not loaded',
+    tools: configManager.getAllToolConfigs().length > 0 ? 'loaded' : 'not loaded'
   },
   websocket: {
     url: TUNNEL_DOMAIN ? `wss://${TUNNEL_DOMAIN}/media-stream` : `ws://localhost:${PORT}/media-stream`,
@@ -179,6 +181,80 @@ app.get('/api/inbound/recording/:callSid', proxyRecording);
 // API Routes - SIP (OpenAI Realtime SIP webhooks)
 app.use('/api/sip', sipRoutes);
 
+// API Routes - Tools (for admin portal to discover available tools)
+app.get('/api/tools/definitions', (req, res) => {
+  try {
+    const toolDefinitions = toolExecutor.getToolDefinitions();
+    const availableTools = toolExecutor.getAvailableTools();
+    
+    // Map to expected format with descriptions
+    const tools = toolDefinitions.map(def => ({
+      name: def.name,
+      description: def.description || '',
+      parameters: def.parameters || {}
+    }));
+    
+    res.json({ 
+      success: true, 
+      tools,
+      count: tools.length
+    });
+  } catch (error) {
+    console.error('Error fetching tool definitions:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// API Route - Browser Agent Service (for CRM browser tool)
+app.post('/api/tools/browser/execute', async (req, res) => {
+  try {
+    const { task, args, callContext } = req.body;
+    
+    if (!task) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Task is required' 
+      });
+    }
+
+    const browserAgentService = (await import('../services/browserAgentService.js')).default;
+    const result = await browserAgentService.executeTask(task, args || {}, callContext || {});
+    
+    res.json({ 
+      success: true, 
+      result 
+    });
+  } catch (error) {
+    console.error('Error executing browser task:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// API Route - ITM Booking Demo (for testing)
+// Note: This endpoint requires the backend to manage browser instance
+// and pass page data, which is complex over HTTP. 
+// For now, we'll return an error suggesting to use the backend directly
+app.post('/api/booking/itm/demo', async (req, res) => {
+  try {
+    res.status(501).json({ 
+      success: false, 
+      error: 'ITM Booking Demo requires browser instance management. Use backend endpoint directly for testing.' 
+    });
+  } catch (error) {
+    console.error('Error in ITM booking demo:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // Manual call trigger (for testing)
 app.get('/call', async (req, res) => {
   const to = req.query.to;
@@ -226,7 +302,8 @@ server.listen(PORT, () => {
   console.log(`\n🤖 ROBERT VOICE AGENT SERVICE READY`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌐 Tunnel URL: https://${TUNNEL_DOMAIN}`);
-  console.log(`📋 Configs: AI=${configManager.getAIConfig() ? '✅' : '❌'}, Audio=${configManager.getAudioConfig() ? '✅' : '❌'}, Telephony=${configManager.getTelephonyConfig() ? '✅' : '❌'}`);
+  const toolConfigsCount = configManager.getAllToolConfigs().length;
+  console.log(`📋 Configs: AI=${configManager.getAIConfig() ? '✅' : '❌'}, Audio=${configManager.getAudioConfig() ? '✅' : '❌'}, Telephony=${configManager.getTelephonyConfig() ? '✅' : '❌'}, Tools=${toolConfigsCount > 0 ? `✅ (${toolConfigsCount})` : '❌'}`);
   console.log(`CALL NOW → http://localhost:${PORT}/call?to=+918120523400\n`);
 });
 

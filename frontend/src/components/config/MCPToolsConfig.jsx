@@ -39,20 +39,27 @@ const MCPToolsConfig = ({
   // Fetch MCP tools
   const { data: fetchedMcpTools = [], isLoading: mcpLoading, refetch: refetchMcpTools } = useQuery({
     queryKey: ['mcp-tools'],
-    queryFn: mcpToolsService.getAllTools
+    queryFn: () => mcpToolsService.getAllTools()
   });
 
   // Update local state when MCP tools are fetched
   useEffect(() => {
-    if (fetchedMcpTools && fetchedMcpTools.length > 0) {
-      const domainsState = {};
-      const rateLimitState = {};
-      fetchedMcpTools.forEach(tool => {
-        domainsState[tool.name] = [...(tool.domains || [])];
-        rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
-      });
-      setEditingDomains(domainsState);
-      setRateLimitValues(rateLimitState);
+    if (fetchedMcpTools) {
+      // Ensure fetchedMcpTools is an array
+      const toolsArray = Array.isArray(fetchedMcpTools) 
+        ? fetchedMcpTools 
+        : (fetchedMcpTools.tools || fetchedMcpTools.data || []);
+      
+      if (toolsArray.length > 0) {
+        const domainsState = {};
+        const rateLimitState = {};
+        toolsArray.forEach(tool => {
+          domainsState[tool.name] = [...(tool.domains || [])];
+          rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
+        });
+        setEditingDomains(domainsState);
+        setRateLimitValues(rateLimitState);
+      }
     }
   }, [fetchedMcpTools]);
 
@@ -140,7 +147,7 @@ const MCPToolsConfig = ({
       <Paper>
         <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6" gutterBottom>
-            Available MCP Tools ({fetchedMcpTools.length})
+            Available MCP Tools ({Array.isArray(fetchedMcpTools) ? fetchedMcpTools.length : (fetchedMcpTools?.tools?.length || fetchedMcpTools?.data?.length || 0)})
           </Typography>
           <Button
             variant="outlined"
@@ -154,25 +161,30 @@ const MCPToolsConfig = ({
         </Box>
         {mcpLoading ? (
           <LinearProgress sx={{ mb: 2 }} />
-        ) : fetchedMcpTools.length === 0 ? (
-          <Alert severity="info" sx={{ m: 2 }}>
-            No MCP tools found. Tools will be discovered on system startup.
-          </Alert>
-        ) : (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell><strong>Tool</strong></TableCell>
-                  <TableCell><strong>Description</strong></TableCell>
-                  <TableCell align="center"><strong>Enabled</strong></TableCell>
-                  <TableCell><strong>Rate Limit</strong></TableCell>
-                  <TableCell><strong>Domain Allowlist</strong></TableCell>
-                  <TableCell><strong>Usage Stats</strong></TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {fetchedMcpTools.map((tool) => {
+        ) : (() => {
+          const toolsArray = Array.isArray(fetchedMcpTools) 
+            ? fetchedMcpTools 
+            : (fetchedMcpTools?.tools || fetchedMcpTools?.data || []);
+          
+          return toolsArray.length === 0 ? (
+            <Alert severity="info" sx={{ m: 2 }}>
+              No MCP tools found. Tools will be discovered on system startup.
+            </Alert>
+          ) : (
+            <TableContainer>
+              <Table sx={{ tableLayout: 'fixed' }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ width: '15%' }}><strong>Tool</strong></TableCell>
+                    <TableCell sx={{ width: '25%' }}><strong>Description</strong></TableCell>
+                    <TableCell align="center" sx={{ width: '10%' }}><strong>Enabled</strong></TableCell>
+                    <TableCell sx={{ width: '15%' }}><strong>Rate Limit</strong></TableCell>
+                    <TableCell sx={{ width: '20%' }}><strong>Domain Allowlist</strong></TableCell>
+                    <TableCell sx={{ width: '15%' }}><strong>Usage Stats</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {toolsArray.map((tool) => {
                   const toolDomains = editingDomains[tool.name] || tool.domains || [];
                   const newDomainInput = newDomainInputs[tool.name] || '';
                   const rateLimitValue = rateLimitValues[tool.name] ?? tool.rateLimit?.limit ?? 100;
@@ -180,13 +192,31 @@ const MCPToolsConfig = ({
                   return (
                     <TableRow key={tool.name}>
                       <TableCell>
-                        <Typography variant="body2" fontWeight="medium" fontFamily="monospace">
+                        <Typography 
+                          variant="body2" 
+                          fontWeight="medium" 
+                          fontFamily="monospace"
+                          sx={{ 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis', 
+                            whiteSpace: 'nowrap' 
+                          }}
+                        >
                           {tool.name}
                         </Typography>
                       </TableCell>
                       <TableCell>
                         <Tooltip title={tool.description || 'No description available'}>
-                          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <Typography 
+                            variant="body2" 
+                            color="text.secondary" 
+                            sx={{ 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis', 
+                              whiteSpace: 'nowrap',
+                              display: 'block'
+                            }}
+                          >
                             {tool.description || 'N/A'}
                           </Typography>
                         </Tooltip>
@@ -219,10 +249,10 @@ const MCPToolsConfig = ({
                             inputProps={{
                               min: 1,
                               max: 1000,
-                              style: { textAlign: 'center', width: '80px' }
+                              style: { textAlign: 'center', width: '60px' }
                             }}
                             size="small"
-                            sx={{ width: '100px' }}
+                            sx={{ width: '80px' }}
                             disabled={readOnly}
                           />
                           <Typography variant="caption" color="text.secondary">
@@ -231,8 +261,8 @@ const MCPToolsConfig = ({
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ minWidth: 250 }}>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+                        <Box sx={{ width: '100%', overflow: 'hidden' }}>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1, maxHeight: '60px', overflowY: 'auto' }}>
                             {toolDomains.length > 0 ? (
                               toolDomains.map((domain, idx) => (
                                 <Chip
@@ -242,6 +272,7 @@ const MCPToolsConfig = ({
                                   onDelete={readOnly ? undefined : () => handleRemoveDomain(tool.name, domain)}
                                   color="primary"
                                   variant="outlined"
+                                  sx={{ maxWidth: '100%' }}
                                 />
                               ))
                             ) : (
@@ -251,7 +282,7 @@ const MCPToolsConfig = ({
                             )}
                           </Box>
                           {!readOnly && (
-                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                               <TextField
                                 placeholder="Add domain"
                                 value={newDomainInput}
@@ -268,7 +299,7 @@ const MCPToolsConfig = ({
                                   }
                                 }}
                                 size="small"
-                                sx={{ flex: 1 }}
+                                sx={{ flex: 1, minWidth: '120px' }}
                               />
                               <Button
                                 size="small"
@@ -297,15 +328,29 @@ const MCPToolsConfig = ({
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Box>
-                          <Typography variant="caption" display="block">
+                        <Box sx={{ width: '100%' }}>
+                          <Typography 
+                            variant="caption" 
+                            display="block"
+                            sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          >
                             Used: {tool.usageCount || 0} times
                           </Typography>
-                          <Typography variant="caption" display="block" color="text.secondary">
+                          <Typography 
+                            variant="caption" 
+                            display="block" 
+                            color="text.secondary"
+                            sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          >
                             {tool.lastUsed ? formatDateTime(tool.lastUsed) : 'Never'}
                           </Typography>
                           {tool.rateLimit && (
-                            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                            <Typography 
+                              variant="caption" 
+                              display="block" 
+                              color="text.secondary" 
+                              sx={{ mt: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            >
                               Current: {tool.rateLimit.current}/{tool.rateLimit.limit}
                             </Typography>
                           )}
@@ -313,11 +358,12 @@ const MCPToolsConfig = ({
                       </TableCell>
                     </TableRow>
                   );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          );
+        })()}
       </Paper>
     </Box>
   );
