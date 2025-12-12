@@ -86,17 +86,77 @@ export async function fillCardDetails(page, screenshotsDir) {
           await page.waitForTimeout(200);
         }
         
-        // Fill the field with value from environment variable
-        await inputField.fill(fieldValue);
-        await page.waitForTimeout(500); // Wait for validation/formatting
-        
-        // Verify the value was filled
-        const filledValue = await inputField.inputValue();
-        if (filledValue === fieldValue || filledValue.includes(fieldValue)) {
-          console.log(`✅ [STEP 12] ${field.name} filled successfully`);
-          filledCount++;
+        // For expiry date, handle DevExtreme date picker format (MM/yy)
+        if (field.name === 'Expiry Date') {
+          // Parse MM/yy format from env (e.g., "07/27" -> month=07, year=27)
+          const expiryMatch = fieldValue.match(/(\d{2})\/(\d{2})/);
+          if (expiryMatch) {
+            const month = expiryMatch[1];
+            const year = expiryMatch[2];
+            const mmyyFormat = `${month}${year}`; // e.g., "0727"
+            
+            console.log(`💳 [STEP 12] Parsed expiry date: ${fieldValue} -> MMyy format: ${mmyyFormat}`);
+            
+            // Clear the field first
+            await inputField.click();
+            await page.waitForTimeout(200);
+            await inputField.fill(''); // Clear existing value
+            await page.waitForTimeout(200);
+            
+            // Type MMyy format (e.g., "0727") - let date picker auto-format with slashes
+            await inputField.type(mmyyFormat);
+            await page.waitForTimeout(500); // Wait for auto-formatting
+            
+            // Trigger blur to ensure formatting is applied
+            await inputField.blur();
+            await page.waitForTimeout(300);
+            
+            // Verify the value was filled correctly
+            const filledValue = await inputField.inputValue();
+            
+            // Normalize both values for comparison (remove slashes, spaces, dashes)
+            const normalizedEnv = fieldValue.replace(/[\/\s-]/g, '').toLowerCase();
+            const normalizedFilled = filledValue.replace(/[\/\s-]/g, '').toLowerCase();
+            
+            // Check if the month and year parts match
+            const envParts = normalizedEnv.match(/(\d{2})(\d{2})/);
+            const filledParts = normalizedFilled.match(/(\d{2})(\d{2,4})/);
+            
+            if (envParts && filledParts) {
+              const envMonth = envParts[1];
+              const envYear = envParts[2].length === 2 ? envParts[2] : envParts[2].substring(2);
+              const filledMonth = filledParts[1];
+              const filledYear = filledParts[2].length === 2 ? filledParts[2] : filledParts[2].substring(2);
+              
+              if (envMonth === filledMonth && envYear === filledYear) {
+                console.log(`✅ [STEP 12] ${field.name} filled successfully (normalized match: ${filledValue})`);
+                filledCount++;
+              } else {
+                console.log(`⚠️ [STEP 12] ${field.name} format mismatch. Expected month/year: ${envMonth}/${envYear}, Got: ${filledMonth}/${filledYear} (filled value: "${filledValue}")`);
+              }
+            } else {
+              console.log(`⚠️ [STEP 12] ${field.name} could not be parsed. Expected: "${fieldValue}", Got: "${filledValue}"`);
+            }
+          } else {
+            console.log(`⚠️ [STEP 12] ${field.name} format invalid. Expected MM/yy format (e.g., "07/27"), got: "${fieldValue}"`);
+            // Fallback to regular fill
+            await inputField.fill(fieldValue);
+            await page.waitForTimeout(500);
+            filledCount++;
+          }
         } else {
-          console.log(`⚠️ [STEP 12] ${field.name} fill verification failed. Expected: "${fieldValue}", Got: "${filledValue}"`);
+          // For other fields, use regular fill
+          await inputField.fill(fieldValue);
+          await page.waitForTimeout(500); // Wait for validation/formatting
+          
+          // Verify the value was filled
+          const filledValue = await inputField.inputValue();
+          if (filledValue === fieldValue || filledValue.includes(fieldValue)) {
+            console.log(`✅ [STEP 12] ${field.name} filled successfully`);
+            filledCount++;
+          } else {
+            console.log(`⚠️ [STEP 12] ${field.name} fill verification failed. Expected: "${fieldValue}", Got: "${filledValue}"`);
+          }
         }
         
       } catch (error) {

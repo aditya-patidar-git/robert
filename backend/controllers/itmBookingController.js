@@ -34,12 +34,23 @@ export const testITMBooking = async (req, res) => {
     
     console.log('✅ ITM booking demo completed successfully');
     
+    // Enhanced response with detailed test results
     res.json({
-      success: true,
-      message: 'ITM booking demo completed successfully',
+      success: result.success !== false,
+      message: result.success !== false 
+        ? 'ITM booking demo completed successfully' 
+        : 'ITM booking demo completed with errors',
       sessionDetails: result.sessionDetails,
-      screenshots: result.screenshots,
-      clientEmail: process.env.CLIENT_EMAIL_ADDRESS
+      screenshots: result.screenshots || [],
+      clientEmail: result.clientEmail || process.env.TEST_CLIENT_EMAIL || process.env.CLIENT_EMAIL_ADDRESS,
+      workflowSteps: result.workflowSteps || {
+        mobileSearchAttempts: 0,
+        verificationCompleted: false,
+        policyCheckPerformed: false,
+        confirmationEmailSent: false
+      },
+      testState: result.testState || {},
+      error: result.error || null
     });
     
   } catch (error) {

@@ -25,6 +25,9 @@ class ITMBookingService {
     const screenshots = [];
     let sessionDetails = null;
     const workflowType = bookingArgs.workflowType || 'existing';
+    
+    // Initialize confirmation email sent flag (used in both workflows)
+    let confirmationEmailSent = false;
 
     try {
       console.log(`🚀 Starting ITM booking workflow (${workflowType} client)...`);
@@ -114,8 +117,13 @@ class ITMBookingService {
         // STEP 4-5: Search for existing client (mobile first, then email fallback)
         console.log('👤 Step 4-5: Finding existing client...');
         
-        // Check if we have customer info to search
-        if (!bookingArgs.customerMobile && !bookingArgs.customerPhone && !bookingArgs.customerEmail) {
+        // Check if client is already verified - skip search if so
+        if (callContext.clientVerified && callContext.clientDetails) {
+          console.log('✅ Step 4-5: Client already verified, skipping search and proceeding to booking');
+          // Client is verified, proceed directly to Step 6
+        } else {
+          // Check if we have customer info to search
+          if (!bookingArgs.customerMobile && !bookingArgs.customerPhone && !bookingArgs.customerEmail) {
           // Return graceful error asking agent to collect customer info
           console.log('⚠️ Step 4-5: Customer info missing - asking agent to collect');
           return {
@@ -138,26 +146,49 @@ class ITMBookingService {
           searchValue = bookingArgs.customerEmail;
         }
         
-        // Search for client - pass email so Smart search always uses email
-        const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, bookingArgs.customerEmail);
+        // Search for client - pass callSid for state tracking
+        const callSid = callContext.callSid || 'unknown';
+        const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, bookingArgs.customerEmail, null, callSid);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
+        
+        // Handle retry prompts for mobile search
+        if (searchResult.retryPrompt) {
+          return {
+            success: false,
+            requiresCustomerInfo: true,
+            retryPrompt: searchResult.retryPrompt,
+            message: searchResult.retryPrompt,
+            workflowType: 'existing'
+          };
+        }
         
         if (!searchResult.found) {
           // If mobile search failed and we haven't tried email yet, try email
           if (searchType === 'mobile' && bookingArgs.customerEmail) {
-            console.log('⚠️ Mobile search failed, trying email...');
-            const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir, bookingArgs.customerEmail);
+            console.log('⚠️ Mobile search failed, trying email search...');
+            const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir, bookingArgs.customerEmail, null, callSid);
             if (emailSearchResult.found) {
               if (emailSearchResult.clientDetails) {
                 callContext.clientDetails = emailSearchResult.clientDetails;
                 bookingArgs.clientDetails = emailSearchResult.clientDetails;
               }
               console.log('✅ Step 4-5: Client found via email');
+              
+              // Return with verification prompt
+              if (emailSearchResult.requiresVerification) {
+                return {
+                  success: false,
+                  requiresVerification: true,
+                  verificationPrompt: emailSearchResult.verificationPrompt,
+                  clientDetails: emailSearchResult.clientDetails || callContext.clientDetails,
+                  message: emailSearchResult.verificationPrompt || 'Client found but requires verbal verification before proceeding with booking'
+                };
+              }
             } else {
               throw new Error('Could not find client with mobile number or email address');
             }
           } else {
-            throw new Error('Could not find client in CRM');
+            throw new Error(searchResult.error || 'Could not find client in CRM');
           }
         } else {
           if (searchResult.clientDetails) {
@@ -173,11 +204,13 @@ class ITMBookingService {
           return {
             success: false,
             requiresVerification: true,
+            verificationPrompt: searchResult.verificationPrompt,
             clientDetails: searchResult.clientDetails || callContext.clientDetails,
-            message: 'Client found but requires verbal verification before proceeding with booking'
+            message: searchResult.verificationPrompt || 'Client found but requires verbal verification before proceeding with booking'
           };
         }
-
+        } // End of else block for client search
+        
         // STEP 6: Navigate to Diaries and select session
         console.log('📅 Step 6: Navigating to Diaries and selecting session...');
         await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
@@ -226,7 +259,7 @@ class ITMBookingService {
         await commonSteps.fillCardDetails(page, this.screenshotsDir);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-card-details-filled.png', this.screenshotsDir));
         const termsAccepted = bookingArgs.termsAccepted || false;
-        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true);
+        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, false);
         if (!bookingResult.success) {
           if (!bookingResult.termsAccepted) {
             throw new Error('Client did not accept terms - booking cancelled');
@@ -236,6 +269,17 @@ class ITMBookingService {
         }
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-booking-completed.png', this.screenshotsDir));
         console.log('✅ Step 9 completed: Payment processed and booking made');
+
+        // STEP 10: Send booking confirmation email
+        try {
+          console.log('📧 Step 10: Sending booking confirmation email...');
+          await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'itm');
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-email-sent.png', this.screenshotsDir));
+          console.log('✅ Step 10 completed: Booking confirmation email sent');
+          confirmationEmailSent = true;
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send confirmation email (non-critical):', emailError.message);
+        }
 
       } else {
         // NEW CLIENT WORKFLOW
@@ -306,7 +350,7 @@ class ITMBookingService {
         await commonSteps.fillCardDetails(page, this.screenshotsDir);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-card-details-filled.png', this.screenshotsDir));
         const termsAccepted = bookingArgs.termsAccepted || false;
-        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, true);
+        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, false);
         if (!bookingResult.success) {
           if (!bookingResult.termsAccepted) {
             throw new Error('Client did not accept terms - booking cancelled');
@@ -316,6 +360,17 @@ class ITMBookingService {
         }
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-booking-completed.png', this.screenshotsDir));
         console.log('✅ Step 8 completed: Payment processed and booking made');
+
+        // STEP 9: Send booking confirmation email
+        try {
+          console.log('📧 Step 9: Sending booking confirmation email...');
+          await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'itm');
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-email-sent.png', this.screenshotsDir));
+          console.log('✅ Step 9 completed: Booking confirmation email sent');
+          confirmationEmailSent = true;
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send confirmation email (non-critical):', emailError.message);
+        }
       }
 
       console.log('🎉 Service: All steps completed successfully!');
@@ -323,7 +378,8 @@ class ITMBookingService {
         success: true,
         sessionDetails,
         screenshots,
-        clientEmail: bookingArgs.customerEmail
+        clientEmail: bookingArgs.customerEmail,
+        confirmationEmailSent: confirmationEmailSent || false
       };
 
     } catch (error) {
@@ -879,24 +935,63 @@ async checkAvailabilityAndNoteDetails(page) {
       const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
       console.log(`✅ [STEP 8] Selecting bike type: ${bikeType}`);
       
-      // Find and select the bike type option
-      const bikeOption = searchContext.locator(`[role="radio"]:has-text("${bikePattern.source}"), input[type="radio"]`).filter({ hasText: bikePattern }).first();
+      // Find and select the bike type option using div-based checkbox structure
+      // Options are in: .jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable
+      // Checkbox is: .jqx_inputBookingOptionsSelect_check
+      // Option text is in: .optionName span
+      const allOptions = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+      const optionCount = await allOptions.count();
+      console.log(`🔍 [STEP 8] Found ${optionCount} selectable booking options`);
       
-      if (await bikeOption.count() === 0) {
+      let matchingOption = null;
+      let matchingRowIndex = -1;
+      
+      // Iterate through all options to find matching bike type
+      for (let i = 0; i < optionCount; i++) {
+        const optionRow = allOptions.nth(i);
+        const optionNameSpan = optionRow.locator('.optionName span');
+        
+        if (await optionNameSpan.count() > 0) {
+          const optionText = await optionNameSpan.textContent();
+          const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+          
+          // Check if option text matches the bike type pattern
+          if (normalizedText && bikePattern.test(normalizedText)) {
+            console.log(`✅ [STEP 8] Found matching option at index ${i}: "${optionText}"`);
+            matchingOption = optionRow;
+            matchingRowIndex = i;
+            break;
+          }
+        }
+      }
+      
+      if (matchingOption && matchingRowIndex >= 0) {
+        // Click the checkbox div inside the matching row
+        const checkDiv = matchingOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+        if (await checkDiv.count() > 0) {
+          await checkDiv.click();
+          console.log(`✅ [STEP 8] Clicked checkbox for bike type option at index ${matchingRowIndex}`);
+        } else {
+          // Fallback: click the row itself
+          await matchingOption.click();
+          console.log(`✅ [STEP 8] Clicked row for bike type option at index ${matchingRowIndex}`);
+        }
+      } else {
         // Fallback: try selecting first available option
+        console.log('⚠️ [STEP 8] No matching bike type option found, selecting first available option');
         const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
         if (await firstOption.count() > 0) {
           const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
           if (await checkDiv.count() > 0) {
             await checkDiv.click();
+            console.log('✅ [STEP 8] Selected first available option as fallback');
           } else {
             await firstOption.click();
+            console.log('✅ [STEP 8] Clicked first available option row as fallback');
           }
         } else {
           throw new Error('No selectable booking options found on price page');
         }
-      } else {
-        await bikeOption.check();
       }
       
       await page.waitForTimeout(1000);
@@ -1020,26 +1115,263 @@ async checkAvailabilityAndNoteDetails(page) {
 
   async executeITMBookingDemo(page) {
     // This method is for testing/demo purposes
-    // Uses existing client email from environment
-    const clientEmail = process.env.CLIENT_EMAIL_ADDRESS;
+    // Uses test data from environment variables
+    // Workflow is identical to production - only difference is data source (env vs voice)
     
-    if (!clientEmail) {
-      throw new Error('CLIENT_EMAIL_ADDRESS environment variable is not set');
+    // Load test data from environment
+    const testMobile = process.env.TEST_CLIENT_MOBILE;
+    const testEmail = process.env.TEST_CLIENT_EMAIL || process.env.CLIENT_EMAIL_ADDRESS;
+    const testFullName = process.env.TEST_CLIENT_FULL_NAME;
+    const testPostcode = process.env.TEST_CLIENT_POSTCODE;
+    const testTelephone = process.env.TEST_CLIENT_TELEPHONE;
+    
+    if (!testMobile && !testEmail) {
+      throw new Error('TEST_CLIENT_MOBILE or TEST_CLIENT_EMAIL (or CLIENT_EMAIL_ADDRESS) environment variable must be set');
+    }
+    
+    if (!testFullName || !testPostcode || !testTelephone) {
+      throw new Error('TEST_CLIENT_FULL_NAME, TEST_CLIENT_POSTCODE, and TEST_CLIENT_TELEPHONE environment variables must be set for verification');
     }
 
-    // Execute the booking workflow with demo/test parameters
-    const bookingArgs = {
-      workflowType: 'existing',
-      customerEmail: clientEmail,
-      // Add other default parameters as needed
+    // Generate test callSid for state tracking
+    const testCallSid = `test-${Date.now()}`;
+    
+    // Initialize conversation state (same as production)
+    // Note: Test sessions (starting with 'test-') are excluded from automatic cleanup
+    const { conversations } = await import('../shared/state.js');
+    const now = Date.now();
+    conversations[testCallSid] = {
+      transcript: [],
+      language: 'en',
+      startTime: now,
+      lastActivityTime: now, // Set lastActivityTime to prevent immediate cleanup
+      mobileSearchAttempts: {
+        count: 0,
+        lastAttempt: null,
+        values: [],
+        lastAttemptTime: null
+      },
+      verificationAttempts: {
+        fullName: 0,
+        postcode: 0,
+        telephoneNumber: 0
+      },
+      clientDetails: null,
+      clientVerified: false,
+      clientVerifiedAt: null,
+      verificationMethod: null,
+      bookingConsent: {
+        given: false,
+        timestamp: null,
+        dryRunDiff: null
+      },
+      policyCheck: {
+        performed: false,
+        timestamp: null,
+        results: null
+      }
     };
 
-    const result = await this.executeBookingWorkflow(page, bookingArgs, { clientVerified: true });
+    // Create callContext with callSid for state tracking
+    const callContext = {
+      callSid: testCallSid
+    };
+
+    // Prepare booking arguments with test data
+    const bookingArgs = {
+      workflowType: 'existing',
+      customerMobile: testMobile,
+      customerEmail: testEmail,
+      preferredDate: process.env.TEST_PREFERRED_DATE || '2026-03-29',
+      preferredTime: process.env.TEST_PREFERRED_TIME || '17:00',
+      location: process.env.TEST_LOCATION || 'Croydon, South London, CR0',
+      // ITM-specific preferences
+      bikeType: process.env.TEST_BIKE_TYPE || null,
+      // Terms acceptance (convert string to boolean)
+      termsAccepted: process.env.TEST_TERMS_ACCEPTED === 'true' || process.env.TEST_TERMS_ACCEPTED === '1' || false
+    };
+
+    console.log(`🧪 [TEST] Starting ITM booking demo with callSid: ${testCallSid}`);
+    console.log(`🧪 [TEST] Using mobile: ${testMobile}, email: ${testEmail}`);
+
+    let workflowResult;
+    let maxIterations = 10; // Safety limit to prevent infinite loops
+    let iteration = 0;
+
+    // Execute workflow and handle all return states (same as agent would)
+    while (iteration < maxIterations) {
+      iteration++;
+      console.log(`🧪 [TEST] Workflow iteration ${iteration}...`);
+
+      // Call the booking workflow
+      workflowResult = await this.executeBookingWorkflow(page, bookingArgs, callContext);
+
+      // Handle retry prompt (mobile search failed)
+      if (workflowResult.retryPrompt) {
+        console.log(`🧪 [TEST] Received retry prompt: ${workflowResult.retryPrompt}`);
+        const conversation = conversations[testCallSid];
+        if (!conversation) {
+          throw new Error(`Session ${testCallSid} was cleaned up during workflow`);
+        }
+        const attemptCount = conversation.mobileSearchAttempts?.count || 0;
+        
+        if (attemptCount >= 3) {
+          // After 3 mobile attempts, switch to email search
+          console.log(`🧪 [TEST] Mobile search exhausted after ${attemptCount} attempts, switching to email search`);
+          bookingArgs.customerMobile = null; // Remove mobile to force email search
+          continue; // Retry with email
+        } else {
+          // Simulate agent retrying with same mobile (for testing retry logic)
+          // In real scenario, agent would ask user for mobile again
+          console.log(`🧪 [TEST] Simulating mobile retry attempt ${attemptCount + 1}`);
+          continue; // Retry with same mobile to test retry tracking
+        }
+      }
+
+      // Handle verification requirement
+      if (workflowResult.requiresVerification) {
+        console.log(`🧪 [TEST] Client found, verification required`);
+        console.log(`🧪 [TEST] Verification prompt: ${workflowResult.verificationPrompt}`);
+        
+        // Simulate agent calling client_verification tool with env data
+        const clientVerificationTool = (await import('../tools/clientVerification.js')).default;
+        const verificationResult = await clientVerificationTool.execute({
+          fullName: testFullName,
+          postcode: testPostcode,
+          telephoneNumber: testTelephone
+        }, callContext);
+
+        if (verificationResult.verified) {
+          console.log(`✅ [TEST] Client verification successful`);
+          // Mark as verified in callContext so workflow continues
+          callContext.clientVerified = true;
+          const conversation = conversations[testCallSid];
+          if (conversation) {
+            conversation.clientVerified = true;
+          }
+          // Continue workflow
+          continue;
+        } else {
+          throw new Error(`Client verification failed: ${verificationResult.message || 'Unknown error'}`);
+        }
+      }
+
+      // Handle customer info requirement
+      if (workflowResult.requiresCustomerInfo) {
+        console.log(`🧪 [TEST] Customer info required: ${workflowResult.message}`);
+        // This shouldn't happen in test mode as we provide all data upfront
+        throw new Error(`Customer info required but should be provided from env: ${workflowResult.message}`);
+      }
+
+      // Handle preferences requirement
+      if (workflowResult.requiresPreferences) {
+        console.log(`🧪 [TEST] Booking preferences required: ${workflowResult.message}`);
+        console.log(`🧪 [TEST] Missing preferences: ${JSON.stringify(workflowResult.missingPreferences || [])}`);
+        console.log(`🧪 [TEST] Valid options: ${JSON.stringify(workflowResult.validOptions || {})}`);
+        
+        // Read missing preferences from env and add to bookingArgs
+        const missingPrefs = workflowResult.missingPreferences || [];
+        const validOptions = workflowResult.validOptions || {};
+        
+        for (const pref of missingPrefs) {
+          const envVarName = `TEST_${pref.toUpperCase()}`;
+          const envValue = process.env[envVarName];
+          
+          if (envValue) {
+            console.log(`🧪 [TEST] Found ${pref} in env: ${envValue}`);
+            bookingArgs[pref] = envValue;
+          } else {
+            // Try to get default from validOptions
+            let defaultValue = null;
+            
+            // Check if validOptions is an object with the preference as a key
+            if (validOptions[pref] && Array.isArray(validOptions[pref]) && validOptions[pref].length > 0) {
+              defaultValue = validOptions[pref][0]; // Use first valid option as default
+            } 
+            // Check if validOptions is directly an array (for single preference)
+            else if (Array.isArray(validOptions) && validOptions.length > 0) {
+              defaultValue = validOptions[0];
+            }
+            
+            if (defaultValue) {
+              console.log(`🧪 [TEST] Using default ${pref}: ${defaultValue} (from valid options)`);
+              bookingArgs[pref] = defaultValue;
+            } else {
+              const optionsDisplay = validOptions[pref] ? JSON.stringify(validOptions[pref]) : JSON.stringify(validOptions);
+              throw new Error(`Missing required preference "${pref}" - please set ${envVarName} in .env file. Valid options: ${optionsDisplay}`);
+            }
+          }
+        }
+        
+        // Retry workflow with updated preferences
+        console.log(`🧪 [TEST] Retrying workflow with updated preferences...`);
+        continue;
+      }
+
+      // If workflow completed successfully or failed, break
+      if (workflowResult.success !== undefined) {
+        break;
+      }
+
+      // If we get here without a clear result, something unexpected happened
+      console.warn(`⚠️ [TEST] Unexpected workflow result state, breaking loop`);
+      break;
+    }
+
+    if (iteration >= maxIterations) {
+      throw new Error('Workflow exceeded maximum iterations - possible infinite loop');
+    }
+
+    // Get final conversation state for reporting
+    const conversation = conversations[testCallSid];
+    if (!conversation) {
+      console.warn(`⚠️ [TEST] Session ${testCallSid} was cleaned up before completion`);
+      // Return default state if session was cleaned up
+      return {
+        success: workflowResult.success !== false,
+        sessionDetails: workflowResult.sessionDetails,
+        screenshots: workflowResult.screenshots || [],
+        clientEmail: workflowResult.clientEmail || testEmail,
+        testState: {
+          mobileSearchAttempts: { count: 0 },
+          verificationAttempts: { fullName: 0, postcode: 0, telephoneNumber: 0 },
+          clientVerified: false,
+          policyCheck: { performed: false }
+        },
+        workflowSteps: {
+          mobileSearchAttempts: 0,
+          verificationCompleted: false,
+          policyCheckPerformed: false,
+          confirmationEmailSent: workflowResult.confirmationEmailSent || false
+        }
+      };
+    }
     
+    const finalState = {
+      mobileSearchAttempts: conversation.mobileSearchAttempts || { count: 0 },
+      verificationAttempts: conversation.verificationAttempts || { fullName: 0, postcode: 0, telephoneNumber: 0 },
+      clientVerified: conversation.clientVerified || false,
+      policyCheck: conversation.policyCheck || { performed: false }
+    };
+
+    console.log(`✅ [TEST] ITM booking demo completed`);
+    console.log(`🧪 [TEST] Final state:`, JSON.stringify(finalState, null, 2));
+
+    // Clean up test conversation state (optional - keep for debugging)
+    // delete conversations[testCallSid];
+
     return {
-      sessionDetails: result.sessionDetails,
-      screenshots: result.screenshots,
-      clientEmail: result.clientEmail || clientEmail
+      success: workflowResult.success,
+      sessionDetails: workflowResult.sessionDetails,
+      screenshots: workflowResult.screenshots || [],
+      clientEmail: workflowResult.clientEmail || testEmail,
+      testState: finalState,
+      workflowSteps: {
+        mobileSearchAttempts: finalState.mobileSearchAttempts?.count || 0,
+        verificationCompleted: finalState.clientVerified || false,
+        policyCheckPerformed: finalState.policyCheck?.performed || false,
+        confirmationEmailSent: workflowResult.confirmationEmailSent || false
+      }
     };
   }
 }

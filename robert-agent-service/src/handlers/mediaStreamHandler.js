@@ -359,8 +359,9 @@ export const handleMediaStreamConnection = (ws, req) => {
         if (callSid) {
             // Update database with transcript and mark call as completed when WebSocket disconnects
             try {
+                const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
                 const duration = callStartTime ? Math.floor((Date.now() - callStartTime) / 1000) : null;
-                const conversation = conversations[callSid];
+                const conversation = sessionManagementService.getSession(callSid);
                 
                 // Prepare update object
                 const updateData = {
@@ -406,7 +407,7 @@ export const handleMediaStreamConnection = (ws, req) => {
             }
             
             delete realtimeClients[callSid];
-            delete conversations[callSid];
+            sessionManagementService.deleteSession(callSid);
             pendingToolCalls.clear();
         }
     };
@@ -682,13 +683,14 @@ export const handleMediaStreamConnection = (ws, req) => {
             });
             
             // Initialize conversation state with recording consent tracking
+            const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
             if (!conversations[callSid]) {
-                conversations[callSid] = { 
-                    transcript: [], 
-                    language: 'en-US', 
+                sessionManagementService.initializeSession(callSid, {
+                    language: 'en-US',
                     realtimeWs: ws,
                     from: phoneNumber,
                     to: phoneNumber,
+                    callType: 'Twilio',
                     recordingConsent: {
                         requested: false,
                         given: null,
@@ -711,7 +713,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                         postcode: null,
                         bookingReference: null
                     }
-                };
+                });
             } else {
                 // Ensure recordingConsent, memoryConsent, and kba exist even if conversations[callSid] was created elsewhere
                 if (!conversations[callSid].recordingConsent) {

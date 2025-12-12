@@ -26,11 +26,21 @@ export const callStatus = async (req, res) => {
         console.log(`📞 [CALL STATUS] Call ${CallSid} is ${CallStatus} - WebSocket should connect soon...`);
     }
 
+    // Initialize or update conversation state using session management service
+    const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
     if (!conversations[CallSid]) {
-        conversations[CallSid] = { transcript: [] };
+        sessionManagementService.initializeSession(CallSid, {
+            from: From,
+            to: To,
+            language: 'en-US',
+            callType: 'Twilio'
+        });
+    } else {
+        sessionManagementService.updateSession(CallSid, {
+            from: From,
+            to: To
+        });
     }
-    conversations[CallSid].from = From;
-    conversations[CallSid].to = To;
 
     // Update CallRecord
     try {

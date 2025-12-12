@@ -23,7 +23,10 @@ class BrowserAgentService {
     this.screenshotsDir = './screenshots';
     this.auditDir = './audit-logs';
     // Lock mechanism to prevent concurrent executions per call
-    this.activeExecutions = new Map(); // Map<callSid, { task, startTime }>
+    this.activeExecutions = new Map(); // Map<executionKey, { task, startTime, lastHeartbeat }>
+    // Execution lock configuration
+    this.executionLockTimeout = parseInt(process.env.EXECUTION_LOCK_TIMEOUT_MINUTES || '2', 10) * 60 * 1000; // Default 2 minutes
+    this.executionHeartbeatInterval = parseInt(process.env.EXECUTION_HEARTBEAT_INTERVAL_SECONDS || '30', 10) * 1000; // Default 30 seconds
     // Browser pooling instance variables
     this.browserInstance = null;
     this.browserContext = null;
@@ -930,26 +933,29 @@ class BrowserAgentService {
     // Check if there's already an active execution for this call and task
     if (this.activeExecutions.has(executionKey)) {
       const activeExecution = this.activeExecutions.get(executionKey);
-      const elapsedTime = Date.now() - activeExecution.startTime;
+      const now = Date.now();
+      const elapsedTime = now - activeExecution.startTime;
+      const timeSinceHeartbeat = activeExecution.lastHeartbeat ? (now - activeExecution.lastHeartbeat) : elapsedTime;
       
-      // If execution is stuck for more than 5 minutes, force clear it to allow retry
-      if (elapsedTime > 300000) {
-        console.warn(`⚠️ [${callSid}] Execution lock was stuck for ${Math.round(elapsedTime / 1000)}s, force clearing to allow retry`);
+      // If execution is stuck (exceeded timeout or no heartbeat), force clear it to allow retry
+      if (elapsedTime > this.executionLockTimeout || timeSinceHeartbeat > this.executionHeartbeatInterval * 2) {
+        console.warn(`⚠️ [${callSid}] Execution lock was stuck for ${Math.round(elapsedTime / 1000)}s (timeout: ${this.executionLockTimeout / 1000}s), force clearing to allow retry`);
         this.activeExecutions.delete(executionKey);
       } else {
-      console.log(`⚠️ [${callSid}] Task "${task}" is already running (started ${Math.round(elapsedTime / 1000)}s ago). Rejecting concurrent execution.`);
-      return {
-        success: false,
-        error: `Task "${task}" is already in progress for this call. Please wait for it to complete.`,
-        dryRun: false
-      };
+        console.log(`⚠️ [${callSid}] Task "${task}" is already running (started ${Math.round(elapsedTime / 1000)}s ago, last heartbeat: ${Math.round(timeSinceHeartbeat / 1000)}s ago). Rejecting concurrent execution.`);
+        return {
+          success: false,
+          error: `Task "${task}" is already in progress for this call. Please wait for it to complete.`,
+          dryRun: false
+        };
       }
     }
     
-    // Mark execution as active
+    // Mark execution as active with heartbeat tracking
     this.activeExecutions.set(executionKey, {
       task,
-      startTime: Date.now()
+      startTime: Date.now(),
+      lastHeartbeat: Date.now()
     });
     
     // Check if this is an availability check (public page, no auth needed)
@@ -1054,44 +1060,57 @@ class BrowserAgentService {
       
       console.log(`🤖 Browser agent executing task: ${task}`);
       
-      // Route to course-specific service for create_booking
-      if (task === 'create_booking' && args.courseType) {
-        return await this.executeCourseBooking(page, args, callContext, auditId);
-      }
+      // Send heartbeat to keep lock alive during long-running tasks
+      const heartbeatInterval = setInterval(() => {
+        const execution = this.activeExecutions.get(executionKey);
+        if (execution) {
+          execution.lastHeartbeat = Date.now();
+        }
+      }, this.executionHeartbeatInterval);
       
-      // Always start with dry-run for other tasks
-      const dryRunResult = await this.executeDryRun(page, task, args, auditId);
-      
-      if (!dryRunResult.success) {
-        return {
-          success: false,
-          error: dryRunResult.error,
-          dryRun: true
-        };
-      }
+      try {
+        // Route to course-specific service for create_booking
+        if (task === 'create_booking' && args.courseType) {
+          return await this.executeCourseBooking(page, args, callContext, auditId);
+        }
+        
+        // Always start with dry-run for other tasks
+        const dryRunResult = await this.executeDryRun(page, task, args, auditId);
+        
+        if (!dryRunResult.success) {
+          return {
+            success: false,
+            error: dryRunResult.error,
+            dryRun: true
+          };
+        }
 
-      // If dry-run successful and task requires confirmation, return for user confirmation
-      if (dryRunResult.requiresConfirmation) {
-        return {
-          success: true,
-          result: dryRunResult.result,
-          dryRun: true,
-          requiresConfirmation: true,
-          auditId
-        };
-      }
+        // If dry-run successful and task requires confirmation, return for user confirmation
+        if (dryRunResult.requiresConfirmation) {
+          return {
+            success: true,
+            result: dryRunResult.result,
+            dryRun: true,
+            requiresConfirmation: true,
+            auditId
+          };
+        }
 
-      // Execute actual task
-      const result = await this.executeActualTask(page, task, args, auditId);
-      
-      return {
-        success: result.success,
-        result: result.result,
-        dryRun: false,
-        requiresConfirmation: false,
-        auditId,
-        screenshots: result.screenshots
-      };
+        // Execute actual task
+        const result = await this.executeActualTask(page, task, args, auditId);
+        
+        return {
+          success: result.success,
+          result: result.result,
+          dryRun: false,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: result.screenshots
+        };
+      } finally {
+        // Always clear heartbeat interval
+        clearInterval(heartbeatInterval);
+      }
 
     } catch (error) {
       console.error(`❌ [${callSid}] Browser agent error:`, error);
@@ -1132,8 +1151,8 @@ class BrowserAgentService {
       const execution = this.activeExecutions.get(executionKey);
       if (execution) {
         const elapsed = Date.now() - execution.startTime;
-        if (elapsed > 60000) {
-          console.warn(`⚠️ [${callSid}] Execution lock was stuck for ${Math.round(elapsed / 1000)}s, force releasing`);
+        if (elapsed > this.executionLockTimeout) {
+          console.warn(`⚠️ [${callSid}] Execution lock exceeded timeout (${this.executionLockTimeout / 1000}s), force releasing`);
         }
         this.activeExecutions.delete(executionKey);
         console.log(`🧹 [${callSid}] Cleaned up execution lock and pages for task: ${task} (duration: ${Math.round(elapsed / 1000)}s)`);
@@ -1997,6 +2016,12 @@ class BrowserAgentService {
         callContext.clientDetails = args.clientDetails;
       }
 
+      // Ensure callSid is in callContext for state tracking
+      const callSid = callContext.callSid || 'unknown';
+      if (!callContext.callSid) {
+        callContext.callSid = callSid;
+      }
+
       // Check if client verification is required (for existing clients)
       if (bookingArgs.workflowType === 'existing' && callContext.clientDetails && !callContext.clientVerified) {
         return {
@@ -2012,16 +2037,49 @@ class BrowserAgentService {
         };
       }
 
+      // Perform policy check before booking (per prompt_2.txt requirement)
+      try {
+        const { performPolicyCheck } = await import('./policyCheckService.js');
+        const fileSearchTool = await import('../tools/fileSearch.js').then(m => m.default);
+        const policyCheckResult = await performPolicyCheck(fileSearchTool, args.courseType, callContext);
+        
+        if (policyCheckResult.success && policyCheckResult.policyResults) {
+          callContext.policyCheck = policyCheckResult.policyResults;
+          console.log(`📋 [${auditId}] Policy check completed for ${args.courseType}`);
+        } else {
+          console.warn(`⚠️ [${auditId}] Policy check failed or incomplete:`, policyCheckResult.error);
+        }
+      } catch (policyError) {
+        console.warn(`⚠️ [${auditId}] Policy check error (non-critical):`, policyError.message);
+        // Don't fail booking if policy check fails
+      }
+
       // Execute workflow - all services now use executeBookingWorkflow
       const result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext);
 
-      // If result indicates verification is required, return it
+      // If result indicates verification is required, return it with verification prompt
       if (result.requiresVerification) {
         return {
           success: false,
           requiresVerification: true,
+          verificationPrompt: result.verificationPrompt,
           clientDetails: result.clientDetails || callContext.clientDetails,
-          message: result.message || 'Client found but requires verbal verification before proceeding with booking.',
+          message: result.verificationPrompt || result.message || 'Client found but requires verbal verification before proceeding with booking.',
+          dryRun: true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: result.screenshots || [],
+          courseType: args.courseType
+        };
+      }
+
+      // If result indicates retry prompt (mobile search), return it
+      if (result.retryPrompt) {
+        return {
+          success: false,
+          requiresCustomerInfo: true,
+          retryPrompt: result.retryPrompt,
+          message: result.retryPrompt,
           dryRun: true,
           requiresConfirmation: false,
           auditId,

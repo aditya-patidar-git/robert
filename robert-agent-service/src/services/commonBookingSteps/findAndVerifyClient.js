@@ -151,9 +151,35 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     } else {
       console.log('❌ No search button found, trying alternative...');
       
-      // Approach 3: Click elsewhere to remove focus and trigger search
-      console.log('🔍 [STEP 3-5] Clicking elsewhere to trigger search...');
-      await iframe.locator('body').click({ position: { x: 100, y: 100 } });
+      // Approach 3: Safer approach - Use JavaScript to blur the input field directly
+      console.log('🔍 [STEP 3-5] Blurring search input field to trigger search...');
+      try {
+        const frameElement = await page.$('#contactLookup_iframe');
+        if (frameElement) {
+          const actualFrame = await frameElement.contentFrame();
+          if (actualFrame) {
+            await actualFrame.evaluate(() => {
+              const activeElement = document.activeElement;
+              if (activeElement && activeElement.tagName === 'INPUT') {
+                activeElement.blur();
+              }
+            });
+            console.log('✅ [STEP 3-5] Blurred search input field using JavaScript');
+          }
+        }
+      } catch (e) {
+        console.log(`⚠️ [STEP 3-5] Could not blur input: ${e.message}, trying container click...`);
+        // Fallback: Try clicking on a safe container
+        const safeContainer = iframe.locator('.jqx_pageContent, .dx-widget, [class*="container"]').first();
+        if (await safeContainer.count() > 0) {
+          await safeContainer.click({ position: { x: 10, y: 10 }, force: true });
+          console.log('✅ [STEP 3-5] Clicked on safe container');
+        } else {
+          // Last resort: Click on body at top-left corner (less likely to hit interactive elements)
+          await iframe.locator('body').click({ position: { x: 10, y: 10 }, force: true });
+          console.log('⚠️ [STEP 3-5] Clicked on body as last resort');
+        }
+      }
       await page.waitForTimeout(2000);
       
       // Approach 4: Use Tab to move focus away

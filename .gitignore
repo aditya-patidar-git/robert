@@ -37,7 +37,7 @@ pids
 *.pid
 *.seed
 *.pid.lock
-
+*.md
 # Coverage
 coverage/
 *.lcov

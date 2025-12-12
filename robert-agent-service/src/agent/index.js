@@ -15,6 +15,7 @@ import sipRoutes from '../routes/sipRoutes.js';
 import secretsManager from '../services/secretsManager.js';
 import browserAgentService from '../services/browserAgentService.js';
 import toolExecutor from '../tools/index.js';
+import sessionManagementService from '../services/sessionManagementService.js';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -28,6 +29,11 @@ dotenv.config({ path: join(__dirname, '../../.env') });
   try {
     await secretsManager.initialize();
     console.log('✅ Secrets Manager initialized successfully');
+    
+    // Initialize session management service (starts cleanup interval)
+    console.log('✅ Session Management Service initialized');
+    const metrics = sessionManagementService.getSessionMetrics();
+    console.log(`📊 Session Management: TTL=${metrics.sessionTTLMinutes}min, Max=${metrics.maxSessions}, Cleanup=${metrics.cleanupIntervalSeconds}s`);
   } catch (error) {
     console.error('❌ Secrets Manager initialization failed:', error.message);
     console.error('❌ Application cannot start without required secrets');

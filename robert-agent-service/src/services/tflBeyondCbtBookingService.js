@@ -523,22 +523,61 @@ class TfLBeyondCbtBookingService {
       const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
       console.log(`✅ [STEP 7/5] Selecting bike type: ${bikeType}`);
       
-      // Find and select the bike type option
-      const bikeOption = searchContext.locator(`[role="radio"]:has-text("${bikePattern.source}"), input[type="radio"]`).filter({ hasText: bikePattern }).first();
+      // Find and select the bike type option using div-based checkbox structure
+      // Options are in: .jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable
+      // Checkbox is: .jqx_inputBookingOptionsSelect_check
+      // Option text is in: .optionName span
+      const allOptions = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+      const optionCount = await allOptions.count();
+      console.log(`🔍 [STEP 7/5] Found ${optionCount} selectable booking options`);
       
-      if (await bikeOption.count() === 0) {
+      let matchingOption = null;
+      let matchingRowIndex = -1;
+      
+      // Iterate through all options to find matching bike type
+      for (let i = 0; i < optionCount; i++) {
+        const optionRow = allOptions.nth(i);
+        const optionNameSpan = optionRow.locator('.optionName span');
+        
+        if (await optionNameSpan.count() > 0) {
+          const optionText = await optionNameSpan.textContent();
+          const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+          
+          // Check if option text matches the bike type pattern
+          if (normalizedText && bikePattern.test(normalizedText)) {
+            console.log(`✅ [STEP 7/5] Found matching option at index ${i}: "${optionText}"`);
+            matchingOption = optionRow;
+            matchingRowIndex = i;
+            break;
+          }
+        }
+      }
+      
+      if (matchingOption && matchingRowIndex >= 0) {
+        // Click the checkbox div inside the matching row
+        const checkDiv = matchingOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+        if (await checkDiv.count() > 0) {
+          await checkDiv.click();
+          console.log(`✅ [STEP 7/5] Clicked checkbox for bike type option at index ${matchingRowIndex}`);
+        } else {
+          // Fallback: click the row itself
+          await matchingOption.click();
+          console.log(`✅ [STEP 7/5] Clicked row for bike type option at index ${matchingRowIndex}`);
+        }
+      } else {
         // Fallback: try selecting first available option
+        console.log('⚠️ [STEP 7/5] No matching bike type option found, selecting first available option');
         const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
         if (await firstOption.count() > 0) {
           const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
           if (await checkDiv.count() > 0) {
             await checkDiv.click();
+            console.log('✅ [STEP 7/5] Selected first available option as fallback');
           } else {
             await firstOption.click();
+            console.log('✅ [STEP 7/5] Clicked first available option row as fallback');
           }
         }
-      } else {
-        await bikeOption.check();
       }
       
       await page.waitForTimeout(1000);

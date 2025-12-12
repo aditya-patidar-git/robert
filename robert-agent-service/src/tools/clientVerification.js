@@ -1,4 +1,12 @@
 import { conversations } from '../shared/state.js';
+import {
+  initializeVerificationAttempts,
+  incrementVerificationAttempt,
+  isMaxAttemptsExceeded,
+  getMaxAttemptsExceededMessage,
+  getFieldMismatchMessage,
+  markClientVerified
+} from '../services/verificationService.js';
 
 class ClientVerificationTool {
   /**
@@ -41,6 +49,9 @@ class ClientVerificationTool {
       console.log(`   Stored: name="${storedClientDetails.fullName}", postcode="${storedClientDetails.postcode}", telephone="${storedClientDetails.telephoneNumber}"`);
       console.log(`   Provided: name="${fullName}", postcode="${postcode}", telephone="${telephoneNumber}"`);
 
+      // Initialize verification attempts tracking
+      initializeVerificationAttempts(conversation);
+
       // Normalize strings for comparison (trim, lowercase, remove extra spaces)
       const normalize = (str) => {
         if (!str || str === 'Not found') return '';
@@ -72,10 +83,12 @@ class ClientVerificationTool {
           console.log(`✅ [${callSid}] Full name verified`);
         } else {
           mismatches.push('fullName');
+          incrementVerificationAttempt(conversation, 'fullName');
           console.log(`❌ [${callSid}] Full name mismatch: stored="${cleanStoredName}", provided="${cleanProvidedName}"`);
         }
       } else if (storedName) {
         mismatches.push('fullName');
+        incrementVerificationAttempt(conversation, 'fullName');
         console.log(`❌ [${callSid}] Full name not provided but required`);
       }
 
@@ -90,10 +103,12 @@ class ClientVerificationTool {
           console.log(`✅ [${callSid}] Postcode verified`);
         } else {
           mismatches.push('postcode');
+          incrementVerificationAttempt(conversation, 'postcode');
           console.log(`❌ [${callSid}] Postcode mismatch: stored="${cleanStoredPostcode}", provided="${cleanProvidedPostcode}"`);
         }
       } else if (storedPostcode) {
         mismatches.push('postcode');
+        incrementVerificationAttempt(conversation, 'postcode');
         console.log(`❌ [${callSid}] Postcode not provided but required`);
       }
 
@@ -112,34 +127,21 @@ class ClientVerificationTool {
           console.log(`✅ [${callSid}] Telephone number verified`);
         } else {
           mismatches.push('telephoneNumber');
+          incrementVerificationAttempt(conversation, 'telephoneNumber');
           console.log(`❌ [${callSid}] Telephone number mismatch: stored="${storedLast11}", provided="${providedLast11}"`);
         }
       } else if (storedTelephone) {
         mismatches.push('telephoneNumber');
+        incrementVerificationAttempt(conversation, 'telephoneNumber');
         console.log(`❌ [${callSid}] Telephone number not provided but required`);
       }
-
-      // Track verification attempts
-      if (!conversation.verificationAttempts) {
-        conversation.verificationAttempts = {};
-      }
-
-      // Increment attempt count for mismatched fields
-      mismatches.forEach(field => {
-        if (!conversation.verificationAttempts[field]) {
-          conversation.verificationAttempts[field] = 0;
-        }
-        conversation.verificationAttempts[field]++;
-      });
 
       // Check if all three fields are verified
       const allVerified = mismatches.length === 0 && verifiedCount >= 2; // At least 2 out of 3 must match
 
       if (allVerified) {
-        // Mark client as verified in conversation
-        conversation.clientVerified = true;
-        conversation.clientVerifiedAt = new Date();
-        conversation.verificationMethod = 'fullName_postcode_telephone';
+        // Mark client as verified using verification service
+        markClientVerified(conversation);
         
         console.log(`✅ [${callSid}] Client verification successful`);
         
@@ -151,30 +153,20 @@ class ClientVerificationTool {
         };
       } else {
         // Check if we've exceeded max attempts (7 per field)
-        const maxAttemptsExceeded = mismatches.some(field => 
-          conversation.verificationAttempts[field] >= 7
-        );
-
-        if (maxAttemptsExceeded) {
+        if (isMaxAttemptsExceeded(conversation)) {
           console.log(`❌ [${callSid}] Maximum verification attempts exceeded`);
           return {
             success: false,
             verified: false,
             maxAttemptsExceeded: true,
             mismatches,
-            message: 'Unable to verify identity after multiple attempts. Would you like me to create a new profile for you, or transfer you to a colleague?',
+            message: getMaxAttemptsExceededMessage(),
             attempts: conversation.verificationAttempts
           };
         }
 
-        // Provide specific feedback for mismatches
-        const mismatchMessages = {
-          fullName: 'The full name you provided does not match the one we have on file. Have you changed your name, or perhaps previously provided a different spelling?',
-          postcode: 'The postcode you provided does not match the one we have on file. Have you changed your address, or perhaps previously provided a different postcode?',
-          telephoneNumber: 'The telephone number you provided does not match the one we have on file. Have you changed your telephone number, or have you ever provided us with an alternative telephone number?'
-        };
-
-        const messages = mismatches.map(field => mismatchMessages[field] || `The ${field} does not match.`);
+        // Provide specific feedback for mismatches using verification service
+        const messages = mismatches.map(field => getFieldMismatchMessage(field));
 
         console.log(`⚠️ [${callSid}] Client verification failed. Mismatches: ${mismatches.join(', ')}`);
 
