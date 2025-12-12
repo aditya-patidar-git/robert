@@ -5,7 +5,8 @@ import {
   getLanguageMappings,
   getLanguageMapping,
   updateLanguageMapping,
-  bulkUpdateLanguageMappings
+  bulkUpdateLanguageMappings,
+  createLanguageMapping
 } from "../controllers/languageVoiceController.js";
 
 const router = express.Router();
@@ -17,6 +18,7 @@ router.use(authorizeRoles("owner", "admin"));
 // Language/Voice Mapping Routes
 router.get("/language-voice-mappings", getLanguageMappings);
 router.get("/language-voice-mappings/:languageCode", getLanguageMapping);
+router.post("/language-voice-mappings", createLanguageMapping);
 router.put("/language-voice-mappings/:languageCode", updateLanguageMapping);
 router.put("/language-voice-mappings", bulkUpdateLanguageMappings);
 

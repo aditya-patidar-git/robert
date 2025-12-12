@@ -92,6 +92,22 @@ class LanguageVoiceService extends BaseService {
       mappings
     });
   }
+
+  /**
+   * Create new language/voice mapping
+   * @param {Object} languageData - Language mapping data
+   * @param {string} languageData.languageCode - Language code (e.g., 'zh-CN')
+   * @param {string} languageData.languageName - Language name (e.g., 'Chinese')
+   * @param {string} languageData.localeCode - Locale code (e.g., 'zh-CN')
+   * @param {string} languageData.voiceId - Voice ID
+   * @param {string} languageData.voiceName - Voice name (optional)
+   * @param {boolean} languageData.isActive - Active status (default: true)
+   * @returns {Promise<Object>} Created mapping object
+   */
+  async createLanguageMapping(languageData) {
+    const response = await this.post('', languageData);
+    return response.data?.mapping || response.data;
+  }
 }
 
 // Export singleton instance

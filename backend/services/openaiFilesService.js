@@ -330,6 +330,28 @@ class OpenAIFilesService {
       throw new Error(`Failed to update file tags: ${error.message}`);
     }
   }
+
+  // Upload text content directly to vector store (for Q&A pairs)
+  async uploadTextToVectorStore(content, filename) {
+    try {
+      console.log(`📝 Uploading text content directly to vector store: ${filename}`);
+      
+      // Use uploadAndPoll to upload text directly to vector store
+      const result = await this.openai.vectorStores.files.uploadAndPoll(
+        this.vectorStoreId,
+        {
+          file: Buffer.from(content, 'utf-8'),
+          filename: filename
+        }
+      );
+
+      console.log(`✅ Text content uploaded to vector store: ${result.id}, status: ${result.status}`);
+      return result;
+    } catch (error) {
+      console.error('Error uploading text to vector store:', error);
+      throw new Error(`Failed to upload text to vector store: ${error.message}`);
+    }
+  }
 }
 
 export default new OpenAIFilesService();

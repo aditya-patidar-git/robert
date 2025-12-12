@@ -20,12 +20,16 @@ import {
   TextField,
   MenuItem,
   CircularProgress,
-  Alert
+  Alert,
+  InputAdornment
 } from '@mui/material';
 import {
   Delete as DeleteIcon,
   Block as BlockIcon,
-  CheckCircle as CheckCircleIcon
+  CheckCircle as CheckCircleIcon,
+  PersonAdd as PersonAddIcon,
+  Visibility,
+  VisibilityOff
 } from '@mui/icons-material';
 import { useToast } from '../../components/common/ToastProvider';
 import { useAuth } from '../../context/AuthContext';
@@ -39,6 +43,15 @@ const UsersPage = () => {
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [confirmDialog, setConfirmDialog] = useState({ open: false, user: null, action: '' });
+  const [addUserDialog, setAddUserDialog] = useState({ open: false });
+  const [showPassword, setShowPassword] = useState(false);
+  const [formData, setFormData] = useState({
+    email: '',
+    username: '',
+    password: '',
+    role: ''
+  });
+  const [formErrors, setFormErrors] = useState({});
 
   const { data: usersResponse, isLoading: usersLoading } = useQuery({
     queryKey: ['users'],
@@ -88,6 +101,27 @@ const UsersPage = () => {
     }
   });
 
+  const createUserMutation = useMutation({
+    mutationFn: async (userData) => {
+      const response = await userService.createUser(userData);
+      if (!response.success) {
+        throw new Error(response.error?.message || 'Failed to create user');
+      }
+      return response;
+    },
+    onSuccess: () => {
+      showSuccess('User created successfully');
+      queryClient.invalidateQueries(['users']);
+      setAddUserDialog({ open: false });
+      setFormData({ email: '', username: '', password: '', role: '' });
+      setFormErrors({});
+      setShowPassword(false);
+    },
+    onError: (error) => {
+      showError(error.message || 'Failed to create user');
+    }
+  });
+
   const filteredUsers = activeUsers.filter(user => {
     const matchesRole = !roleFilter || user.role === roleFilter;
     const matchesStatus = !statusFilter || user.status === statusFilter;
@@ -130,6 +164,71 @@ const UsersPage = () => {
     }
   };
 
+  const validateForm = () => {
+    const errors = {};
+    
+    // Email validation
+    if (!formData.email) {
+      errors.email = 'Email is required';
+    } else if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(formData.email)) {
+      errors.email = 'Invalid email address';
+    }
+    
+    // Username validation
+    if (!formData.username) {
+      errors.username = 'Username is required';
+    } else if (formData.username.length < 3) {
+      errors.username = 'Username must be at least 3 characters';
+    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+      errors.username = 'Username can only contain letters, numbers, and underscores';
+    }
+    
+    // Password validation
+    if (!formData.password) {
+      errors.password = 'Password is required';
+    } else if (formData.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters';
+    } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
+      errors.password = 'Password must contain at least one uppercase letter, one lowercase letter, and one number';
+    }
+    
+    // Role validation
+    if (!formData.role) {
+      errors.role = 'Role is required';
+    } else if (!['owner', 'admin'].includes(formData.role)) {
+      errors.role = 'Role must be either owner or admin';
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleAddUser = () => {
+    if (validateForm()) {
+      createUserMutation.mutate({
+        email: formData.email,
+        username: formData.username,
+        password: formData.password,
+        role: formData.role
+      });
+    }
+  };
+
+  const handleCloseAddUserDialog = () => {
+    setAddUserDialog({ open: false });
+    setFormData({ email: '', username: '', password: '', role: '' });
+    setFormErrors({});
+    setShowPassword(false);
+  };
+
+  const handleFormChange = (field) => (e) => {
+    setFormData({ ...formData, [field]: e.target.value });
+    // Clear error for this field when user starts typing
+    if (formErrors[field]) {
+      setFormErrors({ ...formErrors, [field]: '' });
+    }
+  };
+
   if (usersLoading) {
     return (
       <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -144,6 +243,8 @@ const UsersPage = () => {
     <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+          <Box>
         <Typography 
           variant="h4" 
           component="h1"
@@ -165,6 +266,22 @@ const UsersPage = () => {
         >
           Manage system users, roles, and permissions
         </Typography>
+          </Box>
+          {currentUser?.role === 'owner' && (
+            <Button
+              variant="contained"
+              startIcon={<PersonAddIcon />}
+              onClick={() => setAddUserDialog({ open: true })}
+              sx={{
+                borderRadius: 2,
+                textTransform: 'none',
+                fontWeight: 600
+              }}
+            >
+              Add User
+            </Button>
+          )}
+        </Box>
       </Box>
 
       {/* Filters */}
@@ -394,6 +511,103 @@ const UsersPage = () => {
             autoFocus
           >
             Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add User Dialog */}
+      <Dialog
+        open={addUserDialog.open}
+        onClose={handleCloseAddUserDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 2 }
+        }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Add New User
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField
+              fullWidth
+              label="Email Address"
+              type="email"
+              value={formData.email}
+              onChange={handleFormChange('email')}
+              error={!!formErrors.email}
+              helperText={formErrors.email}
+              required
+              margin="normal"
+            />
+            <TextField
+              fullWidth
+              label="Username"
+              value={formData.username}
+              onChange={handleFormChange('username')}
+              error={!!formErrors.username}
+              helperText={formErrors.username}
+              required
+              margin="normal"
+            />
+            <TextField
+              fullWidth
+              label="Password"
+              type={showPassword ? 'text' : 'password'}
+              value={formData.password}
+              onChange={handleFormChange('password')}
+              error={!!formErrors.password}
+              helperText={formErrors.password}
+              required
+              margin="normal"
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      aria-label="toggle password visibility"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                )
+              }}
+            />
+            <TextField
+              select
+              fullWidth
+              label="Role"
+              value={formData.role}
+              onChange={handleFormChange('role')}
+              error={!!formErrors.role}
+              helperText={formErrors.role}
+              required
+              margin="normal"
+            >
+              <MenuItem value="owner">Owner</MenuItem>
+              <MenuItem value="admin">Admin</MenuItem>
+            </TextField>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button 
+            onClick={handleCloseAddUserDialog}
+            variant="outlined"
+            disabled={createUserMutation.isLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleAddUser} 
+            variant="contained"
+            disabled={createUserMutation.isLoading}
+            startIcon={createUserMutation.isLoading ? <CircularProgress size={20} /> : <PersonAddIcon />}
+          >
+            {createUserMutation.isLoading ? 'Creating...' : 'Create User'}
           </Button>
         </DialogActions>
       </Dialog>

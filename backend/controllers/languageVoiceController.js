@@ -161,6 +161,79 @@ export const updateLanguageMapping = async (req, res) => {
   }
 };
 
+// Create new language/voice mapping
+export const createLanguageMapping = async (req, res) => {
+  try {
+    const { languageCode, languageName, localeCode, voiceId, voiceName, isActive } = req.body;
+    
+    // Validate required fields
+    if (!languageCode || !languageName || !localeCode || !voiceId) {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing required fields: languageCode, languageName, localeCode, and voiceId are required"
+      });
+    }
+    
+    // Check for duplicate language code
+    const existingMapping = await LanguageVoiceMapping.findOne({ languageCode });
+    if (existingMapping) {
+      return res.status(409).json({
+        status: "error",
+        message: `Language code '${languageCode}' already exists`
+      });
+    }
+    
+    // Get voice name from discovery service if available
+    let finalVoiceName = voiceName;
+    try {
+      const voice = voiceDiscoveryService.getVoice(voiceId);
+      if (voice) {
+        finalVoiceName = voice.name || voiceName || '';
+      }
+    } catch (err) {
+      // Voice not found in discovery service, use provided name
+      if (!finalVoiceName) {
+        finalVoiceName = voiceId;
+      }
+    }
+    
+    // Create new mapping
+    const newMapping = new LanguageVoiceMapping({
+      languageCode: languageCode.trim(),
+      languageName: languageName.trim(),
+      localeCode: localeCode.trim(),
+      voiceId: voiceId.trim(),
+      voiceName: finalVoiceName || '',
+      isActive: isActive !== undefined ? isActive : true
+    });
+    
+    await newMapping.save();
+    
+    console.log(`✅ Created new language mapping: ${languageCode} -> ${finalVoiceName}`);
+    
+    res.status(201).json({
+      status: "success",
+      message: "Language mapping created successfully",
+      mapping: newMapping.toObject()
+    });
+  } catch (error) {
+    console.error("Error creating language mapping:", error);
+    
+    // Handle duplicate key error (MongoDB unique constraint)
+    if (error.code === 11000) {
+      return res.status(409).json({
+        status: "error",
+        message: `Language code '${req.body.languageCode}' already exists`
+      });
+    }
+    
+    res.status(500).json({
+      status: "error",
+      message: error.message || "Internal server error"
+    });
+  }
+};
+
 // Bulk update language mappings
 export const bulkUpdateLanguageMappings = async (req, res) => {
   try {

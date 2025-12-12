@@ -244,6 +244,17 @@ export const useKBPageState = () => {
     onError: () => showError('Failed to cleanup vector store')
   });
 
+  const addQAPairMutation = useMutation({
+    mutationFn: ({ question, answer }) => kbService.addQAPair(question, answer),
+    onSuccess: () => {
+      showSuccess('Q&A pair added successfully to vector store');
+      queryClient.invalidateQueries(['kb-files']);
+    },
+    onError: (error) => {
+      showError(error.message || 'Failed to add Q&A pair to vector store');
+    }
+  });
+
   const fileSearchMutation = useMutation({
     mutationFn: ({ query, options }) => fileSearchService.searchFiles(query, options),
     onSuccess: (results) => {
@@ -592,6 +603,7 @@ export const useKBPageState = () => {
     validateVectorStoreMutation,
     cleanupVectorStoreMutation,
     fileSearchMutation,
+    addQAPairMutation,
     
     // Query client
     queryClient,
