@@ -102,14 +102,10 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
     await takeScreenshot(page, 'terms-and-booking-page.png', screenshotsDir);
     
     // Check if we should skip clicking the button
+    // NOTE: User requested to have the button active, so we'll click it even if skipMakeBooking is true
+    // This allows inspection of the confirmation email window
     if (skipMakeBooking) {
-      console.log('⏸️ [STEP 13] Skipping "Make booking" button click (skipMakeBooking=true)');
-      console.log('✅ [STEP 13] Terms accepted and Grand Total extracted, but booking button click skipped');
-      return {
-        success: true,
-        termsAccepted: true,
-        grandTotal: grandTotal
-      };
+      console.log('⚠️ [STEP 13] skipMakeBooking=true, but proceeding to click "Make booking" button for inspection');
     }
     
     // Find MAKE BOOKING button using multiple selectors (try in order, stop when found)
@@ -178,8 +174,38 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
     
     // Click the MAKE BOOKING button
     console.log('🖱️ [STEP 13] Clicking MAKE BOOKING button...');
+    
+    // Wait for button to be visible and enabled
     await makeBookingButton.waitFor({ state: 'visible', timeout: 5000 });
-    await makeBookingButton.click();
+    
+    // Check if button is enabled (not disabled)
+    const isDisabled = await makeBookingButton.getAttribute('disabled').catch(() => null);
+    if (isDisabled !== null) {
+      console.log('⚠️ [STEP 13] Make Booking button is disabled, waiting for it to be enabled...');
+      await page.waitForTimeout(2000);
+    }
+    
+    // Scroll button into view (important for DevExtreme buttons)
+    try {
+      await makeBookingButton.scrollIntoViewIfNeeded({ timeout: 2000 });
+      console.log('✅ [STEP 13] Scrolled Make Booking button into view');
+    } catch (scrollErr) {
+      console.log('⚠️ [STEP 13] Could not scroll Make Booking button into view:', scrollErr.message);
+    }
+    
+    // Try regular click first
+    try {
+      await makeBookingButton.click({ timeout: 5000 });
+      console.log('✅ [STEP 13] Clicked Make Booking button (regular click)');
+    } catch (clickErr) {
+      console.log('⚠️ [STEP 13] Regular click failed, trying force click:', clickErr.message);
+      // Fallback: Use force click (works even if button is partially hidden)
+      await makeBookingButton.click({ force: true, timeout: 5000 });
+      console.log('✅ [STEP 13] Clicked Make Booking button (force click)');
+    }
+    
+    // Wait a moment for the click to register
+    await page.waitForTimeout(500);
     
     // Wait for payment processing/confirmation (up to 30 seconds)
     console.log('⏳ [STEP 13] Waiting for payment processing/confirmation...');
@@ -221,6 +247,117 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
     // Take screenshot after clicking
     await takeScreenshot(page, 'booking-completed.png', screenshotsDir);
     
+    // Wait for the next page (confirmation email window) to load after payment completes
+    console.log('⏳ [STEP 13] Waiting for payment to complete and next page to load...');
+    
+    // CRITICAL: First check if we're still on the payment page (button should disappear or be disabled)
+    // This ensures we don't get false positives from elements that already exist
+    let stillOnPaymentPage = true;
+    let paymentPageCheckAttempts = 0;
+    const maxPaymentPageChecks = 10; // 10 seconds
+    
+    while (stillOnPaymentPage && paymentPageCheckAttempts < maxPaymentPageChecks) {
+      await page.waitForTimeout(1000);
+      paymentPageCheckAttempts++;
+      
+      // Check if "Make Booking" button still exists and is enabled (means we're still on payment page)
+      try {
+        const buttonStillExists = await searchContext.locator('#diaryNewCourseBookingWiz_OKBtn').count() > 0;
+        if (buttonStillExists) {
+          const button = searchContext.locator('#diaryNewCourseBookingWiz_OKBtn').first();
+          const isVisible = await button.isVisible().catch(() => false);
+          const isDisabled = await button.getAttribute('disabled').catch(() => null);
+          
+          // If button is visible and not disabled, we're still on payment page
+          if (isVisible && isDisabled === null) {
+            console.log(`⏳ [STEP 13] Still on payment page (attempt ${paymentPageCheckAttempts}/${maxPaymentPageChecks})...`);
+            continue;
+          }
+        }
+        // Button doesn't exist or is disabled - payment processing may have started
+        stillOnPaymentPage = false;
+        console.log('✅ [STEP 13] Payment page navigation detected (button disappeared or disabled)');
+      } catch (e) {
+        // Error checking button - assume we've navigated away
+        stillOnPaymentPage = false;
+        console.log('✅ [STEP 13] Payment page navigation detected (button check failed)');
+      }
+    }
+    
+    if (stillOnPaymentPage) {
+      console.log('⚠️ [STEP 13] Still on payment page after 10 seconds - payment may not have processed');
+      // Take screenshot for debugging
+      await takeScreenshot(page, 'payment-still-processing.png', screenshotsDir);
+    }
+    
+    // Now wait for indicators that we're on the confirmation/next page
+    // Look for: "Send a confirmation" list item, "Finish" list item, or stationary page
+    // NOTE: Using specific list item selectors to avoid false positives
+    const nextPageIndicators = [
+      // Prioritize list item selectors based on actual HTML structure
+      'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-heading:has-text("Send a confirmation"))',
+      'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-heading:has-text("Finish"))',
+      '.list-menu-item-heading:has-text("Send a confirmation")',
+      '.list-menu-item-heading:has-text("Finish")',
+      // Fallback text-based selectors
+      'text=/Send a confirmation/i',
+      'text=/Finish and close/i',
+      'text=/Pick an item of stationary/i',
+      'text=/stationary/i'
+    ];
+    
+    let nextPageLoaded = false;
+    let waitAttempts = 0;
+    const maxWaitAttempts = 30; // 30 seconds total (30 * 1000ms)
+    
+    while (!nextPageLoaded && waitAttempts < maxWaitAttempts) {
+      await page.waitForTimeout(1000); // Wait 1 second between checks
+      waitAttempts++;
+      
+      // Check if we're on the next page by looking for indicators in iframe context
+      for (const indicator of nextPageIndicators) {
+        try {
+          const element = searchContext.locator(indicator).first();
+          if (await element.count() > 0) {
+            const isVisible = await element.isVisible().catch(() => false);
+            if (isVisible) {
+              console.log(`✅ [STEP 13] Next page loaded - found indicator: "${indicator}"`);
+              nextPageLoaded = true;
+              break;
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      // Also check main page (but be more specific - don't use generic .list-menu-item)
+      if (!nextPageLoaded) {
+        for (const indicator of nextPageIndicators) {
+          try {
+            const element = page.locator(indicator).first();
+            if (await element.count() > 0) {
+              const isVisible = await element.isVisible().catch(() => false);
+              if (isVisible) {
+                console.log(`✅ [STEP 13] Next page loaded on main page - found indicator: "${indicator}"`);
+                nextPageLoaded = true;
+                break;
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+    }
+    
+    if (!nextPageLoaded) {
+      console.log('⚠️ [STEP 13] Next page indicators not found after 30 seconds, but continuing...');
+    }
+    
+    // Take screenshot of the confirmation email window
+    await takeScreenshot(page, 'confirmation-email-window.png', screenshotsDir);
+    
     // Click "Finish and close" button (only if Make Booking was actually clicked)
     console.log('🏁 [STEP 13] Looking for "Finish and close" button...');
     
@@ -250,16 +387,20 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
       }
       
       // Multiple selector strategy for "Finish and close" (try in order, stop when found)
-      // Based on image structure: list-menu-item > list-menu-item-heading (title) + subtitle
+      // Based on actual HTML structure: div.dx-item.dx-list-item[role="option"] > div.list-menu-item > h3.list-menu-item-heading
       const finishSelectors = [
-        '.list-menu-item-heading:has-text("Finish")', // Heading text (prioritized based on image structure)
-        '.list-menu-item:has(.list-menu-item-heading:has-text("Finish"))', // Nested structure from image
-        '.list-menu-item:has-text("Finish and close")', // Class + text
-        'text="Finish and close"', // Exact text match
-        'text=/Finish and close/i', // Case-insensitive regex
-        '.list-menu-item-text:has-text("Finish and close")', // Specific class
-        '[role="option"]:has-text("Finish and close")', // Role + text
-        'div.dx-list-item:has-text("Finish and close")', // DevExtreme list item
+        // Prioritize list item selectors based on actual HTML structure
+        'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-heading:has-text("Finish"))',
+        'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-text:has-text("Finish and close"))',
+        '.list-menu-item:has(.list-menu-item-heading:has-text("Finish"))',
+        '[role="option"]:has-text("Finish and close")',
+        // Keep existing fallbacks
+        '.list-menu-item-heading:has-text("Finish")',
+        '.list-menu-item:has-text("Finish and close")',
+        'text="Finish and close"',
+        'text=/Finish and close/i',
+        '.list-menu-item-text:has-text("Finish and close")',
+        'div.dx-list-item:has-text("Finish and close")'
       ];
       
       let finishButton = null;

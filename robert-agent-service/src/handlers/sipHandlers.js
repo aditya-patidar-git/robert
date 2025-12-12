@@ -26,13 +26,12 @@ export const handleCallAccept = async (req, res) => {
     console.log(`📞 [SIP] Call accept webhook received - call_id: ${call_id}, from: ${from}, to: ${to}`);
 
     // Initialize conversation state
+    const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
     if (!conversations[call_id]) {
-      conversations[call_id] = {
-        transcript: [],
+      sessionManagementService.initializeSession(call_id, {
         language: 'en-US',
         from: from,
         to: to,
-        startTime: Date.now(),
         callType: 'SIP',
         recordingConsent: {
           requested: false,
@@ -46,7 +45,7 @@ export const handleCallAccept = async (req, res) => {
           requestedAt: null,
           respondedAt: null
         }
-      };
+      });
     }
 
     // Get configuration
@@ -136,11 +135,10 @@ export const handleCallStatus = async (req, res) => {
       console.error(`❌ [SIP] Error updating CallRecord:`, err);
     }
 
-    // Cleanup on terminal states
+    // Cleanup on terminal states using session management service
+    const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
     if (['completed', 'failed', 'busy', 'no-answer'].includes(status)) {
-      if (conversations[call_id]) {
-        delete conversations[call_id];
-      }
+      sessionManagementService.deleteSession(call_id);
     }
 
     res.sendStatus(200);

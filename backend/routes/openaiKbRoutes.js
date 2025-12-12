@@ -11,7 +11,8 @@ import {
   updateFileTags,
   reingestFile,
   detectFileDrift,
-  upload
+  upload,
+  addQAPair
 } from "../controllers/openaiKb/index.js";
 
 const router = express.Router();
@@ -22,6 +23,7 @@ router.get("/files", protect, getAllFiles);
 router.post("/files/upload", protect, upload.single('file'), uploadFile);
 router.post("/search", protect, searchFiles);
 router.get("/vector-store/status", protect, getVectorStoreStatus);
+router.post("/qa-pairs", protect, addQAPair);
 
 // More specific routes with additional path segments (must come before generic :id routes)
 router.get("/files/:id/content", protect, getFileContent);

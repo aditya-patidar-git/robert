@@ -3,6 +3,7 @@ import { Box } from '@mui/material';
 import VectorStoreStatus from '../components/VectorStoreStatus';
 import FileUploadSection from '../components/FileUploadSection';
 import FileSearchInterface from '../components/FileSearchInterface';
+import QAPairInput from '../components/QAPairInput';
 import FilesTable from '../components/FilesTable';
 import kbService from '../../../services/kbService';
 import { useToast } from '../../../components/common/ToastProvider';
@@ -27,7 +28,8 @@ const KnowledgeBaseManagementTab = ({ state, handlers }) => {
     reingestingFiles,
     detectingDrift,
     reingestFileMutation,
-    detectDriftMutation
+    detectDriftMutation,
+    addQAPairMutation
   } = state;
 
   const {
@@ -95,6 +97,10 @@ const KnowledgeBaseManagementTab = ({ state, handlers }) => {
         fileSearchMutation={fileSearchMutation}
         isSearching={isSearching}
         handleFileSearch={handleFileSearch}
+      />
+      
+      <QAPairInput
+        addQAPairMutation={addQAPairMutation}
       />
       
       <FilesTable

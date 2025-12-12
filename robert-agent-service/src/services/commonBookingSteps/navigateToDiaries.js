@@ -632,12 +632,14 @@ export async function navigateToDiariesAndSelectSession(page, sessionDetails, sc
         
         console.log(`   Entry ${i + 1}: Course="${courseName}", Instructor="${instructorName}", Time="${extractedTime}", Vacancy=${hasVacancy}`);
         
-        // Match criteria
-        const timeMatches = extractedTime === expectedTime;
+        // Match criteria - make flexible when values are "TBD" or empty
+        const timeMatches = expectedTime === 'TBD' || expectedTime === '' || extractedTime === expectedTime;
         const courseMatches = courseNormalized === expectedCourseNormalized || 
                              courseNormalized.includes(expectedCourseNormalized) ||
                              expectedCourseNormalized.includes(courseNormalized);
-        const instructorMatches = instructorNormalized === expectedInstructorNormalized ||
+        // If instructor is "TBD" or empty, match any instructor
+        const instructorMatches = expectedInstructorNormalized === 'tbd' || expectedInstructorNormalized === '' ||
+                                 instructorNormalized === expectedInstructorNormalized ||
                                  instructorNormalized.includes(expectedInstructorNormalized) ||
                                  expectedInstructorNormalized.includes(instructorNormalized);
         

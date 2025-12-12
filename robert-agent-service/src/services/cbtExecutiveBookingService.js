@@ -137,16 +137,27 @@ class CBTExecutiveBookingService {
           console.log('🔍 Service: Searching by email:', searchValue);
         }
         
-        // Search for client
-        // Search for client - pass email so Smart search always uses email
-        const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, bookingArgs.customerEmail);
+        // Search for client - pass callSid for state tracking
+        const callSid = callContext.callSid || 'unknown';
+        const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, bookingArgs.customerEmail, null, callSid);
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
+        
+        // Handle retry prompts for mobile search
+        if (searchResult.retryPrompt) {
+          return {
+            success: false,
+            requiresCustomerInfo: true,
+            retryPrompt: searchResult.retryPrompt,
+            message: searchResult.retryPrompt,
+            workflowType: 'existing'
+          };
+        }
         
         if (!searchResult.found) {
           // If mobile search failed and we haven't tried email yet, try email
           if (searchType === 'mobile' && bookingArgs.customerEmail) {
             console.log('⚠️ Mobile search failed, trying email search...');
-            const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir, bookingArgs.customerEmail);
+            const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir, bookingArgs.customerEmail, null, callSid);
             if (emailSearchResult.found) {
               // Store client details for verification
               if (emailSearchResult.clientDetails) {
@@ -154,11 +165,22 @@ class CBTExecutiveBookingService {
                 bookingArgs.clientDetails = emailSearchResult.clientDetails;
               }
               console.log('✅ Step 4-5 completed: Client found via email - requires verbal verification');
+              
+              // Return with verification prompt
+              if (emailSearchResult.requiresVerification) {
+                return {
+                  success: false,
+                  requiresVerification: true,
+                  verificationPrompt: emailSearchResult.verificationPrompt,
+                  clientDetails: emailSearchResult.clientDetails || callContext.clientDetails,
+                  message: emailSearchResult.verificationPrompt || 'Client found but requires verbal verification before proceeding with booking'
+                };
+              }
             } else {
               throw new Error('Could not find client with mobile number or email address');
             }
           } else {
-            throw new Error('Could not find client in CRM');
+            throw new Error(searchResult.error || 'Could not find client in CRM');
           }
         } else {
           // Store client details for verification
@@ -175,8 +197,9 @@ class CBTExecutiveBookingService {
           return {
             success: false,
             requiresVerification: true,
+            verificationPrompt: searchResult.verificationPrompt,
             clientDetails: searchResult.clientDetails || callContext.clientDetails,
-            message: 'Client found but requires verbal verification before proceeding with booking'
+            message: searchResult.verificationPrompt || 'Client found but requires verbal verification before proceeding with booking'
           };
         }
 
@@ -238,6 +261,16 @@ class CBTExecutiveBookingService {
         }
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-booking-completed.png', this.screenshotsDir));
         console.log('✅ Step 9 completed: Payment processed and booking made');
+
+        // STEP 10: Send booking confirmation email
+        try {
+          console.log('📧 Step 10: Sending booking confirmation email...');
+          await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'cbt-executive');
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-email-sent.png', this.screenshotsDir));
+          console.log('✅ Step 10 completed: Booking confirmation email sent');
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send confirmation email (non-critical):', emailError.message);
+        }
 
       } else {
         // NEW CLIENT WORKFLOW
@@ -318,6 +351,16 @@ class CBTExecutiveBookingService {
         }
         screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-booking-completed.png', this.screenshotsDir));
         console.log('✅ Step 8 completed: Payment processed and booking made');
+
+        // STEP 9: Send booking confirmation email
+        try {
+          console.log('📧 Step 9: Sending booking confirmation email...');
+          await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'cbt-executive');
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-email-sent.png', this.screenshotsDir));
+          console.log('✅ Step 9 completed: Booking confirmation email sent');
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send confirmation email (non-critical):', emailError.message);
+        }
       }
 
       console.log('🎉 Service: All steps completed successfully!');
@@ -493,22 +536,61 @@ class CBTExecutiveBookingService {
       const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
       console.log(`✅ [STEP 8] Selecting bike type: ${bikeType}`);
       
-      // Find and select the bike type option
-      const bikeOption = searchContext.locator(`[role="radio"]:has-text("${bikePattern.source}"), input[type="radio"]`).filter({ hasText: bikePattern }).first();
+      // Find and select the bike type option using div-based checkbox structure
+      // Options are in: .jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable
+      // Checkbox is: .jqx_inputBookingOptionsSelect_check
+      // Option text is in: .optionName span
+      const allOptions = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+      const optionCount = await allOptions.count();
+      console.log(`🔍 [STEP 8] Found ${optionCount} selectable booking options`);
       
-      if (await bikeOption.count() === 0) {
+      let matchingOption = null;
+      let matchingRowIndex = -1;
+      
+      // Iterate through all options to find matching bike type
+      for (let i = 0; i < optionCount; i++) {
+        const optionRow = allOptions.nth(i);
+        const optionNameSpan = optionRow.locator('.optionName span');
+        
+        if (await optionNameSpan.count() > 0) {
+          const optionText = await optionNameSpan.textContent();
+          const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+          
+          // Check if option text matches the bike type pattern
+          if (normalizedText && bikePattern.test(normalizedText)) {
+            console.log(`✅ [STEP 8] Found matching option at index ${i}: "${optionText}"`);
+            matchingOption = optionRow;
+            matchingRowIndex = i;
+            break;
+          }
+        }
+      }
+      
+      if (matchingOption && matchingRowIndex >= 0) {
+        // Click the checkbox div inside the matching row
+        const checkDiv = matchingOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+        if (await checkDiv.count() > 0) {
+          await checkDiv.click();
+          console.log(`✅ [STEP 8] Clicked checkbox for bike type option at index ${matchingRowIndex}`);
+        } else {
+          // Fallback: click the row itself
+          await matchingOption.click();
+          console.log(`✅ [STEP 8] Clicked row for bike type option at index ${matchingRowIndex}`);
+        }
+      } else {
         // Fallback: try selecting first available option
+        console.log('⚠️ [STEP 8] No matching bike type option found, selecting first available option');
         const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
         if (await firstOption.count() > 0) {
           const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
           if (await checkDiv.count() > 0) {
             await checkDiv.click();
+            console.log('✅ [STEP 8] Selected first available option as fallback');
           } else {
             await firstOption.click();
+            console.log('✅ [STEP 8] Clicked first available option row as fallback');
           }
         }
-      } else {
-        await bikeOption.check();
       }
       
       await page.waitForTimeout(1000);

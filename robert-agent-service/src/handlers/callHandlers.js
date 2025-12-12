@@ -147,15 +147,16 @@ export const handleIncomingCall = async (req, res) => {
         timestamp: new Date()
     });
     
+    // Initialize conversation state using session management service
+    const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
     if (!conversations[CallSid]) {
-        conversations[CallSid] = { 
-            transcript: [], 
-            from: From, 
+        sessionManagementService.initializeSession(CallSid, {
+            from: From,
             to: To,
-            startTime: Date.now(),
             language: 'en-US',
-            realtimeWs: null 
-        };
+            callType: 'Twilio',
+            realtimeWs: null
+        });
     }
 
     const twilio = await import("twilio");

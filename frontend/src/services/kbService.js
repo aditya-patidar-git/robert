@@ -124,6 +124,20 @@ class KBService extends BaseService {
     const response = await this.post(`/files/${fileId}/detect-drift`);
     return response.data?.drift || response.data;
   }
+
+  /**
+   * Add Q&A pair directly to vector store
+   * @param {string} question - Question text
+   * @param {string} answer - Answer text
+   * @returns {Promise<Object>} Upload result
+   */
+  async addQAPair(question, answer) {
+    const response = await this.post('/qa-pairs', {
+      question,
+      answer
+    });
+    return response.data?.file || response.data;
+  }
 }
 
 // Export singleton instance

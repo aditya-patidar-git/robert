@@ -24,18 +24,27 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
       console.log('🔍 [CONFIRMATION] Working with main page...');
     }
     
-    // Find "SEND A CONFIRMATION" button with multiple fallback selectors
-    console.log('🔍 [CONFIRMATION] Looking for "SEND A CONFIRMATION" button...');
+    // Find "SEND A CONFIRMATION" list item with multiple fallback selectors
+    console.log('🔍 [CONFIRMATION] Looking for "Send a confirmation" list item...');
     let sendConfirmationButton = null;
     
     const buttonSelectors = [
+      // Prioritize list item selectors based on actual HTML structure
+      'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-heading:has-text("Send a confirmation"))',
+      '.list-menu-item:has(.list-menu-item-heading:has-text("Send a confirmation"))',
+      '[role="option"]:has-text("Send a confirmation")',
+      '.list-menu-item-heading:has-text("Send a confirmation")',
+      // Keep some existing fallbacks for backward compatibility
       'button:has-text("SEND A CONFIRMATION")',
       'button:has-text("Send a confirmation")',
       'button:has-text("Send A Confirmation")',
       '[role="button"]:has-text(/send.*confirmation/i)',
       '.dx-button:has-text(/send.*confirmation/i)',
+      '.jqx_button:has-text(/send.*confirmation/i)',
       'a:has-text("SEND A CONFIRMATION")',
-      'a:has-text("Send a confirmation")'
+      'a:has-text("Send a confirmation")',
+      '[aria-label*="confirmation" i]',
+      '[aria-label*="Confirmation" i]'
     ];
     
     // Try main page first
@@ -43,9 +52,11 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
       try {
         const button = page.locator(selector).first();
         if (await button.count() > 0) {
+          // Wait for button to be attached (not just visible)
+          await button.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
           const isVisible = await button.isVisible().catch(() => false);
           if (isVisible) {
-            console.log(`✅ [CONFIRMATION] Found button using selector: "${selector}"`);
+            console.log(`✅ [CONFIRMATION] Found list item using selector: "${selector}"`);
             sendConfirmationButton = button;
             break;
           }
@@ -62,9 +73,11 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
         try {
           const button = iframe.locator(selector).first();
           if (await button.count() > 0) {
+            // Wait for list item to be attached (not just visible)
+            await button.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
             const isVisible = await button.isVisible().catch(() => false);
             if (isVisible) {
-              console.log(`✅ [CONFIRMATION] Found button in iframe using selector: "${selector}"`);
+              console.log(`✅ [CONFIRMATION] Found list item in iframe using selector: "${selector}"`);
               sendConfirmationButton = button;
               break;
             }
@@ -75,13 +88,55 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
       }
     }
     
+    // If still not found, try with attached state (list item may be hidden)
     if (!sendConfirmationButton) {
-      throw new Error('Could not find "SEND A CONFIRMATION" button');
+      console.log('🔍 [CONFIRMATION] List item not visible, trying attached state...');
+      for (const selector of buttonSelectors) {
+        try {
+          const button = eventBookingIframeExists 
+            ? page.frameLocator('#eventNewBooking2_iframe').locator(selector).first()
+            : page.locator(selector).first();
+          if (await button.count() > 0) {
+            await button.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
+            console.log(`✅ [CONFIRMATION] Found list item (attached) using selector: "${selector}"`);
+            sendConfirmationButton = button;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
     }
     
-    // Click the button
-    console.log('🖱️ [CONFIRMATION] Clicking "SEND A CONFIRMATION" button...');
-    await sendConfirmationButton.click();
+    if (!sendConfirmationButton) {
+      throw new Error('Could not find "Send a confirmation" list item');
+    }
+    
+    // Click the list item - handle hidden elements
+    console.log('🖱️ [CONFIRMATION] Clicking "Send a confirmation" list item...');
+    try {
+      // Try to scroll list item into view
+      await sendConfirmationButton.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+      
+      // Check if list item is visible
+      const isVisible = await sendConfirmationButton.isVisible().catch(() => false);
+      
+      if (isVisible) {
+        // List item is visible, click normally
+        await sendConfirmationButton.click({ timeout: 5000 });
+        console.log('✅ [CONFIRMATION] Clicked list item (visible)');
+      } else {
+        // List item is hidden, use force click
+        console.log('⚠️ [CONFIRMATION] List item is hidden, using force click');
+        await sendConfirmationButton.click({ force: true, timeout: 5000 });
+        console.log('✅ [CONFIRMATION] Clicked list item (force)');
+      }
+    } catch (clickErr) {
+      // Fallback: try force click if normal click fails
+      console.log('⚠️ [CONFIRMATION] Normal click failed, trying force click...');
+      await sendConfirmationButton.click({ force: true, timeout: 5000 });
+      console.log('✅ [CONFIRMATION] Clicked list item (force fallback)');
+    }
     await page.waitForTimeout(2000);
     
     // Wait for "Pick an item of stationary" page

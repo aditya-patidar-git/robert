@@ -229,9 +229,35 @@ export async function lookupContactAndWait(page, email, screenshotsDir) {
     } else {
       console.log('❌ [STEP 9] No search button found, trying alternative...');
       
-      // Approach 3: Click elsewhere to remove focus and trigger search
-      console.log('🔍 [STEP 9] Clicking elsewhere to trigger search...');
-      await iframe.locator('body').click({ position: { x: 100, y: 100 } });
+      // Approach 3: Safer approach - Use JavaScript to blur the input field directly
+      console.log('🔍 [STEP 9] Blurring search input field to trigger search...');
+      try {
+        const frameElement = await page.$(iframeId);
+        if (frameElement) {
+          const actualFrame = await frameElement.contentFrame();
+          if (actualFrame) {
+            await actualFrame.evaluate(() => {
+              const activeElement = document.activeElement;
+              if (activeElement && activeElement.tagName === 'INPUT') {
+                activeElement.blur();
+              }
+            });
+            console.log('✅ [STEP 9] Blurred search input field using JavaScript');
+          }
+        }
+      } catch (e) {
+        console.log(`⚠️ [STEP 9] Could not blur input: ${e.message}, trying container click...`);
+        // Fallback: Try clicking on a safe container
+        const safeContainer = iframe.locator('.jqx_pageContent, .dx-widget, [class*="container"]').first();
+        if (await safeContainer.count() > 0) {
+          await safeContainer.click({ position: { x: 10, y: 10 }, force: true });
+          console.log('✅ [STEP 9] Clicked on safe container');
+        } else {
+          // Last resort: Click on body at top-left corner (less likely to hit interactive elements)
+          await iframe.locator('body').click({ position: { x: 10, y: 10 }, force: true });
+          console.log('⚠️ [STEP 9] Clicked on body as last resort');
+        }
+      }
       await page.waitForTimeout(2000);
       
       // Approach 4: Use Tab to move focus away
@@ -247,38 +273,195 @@ export async function lookupContactAndWait(page, email, screenshotsDir) {
     // Take screenshot after search
     await takeScreenshot(page, 'contact-search-results.png', screenshotsDir);
     
-    // STEP 5: Click on found client (should be the first result) - robust multi-approach logic from findAndVerifyClient
+    // STEP 5: Click on found client - use robust logic from findAndVerifyClient.js
     console.log('👆 [STEP 9] Clicking on found client...');
     
-    // Try to find and click the client
-    let clientClicked = false;
+    // Normalize email for comparison (lowercase, trim)
+    const normalizedSearch = email.toLowerCase().trim();
     
-    try {
-      // Approach 1: Look for visible text
-      const visibleClient = iframe.locator(`text=${email}`).filter({ hasText: email }).first();
-      if (await visibleClient.count() > 0 && await visibleClient.isVisible()) {
-        console.log('✅ [STEP 9] Found visible client text');
-        await visibleClient.click();
-        clientClicked = true;
-      } else {
-        // Approach 2: Look for any element containing the email
-        const anyClient = iframe.locator(`*:has-text("${email}")`).first();
-        if (await anyClient.count() > 0) {
-          console.log('✅ [STEP 9] Found client in any element');
-          await anyClient.click();
-          clientClicked = true;
+    // Look for DevExtreme DataGrid table rows (based on actual HTML structure)
+    const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
+    const rowCount = await resultRows.count();
+    
+    console.log(`🔍 [STEP 9] Found ${rowCount} search result rows, looking for email matches...`);
+    
+    // Extract all rows that contain the email (per document: Smart search matches loosely)
+    const matchingRows = [];
+    for (let i = 0; i < rowCount; i++) {
+      const row = resultRows.nth(i);
+      
+      // Extract email using specific selector (based on actual HTML structure)
+      // Email is in: .jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span
+      let foundEmail = null;
+      try {
+        const emailSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
+        if (await emailSpan.count() > 0) {
+          foundEmail = await emailSpan.textContent();
+          foundEmail = foundEmail ? foundEmail.trim() : null;
+        }
+      } catch (e) {
+        console.log(`⚠️ [STEP 9] Could not extract email from row ${i + 1}:`, e.message);
+      }
+      
+      if (foundEmail) {
+        const normalizedEmail = foundEmail.toLowerCase().trim();
+        // Smart search matches loosely, so check if searched email is contained in found email or vice versa
+        const emailMatches = normalizedEmail === normalizedSearch || 
+                             normalizedEmail.includes(normalizedSearch) || 
+                             normalizedSearch.includes(normalizedEmail);
+        
+        if (emailMatches) {
+          console.log(`✅ [STEP 9] Found email match in row ${i + 1}: ${foundEmail}`);
+          
+          // Extract postcode using specific selector (based on actual HTML structure)
+          // Postcode is in: div.jqx_margin_right + div[style*="display:inline-block"] > span
+          let postcode = null;
+          try {
+            const postcodeSpan = row.locator('div.jqx_margin_right + div[style*="display:inline-block"] > span');
+            if (await postcodeSpan.count() > 0) {
+              const postcodeText = await postcodeSpan.textContent();
+              // Postcode may be in full address (e.g., "89 Brook Road, London, Greater London, NW2 7DS")
+              // Extract the last UK postcode pattern from the text
+              const postcodeMatch = postcodeText.match(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}\b/gi);
+              if (postcodeMatch && postcodeMatch.length > 0) {
+                // Get the last match (postcode is usually at the end of address)
+                postcode = postcodeMatch[postcodeMatch.length - 1].trim();
+                console.log(`📍 [STEP 9] Extracted postcode from row ${i + 1}: ${postcode}`);
+              }
+            }
+          } catch (e) {
+            console.log(`⚠️ [STEP 9] Could not extract postcode from row ${i + 1}:`, e.message);
+          }
+          
+          matchingRows.push({
+            rowIndex: i,  // Store index instead of locator to avoid stale locator issues
+            email: foundEmail,
+            postcode: postcode,
+            index: i
+          });
+        }
+      }
+    }
+    
+    console.log(`📊 [STEP 9] Found ${matchingRows.length} rows with matching email`);
+    
+    if (matchingRows.length === 0) {
+      throw new Error(`No email matches found in search results for: ${email}`);
+    }
+    
+    // Try to find exact email match first
+    let exactMatch = null;
+    const exactEmailMatch = matchingRows.find(m => m.email.toLowerCase().trim() === normalizedSearch);
+    if (exactEmailMatch) {
+      console.log(`✅ [STEP 9] Found exact email match at row ${exactEmailMatch.rowIndex + 1}`);
+      exactMatch = {
+        rowIndex: exactEmailMatch.rowIndex,
+        locator: resultRows.nth(exactEmailMatch.rowIndex)
+      };
+    } else {
+      // No exact match - use first match
+      console.log(`⚠️ [STEP 9] No exact email match, using first match at row ${matchingRows[0].rowIndex + 1}`);
+      exactMatch = {
+        rowIndex: matchingRows[0].rowIndex,
+        locator: resultRows.nth(matchingRows[0].rowIndex)
+      };
+    }
+    
+    // Click exact match using JavaScript (robust method from findAndVerifyClient.js)
+    let clientClicked = false;
+    if (exactMatch) {
+      const rowIndex = exactMatch.rowIndex;
+      
+      // Get the actual frame for JavaScript evaluation
+      let actualFrame = null;
+      try {
+        await page.waitForSelector(iframeId, { state: 'attached' });
+        const frameElement = await page.$(iframeId);
+        if (frameElement) {
+          actualFrame = await frameElement.contentFrame();
+        }
+      } catch (e) {
+        console.log(`⚠️ [STEP 9] Could not get frame for evaluation: ${e.message}`);
+      }
+      
+      // Verify we're still on search results page before attempting click
+      const verifyStillOnSearchPage = async () => {
+        try {
+          const searchTable = await iframe.locator('table.dx-datagrid-table').count();
+          return searchTable > 0;
+        } catch {
+          return false;
+        }
+      };
+      
+      // Use JavaScript click (works even if element is not visible and doesn't trigger scroll that might click row 1)
+      if (rowIndex !== null && actualFrame) {
+        const stillOnSearchPage = await verifyStillOnSearchPage();
+        if (!stillOnSearchPage) {
+          console.log(`⚠️ [STEP 9] Already navigated away from search results - cannot click row ${rowIndex + 1}`);
         } else {
-          // Approach 3: Look for clickable elements with email
-          const clickableClient = iframe.locator(`a:has-text("${email}"), button:has-text("${email}"), [role="button"]:has-text("${email}")`).first();
-          if (await clickableClient.count() > 0) {
-            console.log('✅ [STEP 9] Found clickable client element');
-            await clickableClient.click();
+          try {
+            console.log(`🔄 [STEP 9] Using JavaScript click on row ${rowIndex + 1} (bypasses visibility, avoids accidental row 1 click)...`);
+            // Use JavaScript to click directly - this won't trigger scroll that might click row 1
+            await actualFrame.evaluate((index) => {
+              const rows = document.querySelectorAll('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
+              if (rows[index]) {
+                // CRITICAL: Click the TD (cell) inside the row, not the TR itself
+                // DevExtreme grid requires clicking the cell to trigger navigation
+                const cell = rows[index].querySelector('td[role="gridcell"]');
+                if (cell) {
+                  // Verify we're clicking the right row by checking email
+                  const emailSpan = rows[index].querySelector('.jqx_inlineSummary .jqx_inlineSummaryTitle');
+                  let email = '';
+                  if (emailSpan && emailSpan.textContent.includes('Email:')) {
+                    const emailText = emailSpan.nextElementSibling;
+                    if (emailText) {
+                      const emailSpanInner = emailText.querySelector('span');
+                      email = emailSpanInner ? emailSpanInner.textContent.trim() : '';
+                    }
+                  }
+                  // Alternative: find email by looking for span with email pattern
+                  if (!email) {
+                    const allSpans = rows[index].querySelectorAll('span');
+                    for (const span of allSpans) {
+                      if (span.textContent.includes('@')) {
+                        email = span.textContent.trim();
+                        break;
+                      }
+                    }
+                  }
+                  console.log(`[DEBUG] Clicking row ${index + 1}, email: ${email}`);
+                  
+                  // Click the cell
+                  cell.click();
+                } else {
+                  // Fallback: click the row itself
+                  console.log(`[DEBUG] No cell found, clicking row ${index + 1} directly`);
+                  rows[index].click();
+                }
+              }
+            }, rowIndex);
+            await page.waitForTimeout(2000); // Wait 2 seconds for navigation
             clientClicked = true;
+            console.log(`✅ [STEP 9] Successfully clicked row ${rowIndex + 1} using JavaScript click`);
+          } catch (jsErr) {
+            console.log(`⚠️ [STEP 9] JavaScript click failed: ${jsErr.message}`);
+            // If JavaScript click fails, try fallback
+            try {
+              const rowLocator = resultRows.nth(rowIndex);
+              await rowLocator.click({ timeout: 10000, force: false });
+              clientClicked = true;
+              console.log(`✅ [STEP 9] Successfully clicked row ${rowIndex + 1} using fallback click`);
+            } catch (fallbackErr) {
+              console.log(`⚠️ [STEP 9] Fallback click also failed: ${fallbackErr.message}`);
+            }
           }
         }
       }
-    } catch (clickError) {
-      console.log('❌ [STEP 9] Failed to click client, but continuing to check if page navigation occurred...');
+    }
+    
+    if (!clientClicked) {
+      throw new Error(`Could not click client row for email: ${email}`);
     }
     
     // CRITICAL: Check if we're already on the client details page BEFORE waiting (robust verification from findAndVerifyClient)
@@ -424,8 +607,40 @@ export async function lookupContactAndWait(page, email, screenshotsDir) {
       throw new Error('Next button not found on Contact Details page - checked eventNewBooking2_iframe, current iframe, and main page');
     }
     
-    await nextButton.waitFor({ state: 'visible', timeout: 5000 });
-    await nextButton.click();
+    // Wait for button to be attached (not visible, as it may be hidden)
+    try {
+      await nextButton.waitFor({ state: 'attached', timeout: 10000 });
+      console.log('✅ [STEP 9] Next button is attached to DOM');
+      
+      // Try to scroll button into view
+      try {
+        await nextButton.scrollIntoViewIfNeeded({ timeout: 2000 });
+        console.log('✅ [STEP 9] Scrolled Next button into view');
+      } catch (scrollErr) {
+        console.log('⚠️ [STEP 9] Could not scroll Next button into view:', scrollErr.message);
+      }
+      
+      // Check if button is visible
+      const isVisible = await nextButton.isVisible().catch(() => false);
+      
+      if (isVisible) {
+        // Button is visible, click normally
+        await nextButton.click({ timeout: 5000 });
+        console.log('✅ [STEP 9] Clicked Next button (visible)');
+      } else {
+        // Button is hidden, use force click
+        console.log('⚠️ [STEP 9] Next button is hidden, using force click');
+        await nextButton.click({ force: true, timeout: 5000 });
+        console.log('✅ [STEP 9] Clicked Next button (force)');
+      }
+    } catch (clickErr) {
+      // Handle browser closure or other errors gracefully
+      if (clickErr.message.includes('Target page, context or browser has been closed')) {
+        console.log('⚠️ [STEP 9] Browser was closed during Next button click');
+        throw new Error('Browser was closed - cannot proceed with Next button click');
+      }
+      throw clickErr;
+    }
     
     console.log('✅ [STEP 9] Next button clicked, waiting for next page to load...');
     
