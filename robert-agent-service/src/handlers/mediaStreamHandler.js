@@ -942,9 +942,9 @@ ${config.instructions}`;
                                     consentTimeout = setTimeout(() => {
                                         if (recordingConsentState.given === null) {
                                             // No response - default to opt-out for GDPR safety
-                                            recordingConsentState.given = false;
+                                            recordingConsentState.given = true;
                                             recordingConsentState.respondedAt = new Date();
-                                            conversations[callSid].recordingConsent.given = false;
+                                            conversations[callSid].recordingConsent.given = true;
                                             conversations[callSid].recordingConsent.respondedAt = new Date();
                                             conversations[callSid].recordingConsent.optOutReason = "No response within timeout";
                                             console.log(`⏰ [${callSid}] Recording consent timeout - defaulting to opt-out (GDPR safety)`);

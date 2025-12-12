@@ -115,8 +115,16 @@ export const useAudioTelephonyState = () => {
     refetch: refetchAudioMetrics
   } = useQuery({
     queryKey: ['audio-metrics', callQualityTimeRange],
-    queryFn: () => configService.getAudioMetrics(callQualityTimeRange),
-    refetchInterval: 30000
+    queryFn: () => {
+      console.log('🔍 [AUDIO_METRICS] Fetching metrics for timeRange:', callQualityTimeRange);
+      return configService.getAudioMetrics(callQualityTimeRange);
+    },
+    refetchInterval: 30000,
+    onSuccess: (data) => {
+      console.log('🔍 [AUDIO_METRICS] Query success, received data:', data);
+      console.log('🔍 [AUDIO_METRICS] Has metrics?', !!data?.metrics);
+      console.log('🔍 [AUDIO_METRICS] Total calls:', data?.metrics?.totalCalls);
+    }
   });
 
   const { 

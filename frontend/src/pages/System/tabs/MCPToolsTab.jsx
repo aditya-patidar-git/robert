@@ -1,11 +1,70 @@
-import React from 'react';
-import { Box, Paper, Typography, Grid, Switch, FormControlLabel, Slider } from '@mui/material';
+import React, { useEffect, useRef, useState } from 'react';
+import { Box, Paper, Typography, Grid, Switch, FormControlLabel, Slider, Button } from '@mui/material';
+import { Save } from '@mui/icons-material';
 import { Controller } from 'react-hook-form';
+import { useQueryClient } from '@tanstack/react-query';
+import { useToast } from '../../../components/common/ToastProvider';
 import MCPToolsConfig from '../../../components/config/MCPToolsConfig';
+import systemService from '../../../services/systemService';
 
-const MCPToolsTab = ({ control, watch }) => {
+const MCPToolsTab = ({ control, watch, currentTab }) => {
+  const queryClient = useQueryClient();
+  const { showSuccess, showError } = useToast();
+  const mcpToolsConfigRef = useRef(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Load configs when tab is opened
+  useEffect(() => {
+    if (currentTab === 0) {
+      setIsLoading(true);
+      // Refetch system config and MCP tools
+      Promise.all([
+        queryClient.invalidateQueries(['system-config']),
+        queryClient.invalidateQueries(['mcp-tools'])
+      ]).finally(() => {
+        setIsLoading(false);
+      });
+    }
+  }, [currentTab, queryClient]);
+
+  // Save all configurations
+  const handleSaveAll = async () => {
+    setIsSaving(true);
+    try {
+      // Save system MCP config
+      const systemConfigData = {
+        mcpEnabled: watch('mcpEnabled'),
+        mcpRateLimit: watch('mcpRateLimit'),
+        mcpTimeout: watch('mcpTimeout')
+      };
+      
+      await systemService.updateSystemConfig(systemConfigData);
+
+      // Save all tool configs via MCPToolsConfig ref
+      if (mcpToolsConfigRef.current?.saveAll) {
+        const result = await mcpToolsConfigRef.current.saveAll();
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to save some tool configurations');
+        }
+      }
+
+      // Refetch to get latest data
+      await Promise.all([
+        queryClient.invalidateQueries(['system-config']),
+        queryClient.invalidateQueries(['mcp-tools'])
+      ]);
+
+      showSuccess('All MCP configurations saved successfully');
+    } catch (error) {
+      showError(`Failed to save configurations: ${error.message || error}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
-    <Box>
+    <Box sx={{ position: 'relative', minHeight: '400px' }}>
       {/* MCP Controls */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h5" component="h2" gutterBottom fontWeight="bold">
@@ -16,7 +75,7 @@ const MCPToolsTab = ({ control, watch }) => {
         </Typography>
 
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Controller
               name="mcpEnabled"
               control={control}
@@ -29,9 +88,9 @@ const MCPToolsTab = ({ control, watch }) => {
             />
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Typography variant="subtitle2" gutterBottom>
-              Global Rate Limit: {watch('mcpRateLimit')} calls/sec
+              Global Rate Limit: {watch('mcpRateLimit')} calls/min
             </Typography>
             <Controller
               name="mcpRateLimit"
@@ -57,7 +116,21 @@ const MCPToolsTab = ({ control, watch }) => {
       </Paper>
 
       {/* MCP Tools Registry */}
-      <MCPToolsConfig showSystemControls={false} />
+      <MCPToolsConfig ref={mcpToolsConfigRef} showSystemControls={false} />
+
+      {/* Save Button */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
+        <Button
+          variant="contained"
+          size="large"
+          startIcon={<Save />}
+          disabled={isSaving || isLoading}
+          sx={{ minWidth: 150 }}
+          onClick={handleSaveAll}
+        >
+          {isSaving ? 'Saving...' : 'Save Configuration'}
+        </Button>
+      </Box>
     </Box>
   );
 };

@@ -48,7 +48,27 @@ class ConfigService extends BaseService {
    * @returns {Promise<Object>} Audio metrics
    */
   async getAudioMetrics(timeRange = '24h') {
-    return this.get('/audio-telephony/config/audio/metrics', { timeRange });
+    const response = await this.get('/audio-telephony/config/audio/metrics', { timeRange }, {
+      normalizeResponse: false  // Don't normalize, we'll handle it manually
+    });
+    
+    // Debug: Log the response to see what we're getting
+    console.log('🔍 [AUDIO_METRICS] Raw response:', response);
+    console.log('🔍 [AUDIO_METRICS] Response type:', typeof response);
+    console.log('🔍 [AUDIO_METRICS] Has metrics?', !!response?.metrics);
+    
+    // Extract metrics from the response
+    // API returns: { status: "success", metrics: {...} }
+    // With normalizeResponse: false, response is response.data, so response = { status: "success", metrics: {...} }
+    // Frontend expects: { metrics: {...} }
+    if (response?.metrics) {
+      console.log('🔍 [AUDIO_METRICS] Extracted metrics:', response.metrics);
+      return { metrics: response.metrics };
+    }
+    
+    // Fallback if response structure is different
+    console.warn('🔍 [AUDIO_METRICS] No metrics found in response, returning null');
+    return { metrics: null };
   }
 
   /**
@@ -202,6 +222,25 @@ class ConfigService extends BaseService {
    */
   async updateSystemConfig(config) {
     return this.put('/config/system', config);
+  }
+
+  // CRM Tasks Configuration
+
+  /**
+   * Get CRM tasks configuration
+   * @returns {Promise<Object>} CRM tasks configuration
+   */
+  async getCRMTasksConfig() {
+    return this.get('/config/crm-tasks');
+  }
+
+  /**
+   * Update CRM tasks configuration
+   * @param {Object} config - CRM tasks configuration
+   * @returns {Promise<Object>} Updated configuration
+   */
+  async updateCRMTasksConfig(config) {
+    return this.put('/config/crm-tasks', config);
   }
 }
 

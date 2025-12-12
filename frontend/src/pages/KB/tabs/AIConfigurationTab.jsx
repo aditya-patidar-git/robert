@@ -6,8 +6,6 @@ import { formatDateTime } from '../../../utils/formatters';
 import ModelVoiceSelection from '../../../components/config/ModelVoiceSelection';
 import ModelParameters from '../../../components/config/ModelParameters';
 import ModelCapabilityRegistry from '../../../components/config/ModelCapabilityRegistry';
-import LanguageVoiceMapping from '../../../components/config/LanguageVoiceMapping';
-import MCPToolsConfig from '../../../components/config/MCPToolsConfig';
 import TokenManagementStats from '../components/TokenManagementStats';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -343,12 +341,6 @@ const AIConfigurationTab = ({ state, handlers }) => {
           selectedModelId={watch('selectedModel')} 
           fallbackChain={fallbackChain} 
         />
-
-        {/* Language/Voice Mapping Configuration */}
-        <LanguageVoiceMapping />
-
-        {/* MCP Tools Configuration */}
-        <MCPToolsConfig showSystemControls={false} />
 
         {/* Unified Save/Cancel Buttons */}
         <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 4, mb: 2 }}>

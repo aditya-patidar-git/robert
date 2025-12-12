@@ -7,8 +7,6 @@ import systemService from '../../../services/systemService';
 import configService from '../../../services/configService';
 import { useAIModels } from '../../../hooks/useAIModels';
 import { useModelCapabilities } from '../../../hooks/useModelCapabilities';
-import { useAudioConfig } from '../../../hooks/useAudioConfig';
-import { useTelephonyConfig } from '../../../hooks/useTelephonyConfig';
 
 export const useSystemPageState = () => {
   const { user } = useAuth();
@@ -18,8 +16,19 @@ export const useSystemPageState = () => {
 
   const isOwner = user?.role === 'owner';
 
-  // CRM Tasks state
-  const [crmTasksConfig, setCrmTasksConfig] = useState({
+  // Fetch CRM tasks configuration
+  const { data: crmTasksConfigData, isLoading: crmTasksLoading } = useQuery({
+    queryKey: ['crm-tasks-config'],
+    queryFn: () => configService.getCRMTasksConfig(),
+    onSuccess: (data) => {
+      if (data?.config) {
+        // Config is already in the correct format from the backend
+      }
+    }
+  });
+
+  // Transform backend config to frontend format
+  const crmTasksConfig = crmTasksConfigData?.config || {
     createBooking: { enabled: true, requireConfirmation: true },
     reschedule: { enabled: true, requireConfirmation: true },
     cancel: { enabled: true, requireConfirmation: true },
@@ -27,7 +36,7 @@ export const useSystemPageState = () => {
     issueRefund: { enabled: false, requireConfirmation: true },
     dryRunEnforced: true,
     auditLogging: true
-  });
+  };
 
   const { control, handleSubmit, watch, setValue } = useForm({
     defaultValues: {
@@ -40,20 +49,6 @@ export const useSystemPageState = () => {
       callTimeout: 300,
       retryAttempts: 3,
       logLevel: 'info',
-      // Audio settings
-      vadThreshold: 500,
-      startPadding: 250,
-      endPadding: 300,
-      bargeInPolicy: 'pause',
-      noiseSuppression: true,
-      noiseSuppressionAlgorithm: 'basic',
-      echoCancellation: true,
-      automaticGainControl: false,
-      audioQuality: 'high',
-      energyThreshold: null,
-      energyThresholdAutoCalibrate: true,
-      // Telephony settings
-      outboundCallerId: '+442045726060',
       // Privacy settings
       transcriptRetention: 90,
       recordingRetention: 90,
@@ -79,8 +74,6 @@ export const useSystemPageState = () => {
   // Use custom hooks for data fetching
   const { models, isLoading: modelsLoading } = useAIModels();
   const { capabilities: capabilitiesData, isLoading: capabilitiesLoading } = useModelCapabilities();
-  const { isLoading: audioLoading, saveConfig: saveAudioConfig, isSaving: isSavingAudio } = useAudioConfig({ setValue, watch });
-  const { config: telephonyConfig, isLoading: telephonyLoading, saveConfig: saveTelephonyConfig, isSaving: isSavingTelephony } = useTelephonyConfig({ setValue, watch });
 
   // Fetch privacy configuration
   const { data: privacyConfigData, isLoading: privacyLoading } = useQuery({
@@ -120,30 +113,18 @@ export const useSystemPageState = () => {
     onError: () => showError('Failed to save privacy configuration')
   });
 
+  // Save CRM tasks configuration mutation
+  const saveCRMTasksConfigMutation = useMutation({
+    mutationFn: configService.updateCRMTasksConfig,
+    onSuccess: () => {
+      showSuccess('CRM tasks configuration saved successfully');
+      queryClient.invalidateQueries(['crm-tasks-config']);
+    },
+    onError: () => showError('Failed to save CRM tasks configuration')
+  });
+
   const onSubmit = (data) => {
     saveConfigMutation.mutate(data);
-  };
-
-  const handleSaveAudioConfig = (data) => {
-    saveAudioConfig({
-      vadThreshold: data.vadThreshold,
-      startPadding: data.startPadding,
-      endPadding: data.endPadding,
-      bargeInPolicy: data.bargeInPolicy,
-      noiseSuppression: data.noiseSuppression,
-      noiseSuppressionAlgorithm: data.noiseSuppressionAlgorithm,
-      echoCancellation: data.echoCancellation,
-      automaticGainControl: data.automaticGainControl,
-      audioQuality: data.audioQuality,
-      energyThreshold: data.energyThreshold,
-      energyThresholdAutoCalibrate: data.energyThresholdAutoCalibrate
-    });
-  };
-
-  const handleSaveTelephonyConfig = (data) => {
-    saveTelephonyConfig({
-      outboundCallerId: data.outboundCallerId
-    });
   };
 
   const handleSavePrivacyConfig = (data) => {
@@ -159,22 +140,50 @@ export const useSystemPageState = () => {
   };
 
   const handleSaveCrmTasksConfig = () => {
-    // TODO: Implement save to backend when CRM config endpoint is available
-    showSuccess('CRM tasks configuration saved (Note: Backend endpoint pending)');
+    // Prepare config data in the format expected by the backend
+    const configData = {
+      createBooking: crmTasksConfig.createBooking,
+      reschedule: crmTasksConfig.reschedule,
+      cancel: crmTasksConfig.cancel,
+      updateRecord: crmTasksConfig.updateRecord,
+      issueRefund: crmTasksConfig.issueRefund,
+      dryRunEnforced: crmTasksConfig.dryRunEnforced,
+      auditLogging: crmTasksConfig.auditLogging
+    };
+    saveCRMTasksConfigMutation.mutate(configData);
   };
 
   const handleCrmTaskToggle = (taskKey, field, value) => {
-    setCrmTasksConfig(prev => ({
-      ...prev,
-      [taskKey]: { ...prev[taskKey], [field]: value }
-    }));
+    // Update local state optimistically
+    // The actual save happens when handleSaveCrmTasksConfig is called
+    // For now, we'll need to update the query cache directly
+    queryClient.setQueryData(['crm-tasks-config'], (oldData) => {
+      if (!oldData?.config) return oldData;
+      return {
+        ...oldData,
+        config: {
+          ...oldData.config,
+          [taskKey]: {
+            ...oldData.config[taskKey],
+            [field]: value
+          }
+        }
+      };
+    });
   };
 
   const handleCrmGeneralToggle = (field, value) => {
-    setCrmTasksConfig(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    // Update local state optimistically
+    queryClient.setQueryData(['crm-tasks-config'], (oldData) => {
+      if (!oldData?.config) return oldData;
+      return {
+        ...oldData,
+        config: {
+          ...oldData.config,
+          [field]: value
+        }
+      };
+    });
   };
 
   return {
@@ -182,7 +191,7 @@ export const useSystemPageState = () => {
     setCurrentTab,
     isOwner,
     crmTasksConfig,
-    setCrmTasksConfig,
+    crmTasksLoading,
     control,
     handleSubmit,
     watch,
@@ -193,18 +202,12 @@ export const useSystemPageState = () => {
     modelsLoading,
     capabilitiesData,
     capabilitiesLoading,
-    audioLoading,
-    isSavingAudio,
-    telephonyConfig,
-    telephonyLoading,
-    isSavingTelephony,
     privacyConfigData,
     privacyLoading,
     saveConfigMutation,
     savePrivacyConfigMutation,
+    saveCRMTasksConfigMutation,
     onSubmit,
-    handleSaveAudioConfig,
-    handleSaveTelephonyConfig,
     handleSavePrivacyConfig,
     handleSaveCrmTasksConfig,
     handleCrmTaskToggle,
