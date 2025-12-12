@@ -22,49 +22,22 @@ export const useAudioConfig = (formMethods = null) => {
   // Update form values when config is loaded
   useEffect(() => {
     if (!data || isLoading) {
-      console.log('🔵 [AUDIO_CONFIG_DEBUG] Skipping reset - data:', !!data, 'isLoading:', isLoading);
       return;
     }
-    
-    // Debug: Log the actual data structure
-    console.log('🔵 [AUDIO_CONFIG_DEBUG] ========== AUDIO CONFIG DATA FLOW ==========');
-    console.log('🔵 [AUDIO_CONFIG_DEBUG] Raw API Response:', {
-      'data': data,
-      'data.data': data?.data,
-      'data.config': data?.config,
-      'data.success': data?.success,
-      'data type': typeof data,
-      'data.data type': typeof data?.data
-    });
     
     // Handle normalized response structure: { success: true, data: config, ... }
     // Backend returns: { status: "success", config: {...} }
     // Normalizer with dataPath: 'config' extracts config and puts it in data.data
-    const config = data?.data || data?.config;
+    const config = data?.data || data?.config || data;
     
-    console.log('🔵 [AUDIO_CONFIG_DEBUG] Extracted Config Object:', config);
-    console.log('🔵 [AUDIO_CONFIG_DEBUG] Config Type:', typeof config);
-    console.log('🔵 [AUDIO_CONFIG_DEBUG] Config Keys:', config ? Object.keys(config) : 'null');
-    console.log('🔵 [AUDIO_CONFIG_DEBUG] Key Values from Config:', {
-      vadThreshold: config?.vadThreshold,
-      startPadding: config?.startPadding,
-      endPadding: config?.endPadding,
-      bargeInPolicy: config?.bargeInPolicy,
-      noiseSuppression: config?.noiseSuppression,
-      echoCancellation: config?.echoCancellation,
-      automaticGainControl: config?.automaticGainControl,
-      audioQuality: config?.audioQuality
-    });
+    // Validate that config is an object with expected properties
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      return;
+    }
     
     if (config && reset && getValues) {
       // Get current form values to preserve other fields (telephony, voice, etc.)
       const currentValues = getValues();
-      
-      console.log('🔵 [AUDIO_CONFIG_DEBUG] Current Form Values (before reset):', {
-        vadThreshold: currentValues.vadThreshold,
-        startPadding: currentValues.startPadding,
-        endPadding: currentValues.endPadding
-      });
       
       // Build form values with proper handling of null/undefined (but preserve falsy values like 0, false)
       const formValues = {
@@ -78,18 +51,27 @@ export const useAudioConfig = (formMethods = null) => {
         endPadding: config.endPadding !== null && config.endPadding !== undefined 
           ? config.endPadding 
           : AUDIO_CONFIG_DEFAULTS.endPadding,
-        bargeInPolicy: config.bargeInPolicy || AUDIO_CONFIG_DEFAULTS.bargeInPolicy,
+        // FIX: Use explicit null/undefined check for bargeInPolicy to handle "stop" correctly
+        bargeInPolicy: config.bargeInPolicy !== null && config.bargeInPolicy !== undefined
+          ? config.bargeInPolicy
+          : AUDIO_CONFIG_DEFAULTS.bargeInPolicy,
         noiseSuppression: config.noiseSuppression !== null && config.noiseSuppression !== undefined 
           ? config.noiseSuppression 
           : AUDIO_CONFIG_DEFAULTS.noiseSuppression,
-        noiseSuppressionAlgorithm: config.noiseSuppressionAlgorithm || AUDIO_CONFIG_DEFAULTS.noiseSuppressionAlgorithm,
+        // FIX: Use explicit null/undefined check for noiseSuppressionAlgorithm
+        noiseSuppressionAlgorithm: config.noiseSuppressionAlgorithm !== null && config.noiseSuppressionAlgorithm !== undefined
+          ? config.noiseSuppressionAlgorithm
+          : AUDIO_CONFIG_DEFAULTS.noiseSuppressionAlgorithm,
         echoCancellation: config.echoCancellation !== null && config.echoCancellation !== undefined 
           ? config.echoCancellation 
           : AUDIO_CONFIG_DEFAULTS.echoCancellation,
         automaticGainControl: config.automaticGainControl !== null && config.automaticGainControl !== undefined 
           ? config.automaticGainControl 
           : AUDIO_CONFIG_DEFAULTS.automaticGainControl,
-        audioQuality: config.audioQuality || AUDIO_CONFIG_DEFAULTS.audioQuality,
+        // FIX: Use explicit null/undefined check for audioQuality
+        audioQuality: config.audioQuality !== null && config.audioQuality !== undefined
+          ? config.audioQuality
+          : AUDIO_CONFIG_DEFAULTS.audioQuality,
         energyThreshold: config.energyThreshold !== null && config.energyThreshold !== undefined 
           ? config.energyThreshold 
           : AUDIO_CONFIG_DEFAULTS.energyThreshold,
@@ -98,41 +80,12 @@ export const useAudioConfig = (formMethods = null) => {
           : AUDIO_CONFIG_DEFAULTS.energyThresholdAutoCalibrate,
       };
       
-      console.log('🔵 [AUDIO_CONFIG_DEBUG] Form Values to Reset With:', {
-        vadThreshold: formValues.vadThreshold,
-        startPadding: formValues.startPadding,
-        endPadding: formValues.endPadding,
-        bargeInPolicy: formValues.bargeInPolicy,
-        noiseSuppression: formValues.noiseSuppression,
-        echoCancellation: formValues.echoCancellation,
-        automaticGainControl: formValues.automaticGainControl,
-        'comparison': {
-          'config.vadThreshold': config.vadThreshold,
-          'formValues.vadThreshold': formValues.vadThreshold,
-          'default': AUDIO_CONFIG_DEFAULTS.vadThreshold
-        }
-      });
-      
       // Reset form with new values - use keepDefaultValues: false to ensure values update
       reset(formValues, { 
         keepDefaultValues: false 
       });
-      
-      // Check form values after reset
-      const valuesAfterReset = getValues();
-      console.log('🔵 [AUDIO_CONFIG_DEBUG] Form Values After Reset:', {
-        vadThreshold: valuesAfterReset.vadThreshold,
-        startPadding: valuesAfterReset.startPadding,
-        endPadding: valuesAfterReset.endPadding,
-        'match check': {
-          'vadThreshold matches': valuesAfterReset.vadThreshold === formValues.vadThreshold,
-          'startPadding matches': valuesAfterReset.startPadding === formValues.startPadding,
-          'endPadding matches': valuesAfterReset.endPadding === formValues.endPadding
-        }
-      });
-      console.log('🔵 [AUDIO_CONFIG_DEBUG] ========== END AUDIO CONFIG DATA FLOW ==========');
     } else if (config && setValue) {
-        // Fallback to setValue if reset is not available
+      // Fallback to setValue if reset is not available
         if (config.vadThreshold !== undefined && config.vadThreshold !== null) {
           setValue('vadThreshold', config.vadThreshold, { shouldValidate: false });
         }
@@ -142,13 +95,15 @@ export const useAudioConfig = (formMethods = null) => {
         if (config.endPadding !== undefined && config.endPadding !== null) {
           setValue('endPadding', config.endPadding, { shouldValidate: false });
         }
-        if (config.bargeInPolicy !== undefined) {
+        // FIX: Use explicit null/undefined check for bargeInPolicy
+        if (config.bargeInPolicy !== undefined && config.bargeInPolicy !== null) {
           setValue('bargeInPolicy', config.bargeInPolicy, { shouldValidate: false });
         }
         if (config.noiseSuppression !== undefined) {
           setValue('noiseSuppression', config.noiseSuppression, { shouldValidate: false });
         }
-        if (config.noiseSuppressionAlgorithm !== undefined) {
+        // FIX: Use explicit null/undefined check for noiseSuppressionAlgorithm
+        if (config.noiseSuppressionAlgorithm !== undefined && config.noiseSuppressionAlgorithm !== null) {
           setValue('noiseSuppressionAlgorithm', config.noiseSuppressionAlgorithm, { shouldValidate: false });
         }
         if (config.echoCancellation !== undefined) {
@@ -157,7 +112,8 @@ export const useAudioConfig = (formMethods = null) => {
         if (config.automaticGainControl !== undefined) {
           setValue('automaticGainControl', config.automaticGainControl, { shouldValidate: false });
         }
-        if (config.audioQuality !== undefined) {
+        // FIX: Use explicit null/undefined check for audioQuality
+        if (config.audioQuality !== undefined && config.audioQuality !== null) {
           setValue('audioQuality', config.audioQuality, { shouldValidate: false });
         }
         if (config.energyThreshold !== undefined) {

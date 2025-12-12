@@ -98,7 +98,7 @@ export const uploadFile = async (req, res) => {
     const uploadedFile = await openaiFilesService.uploadFile(
       buffer,
       originalname,
-      'fine-tune' // Changed from 'assistants' to allow downloads
+      'assistants' // Changed from 'assistants' to allow downloads
     );
 
     // Add file to vector store

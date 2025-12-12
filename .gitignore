@@ -65,6 +65,7 @@ out/
 # Optional: Ignore backend uploads/temp if any
 uploads/
 tmp/
+backend/audio-previews/
 
 # Screenshots from automation tests
 screenshots/

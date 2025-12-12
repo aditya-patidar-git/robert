@@ -13,6 +13,81 @@ class FileSearchService {
     this.vectorStoreName = process.env.OPENAI_VECTOR_STORE_NAME || 'UNIVERSALAIDATABASE';
   }
 
+  // Extract readable text from content (handles string, object, or array structures)
+  extractTextFromContent(content) {
+    if (!content) return '';
+    
+    if (typeof content === 'string') {
+      return content;
+    }
+    
+    if (Array.isArray(content)) {
+      return content
+        .map(item => {
+          if (typeof item === 'string') return item;
+          if (item && typeof item === 'object') {
+            return item.text || item.content || item.value || JSON.stringify(item);
+          }
+          return String(item);
+        })
+        .filter(Boolean)
+        .join(' ');
+    }
+    
+    if (typeof content === 'object') {
+      return content.text || content.content || content.value || JSON.stringify(content);
+    }
+    
+    return String(content);
+  }
+
+  // Generate AI summary for a file based on query and content snippets
+  async generateFileSummary(query, fileName, contentSnippets) {
+    try {
+      // Combine all content snippets into a single text
+      const combinedContent = contentSnippets
+        .map(snippet => this.extractTextFromContent(snippet))
+        .filter(Boolean)
+        .join('\n\n---\n\n')
+        .substring(0, 3000); // Limit to avoid token limits
+
+      if (!combinedContent) {
+        return 'No relevant content found in this file.';
+      }
+
+      const prompt = `Given the search query "${query}" and the following relevant content snippets from the file "${fileName}", provide a brief 2-3 sentence summary explaining how this file relates to the query and what key information it contains.
+
+Content snippets:
+${combinedContent}
+
+Summary:`;
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant that creates concise summaries of document content in relation to search queries.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 200
+      });
+
+      const summary = response.choices[0]?.message?.content?.trim();
+      return summary || 'Unable to generate summary for this file.';
+    } catch (error) {
+      console.error(`Error generating summary for ${fileName}:`, error);
+      // Fallback: return first snippet if summary generation fails
+      const firstSnippet = this.extractTextFromContent(contentSnippets[0] || '');
+      return firstSnippet ? firstSnippet.substring(0, 200) + '...' : 'Summary unavailable.';
+    }
+  }
+
   // Search files using OpenAI File Search tool
   async searchFiles(query, options = {}) {
     try {
@@ -23,7 +98,7 @@ class FileSearchService {
       }
 
       const {
-        maxResults = 5,
+        maxResults = 10, // Increased to get more results for grouping
         similarityThreshold = 0.7,
         tags = [],
         fileIds = null
@@ -52,22 +127,106 @@ class FileSearchService {
         searchParams
       );
 
-      // Process results
-      const results = searchResults.data.map(result => ({
-        fileId: result.id,
-        fileName: result.filename,
-        similarityScore: result.similarity_score,
-        content: result.content,
-        metadata: result.metadata || {},
-        source: 'OpenAI Vector Store'
-      }));
+      // Process raw results
+      const rawResults = searchResults.data.map((result, index) => {
+        // OpenAI returns 'score' field (not similarity_score), and 'file_id' instead of 'id'
+        // Check score first since that's what OpenAI actually returns
+        const similarityScore = result.score ?? 
+                                result.similarity_score ?? 
+                                result.similarityScore ?? 
+                                (result.distance !== undefined ? (1 - result.distance) : null);
+        
+        // Validate and normalize the score
+        const validScore = (similarityScore !== null && 
+                          similarityScore !== undefined && 
+                          !isNaN(similarityScore)) 
+                          ? Number(similarityScore) 
+                          : null;
+        
+        return {
+          fileId: result.file_id || result.id,  // Fix: use file_id (OpenAI's field name)
+          fileName: result.filename || 'Unknown File',
+          similarityScore: validScore,
+          content: result.content,
+          metadata: result.metadata || result.attributes || {},
+          source: 'OpenAI Vector Store'
+        };
+      });
 
-      console.log(`✅ Found ${results.length} results for query: "${query}"`);
+      // Group results by file
+      const fileGroups = new Map();
+      
+      rawResults.forEach(result => {
+        const key = result.fileId || result.fileName;
+        if (!fileGroups.has(key)) {
+          fileGroups.set(key, {
+            fileId: result.fileId,
+            fileName: result.fileName,
+            contentSnippets: [],
+            similarityScores: []
+          });
+        }
+        
+        const group = fileGroups.get(key);
+        group.contentSnippets.push(result.content);
+        if (result.similarityScore !== null && result.similarityScore !== undefined) {
+          group.similarityScores.push(result.similarityScore);
+        }
+      });
+
+      // Generate summaries for each file group
+      const summaryPromises = Array.from(fileGroups.entries()).map(async ([key, group]) => {
+        try {
+          const summary = await this.generateFileSummary(query, group.fileName, group.contentSnippets);
+          
+          // Calculate average similarity score
+          const avgSimilarity = group.similarityScores.length > 0
+            ? group.similarityScores.reduce((sum, score) => sum + score, 0) / group.similarityScores.length
+            : null;
+
+          return {
+            fileId: group.fileId,
+            fileName: group.fileName,
+            summary: summary,
+            matchCount: group.contentSnippets.length,
+            averageSimilarityScore: avgSimilarity
+          };
+        } catch (error) {
+          console.error(`Error processing file group ${key}:`, error);
+          // Return fallback result
+          const firstSnippet = this.extractTextFromContent(group.contentSnippets[0] || '');
+          const avgSimilarity = group.similarityScores.length > 0
+            ? group.similarityScores.reduce((sum, score) => sum + score, 0) / group.similarityScores.length
+            : null;
+          
+          return {
+            fileId: group.fileId,
+            fileName: group.fileName,
+            summary: firstSnippet ? firstSnippet.substring(0, 200) + '...' : 'Summary unavailable.',
+            matchCount: group.contentSnippets.length,
+            averageSimilarityScore: avgSimilarity
+          };
+        }
+      });
+
+      // Wait for all summaries to be generated
+      const results = await Promise.all(summaryPromises);
+      
+      // Sort by average similarity score (descending) if available
+      results.sort((a, b) => {
+        if (a.averageSimilarityScore === null && b.averageSimilarityScore === null) return 0;
+        if (a.averageSimilarityScore === null) return 1;
+        if (b.averageSimilarityScore === null) return -1;
+        return b.averageSimilarityScore - a.averageSimilarityScore;
+      });
+
+      console.log(`✅ Generated summaries for ${results.length} files`);
       
       return {
         query,
         results,
         totalResults: results.length,
+        totalMatches: rawResults.length,
         vectorStore: {
           id: this.vectorStoreId,
           name: this.vectorStoreName

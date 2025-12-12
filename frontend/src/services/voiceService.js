@@ -54,13 +54,21 @@ class VoiceService extends BaseService {
    * Preview voice with custom text
    * @param {string} voiceId - Voice ID
    * @param {string} text - Text to preview
+   * @param {Object} options - Additional options (modelId, etc.)
    * @returns {Promise<Object>} Preview result
    */
-  async previewVoice(voiceId, text) {
-    const response = await this.post('/preview', {
+  async previewVoice(voiceId, text, options = {}) {
+    const requestBody = {
       voiceId,
       text
-    });
+    };
+    
+    // Add modelId if provided
+    if (options.modelId) {
+      requestBody.modelId = options.modelId;
+    }
+    
+    const response = await this.post('/preview', requestBody);
     
     // Handle different response structures
     if (response.data?.status === 'success' && response.data?.preview) {
