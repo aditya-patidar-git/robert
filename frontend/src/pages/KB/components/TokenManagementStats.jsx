@@ -7,7 +7,11 @@ import aiService from '../../../services/aiService';
 const TokenManagementStats = () => {
   const { data: tokenStats, isLoading, error } = useQuery({
     queryKey: ['token-stats'],
-    queryFn: () => tokenManagementService.getTokenStats(),
+    queryFn: async () => {
+      const stats = await tokenManagementService.getTokenStats();
+      // Ensure we return the stats object directly
+      return stats;
+    },
     refetchInterval: 30000
   });
 

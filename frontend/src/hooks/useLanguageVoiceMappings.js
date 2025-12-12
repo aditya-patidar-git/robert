@@ -16,7 +16,7 @@ export const useLanguageVoiceMappings = () => {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['language-voice-mappings'],
-    queryFn: languageVoiceService.getLanguageMappings,
+    queryFn: () => languageVoiceService.getLanguageMappings(),
     refetchInterval: QUERY_INTERVALS.LANGUAGE_VOICE_MAPPINGS,
     staleTime: QUERY_INTERVALS.LANGUAGE_VOICE_MAPPINGS
   });

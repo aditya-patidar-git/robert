@@ -1,0 +1,43 @@
+[
+  {
+    "id": "audit_1765439395445_ae109cae",
+    "eventType": "data_exported",
+    "eventData": {
+      "exportId": "export_1765439395444_efafe7c0",
+      "userIdentifier": "69326ac2de14cd6631d36ef2",
+      "dataTypes": [
+        "transcripts",
+        "recordings",
+        "metadata"
+      ]
+    },
+    "timestamp": "2025-12-11T07:49:55.445Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1765439498727_696ed84e",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1765439498727",
+      "period": "monthly",
+      "generatedAt": "2025-12-11T07:51:38.727Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2025-12-11T07:51:38.727Z",
+    "system": "robert-ai"
+  }
+]

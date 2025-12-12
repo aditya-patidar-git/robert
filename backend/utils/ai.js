@@ -440,8 +440,8 @@ async function executeWebSearch(args, callContext) {
 }
 
 async function executeCRMBrowser(args, callContext) {
-    // Import browser agent service
-    const browserAgentService = (await import('../../robert-agent-service/src/services/browserAgentService.js')).default;
+    // Use API call instead of direct import (production-ready approach)
+    const AGENT_SERVICE_URL = process.env.AGENT_SERVICE_URL || 'http://localhost:3002';
     
     // Log tool invocation
     console.log(`\n${'='.repeat(80)}`);
@@ -452,15 +452,42 @@ async function executeCRMBrowser(args, callContext) {
     console.log(`📋 Customer Email: ${args.args?.customerEmail || 'not specified'}`);
     console.log(`${'='.repeat(80)}\n`);
     
-    const result = await browserAgentService.executeTask(args.task, args.args, callContext);
-    
-    return {
-        success: result.success,
-        result: result.result,
-        dryRun: result.dryRun,
-        requiresConfirmation: result.requiresConfirmation,
-        courseType: args.args?.courseType || null
-    };
+    try {
+        const axios = (await import('axios')).default;
+        const response = await axios.post(
+            `${AGENT_SERVICE_URL}/api/tools/browser/execute`,
+            {
+                task: args.task,
+                args: args.args || {},
+                callContext: callContext || {}
+            },
+            {
+                timeout: 300000, // 5 minutes timeout for browser operations
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        
+        const result = response.data.result;
+        
+        return {
+            success: result.success,
+            result: result.result,
+            dryRun: result.dryRun,
+            requiresConfirmation: result.requiresConfirmation,
+            courseType: args.args?.courseType || null
+        };
+    } catch (error) {
+        console.error('❌ Error calling browser agent service:', error);
+        return {
+            success: false,
+            result: `Failed to execute browser task: ${error.message}`,
+            dryRun: false,
+            requiresConfirmation: false,
+            courseType: args.args?.courseType || null
+        };
+    }
 }
 
 async function executeTransferCall(args, callContext) {

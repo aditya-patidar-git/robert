@@ -74,15 +74,23 @@ const ModelVoiceSelection = ({
 
   const availableModels = Array.isArray(models) ? models : [];
   const voices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
+  
+  // Filter to only show voice-based (speech-to-speech) models
+  const voiceBasedModels = availableModels.filter(model => {
+    // Check if model supports realtime (speech-to-speech)
+    return model.supportsRealtime === true || 
+           model.capabilities?.realtime === true ||
+           (model.id && (model.id.includes('realtime') || model.id.includes('gpt-realtime')));
+  });
 
   // Get compatible voices for the selected model
   const getCompatibleVoices = useCallback((modelId) => {
-    if (!modelId || !Array.isArray(voices) || !Array.isArray(availableModels)) {
+    if (!modelId || !Array.isArray(voices) || !Array.isArray(voiceBasedModels)) {
       return voices || [];
     }
 
     // Find the selected model
-    const selectedModel = availableModels.find(m => m.id === modelId);
+    const selectedModel = voiceBasedModels.find(m => m.id === modelId);
     if (!selectedModel) {
       return voices || [];
     }
@@ -114,7 +122,7 @@ const ModelVoiceSelection = ({
       // Non-audio models: no voices available
       return [];
     }
-  }, [voices, availableModels]);
+  }, [voices, voiceBasedModels]);
 
   // Fallback chain handlers
   const handleDragEnd = (event) => {
@@ -184,7 +192,8 @@ const ModelVoiceSelection = ({
     const modelId = typeof chainItem === 'string' ? chainItem : chainItem?.modelId || id;
     const voiceId = typeof chainItem === 'string' ? undefined : chainItem?.voiceId;
     
-    const model = availableModels.find(m => m.id === modelId);
+    // Use voiceBasedModels first, fallback to availableModels for existing chain items
+    const model = voiceBasedModels.find(m => m.id === modelId) || availableModels.find(m => m.id === modelId);
     const voice = voices.find(v => v.id === voiceId);
     
     const {
@@ -274,7 +283,7 @@ const ModelVoiceSelection = ({
               <FormControl sx={{ minWidth: 200 }}>
                 <InputLabel>Primary AI Model</InputLabel>
                 <Select {...field} label="Primary AI Model">
-                  {availableModels.map((model) => (
+                  {voiceBasedModels.map((model) => (
                     <MenuItem key={model.id} value={model.id}>
                       {model.name || model.id}
                     </MenuItem>
@@ -396,69 +405,6 @@ const ModelVoiceSelection = ({
             </DndContext>
           )}
 
-          {/* Add Model to Fallback Chain */}
-          <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-            <Typography variant="subtitle2" gutterBottom>
-              Add Model to Fallback Chain
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Controller
-                name="selectedModel"
-                control={control}
-                render={({ field }) => (
-                  <FormControl sx={{ minWidth: 200 }}>
-                    <InputLabel>Model</InputLabel>
-                    <Select {...field} label="Model">
-                      {availableModels.map((model) => (
-                        <MenuItem key={model.id} value={model.id}>
-                          {model.name || model.id}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
-              />
-              <Controller
-                name="selectedVoice"
-                control={control}
-                render={({ field }) => {
-                  const selectedModel = watch('selectedModel');
-                  const compatibleVoices = getCompatibleVoices(selectedModel);
-                  return (
-                    <FormControl sx={{ minWidth: 200 }}>
-                      <InputLabel>Voice</InputLabel>
-                      <Select 
-                        {...field} 
-                        label="Voice"
-                        disabled={!selectedModel}
-                      >
-                        {compatibleVoices.length > 0 ? (
-                          compatibleVoices.map((voice) => (
-                            <MenuItem key={voice.id} value={voice.id}>
-                              {voice.name}
-                            </MenuItem>
-                          ))
-                        ) : (
-                          <MenuItem disabled>
-                            {selectedModel ? 'No compatible voices' : 'Select model first'}
-                          </MenuItem>
-                        )}
-                      </Select>
-                    </FormControl>
-                  );
-                }}
-              />
-              <Button
-                variant="contained"
-                startIcon={<Add />}
-                onClick={handleSaveModelVoice}
-                disabled={!watch('selectedModel') || !watch('selectedVoice')}
-              >
-                Add to Chain
-              </Button>
-            </Box>
-          </Box>
-
           {/* Visual Chain Representation */}
           {fallbackChain.length > 0 && (
             <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
@@ -469,7 +415,8 @@ const ModelVoiceSelection = ({
                 {fallbackChain.map((item, index) => {
                   const modelId = typeof item === 'string' ? item : item.modelId;
                   const voiceId = typeof item === 'string' ? undefined : item.voiceId;
-                  const model = availableModels.find(m => m.id === modelId);
+                  // Use voiceBasedModels first, fallback to availableModels for existing chain items
+                  const model = voiceBasedModels.find(m => m.id === modelId) || availableModels.find(m => m.id === modelId);
                   const voice = voices.find(v => v.id === voiceId);
                   const label = model?.name || modelId;
                   const voiceLabel = voice ? ` (${voice.name})` : '';

@@ -147,6 +147,13 @@ const TranscriptsComplaintsPage = () => {
 
   const handlePlayRecording = useCallback(async (callSid) => {
     try {
+      // Validate callSid
+      if (!callSid) {
+        showError('Call ID is required to play recording');
+        return;
+      }
+
+      // If already playing this recording, pause it
       if (playingCallSid === callSid && playingAudio) {
         playingAudio.pause();
         setPlayingAudio(null);
@@ -154,30 +161,127 @@ const TranscriptsComplaintsPage = () => {
         return;
       }
 
+      // Stop any currently playing audio
       if (playingAudio) {
         playingAudio.pause();
         playingAudio.currentTime = 0;
+        playingAudio.src = '';
       }
 
+      // Get recording URL
       const audioUrl = await transcriptService.getRecordingUrl(callSid);
+      
+      if (!audioUrl) {
+        showError('Recording URL could not be generated');
+        return;
+      }
+
+      // First, check if the URL is accessible and returns audio
+      // Note: HEAD request may fail due to CORS, so we make it optional
+      try {
+        const token = localStorage.getItem('authToken');
+        const headers = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(audioUrl, { 
+          method: 'HEAD',
+          headers,
+          credentials: 'include'
+        });
+        const contentType = response.headers.get('content-type');
+        
+        if (!response.ok) {
+          if (response.status === 404) {
+            showError('Recording not found. The recording may not be available for this call.');
+            return;
+          } else if (response.status === 401 || response.status === 403) {
+            showError('You do not have permission to access this recording.');
+            return;
+          } else {
+            showError(`Recording unavailable (${response.status}). Please try again later.`);
+            return;
+          }
+        }
+        
+        if (contentType && !contentType.startsWith('audio/')) {
+          showError('Recording format not supported. Expected audio format.');
+          return;
+        }
+      } catch (fetchError) {
+        // HEAD request may fail due to CORS or other issues
+        // This is okay - we'll proceed and let the audio element handle errors
+        console.warn('HEAD request failed (may be due to CORS), proceeding with audio playback:', fetchError);
+        // Don't return - continue to try playing the audio
+      }
+
+      // Create and configure audio element
       const audio = new Audio(audioUrl);
       
+      // Set up event listeners before attempting to play
       audio.addEventListener('ended', () => {
         setPlayingAudio(null);
         setPlayingCallSid(null);
       });
       
-      audio.addEventListener('error', () => {
-        showError('Failed to play recording. The recording may not be available.');
+      audio.addEventListener('error', (e) => {
+        console.error('Audio playback error:', e, audio.error);
+        let errorMessage = 'Failed to play recording.';
+        
+        if (audio.error) {
+          switch (audio.error.code) {
+            case MediaError.MEDIA_ERR_ABORTED:
+              errorMessage = 'Playback was aborted.';
+              break;
+            case MediaError.MEDIA_ERR_NETWORK:
+              errorMessage = 'Network error while loading recording.';
+              break;
+            case MediaError.MEDIA_ERR_DECODE:
+              errorMessage = 'Recording format not supported by your browser.';
+              break;
+            case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+              errorMessage = 'Recording format not supported.';
+              break;
+            default:
+              errorMessage = 'The recording may not be available or the format is not supported.';
+          }
+        }
+        
+        showError(errorMessage);
         setPlayingAudio(null);
         setPlayingCallSid(null);
       });
 
-      await audio.play();
-      setPlayingAudio(audio);
-      setPlayingCallSid(callSid);
+      audio.addEventListener('loadstart', () => {
+        // Audio is starting to load
+      });
+
+      audio.addEventListener('canplay', () => {
+        // Audio is ready to play
+      });
+
+      // Attempt to play the audio
+      try {
+        await audio.play();
+        setPlayingAudio(audio);
+        setPlayingCallSid(callSid);
+      } catch (playError) {
+        console.error('Error playing audio:', playError);
+        // Handle browser autoplay restrictions
+        if (playError.name === 'NotAllowedError') {
+          showError('Please interact with the page first to enable audio playback');
+        } else if (playError.name === 'NotSupportedError') {
+          showError('Audio format not supported by your browser');
+        } else {
+          showError('Failed to play recording. Please try again.');
+        }
+        setPlayingAudio(null);
+        setPlayingCallSid(null);
+      }
     } catch (error) {
-      showError('Failed to play recording');
+      console.error('Error in handlePlayRecording:', error);
+      showError('Failed to play recording. Please check if the recording is available.');
       setPlayingAudio(null);
       setPlayingCallSid(null);
     }
@@ -294,11 +398,30 @@ const TranscriptsComplaintsPage = () => {
   }, [selectedComplaint, newPriority, priorityUpdateMutation]);
 
   const renderTranscriptContent = useCallback((transcript) => {
-    if (!transcript?.transcript) return <Typography>No transcript available</Typography>;
+    // Handle multiple possible data structures
+    let transcriptArray = null;
+    
+    if (Array.isArray(transcript)) {
+      // If transcript is directly an array
+      transcriptArray = transcript;
+    } else if (transcript?.transcript && Array.isArray(transcript.transcript)) {
+      // If transcript.transcript is an array
+      transcriptArray = transcript.transcript;
+    } else if (transcript?.turns && Array.isArray(transcript.turns)) {
+      // If transcript.turns is an array
+      transcriptArray = transcript.turns;
+    } else if (transcript?.data?.transcript && Array.isArray(transcript.data.transcript)) {
+      // If transcript.data.transcript is an array
+      transcriptArray = transcript.data.transcript;
+    }
+    
+    if (!transcriptArray || transcriptArray.length === 0) {
+      return <Typography color="text.secondary">No transcript available</Typography>;
+    }
 
     return (
       <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
-        {transcript.transcript.map((turn, idx) => {
+        {transcriptArray.map((turn, idx) => {
           const isAgent = turn.role === 'assistant' || turn.role === 'agent';
           const hasRedactions = turn.redactions && turn.redactions.length > 0;
           
@@ -320,7 +443,7 @@ const TranscriptsComplaintsPage = () => {
                   )}
                 </Box>
                 <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                  {turn.text || turn.content}
+                  {turn.text || turn.content || turn.message || ''}
                 </Typography>
               </Box>
             </Box>
@@ -422,12 +545,39 @@ const TranscriptsComplaintsPage = () => {
             </Box>
           ) : (
             <>
-              {(fullTranscriptData?.transcript || selectedTranscript) && renderTranscriptContent(fullTranscriptData?.transcript || selectedTranscript)}
+              {/* Debug: Log transcript data structure */}
+              {console.log('Full Transcript Data:', fullTranscriptData)}
+              {console.log('Selected Transcript:', selectedTranscript)}
               
-              {(fullTranscriptData?.transcript?.summary || selectedTranscript?.summary) && (
+              {/* Display transcript - try fullTranscriptData first, then fallback to selectedTranscript */}
+              {(() => {
+                // The backend returns: { transcript: CallRecord, escalations: [...], ... }
+                // CallRecord has a transcript array field
+                let transcriptToRender = null;
+                
+                if (fullTranscriptData) {
+                  // If fullTranscriptData has a transcript property (the CallRecord object)
+                  if (fullTranscriptData.transcript) {
+                    transcriptToRender = fullTranscriptData.transcript;
+                  } else {
+                    // If fullTranscriptData itself is the CallRecord
+                    transcriptToRender = fullTranscriptData;
+                  }
+                } else if (selectedTranscript) {
+                  transcriptToRender = selectedTranscript;
+                }
+                
+                if (transcriptToRender) {
+                  return renderTranscriptContent(transcriptToRender);
+                }
+                return <Typography color="text.secondary">No transcript available</Typography>;
+              })()}
+              
+              {/* Display summary */}
+              {(fullTranscriptData?.transcript?.summary || fullTranscriptData?.summary || selectedTranscript?.summary) && (
                 <Box sx={{ mt: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
                   <Typography variant="subtitle2" gutterBottom>AI Summary</Typography>
-                  <Typography variant="body2">{(fullTranscriptData?.transcript?.summary || selectedTranscript?.summary)}</Typography>
+                  <Typography variant="body2">{(fullTranscriptData?.transcript?.summary || fullTranscriptData?.summary || selectedTranscript?.summary)}</Typography>
                 </Box>
               )}
 
@@ -519,16 +669,6 @@ const TranscriptsComplaintsPage = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setTranscriptDialog(false)}>Close</Button>
-          {selectedTranscript && (
-            <Button 
-              variant="contained" 
-              onClick={() => {
-                setComplaintDialog(true);
-              }}
-            >
-              Submit Complaint
-            </Button>
-          )}
         </DialogActions>
       </Dialog>
 

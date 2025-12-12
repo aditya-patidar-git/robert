@@ -2,6 +2,8 @@ import modelDiscoveryService from '../services/modelDiscoveryService.js';
 import voiceDiscoveryService from '../services/voiceDiscoveryService.js';
 import vectorMigrationService from '../services/vectorMigrationService.js';
 import openaiService from '../services/openaiService.js';
+import ToolConfig from '../models/ToolConfig.js';
+import LanguageVoiceMapping from '../models/LanguageVoiceMapping.js';
 
 async function initializeServices() {
   try {
@@ -32,6 +34,26 @@ async function initializeServices() {
 
     if (filesNeedingMigration.length > 0) {
       console.log('⚠️ Files need migration. Run migration manually or via API.');
+    }
+
+    // 5. Initialize default tool configs
+    console.log('🔧 Initializing tool configurations...');
+    try {
+      await ToolConfig.initializeDefaults();
+      const toolCount = await ToolConfig.countDocuments();
+      console.log(`✅ Tool configurations initialized (${toolCount} tools)`);
+    } catch (error) {
+      console.warn('⚠️ Tool config initialization failed (may already exist):', error.message);
+    }
+
+    // 6. Initialize default language/voice mappings
+    console.log('🌍 Initializing language/voice mappings...');
+    try {
+      await LanguageVoiceMapping.initializeDefaults();
+      const mappingCount = await LanguageVoiceMapping.countDocuments();
+      console.log(`✅ Language/voice mappings initialized (${mappingCount} mappings)`);
+    } catch (error) {
+      console.warn('⚠️ Language/voice mapping initialization failed (may already exist):', error.message);
     }
 
     console.log('🎉 Services initialized successfully!');

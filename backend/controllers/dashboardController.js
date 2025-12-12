@@ -57,14 +57,19 @@ export const getDashboardAnalytics = async (req, res) => {
       User.countDocuments(),
       
       // Live Calls - get active calls with details
+      // Only show calls that were updated within last 3 minutes (to filter out stale calls)
       CallRecord.find(
-        { callStatus: 'in-progress' },
+        { 
+          callStatus: 'in-progress',
+          updatedAt: { $gte: new Date(now.getTime() - 3 * 60 * 1000) } // Updated within last 3 minutes
+        },
         {
           callSid: 1,
           from: 1,
           to: 1,
           duration: 1,
           createdAt: 1,
+          updatedAt: 1,
           callStatus: 1
         }
       ).sort({ createdAt: -1 }).limit(10),

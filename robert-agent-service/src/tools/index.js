@@ -9,6 +9,8 @@ import transferCallTool from './transferCall.js';
 import kbaVerificationTool from './kbaVerification.js';
 import complaintSubmissionTool from './complaintSubmission.js';
 import clientVerificationTool from './clientVerification.js';
+import configManager from '../agent/configManager.js';
+import ToolConfig from '../database/models/ToolConfig.js';
 
 /**
  * Tool Executor for OpenAI Realtime API
@@ -18,7 +20,45 @@ class ToolExecutor {
   constructor() {
     this.tools = new Map();
     this.defaultTimeout = 10000; // 10 seconds
+    this.rateLimitTrackers = new Map(); // Track rate limits per tool
     this.registerTools();
+  }
+
+  /**
+   * Check rate limit for a tool
+   * @param {string} toolName - Tool name
+   * @param {Object} rateLimitConfig - Rate limit configuration { limit, windowMs }
+   * @returns {boolean} True if within rate limit
+   */
+  checkRateLimit(toolName, rateLimitConfig) {
+    if (!rateLimitConfig || !rateLimitConfig.limit) {
+      return true; // No rate limit configured
+    }
+
+    const now = Date.now();
+    let tracker = this.rateLimitTrackers.get(toolName);
+    
+    if (!tracker) {
+      tracker = {
+        requests: 0,
+        windowStart: now
+      };
+      this.rateLimitTrackers.set(toolName, tracker);
+    }
+
+    // Reset window if expired
+    if (now - tracker.windowStart >= rateLimitConfig.windowMs) {
+      tracker.requests = 0;
+      tracker.windowStart = now;
+    }
+
+    // Check if under limit
+    if (tracker.requests >= rateLimitConfig.limit) {
+      return false;
+    }
+
+    tracker.requests++;
+    return true;
   }
 
   /**
@@ -422,10 +462,49 @@ class ToolExecutor {
       throw new Error(`Unknown tool: ${toolName}`);
     }
 
-    // Increase timeout for browser automation tools - they need more time
-    if (toolName === 'crm_browser') {
-      timeout = 360000; // 360 seconds (6 minutes) for browser operations (launch, navigate, login, booking workflow, etc.) - extended for development
-      console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
+    // Get tool configuration from ConfigManager
+    const toolConfig = configManager.getToolConfig(toolName);
+    
+    // Check if tool is enabled
+    if (!toolConfig.enabled) {
+      console.error(`❌ [${callSid}] Tool ${toolName} is disabled`);
+      throw new Error(`Tool ${toolName} is disabled`);
+    }
+
+    // Check rate limit (simple in-memory tracking per tool executor instance)
+    // Note: For distributed systems, this should be in Redis or similar
+    if (!this.checkRateLimit(toolName, toolConfig.rateLimit)) {
+      console.error(`❌ [${callSid}] Rate limit exceeded for tool ${toolName}`);
+      throw new Error(`Rate limit exceeded for tool ${toolName}`);
+    }
+
+    // Check domain allowlist if URL is provided
+    if (parameters.url && toolConfig.domains && toolConfig.domains.length > 0) {
+      try {
+        const url = new URL(parameters.url);
+        const domain = url.hostname;
+        const isAllowed = toolConfig.domains.some(allowedDomain => 
+          domain === allowedDomain || domain.endsWith('.' + allowedDomain)
+        );
+        if (!isAllowed) {
+          console.error(`❌ [${callSid}] Domain ${domain} not allowed for tool ${toolName}`);
+          throw new Error(`Domain ${domain} not allowed for tool ${toolName}`);
+        }
+      } catch (urlError) {
+        console.error(`❌ [${callSid}] Invalid URL in parameters:`, urlError);
+        throw new Error(`Invalid URL provided for tool ${toolName}`);
+      }
+    }
+
+    // Use configured maxTime if available, otherwise use default timeout
+    if (toolConfig.maxTime) {
+      timeout = toolConfig.maxTime;
+    } else {
+      // Increase timeout for browser automation tools - they need more time
+      if (toolName === 'crm_browser') {
+        timeout = 360000; // 360 seconds (6 minutes) for browser operations
+        console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
+      }
     }
 
     const tool = this.tools.get(toolName);
@@ -447,6 +526,11 @@ class ToolExecutor {
       console.log(`✅ [${callSid}] [TOOL EXECUTOR] Tool ${toolName} completed successfully`);
       console.log(`✅ [${callSid}] [TOOL EXECUTOR] Execution time: ${executionTime}ms`);
       console.log(`✅ [${callSid}] [TOOL EXECUTOR] Result preview:`, JSON.stringify(result, null, 2).substring(0, 300));
+
+      // Update usage statistics in database (async, don't wait)
+      this.updateToolUsage(toolName).catch(err => {
+        console.warn(`⚠️ [${callSid}] Failed to update tool usage stats:`, err.message);
+      });
 
       return {
         success: true,
@@ -482,6 +566,26 @@ class ToolExecutor {
    */
   getAvailableTools() {
     return Array.from(this.tools.keys());
+  }
+
+  /**
+   * Update tool usage statistics in database
+   * @param {string} toolName - Tool name
+   */
+  async updateToolUsage(toolName) {
+    try {
+      await ToolConfig.findOneAndUpdate(
+        { toolName },
+        {
+          $inc: { usageCount: 1 },
+          lastUsed: new Date()
+        },
+        { upsert: false } // Don't create if doesn't exist
+      );
+    } catch (error) {
+      // Silently fail - usage tracking is not critical
+      console.warn(`Failed to update usage for tool ${toolName}:`, error.message);
+    }
   }
 }
 

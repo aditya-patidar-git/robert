@@ -14,7 +14,7 @@ export const useMCPTools = () => {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['mcp-tools'],
-    queryFn: mcpToolsService.getAllTools,
+    queryFn: () => mcpToolsService.getAllTools(),
     refetchInterval: QUERY_INTERVALS.MCP_TOOLS,
     staleTime: QUERY_INTERVALS.MCP_TOOLS
   });

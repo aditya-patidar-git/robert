@@ -10,6 +10,7 @@ import multilingualService from "../services/multilingualService.js";
 import toolOrchestrator from "../services/toolOrchestrator.js";
 import kbaService from "../services/kbaService.js";
 import complaintDetectionService from "../services/complaintDetectionService.js";
+import CallRecord from "../database/models/CallRecord.js";
 
 // Media Stream WebSocket Handler for Realtime API
 export const mediaStream = async (req, res) => {
@@ -356,6 +357,54 @@ export const handleMediaStreamConnection = (ws, req) => {
         try { if (upFfmpeg) upFfmpeg.kill('SIGKILL'); } catch (_) {}
         
         if (callSid) {
+            // Update database with transcript and mark call as completed when WebSocket disconnects
+            try {
+                const duration = callStartTime ? Math.floor((Date.now() - callStartTime) / 1000) : null;
+                const conversation = conversations[callSid];
+                
+                // Prepare update object
+                const updateData = {
+                    callStatus: 'completed',
+                    ...(duration && { duration })
+                };
+                
+                // Save transcript if available
+                if (conversation?.transcript && conversation.transcript.length > 0) {
+                    updateData.transcript = conversation.transcript;
+                    if (conversation.from) updateData.from = conversation.from;
+                    if (conversation.to) updateData.to = conversation.to;
+                    
+                    // Generate summary if not already present
+                    if (!updateData.summary && conversation.transcript.length > 0) {
+                        try {
+                            const summaryService = (await import('../services/summaryService.js')).default;
+                            updateData.summary = await summaryService.generateCallSummary(
+                                conversation.transcript,
+                                { callSid, from: conversation.from, to: conversation.to }
+                            );
+                        } catch (summaryError) {
+                            console.warn(`⚠️ [${callSid}] Could not generate summary:`, summaryError.message);
+                            updateData.summary = `Call transcript with ${conversation.transcript.length} exchanges.`;
+                        }
+                    }
+                    
+                    console.log(`✅ [${callSid}] Saving transcript with ${conversation.transcript.length} entries`);
+                } else {
+                    console.log(`⚠️ [${callSid}] No transcript available to save`);
+                }
+                
+                await CallRecord.findOneAndUpdate(
+                    { callSid },
+                    updateData,
+                    { upsert: true, new: true }
+                );
+                
+                console.log(`✅ [${callSid}] Saved transcript and marked call as completed (reason: ${reason})`);
+            } catch (err) {
+                console.error(`❌ [${callSid}] Error saving transcript in cleanup:`, err);
+                // Don't throw - cleanup should continue even if DB update fails
+            }
+            
             delete realtimeClients[callSid];
             delete conversations[callSid];
             pendingToolCalls.clear();

@@ -9,10 +9,7 @@ const ComplaintsTab = ({ state, handlers }) => {
     complaintPagination,
     complaintFilters,
     setComplaintFilters,
-    isLoadingComplaints,
-    selectedTranscript,
-    setComplaintDialog,
-    showError
+    isLoadingComplaints
   } = state;
 
   const {
@@ -23,22 +20,10 @@ const ComplaintsTab = ({ state, handlers }) => {
 
   return (
     <Paper>
-      <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ p: 2 }}>
         <Typography variant="h6">
           Complaints & Escalations ({complaintPagination?.total || complaints.length})
         </Typography>
-        <Button 
-          variant="contained" 
-          onClick={() => {
-            if (selectedTranscript) {
-              setComplaintDialog(true);
-            } else {
-              showError('Please select a transcript first');
-            }
-          }}
-        >
-          Submit Complaint
-        </Button>
       </Box>
 
       <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>

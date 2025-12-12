@@ -74,7 +74,6 @@ const ModelParameters = ({
                     step={tempParams.step || 0.1}
                     marks={[
                       { value: tempParams.min, label: tempParams.min.toString() },
-                      { value: tempParams.default || 0.4, label: 'Default' },
                       { value: tempParams.max, label: tempParams.max.toString() }
                     ]}
                     valueLabelDisplay="auto"
@@ -114,7 +113,6 @@ const ModelParameters = ({
                     step={topPParams.step || 0.1}
                     marks={[
                       { value: topPParams.min, label: topPParams.min.toString() },
-                      { value: topPParams.default || 1.0, label: 'Default' },
                       { value: topPParams.max, label: topPParams.max.toString() }
                     ]}
                     valueLabelDisplay="auto"
@@ -156,7 +154,6 @@ const ModelParameters = ({
                     step={maxTokensParams.step || 10}
                     marks={[
                       { value: maxTokensParams.min, label: maxTokensParams.min.toString() },
-                      { value: maxTokensParams.default || 150, label: 'Default' },
                       { value: maxValue, label: maxValue.toString() }
                     ]}
                     valueLabelDisplay="auto"

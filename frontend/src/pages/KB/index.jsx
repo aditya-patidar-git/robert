@@ -350,6 +350,25 @@ const AIKnowledgePage = () => {
     setCompareDialogOpen(true);
   }, [setSelectedVersions, setCompareDialogOpen]);
 
+  const handleEditVersion = useCallback(async (version) => {
+    try {
+      const result = await promptVersionService.activateVersion(version._id);
+      if (result?.data?.status === 'success') {
+        setValue('globalPrompt', result.data.promptContent || version.content);
+        showSuccess(`Version ${version.version} activated and loaded for editing`);
+        queryClient.invalidateQueries(['prompt-versions']);
+        queryClient.invalidateQueries(['prompt-current-version']);
+        queryClient.invalidateQueries(['ai-config']);
+        refetchVersions();
+      } else {
+        throw new Error('Failed to activate version');
+      }
+    } catch (error) {
+      console.error('Error activating version:', error);
+      showError('Failed to activate version');
+    }
+  }, [setValue, showSuccess, showError, queryClient, refetchVersions]);
+
   const handleRollbackClick = useCallback((version) => {
     setRollbackVersion(version);
     setRollbackReason('');
@@ -357,31 +376,58 @@ const AIKnowledgePage = () => {
   }, [setRollbackVersion, setRollbackReason, setRollbackDialogOpen]);
 
   const handleRollbackConfirm = useCallback(async () => {
+    if (!rollbackVersion) {
+      showError('No version selected for rollback');
+      return;
+    }
+    
     try {
       const result = await promptVersionService.rollbackToVersion(
         rollbackVersion._id,
         rollbackReason || `Rollback to version ${rollbackVersion.version}`
       );
-      showSuccess(`Rolled back to version ${rollbackVersion.version}. New version ${result.version.version} created.`);
       
-      setValue('globalPrompt', result.promptContent || rollbackVersion.content);
-      
-      const config = await aiService.getConfig();
-      if (config?.globalPrompt) {
-        setValue('globalPrompt', config.globalPrompt);
+      if (result?.data?.status === 'success') {
+        showSuccess(`Rolled back to version ${rollbackVersion.version}. New version ${result.data.version.version} created.`);
+        
+        setValue('globalPrompt', result.data.promptContent || rollbackVersion.content);
+        
+        const config = await aiService.getConfig();
+        if (config?.globalPrompt) {
+          setValue('globalPrompt', config.globalPrompt);
+        }
+        
+        setRollbackDialogOpen(false);
+        setRollbackVersion(null);
+        setRollbackReason('');
+        queryClient.invalidateQueries(['prompt-versions']);
+        queryClient.invalidateQueries(['prompt-current-version']);
+        queryClient.invalidateQueries(['ai-config']);
+        refetchVersions();
+      } else {
+        throw new Error(result?.data?.message || 'Rollback failed');
       }
-      
-      setRollbackDialogOpen(false);
-      setRollbackVersion(null);
-      setRollbackReason('');
-      queryClient.invalidateQueries(['prompt-versions']);
-      queryClient.invalidateQueries(['prompt-current-version']);
-      queryClient.invalidateQueries(['ai-config']);
-      refetchVersions();
     } catch (error) {
-      showError('Failed to rollback version');
+      console.error('Error rolling back version:', error);
+      showError(error.message || 'Failed to rollback version');
     }
   }, [rollbackVersion, rollbackReason, setValue, showSuccess, showError, queryClient, refetchVersions, setRollbackDialogOpen, setRollbackVersion, setRollbackReason]);
+
+  const handleClearAllVersions = useCallback(async () => {
+    try {
+      const result = await promptVersionService.clearInactiveVersions('global');
+      if (result?.data?.status === 'success') {
+        showSuccess(`Cleared ${result.data.deletedCount} inactive version(s)`);
+        queryClient.invalidateQueries(['prompt-versions']);
+        refetchVersions();
+      } else {
+        throw new Error('Failed to clear versions');
+      }
+    } catch (error) {
+      console.error('Error clearing versions:', error);
+      showError('Failed to clear inactive versions');
+    }
+  }, [showSuccess, showError, queryClient, refetchVersions]);
 
   const handleSaveFlowOverride = useCallback(async (flowType, overrideData) => {
     try {
@@ -421,8 +467,10 @@ const AIKnowledgePage = () => {
     handleCancelConfig,
     handleViewVersion,
     handleCompareVersions,
+    handleEditVersion,
     handleRollbackClick,
     handleRollbackConfirm,
+    handleClearAllVersions,
     handleSaveFlowOverride,
     handleTestFlowDetection
   };

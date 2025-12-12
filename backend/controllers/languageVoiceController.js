@@ -4,10 +4,21 @@ import voiceDiscoveryService from "../services/voiceDiscoveryService.js";
 // Get all language/voice mappings
 export const getLanguageMappings = async (req, res) => {
   try {
+    console.log('🔍 [LANGUAGE-VOICE] getLanguageMappings endpoint called');
+    
     // Ensure defaults are initialized
     await LanguageVoiceMapping.initializeDefaults();
     
     const mappings = await LanguageVoiceMapping.find().sort({ languageName: 1 });
+    console.log(`📊 Found ${mappings.length} language/voice mappings in database`);
+    
+    if (mappings.length === 0) {
+      console.warn('⚠️ No language/voice mappings found in database!');
+      return res.json({
+        status: "success",
+        mappings: []
+      });
+    }
     
     // Enrich with voice names from discovery service
     const enrichedMappings = await Promise.all(
@@ -27,12 +38,16 @@ export const getLanguageMappings = async (req, res) => {
       })
     );
     
+    console.log(`✅ Returning ${enrichedMappings.length} language/voice mappings to frontend`);
+    console.log(`📋 Language codes:`, enrichedMappings.map(m => m.languageCode).join(', '));
+    
     res.json({
       status: "success",
       mappings: enrichedMappings
     });
   } catch (error) {
-    console.error("Error getting language mappings:", error);
+    console.error("❌ Error getting language mappings:", error);
+    console.error("❌ Error stack:", error.stack);
     res.status(500).json({
       status: "error",
       message: error.message || "Internal server error"

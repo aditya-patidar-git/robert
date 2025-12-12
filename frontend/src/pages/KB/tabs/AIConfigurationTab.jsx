@@ -1,7 +1,7 @@
 import React from 'react';
-import { Box, Paper, Typography, TextField, Button, Alert, LinearProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Tooltip, Card, CardContent, Slider, FormControlLabel, Switch, Grid } from '@mui/material';
+import { Box, Paper, Typography, TextField, Button, Alert, LinearProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Tooltip, Card, CardContent, Slider, FormControlLabel, Switch } from '@mui/material';
 import { Controller } from 'react-hook-form';
-import { Refresh, Visibility, Edit, ArrowForward, Save, Undo } from '@mui/icons-material';
+import { Refresh, Visibility, Edit, ArrowForward, Save, Undo, DeleteSweep } from '@mui/icons-material';
 import { formatDateTime } from '../../../utils/formatters';
 import ModelVoiceSelection from '../../../components/config/ModelVoiceSelection';
 import ModelParameters from '../../../components/config/ModelParameters';
@@ -39,7 +39,9 @@ const AIConfigurationTab = ({ state, handlers }) => {
     handleCancelConfig,
     handleViewVersion,
     handleCompareVersions,
+    handleEditVersion,
     handleRollbackClick,
+    handleClearAllVersions,
     handleSaveFlowOverride,
     handleTestFlowDetection
   } = handlers;
@@ -92,15 +94,30 @@ const AIConfigurationTab = ({ state, handlers }) => {
             <Typography variant="h6" gutterBottom>
               Prompt Version History
             </Typography>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<Refresh />}
-              onClick={() => refetchVersions()}
-              disabled={versionsLoading}
-            >
-              Refresh
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<DeleteSweep />}
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to clear all inactive versions? This action cannot be undone.')) {
+                    handleClearAllVersions();
+                  }
+                }}
+                disabled={versionsLoading || promptVersions.filter(v => !v.isActive).length === 0}
+              >
+                Clear All
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<Refresh />}
+                onClick={() => refetchVersions()}
+                disabled={versionsLoading}
+              >
+                Refresh
+              </Button>
+            </Box>
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             View all versions of the global prompt, compare changes, and rollback to previous versions if needed.
@@ -150,7 +167,7 @@ const AIConfigurationTab = ({ state, handlers }) => {
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {version.createdBy || 'admin'}
+                          {version.createdByName || version.createdBy || 'admin'}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -168,31 +185,24 @@ const AIConfigurationTab = ({ state, handlers }) => {
                               <Visibility fontSize="small" />
                             </IconButton>
                           </Tooltip>
+                          <Tooltip title="Edit and activate this version">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleEditVersion(version)}
+                            >
+                              <Edit fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                           {!version.isActive && (
-                            <>
-                              <Tooltip title="Compare with current">
-                                <IconButton
-                                  size="small"
-                                  onClick={() => {
-                                    const current = promptVersions.find(v => v.isActive);
-                                    if (current) {
-                                      handleCompareVersions(current, version);
-                                    }
-                                  }}
-                                >
-                                  <Edit fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Rollback to this version">
-                                <IconButton
-                                  size="small"
-                                  color="warning"
-                                  onClick={() => handleRollbackClick(version)}
-                                >
-                                  <ArrowForward fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            </>
+                            <Tooltip title="Rollback to this version">
+                              <IconButton
+                                size="small"
+                                color="warning"
+                                onClick={() => handleRollbackClick(version)}
+                              >
+                                <ArrowForward fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
                           )}
                         </Box>
                       </TableCell>
@@ -250,8 +260,8 @@ const AIConfigurationTab = ({ state, handlers }) => {
             Configure confidence thresholds and uncertainty handling for knowledge base responses.
           </Typography>
 
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={4}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 3 }}>
+            <Box>
               <FormControlLabel
                 control={
                   <Controller
@@ -271,9 +281,9 @@ const AIConfigurationTab = ({ state, handlers }) => {
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
                 When enabled, the system will validate knowledge base responses against confidence thresholds.
               </Typography>
-            </Grid>
+            </Box>
 
-            <Grid item xs={12} md={4}>
+            <Box>
               <Typography variant="subtitle2" gutterBottom>
                 Confidence Threshold: {watch('uncertaintyGateThreshold')}
               </Typography>
@@ -297,9 +307,9 @@ const AIConfigurationTab = ({ state, handlers }) => {
                   </>
                 )}
               />
-            </Grid>
+            </Box>
 
-            <Grid item xs={12} md={4}>
+            <Box>
               <Typography variant="subtitle2" gutterBottom>
                 Minimum Sources: {watch('uncertaintyGateMinSources')}
               </Typography>
@@ -323,8 +333,8 @@ const AIConfigurationTab = ({ state, handlers }) => {
                   </>
                 )}
               />
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         </Paper>
 
         {/* Model Capability Registry */}

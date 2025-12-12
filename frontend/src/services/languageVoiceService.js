@@ -18,8 +18,41 @@ class LanguageVoiceService extends BaseService {
    * @returns {Promise<Array<Object>>} Array of mapping objects
    */
   async getLanguageMappings() {
-    const response = await this.get('');
-    return response.data || [];
+    try {
+      console.log('🔍 [FRONTEND] Calling getLanguageMappings API...');
+      const response = await this.get('');
+      console.log('📦 [FRONTEND] Raw language mappings response:', response);
+      
+      // Backend returns: { status: "success", mappings: [...] }
+      // After BaseService normalization with dataPath: 'mappings', response.data is already the mappings array
+      
+      // Check if response.data is already the array (normalized)
+      if (Array.isArray(response?.data)) {
+        console.log(`✅ [FRONTEND] Found ${response.data.length} mappings in response.data`);
+        return response.data;
+      }
+      
+      // Fallback for different response structures
+      if (response?.data?.mappings) {
+        console.log(`✅ [FRONTEND] Found ${response.data.mappings.length} mappings in response.data.mappings`);
+        return response.data.mappings;
+      }
+      if (response?.mappings) {
+        console.log(`✅ [FRONTEND] Found ${response.mappings.length} mappings in response.mappings`);
+        return response.mappings;
+      }
+      if (Array.isArray(response)) {
+        console.log(`✅ [FRONTEND] Response is array with ${response.length} items`);
+        return response;
+      }
+      
+      console.warn('⚠️ [FRONTEND] No mappings found in response, returning empty array');
+      console.warn('⚠️ [FRONTEND] Response structure:', JSON.stringify(response, null, 2));
+      return [];
+    } catch (error) {
+      console.error('❌ [FRONTEND] Error in getLanguageMappings:', error);
+      return [];
+    }
   }
 
   /**
