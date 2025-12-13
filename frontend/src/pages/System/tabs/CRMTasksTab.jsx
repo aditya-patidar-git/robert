@@ -17,7 +17,8 @@ const CRMTasksTab = ({
   crmTasksConfig,
   handleCrmTaskToggle,
   handleCrmGeneralToggle,
-  handleSaveCrmTasksConfig
+  handleSaveCrmTasksConfig,
+  isSaving = false
 }) => {
   return (
     <Box>
@@ -33,7 +34,7 @@ const CRMTasksTab = ({
           {Object.entries(crmTasksConfig)
             .filter(([key]) => key !== 'dryRunEnforced' && key !== 'auditLogging')
             .map(([taskKey, taskConfig]) => (
-              <Grid item xs={12} md={6} key={taskKey}>
+              <Grid size={{ xs: 12, md: 6 }} key={taskKey}>
                 <Card variant="outlined">
                   <CardContent>
                     <Typography variant="subtitle1" gutterBottom textTransform="capitalize">
@@ -65,7 +66,7 @@ const CRMTasksTab = ({
               </Grid>
             ))}
 
-          <Grid item xs={12}>
+          <Grid size={{ xs: 12 }}>
             <Divider sx={{ my: 2 }} />
             <Typography variant="subtitle1" gutterBottom>
               General Settings
@@ -96,10 +97,13 @@ const CRMTasksTab = ({
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
           <Button
             variant="contained"
+            size="large"
             startIcon={<Save />}
             onClick={handleSaveCrmTasksConfig}
+            disabled={isSaving}
+            sx={{ minWidth: 150 }}
           >
-            Save CRM Tasks Config
+            {isSaving ? 'Saving...' : 'Save CRM Tasks Config'}
           </Button>
         </Box>
       </Paper>

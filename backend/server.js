@@ -27,6 +27,7 @@ import gdprRoutes from "./routes/gdprRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import languageVoiceRoutes from "./routes/languageVoiceRoutes.js";
 import privacyConfigRoutes from "./routes/privacyConfigRoutes.js";
+import crmTasksConfigRoutes from "./routes/crmTasksConfigRoutes.js";
 import promptVersionRoutes from "./routes/promptVersionRoutes.js";
 import flowParameterRoutes from "./routes/flowParameterRoutes.js";
 import tokenManagementRoutes from "./routes/tokenManagementRoutes.js";
@@ -142,6 +143,9 @@ app.use("/api/admin/audio-telephony", audioTelephonyRoutes);
 
 // Privacy Configuration Routes
 app.use("/api/admin", privacyConfigRoutes);
+
+// CRM Tasks Configuration Routes
+app.use("/api/admin", crmTasksConfigRoutes);
 
 // MCP Tools Routes
 app.use("/api/mcp-tools", mcpToolsRoutes);

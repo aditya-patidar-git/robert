@@ -63,6 +63,62 @@ router.get("/voices/:id", getVoice);
 router.post("/voices/preview", previewVoice);
 router.patch("/voices/:id/default", setDefaultVoice);
 
+// Audio Preview File Serving Route
+router.get("/audio-previews/:filename", async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const audioStorageService = (await import('../services/audioStorageService.js')).default;
+    const path = (await import('path')).default;
+    
+    console.log('🔵 [AUDIO_SERVE] Request for audio file:', filename);
+    
+    // Check if file exists
+    const fileExists = await audioStorageService.fileExists(filename);
+    if (!fileExists) {
+      console.error('❌ [AUDIO_SERVE] File not found:', filename);
+      return res.status(404).json({
+        status: "error",
+        message: "Audio file not found"
+      });
+    }
+    
+    // Get file path
+    const filepath = audioStorageService.getAudioPath(filename);
+    console.log('🔵 [AUDIO_SERVE] Serving file from:', filepath);
+    
+    // Use Express sendFile method for proper file serving
+    res.sendFile(filepath, {
+      headers: {
+        'Content-Type': 'audio/mpeg',
+        'Content-Disposition': `inline; filename="${filename}"`,
+        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+        'Accept-Ranges': 'bytes' // Enable range requests for seeking
+      }
+    }, (err) => {
+      if (err) {
+        console.error('❌ [AUDIO_SERVE] Error sending file:', err);
+        if (!res.headersSent) {
+          res.status(500).json({
+            status: "error",
+            message: "Failed to serve audio file"
+          });
+        }
+      } else {
+        console.log('✅ [AUDIO_SERVE] File sent successfully:', filename);
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ [AUDIO_SERVE] Error serving audio file:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        status: "error",
+        message: "Failed to serve audio file"
+      });
+    }
+  }
+});
+
 // Active Calls Route
 router.get("/active-calls", async (req, res) => {
   try {

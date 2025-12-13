@@ -259,10 +259,14 @@ export const useKBPageState = () => {
     mutationFn: ({ query, options }) => fileSearchService.searchFiles(query, options),
     onSuccess: (results) => {
       setFileSearchResults(results.results || []);
-      showSuccess(`Found ${results.totalResults} results`);
+      setIsSearching(false);
+      const fileCount = results.totalResults || 0;
+      const matchCount = results.totalMatches || 0;
+      showSuccess(`Found ${fileCount} ${fileCount === 1 ? 'file' : 'files'} with ${matchCount} ${matchCount === 1 ? 'match' : 'matches'}`);
     },
     onError: (error) => {
       console.error('File search error:', error);
+      setIsSearching(false);
       showError('File search failed');
     }
   });

@@ -80,6 +80,8 @@ export const useAudioTelephonyState = () => {
   const [voicePreviewDialog, setVoicePreviewDialog] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [previewAudioUrl, setPreviewAudioUrl] = useState(null);
+  const [previewAudioElement, setPreviewAudioElement] = useState(null);
   const [modelRanges, setModelRanges] = useState(null);
   const [selectedNumberForProfile, setSelectedNumberForProfile] = useState(null);
   const [numberProfileDialog, setNumberProfileDialog] = useState(false);
@@ -88,7 +90,7 @@ export const useAudioTelephonyState = () => {
 
   // Use custom hooks
   const { isLoading: audioLoading } = useAudioConfig({ setValue, watch, reset, getValues });
-  const { isLoading: telephonyLoading } = useTelephonyConfig({ setValue, watch });
+  const { isLoading: telephonyLoading } = useTelephonyConfig({ setValue, watch, reset });
   const { models: availableModels } = useAIModels();
   const { mappings: languageMappings, isLoading: mappingsLoading, previewingVoice, setPreviewingVoice } = useLanguageVoiceMappings();
   const { isLoading: capabilitiesLoading } = useModelCapabilities();
@@ -113,8 +115,16 @@ export const useAudioTelephonyState = () => {
     refetch: refetchAudioMetrics
   } = useQuery({
     queryKey: ['audio-metrics', callQualityTimeRange],
-    queryFn: () => configService.getAudioMetrics(callQualityTimeRange),
-    refetchInterval: 30000
+    queryFn: () => {
+      console.log('🔍 [AUDIO_METRICS] Fetching metrics for timeRange:', callQualityTimeRange);
+      return configService.getAudioMetrics(callQualityTimeRange);
+    },
+    refetchInterval: 30000,
+    onSuccess: (data) => {
+      console.log('🔍 [AUDIO_METRICS] Query success, received data:', data);
+      console.log('🔍 [AUDIO_METRICS] Has metrics?', !!data?.metrics);
+      console.log('🔍 [AUDIO_METRICS] Total calls:', data?.metrics?.totalCalls);
+    }
   });
 
   const { 
@@ -298,12 +308,94 @@ export const useAudioTelephonyState = () => {
   });
 
   const voicePreviewMutation = useMutation({
-    mutationFn: ({ voiceId, text }) => voiceService.previewVoice(voiceId, text),
-    onSuccess: (data) => {
-      console.log('Voice preview:', data);
-      showSuccess('Voice preview generated');
+    mutationFn: async ({ voiceId, text, modelId }) => {
+      console.log('🔵 [VOICE_PREVIEW] ========== STARTING PREVIEW REQUEST ==========');
+      console.log('🔵 [VOICE_PREVIEW] Request parameters:', { voiceId, text, modelId });
+      console.log('🔵 [VOICE_PREVIEW] Voice service:', voiceService);
+      console.log('🔵 [VOICE_PREVIEW] Calling voiceService.previewVoice...');
+      
+      try {
+        // Update voiceService to accept modelId if needed
+        // For now, we'll pass it as part of the request
+        const result = await voiceService.previewVoice(voiceId, text, { modelId });
+        console.log('🔵 [VOICE_PREVIEW] Raw response received:', result);
+        console.log('🔵 [VOICE_PREVIEW] Response type:', typeof result);
+        console.log('🔵 [VOICE_PREVIEW] Response keys:', result ? Object.keys(result) : 'null/undefined');
+        console.log('🔵 [VOICE_PREVIEW] ========== REQUEST COMPLETED ==========');
+        return result;
+      } catch (error) {
+        console.error('🔴 [VOICE_PREVIEW] Error in mutationFn:', error);
+        console.error('🔴 [VOICE_PREVIEW] Error stack:', error?.stack);
+        throw error;
+      }
     },
-    onError: () => showError('Failed to generate voice preview')
+    onSuccess: (data) => {
+      console.log('🔵 [VOICE_PREVIEW] ========== MUTATION SUCCESS ==========');
+      console.log('🔵 [VOICE_PREVIEW] Full response data:', JSON.stringify(data, null, 2));
+      console.log('🔵 [VOICE_PREVIEW] Data type:', typeof data);
+      console.log('🔵 [VOICE_PREVIEW] Is array:', Array.isArray(data));
+      console.log('🔵 [VOICE_PREVIEW] Data keys:', data ? Object.keys(data) : 'null/undefined');
+      
+      // Try multiple possible response structures
+      let audioUrl = null;
+      let preview = null;
+      
+      // Structure 1: { data: { preview: { audioUrl } } }
+      if (data?.data?.preview) {
+        preview = data.data.preview;
+        audioUrl = preview.audioUrl || preview.url;
+        console.log('🔵 [VOICE_PREVIEW] Found structure: data.data.preview');
+      }
+      // Structure 2: { preview: { audioUrl } }
+      else if (data?.preview) {
+        preview = data.preview;
+        audioUrl = preview.audioUrl || preview.url;
+        console.log('🔵 [VOICE_PREVIEW] Found structure: data.preview');
+      }
+      // Structure 3: Direct preview object { audioUrl, ... }
+      else if (data?.audioUrl || data?.url) {
+        preview = data;
+        audioUrl = data.audioUrl || data.url;
+        console.log('🔵 [VOICE_PREVIEW] Found structure: direct preview object');
+      }
+      // Structure 4: Normalized response { success: true, data: { preview: { audioUrl } } }
+      else if (data?.success && data?.data) {
+        preview = data.data.preview || data.data;
+        audioUrl = preview?.audioUrl || preview?.url || data.data.audioUrl || data.data.url;
+        console.log('🔵 [VOICE_PREVIEW] Found structure: normalized success response');
+      }
+      
+      console.log('🔵 [VOICE_PREVIEW] Extracted preview object:', preview);
+      console.log('🔵 [VOICE_PREVIEW] Extracted audio URL:', audioUrl);
+      console.log('🔵 [VOICE_PREVIEW] Audio URL type:', typeof audioUrl);
+      console.log('🔵 [VOICE_PREVIEW] Audio URL length:', audioUrl?.length);
+      
+      if (audioUrl && typeof audioUrl === 'string' && audioUrl.trim().length > 0) {
+        console.log('✅ [VOICE_PREVIEW] Valid audio URL found, setting in state');
+        setPreviewAudioUrl(audioUrl);
+        console.log('✅ [VOICE_PREVIEW] Audio URL set successfully:', audioUrl);
+        showSuccess('Voice preview generated. Audio will play automatically.');
+      } else {
+        console.warn('⚠️ [VOICE_PREVIEW] No valid audio URL found');
+        console.warn('⚠️ [VOICE_PREVIEW] Full data structure:', JSON.stringify(data, null, 2));
+        console.warn('⚠️ [VOICE_PREVIEW] Preview object:', preview);
+        showError('Preview generated but audio URL not found in response. Check console for details.');
+      }
+      console.log('🔵 [VOICE_PREVIEW] ========== SUCCESS HANDLER COMPLETE ==========');
+    },
+    onError: (error) => {
+      console.error('🔴 [VOICE_PREVIEW] ========== MUTATION ERROR ==========');
+      console.error('🔴 [VOICE_PREVIEW] Error object:', error);
+      console.error('🔴 [VOICE_PREVIEW] Error message:', error?.message);
+      console.error('🔴 [VOICE_PREVIEW] Error name:', error?.name);
+      console.error('🔴 [VOICE_PREVIEW] Error stack:', error?.stack);
+      console.error('🔴 [VOICE_PREVIEW] Error response:', error?.response);
+      console.error('🔴 [VOICE_PREVIEW] Error response data:', error?.response?.data);
+      console.error('🔴 [VOICE_PREVIEW] Error response status:', error?.response?.status);
+      console.error('🔴 [VOICE_PREVIEW] Error response headers:', error?.response?.headers);
+      console.error('🔴 [VOICE_PREVIEW] ========== ERROR HANDLER COMPLETE ==========');
+      showError(error?.response?.data?.message || error?.message || 'Failed to generate voice preview');
+    }
   });
 
   return {
@@ -336,6 +428,10 @@ export const useAudioTelephonyState = () => {
     setSelectedVoice,
     isPlaying,
     setIsPlaying,
+    previewAudioUrl,
+    setPreviewAudioUrl,
+    previewAudioElement,
+    setPreviewAudioElement,
     modelRanges,
     setModelRanges,
     selectedNumberForProfile,

@@ -153,6 +153,13 @@ const TranscriptsComplaintsPage = () => {
         return;
       }
 
+      // Check for opt-out - look up transcript by callSid
+      const transcript = transcripts.find(t => t.callSid === callSid);
+      if (transcript?.recordingConsent?.given === false) {
+        showError('Recording not available - customer opted out of recording consent');
+        return;
+      }
+
       // If already playing this recording, pause it
       if (playingCallSid === callSid && playingAudio) {
         playingAudio.pause();
@@ -194,7 +201,13 @@ const TranscriptsComplaintsPage = () => {
         
         if (!response.ok) {
           if (response.status === 404) {
-            showError('Recording not found. The recording may not be available for this call.');
+            // Check if 404 is due to opt-out
+            const transcript = transcripts.find(t => t.callSid === callSid);
+            if (transcript?.recordingConsent?.given === false) {
+              showError('Recording not available - customer opted out of recording consent');
+            } else {
+              showError('Recording not found. The recording may not be available for this call.');
+            }
             return;
           } else if (response.status === 401 || response.status === 403) {
             showError('You do not have permission to access this recording.');
@@ -281,19 +294,34 @@ const TranscriptsComplaintsPage = () => {
       }
     } catch (error) {
       console.error('Error in handlePlayRecording:', error);
-      showError('Failed to play recording. Please check if the recording is available.');
+      // Check if error is due to opt-out
+      const transcript = transcripts.find(t => t.callSid === callSid);
+      if (transcript?.recordingConsent?.given === false) {
+        showError('Recording not available - customer opted out of recording consent');
+      } else {
+        showError('Failed to play recording. Please check if the recording is available.');
+      }
       setPlayingAudio(null);
       setPlayingCallSid(null);
     }
-  }, [playingCallSid, playingAudio, showError, setPlayingAudio, setPlayingCallSid]);
+  }, [playingCallSid, playingAudio, showError, setPlayingAudio, setPlayingCallSid, transcripts]);
 
   const handleExport = useCallback((params = {}) => {
+    // Check for opt-out if exporting a single transcript
+    if (params.id) {
+      const transcript = transcripts.find(t => (t.id === params.id || t._id === params.id));
+      if (transcript?.recordingConsent?.given === false) {
+        showError('Transcript not available - customer opted out of recording consent');
+        return;
+      }
+    }
+    
     if (canSeeAll && !params.id) {
       setExportDialog(true);
     } else {
       exportMutation.mutate({ format: exportFormat, ...params });
     }
-  }, [canSeeAll, exportFormat, exportMutation, setExportDialog]);
+  }, [canSeeAll, exportFormat, exportMutation, setExportDialog, transcripts, showError]);
 
   const confirmExport = useCallback(() => {
     exportMutation.mutate({ format: exportFormat, ...filters });
@@ -397,7 +425,7 @@ const TranscriptsComplaintsPage = () => {
     }
   }, [selectedComplaint, newPriority, priorityUpdateMutation]);
 
-  const renderTranscriptContent = useCallback((transcript) => {
+  const renderTranscriptContent = useCallback((transcript, parentData = null) => {
     // Handle multiple possible data structures
     let transcriptArray = null;
     
@@ -415,7 +443,15 @@ const TranscriptsComplaintsPage = () => {
       transcriptArray = transcript.data.transcript;
     }
     
+    // Check for opt-out scenario - check both transcript object and parentData
+    const recordingConsent = transcript?.recordingConsent || parentData?.recordingConsent || 
+                             (parentData?.transcript ? parentData.transcript.recordingConsent : null);
+    
     if (!transcriptArray || transcriptArray.length === 0) {
+      // Check if empty due to opt-out
+      if (recordingConsent?.given === false) {
+        return <Typography color="error">Recording consent not given - transcript unavailable</Typography>;
+      }
       return <Typography color="text.secondary">No transcript available</Typography>;
     }
 
@@ -554,21 +590,34 @@ const TranscriptsComplaintsPage = () => {
                 // The backend returns: { transcript: CallRecord, escalations: [...], ... }
                 // CallRecord has a transcript array field
                 let transcriptToRender = null;
+                let parentData = null;
                 
                 if (fullTranscriptData) {
                   // If fullTranscriptData has a transcript property (the CallRecord object)
                   if (fullTranscriptData.transcript) {
                     transcriptToRender = fullTranscriptData.transcript;
+                    parentData = fullTranscriptData.transcript; // The CallRecord object
                   } else {
                     // If fullTranscriptData itself is the CallRecord
                     transcriptToRender = fullTranscriptData;
+                    parentData = fullTranscriptData;
                   }
                 } else if (selectedTranscript) {
                   transcriptToRender = selectedTranscript;
+                  parentData = selectedTranscript;
                 }
                 
                 if (transcriptToRender) {
-                  return renderTranscriptContent(transcriptToRender);
+                  return renderTranscriptContent(transcriptToRender, parentData);
+                }
+                
+                // Check for opt-out in selectedTranscript or fullTranscriptData
+                const recordingConsent = fullTranscriptData?.transcript?.recordingConsent || 
+                                        fullTranscriptData?.recordingConsent || 
+                                        selectedTranscript?.recordingConsent;
+                
+                if (recordingConsent?.given === false) {
+                  return <Typography color="error">Recording consent not given - transcript unavailable</Typography>;
                 }
                 return <Typography color="text.secondary">No transcript available</Typography>;
               })()}

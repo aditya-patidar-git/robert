@@ -2,6 +2,7 @@ import CallRecord from "../database/models/CallRecord.js";
 import { conversations } from "../shared/state.js";
 import summaryService from "../services/summaryService.js";
 import crossCallMemoryService from "../services/crossCallMemoryService.js";
+import twilioMetricsService from "../services/twilioMetricsService.js";
 
 // Call status with live updates (no Socket.IO in agent service)
 export const callStatus = async (req, res) => {
@@ -88,6 +89,16 @@ export const callStatus = async (req, res) => {
             console.error(`❌ [${CallSid}] Error storing call summary:`, error);
             // Don't block call completion if summary storage fails
         }
+
+        // Fetch and save audio quality metrics from Twilio
+        // This runs asynchronously and won't block call completion
+        twilioMetricsService.fetchAndSaveCallQualityMetrics(CallSid, {
+            maxRetries: 3,
+            initialDelay: 2000
+        }).catch(error => {
+            console.error(`❌ [${CallSid}] Error fetching call quality metrics:`, error);
+            // Error is already logged in the service, just catch to prevent unhandled rejection
+        });
     }
 
     // Cleanup memory for terminal states

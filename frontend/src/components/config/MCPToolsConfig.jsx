@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -25,10 +25,10 @@ import { useToast } from '../common/ToastProvider';
 import { formatDateTime } from '../../utils/formatters';
 import mcpToolsService from '../../services/mcpToolsService';
 
-const MCPToolsConfig = ({ 
+const MCPToolsConfig = forwardRef(({ 
   showSystemControls = true, // Show MCP System Controls section
   readOnly = false // If true, disable all editing
-}) => {
+}, ref) => {
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
   
@@ -140,6 +140,67 @@ const MCPToolsConfig = ({
       showError(`Failed to update domain allowlist for ${toolName}`);
     }
   };
+
+  // Expose saveAll method to parent component
+  useImperativeHandle(ref, () => ({
+    saveAll: async () => {
+      if (readOnly) return { success: false, error: 'Read-only mode' };
+      
+      const toolsArray = Array.isArray(fetchedMcpTools) 
+        ? fetchedMcpTools 
+        : (fetchedMcpTools?.tools || fetchedMcpTools?.data || []);
+      
+      const savePromises = [];
+      const errors = [];
+
+      // Save all pending domain changes
+      for (const tool of toolsArray) {
+        const toolDomains = editingDomains[tool.name] || [];
+        const originalDomains = tool.domains || [];
+        
+        // Check if domains have changed
+        const domainsChanged = toolDomains.length !== originalDomains.length || 
+          toolDomains.some((domain, idx) => domain !== (originalDomains[idx] || ''));
+        
+        if (domainsChanged) {
+          savePromises.push(
+            mcpToolsService.updateDomainAllowlist(tool.name, toolDomains)
+              .catch(error => {
+                errors.push(`Failed to save domains for ${tool.name}: ${error.message}`);
+              })
+          );
+        }
+
+        // Save rate limit if changed
+        const rateLimitValue = rateLimitValues[tool.name];
+        const originalRateLimit = tool.rateLimit?.limit;
+        
+        if (rateLimitValue !== undefined && rateLimitValue !== originalRateLimit) {
+          if (rateLimitValue >= 1 && rateLimitValue <= 1000) {
+            savePromises.push(
+              mcpToolsService.updateRateLimit(tool.name, rateLimitValue)
+                .catch(error => {
+                  errors.push(`Failed to save rate limit for ${tool.name}: ${error.message}`);
+                })
+            );
+          }
+        }
+      }
+
+      try {
+        await Promise.all(savePromises);
+        if (errors.length > 0) {
+          showError(`Some changes failed to save: ${errors.join('; ')}`);
+          return { success: false, errors };
+        }
+        queryClient.invalidateQueries(['mcp-tools']);
+        return { success: true };
+      } catch (error) {
+        showError(`Failed to save all tool configurations: ${error.message}`);
+        return { success: false, error: error.message };
+      }
+    }
+  }));
 
   return (
     <Box>
@@ -367,7 +428,9 @@ const MCPToolsConfig = ({
       </Paper>
     </Box>
   );
-};
+});
+
+MCPToolsConfig.displayName = 'MCPToolsConfig';
 
 export default MCPToolsConfig;
 

@@ -144,15 +144,33 @@ const TelephonyConfigSchema = new mongoose.Schema({
   // System Settings
   isActive: { 
     type: Boolean, 
-    default: true
+    default: true 
   },
   routingEnabled: {
     type: Boolean,
     default: true
   },
+  // General System Settings
+  maxConcurrentCalls: {
+    type: Number,
+    default: 50
+  },
+  callTimeout: {
+    type: Number,
+    default: 300
+  },
+  retryAttempts: {
+    type: Number,
+    default: 3
+  },
+  logLevel: {
+    type: String,
+    enum: ['debug', 'info', 'warn', 'error'],
+    default: 'info'
+  },
   createdBy: { 
     type: String, 
-    default: "admin"
+    default: "admin" 
   }
 }, { 
   timestamps: true 

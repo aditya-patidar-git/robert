@@ -83,7 +83,28 @@ export const updatePrivacyConfig = async (req, res) => {
     let config = await PrivacyConfig.findOne({ isActive: true });
     
     if (!config) {
-      config = new PrivacyConfig();
+      // Initialize with name and ensure nested objects are created
+      config = new PrivacyConfig({
+        name: "default"
+      });
+    }
+
+    // Ensure nested objects exist before setting properties
+    // This is necessary because Mongoose may not initialize nested objects until save
+    if (!config.retentionSettings) {
+      config.retentionSettings = {};
+    }
+    if (!config.consentSettings) {
+      config.consentSettings = {};
+    }
+    if (!config.privacyPolicy) {
+      config.privacyPolicy = {};
+    }
+    if (!config.lawfulBasis) {
+      config.lawfulBasis = {};
+    }
+    if (!config.ukGdprCompliance) {
+      config.ukGdprCompliance = {};
     }
 
     // Update fields
@@ -139,13 +160,13 @@ export const updatePrivacyConfig = async (req, res) => {
       message: "Privacy configuration updated successfully",
       config: {
         consentScript: config.consentScript,
-        transcriptRetention: config.retentionSettings.transcriptRetention,
-        recordingRetention: config.retentionSettings.recordingRetention,
-        metadataRetention: config.retentionSettings.metadataRetention,
-        optOutAllowed: config.consentSettings.optOutAllowed,
-        optOutEmailRoute: config.consentSettings.optOutEmailRoute,
-        requireExplicitConsent: config.consentSettings.requireExplicitConsent,
-        privacyPolicyUrl: config.privacyPolicy.url,
+        transcriptRetention: config.retentionSettings?.transcriptRetention,
+        recordingRetention: config.retentionSettings?.recordingRetention,
+        metadataRetention: config.retentionSettings?.metadataRetention,
+        optOutAllowed: config.consentSettings?.optOutAllowed,
+        optOutEmailRoute: config.consentSettings?.optOutEmailRoute,
+        requireExplicitConsent: config.consentSettings?.requireExplicitConsent,
+        privacyPolicyUrl: config.privacyPolicy?.url,
         lawfulBasis: config.lawfulBasis,
         ukGdprCompliance: config.ukGdprCompliance
       }

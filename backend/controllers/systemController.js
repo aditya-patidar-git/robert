@@ -21,11 +21,11 @@ export const getSystemConfig = async (req, res) => {
       mcpRateLimit: 100,
       mcpTimeout: 30,
       
-      // System Settings (defaults - can be added to TelephonyConfig if needed)
-      maxConcurrentCalls: 50,
-      callTimeout: 300,
-      retryAttempts: 3,
-      logLevel: process.env.LOG_LEVEL || 'info',
+      // System Settings (from TelephonyConfig)
+      maxConcurrentCalls: telephonyConfig?.maxConcurrentCalls ?? 50,
+      callTimeout: telephonyConfig?.callTimeout ?? 300,
+      retryAttempts: telephonyConfig?.retryAttempts ?? 3,
+      logLevel: telephonyConfig?.logLevel ?? (process.env.LOG_LEVEL || 'info'),
       
       // Audio Settings (from AudioConfig)
       vadThreshold: audioConfig?.vadThreshold ?? 500,
@@ -77,16 +77,32 @@ export const updateSystemConfig = async (req, res) => {
     }
 
     // Update Telephony Config for system settings
-    if (configData.outboundCallerId !== undefined) {
+    if (configData.outboundCallerId !== undefined || 
+        configData.maxConcurrentCalls !== undefined || 
+        configData.callTimeout !== undefined || 
+        configData.retryAttempts !== undefined || 
+        configData.logLevel !== undefined) {
       let telephonyConfig = await TelephonyConfig.findOne({ isActive: true });
       if (!telephonyConfig) {
         telephonyConfig = new TelephonyConfig({ name: "default" });
       }
-      telephonyConfig.outboundCallerId = configData.outboundCallerId;
+      if (configData.outboundCallerId !== undefined) {
+        telephonyConfig.outboundCallerId = configData.outboundCallerId;
+      }
+      if (configData.maxConcurrentCalls !== undefined) {
+        telephonyConfig.maxConcurrentCalls = configData.maxConcurrentCalls;
+      }
+      if (configData.callTimeout !== undefined) {
+        telephonyConfig.callTimeout = configData.callTimeout;
+      }
+      if (configData.retryAttempts !== undefined) {
+        telephonyConfig.retryAttempts = configData.retryAttempts;
+      }
+      if (configData.logLevel !== undefined) {
+        telephonyConfig.logLevel = configData.logLevel;
+      }
       await telephonyConfig.save();
     }
-    // Note: maxConcurrentCalls, callTimeout, retryAttempts are not stored in TelephonyConfig model
-    // TODO: Add these fields to TelephonyConfig model if persistent storage is needed
 
     // Update Audio Config
     if (configData.vadThreshold !== undefined || configData.startPadding !== undefined || 

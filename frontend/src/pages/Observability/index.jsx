@@ -55,6 +55,7 @@ const ObservabilityPage = () => {
     acknowledgeAlertMutation,
     resolveAlertMutation,
     handleExport,
+    exportLoading,
     handleViewTimeline,
     handleViewToolTraces,
     handleCloseTimelineDialog,
@@ -126,6 +127,7 @@ const ObservabilityPage = () => {
             startIcon={<Download />}
             onClick={() => handleExport('json')}
             size="small"
+            disabled={exportLoading}
           >
             Export JSON
           </Button>
@@ -134,6 +136,7 @@ const ObservabilityPage = () => {
             startIcon={<Download />}
             onClick={() => handleExport('csv')}
             size="small"
+            disabled={exportLoading}
           >
             Export CSV
           </Button>

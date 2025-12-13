@@ -1,39 +1,64 @@
 import React from 'react';
-import { Box, Paper, Typography, Grid, Card, CardContent, Chip, Button, LinearProgress } from '@mui/material';
+import { Box, Paper, Typography, Card, CardContent, Chip, Button, LinearProgress } from '@mui/material';
 import { PlayArrow } from '@mui/icons-material';
 import ModelVoiceSelection from '../../../components/config/ModelVoiceSelection';
-import ModelCapabilityRegistry from '../../../components/config/ModelCapabilityRegistry';
 import LanguageVoiceMapping from '../../../components/config/LanguageVoiceMapping';
 
 const VoiceManagementTab = ({ state, handlers }) => {
   const {
     control,
     watch,
-    fallbackChain,
-    setFallbackChain,
     voicesData,
     voicesLoading
   } = state;
 
-  const { handleVoicePreview } = handlers;
+  const { handleVoicePreview } = handlers || {};
+
+  // Safety check and wrapper for voice preview with detailed logging
+  const handlePreviewClick = (voice) => {
+    console.log('🔵 [VOICE_PREVIEW] Preview button clicked');
+    console.log('🔵 [VOICE_PREVIEW] Voice object:', voice);
+    console.log('🔵 [VOICE_PREVIEW] Handler available:', !!handleVoicePreview);
+    console.log('🔵 [VOICE_PREVIEW] Handler type:', typeof handleVoicePreview);
+    
+    if (!handleVoicePreview) {
+      console.error('🔴 [VOICE_PREVIEW] handleVoicePreview handler is not available');
+      console.error('🔴 [VOICE_PREVIEW] Handlers object:', handlers);
+      return;
+    }
+    
+    if (!voice) {
+      console.error('🔴 [VOICE_PREVIEW] No voice object provided');
+      return;
+    }
+    
+    if (!voice.id) {
+      console.error('🔴 [VOICE_PREVIEW] Voice object missing id property:', voice);
+      return;
+    }
+    
+    console.log('✅ [VOICE_PREVIEW] Calling handleVoicePreview with voice:', {
+      id: voice.id,
+      name: voice.name,
+      language: voice.language
+    });
+    
+    try {
+      handleVoicePreview(voice);
+      console.log('✅ [VOICE_PREVIEW] handleVoicePreview called successfully');
+    } catch (error) {
+      console.error('🔴 [VOICE_PREVIEW] Error calling handleVoicePreview:', error);
+    }
+  };
 
   return (
     <Box>
-      {/* Primary Model Selection and Fallback Chain */}
+      {/* Primary Model Selection */}
       <ModelVoiceSelection 
         control={control}
         watch={watch}
-        fallbackChain={fallbackChain}
-        setFallbackChain={setFallbackChain}
-        showFallbackChain={true}
-        showDefaultVoice={true}
-      />
-
-      {/* Model Capability Registry */}
-      <ModelCapabilityRegistry 
-        mode="simplified" 
-        selectedModelId={watch('selectedModel')} 
-        fallbackChain={fallbackChain} 
+        showFallbackChain={false}
+        showDefaultVoice={false}
       />
 
       {/* Language/Voice Mapping Configuration */}
@@ -51,40 +76,52 @@ const VoiceManagementTab = ({ state, handlers }) => {
         {voicesLoading ? (
           <LinearProgress />
         ) : (
-          <Grid container spacing={3}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                md: 'repeat(2, 1fr)',
+                lg: 'repeat(3, 1fr)'
+              },
+              gap: 3
+            }}
+          >
             {(Array.isArray(voicesData) ? voicesData : (voicesData?.voices || [])).map((voice) => (
-              <Grid item xs={12} md={6} lg={4} key={voice.id}>
-                <Card sx={{ 
+              <Card 
+                key={voice.id}
+                sx={{ 
                   border: watch('defaultVoice')?.id === voice.id ? 2 : 1,
                   borderColor: watch('defaultVoice')?.id === voice.id ? 'primary.main' : 'divider'
-                }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="h6">{voice.name}</Typography>
-                      {voice.isDefault && <Chip label="Default" color="primary" size="small" />}
-                    </Box>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      {voice.description}
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                      <Chip label={voice.language} size="small" />
-                      <Chip label={voice.gender} size="small" />
-                      <Chip label={voice.provider} size="small" />
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button
-                        size="small"
-                        startIcon={<PlayArrow />}
-                        onClick={() => handleVoicePreview(voice)}
-                      >
-                        Preview
-                      </Button>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
+                }}
+              >
+                <CardContent>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h6">{voice.name}</Typography>
+                    {voice.isDefault && <Chip label="Default" color="primary" size="small" />}
+                  </Box>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    {voice.description}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                    <Chip label={voice.language} size="small" />
+                    <Chip label={voice.gender} size="small" />
+                    <Chip label={voice.provider} size="small" />
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      size="small"
+                      startIcon={<PlayArrow />}
+                      onClick={() => handlePreviewClick(voice)}
+                      disabled={!handleVoicePreview}
+                    >
+                      Preview
+                    </Button>
+                  </Box>
+                </CardContent>
+              </Card>
             ))}
-          </Grid>
+          </Box>
         )}
       </Paper>
     </Box>

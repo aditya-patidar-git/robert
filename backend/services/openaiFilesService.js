@@ -1,4 +1,4 @@
-import { OpenAI } from 'openai';
+import { OpenAI, toFile } from 'openai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -15,23 +15,74 @@ class OpenAIFilesService {
   async uploadFile(fileBuffer, filename, purpose = 'assistants') {
     try {
       console.log(`📁 Uploading file to OpenAI: ${filename}`);
+      console.log(`📊 File size: ${fileBuffer.length} bytes`);
       
-      const file = await this.openai.files.create({
-        file: fileBuffer,
+      // Ensure we have a proper Buffer instance
+      const buffer = Buffer.isBuffer(fileBuffer) 
+        ? fileBuffer 
+        : Buffer.from(fileBuffer);
+      
+      // Use toFile() helper from OpenAI SDK to wrap the Buffer
+      // This is the recommended approach for in-memory data
+      // Direct Buffer is not supported - must use toFile() wrapper
+      const fileObj = await toFile(buffer, filename);
+      
+      console.log(`📊 File object created via toFile():`, {
+        name: fileObj.name,
+        size: fileObj.size,
+        type: fileObj.type
+      });
+      
+      const uploadedFile = await this.openai.files.create({
+        file: fileObj,
         purpose: purpose
       });
 
-      console.log(`✅ File uploaded successfully: ${file.id}`);
+      console.log(`✅ File uploaded successfully: ${uploadedFile.id}`);
       return {
-        id: file.id,
+        id: uploadedFile.id,
         filename: filename,
-        purpose: file.purpose,
-        status: file.status,
-        created_at: file.created_at,
-        bytes: file.bytes
+        purpose: uploadedFile.purpose,
+        status: uploadedFile.status,
+        created_at: uploadedFile.created_at,
+        bytes: uploadedFile.bytes
       };
     } catch (error) {
       console.error('Error uploading file to OpenAI:', error);
+      console.error('Error details:', {
+        status: error.status,
+        message: error.message,
+        errorType: error.constructor?.name,
+        fileType: fileBuffer?.constructor?.name,
+        fileSize: fileBuffer?.length,
+        isBuffer: Buffer.isBuffer(fileBuffer),
+        filename: filename,
+        purpose: purpose,
+        errorCode: error.code,
+        errorParam: error.param
+      });
+      
+      // Log the full error object for debugging
+      if (error.response) {
+        console.error('Error response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          headers: error.response.headers,
+          data: error.response.data
+        });
+      }
+      
+      if (error.status === 413) {
+        console.error(`❌ File too large - Buffer size: ${fileBuffer?.length || 'unknown'} bytes`);
+        console.error(`❌ Filename: ${filename}`);
+        throw new Error(`File size exceeds OpenAI's capacity limit. File size: ${fileBuffer?.length || 'unknown'} bytes`);
+      }
+      
+      if (error.status === 400) {
+        console.error(`❌ Bad request - The SDK may not recognize the file format`);
+        console.error(`❌ Try checking OpenAI SDK version compatibility`);
+      }
+      
       throw new Error(`Failed to upload file: ${error.message}`);
     }
   }

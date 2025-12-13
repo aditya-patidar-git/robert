@@ -32,54 +32,60 @@ const GeneralSettingsTab = ({
         </Typography>
 
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2" gutterBottom>
-              Max Concurrent Calls: {watch('maxConcurrentCalls')}
-            </Typography>
-            <Controller
-              name="maxConcurrentCalls"
-              control={control}
-              render={({ field }) => (
-                <Slider
-                  {...field}
-                  min={10}
-                  max={200}
-                  step={10}
-                  marks={[
-                    { value: 10, label: '10' },
-                    { value: 50, label: '50' },
-                    { value: 100, label: '100' },
-                    { value: 200, label: '200' }
-                  ]}
-                  valueLabelDisplay="auto"
-                />
-              )}
-            />
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Box sx={{ maxWidth: 500 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Max Concurrent Calls: {watch('maxConcurrentCalls')}
+              </Typography>
+              <Controller
+                name="maxConcurrentCalls"
+                control={control}
+                render={({ field }) => (
+                  <Slider
+                    {...field}
+                    min={10}
+                    max={200}
+                    step={10}
+                    marks={[
+                      { value: 10, label: '10' },
+                      { value: 50, label: '50' },
+                      { value: 100, label: '100' },
+                      { value: 200, label: '200' }
+                    ]}
+                    valueLabelDisplay="auto"
+                    sx={{ mt: 2 }}
+                  />
+                )}
+              />
+            </Box>
           </Grid>
 
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2" gutterBottom>
-              Call Timeout: {watch('callTimeout')}s
-            </Typography>
-            <Controller
-              name="callTimeout"
-              control={control}
-              render={({ field }) => (
-                <Slider
-                  {...field}
-                  min={60}
-                  max={1800}
-                  step={60}
-                  marks={[
-                    { value: 60, label: '1m' },
-                    { value: 300, label: '5m' },
-                    { value: 600, label: '10m' },
-                    { value: 1800, label: '30m' }
-                  ]}
-                  valueLabelDisplay="auto"
-                />
-              )}
-            />
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Box sx={{ maxWidth: 500 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Call Timeout: {watch('callTimeout')}s
+              </Typography>
+              <Controller
+                name="callTimeout"
+                control={control}
+                render={({ field }) => (
+                  <Slider
+                    {...field}
+                    min={60}
+                    max={1800}
+                    step={60}
+                    marks={[
+                      { value: 60, label: '1m' },
+                      { value: 300, label: '5m' },
+                      { value: 600, label: '10m' },
+                      { value: 1800, label: '30m' }
+                    ]}
+                    valueLabelDisplay="auto"
+                    sx={{ mt: 2 }}
+                  />
+                )}
+              />
+            </Box>
           </Grid>
         </Grid>
       </Paper>
@@ -98,7 +104,7 @@ const GeneralSettingsTab = ({
           </Alert>
 
           <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Controller
                 name="logLevel"
                 control={control}
@@ -119,24 +125,27 @@ const GeneralSettingsTab = ({
               />
             </Grid>
 
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle2" gutterBottom>
-                Retry Attempts: {watch('retryAttempts')}
-              </Typography>
-              <Controller
-                name="retryAttempts"
-                control={control}
-                render={({ field }) => (
-                  <Slider
-                    {...field}
-                    min={0}
-                    max={10}
-                    step={1}
-                    marks
-                    valueLabelDisplay="auto"
-                  />
-                )}
-              />
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box sx={{ maxWidth: 500, mx: 'auto' }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Retry Attempts: {watch('retryAttempts')}
+                </Typography>
+                <Controller
+                  name="retryAttempts"
+                  control={control}
+                  render={({ field }) => (
+                    <Slider
+                      {...field}
+                      min={0}
+                      max={10}
+                      step={1}
+                      marks
+                      valueLabelDisplay="auto"
+                      sx={{ mt: 2 }}
+                    />
+                  )}
+                />
+              </Box>
             </Grid>
           </Grid>
         </Paper>
@@ -151,7 +160,6 @@ const GeneralSettingsTab = ({
           startIcon={<Save />}
           disabled={saveConfigMutation.isLoading}
           sx={{ minWidth: 150 }}
-          onClick={handleSubmit(onSubmit)}
         >
           {saveConfigMutation.isLoading ? 'Saving...' : 'Save Configuration'}
         </Button>

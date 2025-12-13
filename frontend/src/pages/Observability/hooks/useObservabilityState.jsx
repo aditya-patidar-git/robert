@@ -7,9 +7,11 @@ import {
   Error as ErrorIcon
 } from '@mui/icons-material';
 import observabilityService from '../../../services/observabilityService';
+import { useToast } from '../../../components/common/ToastProvider';
 
 export const useObservabilityState = () => {
   const queryClient = useQueryClient();
+  const { showSuccess, showError } = useToast();
   const [timeRange, setTimeRange] = useState('1h');
   const [logFilter, setLogFilter] = useState('all');
   const [activeTab, setActiveTab] = useState(0);
@@ -101,6 +103,11 @@ export const useObservabilityState = () => {
     mutationFn: observabilityService.acknowledgeAlert,
     onSuccess: () => {
       queryClient.invalidateQueries(['alerts']);
+      showSuccess('Alert acknowledged successfully');
+    },
+    onError: (error) => {
+      console.error('Error acknowledging alert:', error);
+      showError(error?.response?.data?.error || error?.message || 'Failed to acknowledge alert');
     }
   });
 
@@ -108,6 +115,11 @@ export const useObservabilityState = () => {
     mutationFn: observabilityService.resolveAlert,
     onSuccess: () => {
       queryClient.invalidateQueries(['alerts']);
+      showSuccess('Alert resolved successfully');
+    },
+    onError: (error) => {
+      console.error('Error resolving alert:', error);
+      showError(error?.response?.data?.error || error?.message || 'Failed to resolve alert');
     }
   });
 
@@ -166,7 +178,7 @@ export const useObservabilityState = () => {
   const callVolumeData = hourlyData.map(h => ({
     time: h.time,
     calls: h.count || 0,
-    errors: 0 // Would need to calculate from actual data
+    errors: h.errors || 0
   }));
 
   const latencyData = hourlyData.map(h => ({
@@ -215,31 +227,48 @@ export const useObservabilityState = () => {
     }
   ];
 
+  const [exportLoading, setExportLoading] = useState(false);
+
   const handleExport = async (format = 'json') => {
+    setExportLoading(true);
     try {
       const filters = logFilter !== 'all' ? { level: logFilter } : {};
-      const exportData = await observabilityService.exportData(format, filters);
+      const exportResult = await observabilityService.exportData(format, filters);
       
       if (format === 'json') {
-        // exportData is already the JSON object
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        // Backend returns: { format: 'json', data: {...}, filename: '...' }
+        // Extract the data object for JSON export
+        const jsonData = exportResult?.data || exportResult;
+        const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `observability_export_${Date.now()}.json`;
+        a.download = exportResult?.filename || `observability_export_${Date.now()}.json`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        showSuccess(`JSON export downloaded successfully`);
       } else {
-        // exportData is already a Blob for CSV
-        const url = URL.createObjectURL(exportData);
+        // For CSV, backend returns text in response.data
+        // Convert text to Blob
+        const csvText = typeof exportResult === 'string' ? exportResult : exportResult?.data || '';
+        const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `observability_export_${Date.now()}.csv`;
+        a.download = exportResult?.filename || `observability_export_${Date.now()}.csv`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        showSuccess(`CSV export downloaded successfully`);
       }
     } catch (error) {
       console.error('Export error:', error);
+      showError(error?.response?.data?.error || error?.message || `Failed to export ${format.toUpperCase()}`);
+    } finally {
+      setExportLoading(false);
     }
   };
 
@@ -296,6 +325,7 @@ export const useObservabilityState = () => {
     acknowledgeAlertMutation,
     resolveAlertMutation,
     handleExport,
+    exportLoading,
     handleViewTimeline,
     handleViewToolTraces,
     handleCloseTimelineDialog,

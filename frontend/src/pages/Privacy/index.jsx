@@ -59,7 +59,7 @@ const PrivacyPage = () => {
   
   const canSeeAll = user?.role === 'owner' || user?.role === 'admin';
 
-  const { control, handleSubmit, watch } = useForm({
+  const { control, handleSubmit, watch, reset } = useForm({
     defaultValues: {
       consentScript: '',
       transcriptRetention: 90,
@@ -83,11 +83,13 @@ const PrivacyPage = () => {
     queryKey: ['privacy-config'],
     queryFn: () => configService.getPrivacyConfig(),
     onSuccess: (data) => {
-      if (data) {
-        Object.keys(data).forEach(key => {
-          if (key in control._defaultValues) {
-            control._formValues[key] = data[key];
-          }
+      if (data?.config) {
+        const config = data.config;
+        reset({
+          consentScript: config.consentScript || '',
+          transcriptRetention: config.transcriptRetention || 90,
+          recordingRetention: config.recordingRetention || 90,
+          metadataRetention: config.metadataRetention || 365
         });
       }
     }
@@ -826,6 +828,22 @@ const PrivacyPage = () => {
               </Paper>
             </Grid>
           </Grid>
+
+          {/* Save Configuration Button */}
+          {canSeeAll && (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<Save />}
+                disabled={saveConfigMutation.isLoading}
+                sx={{ minWidth: 150 }}
+                onClick={handleSubmit(onSubmit)}
+              >
+                {saveConfigMutation.isLoading ? 'Saving...' : 'Save Configuration'}
+              </Button>
+            </Box>
+          )}
         </form>
       ) : (
         /* User View */
