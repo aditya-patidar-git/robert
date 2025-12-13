@@ -2,6 +2,7 @@ import client from "../utils/twilioClient.js";
 import { conversations } from "../shared/state.js";
 import configManager from "../agent/configManager.js";
 import sipService from "../services/sipService.js";
+import sipCallRouter from "../services/sip/sipCallRouter.js";
 import abusePreventionService from "../services/abusePreventionService.js";
 import dotenv from "dotenv";
 
@@ -17,59 +18,65 @@ export const makeCall = async (req, res) => {
     try {
         const results = [];
         const telephonyConfig = configManager.getTelephonyConfig();
-        const useSip = telephonyConfig?.sipSettings?.primaryPath === 'sip' && sipService.isSipEnabled();
+        
+        // Use agent service domain for WebSocket URL
+        const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
         
         for (const to of toNumbers) {
-            console.log(`📞 Initiating call: to=${to}, from=${process.env.TWILIO_NUMBER}, method=${useSip ? 'SIP' : 'Media Streams'}`);
+            console.log(`📞 Initiating call: to=${to}, from=${process.env.TWILIO_NUMBER}`);
             
-            // Use agent service domain for WebSocket URL
-            const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
-            const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
-            const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
-            
-            let call;
-            
-            if (useSip) {
-                // SIP path: Route to OpenAI Realtime SIP endpoint
-                // Note: This requires Twilio Elastic SIP Trunk configuration
-                // For now, fallback to Media Streams if SIP is not fully configured
-                console.log(`📞 [SIP] Attempting SIP call routing for ${to}`);
-                try {
-                    // SIP routing would be configured in Twilio Elastic SIP Trunk
-                    // This is a placeholder - actual SIP routing is handled by Twilio trunk configuration
-                    // For now, fallback to Media Streams
-                    console.log(`⚠️ [SIP] SIP routing not fully configured, falling back to Media Streams`);
-                    throw new Error('SIP not fully configured');
-                } catch (sipError) {
-                    // Fallback to Media Streams
-                    console.log(`📞 [Media Streams] Using Media Streams fallback for ${to}`);
-                }
+            // Prepare Media Streams options (used as fallback or primary)
+            const mediaStreamsOptions = {
+                to,
+                from: process.env.TWILIO_NUMBER,
+                url: `${baseUrl}/api/outbound/ai-intro`,
+                statusCallback: `${baseUrl}/api/outbound/call-status`,
+                statusCallbackEvent: ["initiated", "ringing", "answered", "completed", "no-answer", "busy", "failed"],
+                statusCallbackMethod: "POST",
+                record: true, // Start recording - consent will be checked in recording handler
+                recordingStatusCallback: `${baseUrl}/api/outbound/recording-status`,
+                recordingStatusCallbackMethod: "POST",
+            };
+
+            // Route call (SIP with fallback to Media Streams)
+            const { call, method } = await sipCallRouter.routeCall(
+                client,
+                to,
+                process.env.TWILIO_NUMBER,
+                telephonyConfig,
+                mediaStreamsOptions
+            );
+
+            if (!call) {
+                console.error(`❌ Failed to create call to ${to}`);
+                results.push({ callSid: null, to, method: 'failed', error: 'Call creation failed' });
+                continue;
             }
+
+            console.log(`✅ Call created: SID=${call.sid}, Status=${call.status}, To=${call.to}, Method=${method}`);
             
-            // Media Streams path (primary or fallback)
-            if (!useSip || !call) {
-                // Note: Recording consent is handled in mediaStreamHandler
-                // We start with recording enabled, but the recording handler will check consent
-                // If consent is denied, the recording won't be processed/stored
-                call = await client.calls.create({
-                    to,
+            // Initialize conversation state
+            const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
+            if (!conversations[call.sid]) {
+                sessionManagementService.initializeSession(call.sid, {
+                    transcript: [],
+                    callType: method,
                     from: process.env.TWILIO_NUMBER,
-                    url: `${baseUrl}/api/outbound/ai-intro`,
-                    statusCallback: `${baseUrl}/api/outbound/call-status`,
-                    statusCallbackEvent: ["initiated", "ringing", "answered", "completed", "no-answer", "busy", "failed"],
-                    statusCallbackMethod: "POST",
-                    record: true, // Start recording - consent will be checked in recording handler
-                    recordingStatusCallback: `${baseUrl}/api/outbound/recording-status`,
-                    recordingStatusCallbackMethod: "POST",
+                    to: to
                 });
             }
 
-            console.log(`✅ Call created: SID=${call.sid}, Status=${call.status}, To=${call.to}, Method=${useSip ? 'SIP' : 'Media Streams'}`);
-            conversations[call.sid] = { 
-                transcript: [],
-                callType: useSip ? 'SIP' : 'Media Streams'
-            };
-            results.push({ callSid: call.sid, to, method: useSip ? 'SIP' : 'Media Streams' });
+            // Track SIP status if using SIP
+            if (method === 'SIP') {
+                sipService.trackStatus(call.sid, 'initiated');
+                sipService.createSession(call.sid, {
+                    from: process.env.TWILIO_NUMBER,
+                    to: to,
+                    callType: 'SIP'
+                });
+            }
+
+            results.push({ callSid: call.sid, to, method });
         }
 
         return res.json({ success: true, calls: results });
