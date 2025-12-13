@@ -165,7 +165,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
         </AccordionSummary>
         <AccordionDetails>
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={12}>
               <Controller
                 name="afterHoursPolicy.enabled"
                 control={control}
@@ -179,7 +179,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
             </Grid>
             {watch('afterHoursPolicy.enabled') && (
               <>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <Tooltip title="Time when after-hours period begins (e.g., 18:00 for 6 PM)">
                     <Controller
                       name="afterHoursPolicy.startTime"
@@ -196,7 +196,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
                     />
                   </Tooltip>
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <Tooltip title="Time when business hours resume (e.g., 09:00 for 9 AM)">
                     <Controller
                       name="afterHoursPolicy.endTime"
@@ -213,7 +213,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
                     />
                   </Tooltip>
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <Controller
                     name="afterHoursPolicy.timezone"
                     control={control}
@@ -230,7 +230,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
                     )}
                   />
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <Controller
                     name="afterHoursPolicy.action"
                     control={control}
@@ -246,7 +246,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
                     )}
                   />
                 </Grid>
-                <Grid item xs={12}>
+                <Grid size={12}>
                   <Controller
                     name="afterHoursPolicy.message"
                     control={control}
@@ -278,7 +278,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
         </AccordionSummary>
         <AccordionDetails>
           <Grid container spacing={3}>
-            <Grid item xs={12}>
+            <Grid size={12}>
               <Controller
                 name="voicemailSettings.enabled"
                 control={control}
@@ -292,7 +292,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
             </Grid>
             {watch('voicemailSettings.enabled') && (
               <>
-                <Grid item xs={12}>
+                <Grid size={12}>
                   <Controller
                     name="voicemailSettings.greeting"
                     control={control}
@@ -308,7 +308,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
                     )}
                   />
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <Controller
                     name="voicemailSettings.maxDuration"
                     control={control}
@@ -323,7 +323,7 @@ const TelephonyRoutingTab = ({ state, handlers }) => {
                     )}
                   />
                 </Grid>
-                <Grid item xs={12} md={6}>
+                <Grid size={{ xs: 12, md: 6 }}>
                   <Controller
                     name="voicemailSettings.emailNotification"
                     control={control}

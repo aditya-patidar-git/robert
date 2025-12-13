@@ -94,33 +94,19 @@ export const updateTelephonyConfig = async (req, res) => {
     if (numbers !== undefined) config.numbers = numbers;
     if (outboundCallerId !== undefined) config.outboundCallerId = outboundCallerId;
     if (transferNumbers !== undefined) config.transferNumbers = transferNumbers;
-    if (afterHoursPolicy) {
-      Object.keys(afterHoursPolicy).forEach(key => {
-        if (afterHoursPolicy[key] !== undefined) {
-          config.afterHoursPolicy[key] = afterHoursPolicy[key];
-        }
-      });
+    
+    // Update nested objects - merge with existing values to preserve defaults
+    if (afterHoursPolicy !== undefined) {
+      config.afterHoursPolicy = { ...(config.afterHoursPolicy || {}), ...afterHoursPolicy };
     }
-    if (voicemailSettings) {
-      Object.keys(voicemailSettings).forEach(key => {
-        if (voicemailSettings[key] !== undefined) {
-          config.voicemailSettings[key] = voicemailSettings[key];
-        }
-      });
+    if (voicemailSettings !== undefined) {
+      config.voicemailSettings = { ...(config.voicemailSettings || {}), ...voicemailSettings };
     }
-    if (sipSettings) {
-      Object.keys(sipSettings).forEach(key => {
-        if (sipSettings[key] !== undefined) {
-          config.sipSettings[key] = sipSettings[key];
-        }
-      });
+    if (sipSettings !== undefined) {
+      config.sipSettings = { ...(config.sipSettings || {}), ...sipSettings };
     }
-    if (recordingSettings) {
-      Object.keys(recordingSettings).forEach(key => {
-        if (recordingSettings[key] !== undefined) {
-          config.recordingSettings[key] = recordingSettings[key];
-        }
-      });
+    if (recordingSettings !== undefined) {
+      config.recordingSettings = { ...(config.recordingSettings || {}), ...recordingSettings };
     }
 
     config.createdBy = req.user?.id || "admin";

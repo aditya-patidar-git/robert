@@ -475,42 +475,42 @@ class ObservabilityService {
   /**
    * Get performance metrics by operation
    * @param {string} timeRange - Time range (1h, 6h, 24h, 7d)
-   * @param {string} operation - Optional operation name filter
-   * @returns {Object} - Performance metrics
+   * @param {string} operation - Optional operation name filter (not used for call-based metrics)
+   * @returns {Object} - Performance metrics with hourly call data
    */
   async getPerformanceMetrics(timeRange = '1h', operation = null) {
     const timeRangeMs = this._parseTimeRange(timeRange);
     const since = new Date(Date.now() - timeRangeMs);
 
     try {
-      // Get traces for the time range
-      const traces = Array.from(this.traces.values())
-        .filter(t => t.startTime >= since.getTime())
-        .filter(t => !operation || t.name.includes(operation));
+      // Get call records from database for the time range
+      const calls = await CallRecord.find({
+        createdAt: { $gte: since }
+      }).select('callStatus result metrics audioQuality duration createdAt').lean();
 
-      const completedTraces = traces.filter(t => t.endTime !== null);
+      // Group calls by hour for chart data
+      const hourlyData = this._groupCallsByHour(calls, since);
+
+      // Calculate overall performance metrics
+      const latencies = calls
+        .map(c => c.audioQuality?.latency || c.metrics?.aiResponseTime)
+        .filter(l => l != null);
       
-      // Group by hour for chart data
-      const hourlyData = this._groupTracesByHour(completedTraces, since);
+      const completedCalls = calls.filter(c => c.callStatus === 'completed');
+      const failedCalls = calls.filter(c => c.callStatus === 'failed' || c.result === 'error');
 
       return {
         traces: {
-          total: traces.length,
-          completed: completedTraces.length,
-          failed: completedTraces.filter(t => !t.success).length
+          total: calls.length,
+          completed: completedCalls.length,
+          failed: failedCalls.length
         },
         performance: {
-          avgDuration: completedTraces.length > 0
-            ? Math.round(completedTraces.reduce((sum, t) => sum + t.duration, 0) / completedTraces.length)
+          avgDuration: latencies.length > 0
+            ? Math.round(latencies.reduce((sum, l) => sum + l, 0) / latencies.length)
             : 0,
-          p95Duration: this._calculatePercentile(
-            completedTraces.map(t => t.duration),
-            95
-          ),
-          p99Duration: this._calculatePercentile(
-            completedTraces.map(t => t.duration),
-            99
-          )
+          p95Duration: this._calculatePercentile(latencies, 95),
+          p99Duration: this._calculatePercentile(latencies, 99)
         },
         hourlyData: hourlyData,
         operation: operation,
@@ -548,7 +548,7 @@ class ObservabilityService {
         to: call.to,
         status: call.callStatus,
         duration: call.duration || Math.floor((Date.now() - call.createdAt.getTime()) / 1000),
-        latency: call.audioQuality?.latency || call.metrics?.aiResponseTime || 0,
+        latency: call.audioQuality?.latency || call.metrics?.aiResponseTime || null,
         mosScore: call.audioQuality?.mosScore || null,
         language: call.language,
         startedAt: call.createdAt
@@ -994,8 +994,65 @@ class ObservabilityService {
   }
 
   /**
-   * Group traces by hour for chart data
+   * Group calls by hour for chart data
    * @private
+   * @param {Array} calls - Array of call records
+   * @param {Date} since - Start date for time range
+   * @returns {Array} - Hourly aggregated call data
+   */
+  _groupCallsByHour(calls, since) {
+    const hourlyData = {};
+    
+    calls.forEach(call => {
+      // Use createdAt for grouping
+      const callDate = new Date(call.createdAt);
+      const hour = callDate.toISOString().substring(0, 13) + ':00';
+      
+      if (!hourlyData[hour]) {
+        hourlyData[hour] = {
+          time: hour,
+          count: 0,
+          errors: 0,
+          latencies: []
+        };
+      }
+      
+      hourlyData[hour].count++;
+      
+      // Count errors (failed calls or calls with error result)
+      if (call.callStatus === 'failed' || call.result === 'error') {
+        hourlyData[hour].errors++;
+      }
+      
+      // Extract latency: prefer audioQuality.latency, fallback to metrics.aiResponseTime
+      const latency = call.audioQuality?.latency || call.metrics?.aiResponseTime;
+      if (latency != null) {
+        hourlyData[hour].latencies.push(latency);
+      }
+    });
+
+    // Calculate percentiles and format for charts
+    return Object.values(hourlyData).map(hour => {
+      const sortedLatencies = [...hour.latencies].sort((a, b) => a - b);
+      const avgLatency = hour.latencies.length > 0
+        ? Math.round(hour.latencies.reduce((sum, l) => sum + l, 0) / hour.latencies.length)
+        : 0;
+      
+      return {
+        time: hour.time.substring(11, 16), // HH:MM format for display
+        count: hour.count,
+        errors: hour.errors,
+        avgLatency: avgLatency,
+        p95Latency: this._calculatePercentile(sortedLatencies, 95),
+        p99Latency: this._calculatePercentile(sortedLatencies, 99)
+      };
+    }).sort((a, b) => a.time.localeCompare(b.time));
+  }
+
+  /**
+   * Group traces by hour for chart data (kept for backward compatibility)
+   * @private
+   * @deprecated Use _groupCallsByHour for call-based metrics
    */
   _groupTracesByHour(traces, since) {
     const hourlyData = {};
@@ -1045,12 +1102,68 @@ class ObservabilityService {
    * @private
    */
   _convertToCSV(data) {
-    // Simplified CSV conversion - in production, use a proper CSV library
-    let csv = 'Timestamp,Level,Message,Component\n';
-    data.logs.forEach(log => {
-      const component = log.context?.component || 'unknown';
-      csv += `"${log.timestamp}","${log.level}","${log.message.replace(/"/g, '""')}","${component}"\n`;
-    });
+    // Convert observability data to CSV format
+    let csv = '';
+    
+    // Helper function to escape CSV values
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      // Escape quotes and wrap in quotes if contains comma, quote, or newline
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+    
+    // Export timestamp
+    csv += `Export Timestamp,${escapeCSV(data.timestamp)}\n\n`;
+    
+    // Export Metrics
+    if (data.metrics && Object.keys(data.metrics).length > 0) {
+      csv += 'METRICS\n';
+      csv += 'Metric Name,Value\n';
+      Object.entries(data.metrics).forEach(([key, value]) => {
+        csv += `${escapeCSV(key)},${escapeCSV(value)}\n`;
+      });
+      csv += '\n';
+    }
+    
+    // Export Logs
+    if (data.logs && data.logs.length > 0) {
+      csv += 'LOGS\n';
+      csv += 'Timestamp,Level,Component,Message\n';
+      data.logs.forEach(log => {
+        const component = log.context?.component || 'unknown';
+        const message = log.message || '';
+        csv += `${escapeCSV(log.timestamp)},${escapeCSV(log.level)},${escapeCSV(component)},${escapeCSV(message)}\n`;
+      });
+      csv += '\n';
+    }
+    
+    // Export Alerts
+    if (data.alerts && data.alerts.length > 0) {
+      csv += 'ALERTS\n';
+      csv += 'ID,Severity,Status,Title,Component,Message,Created At\n';
+      data.alerts.forEach(alert => {
+        csv += `${escapeCSV(alert.id)},${escapeCSV(alert.severity)},${escapeCSV(alert.status)},${escapeCSV(alert.title)},${escapeCSV(alert.component)},${escapeCSV(alert.message)},${escapeCSV(alert.createdAt)}\n`;
+      });
+      csv += '\n';
+    }
+    
+    // Export Traces (simplified)
+    if (data.traces && data.traces.length > 0) {
+      csv += 'TRACES\n';
+      csv += 'ID,Name,Status,Duration (ms),Start Time\n';
+      data.traces.forEach(trace => {
+        const duration = trace.endTime && trace.startTime 
+          ? (trace.endTime - trace.startTime) 
+          : '';
+        csv += `${escapeCSV(trace.id)},${escapeCSV(trace.name)},${escapeCSV(trace.success ? 'success' : 'failed')},${escapeCSV(duration)},${escapeCSV(new Date(trace.startTime).toISOString())}\n`;
+      });
+      csv += '\n';
+    }
+    
     return csv;
   }
 }

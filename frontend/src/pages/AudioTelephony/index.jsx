@@ -73,6 +73,23 @@ const AudioTelephonyPage = () => {
   const audioRef = useRef(null);
   const blobUrlRef = useRef(null); // Store blob URL for cleanup
 
+  // Fix accessibility issue: blur any focused elements when dialogs open
+  useEffect(() => {
+    const hasOpenDialog = voicePreviewDialog || addNumberDialog || editNumberDialog || 
+                         deleteNumberDialog || addTransferNumberDialog || editTransferNumberDialog;
+    
+    if (hasOpenDialog) {
+      // Blur any focused elements in the background to prevent aria-hidden issues
+      const activeElement = document.activeElement;
+      if (activeElement && activeElement !== document.body && 
+          activeElement.tagName === 'BUTTON' && 
+          !activeElement.closest('[role="dialog"]')) {
+        activeElement.blur();
+      }
+    }
+  }, [voicePreviewDialog, addNumberDialog, editNumberDialog, deleteNumberDialog, 
+      addTransferNumberDialog, editTransferNumberDialog]);
+
   // Phone number mutations
   const addPhoneNumberMutation = useMutation({
     mutationFn: configService.addPhoneNumber,
@@ -540,7 +557,14 @@ const AudioTelephonyPage = () => {
 
       {/* Dialogs */}
       {/* Voice Preview Dialog */}
-      <Dialog open={voicePreviewDialog} onClose={() => setVoicePreviewDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog 
+        open={voicePreviewDialog} 
+        onClose={() => setVoicePreviewDialog(false)} 
+        maxWidth="sm" 
+        fullWidth
+        disableAutoFocus={false}
+        disableEnforceFocus={false}
+      >
         <DialogTitle>Voice Preview</DialogTitle>
         <DialogContent>
           {selectedVoice && (
@@ -633,7 +657,14 @@ const AudioTelephonyPage = () => {
       </Dialog>
 
       {/* Add Phone Number Dialog */}
-      <Dialog open={addNumberDialog} onClose={() => setAddNumberDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog 
+        open={addNumberDialog} 
+        onClose={() => setAddNumberDialog(false)} 
+        maxWidth="sm" 
+        fullWidth
+        disableAutoFocus={false}
+        disableEnforceFocus={false}
+      >
         <DialogTitle>Add Phone Number</DialogTitle>
         <DialogContent>
           <PhoneNumberForm
@@ -645,10 +676,17 @@ const AudioTelephonyPage = () => {
       </Dialog>
 
       {/* Edit Phone Number Dialog */}
-      <Dialog open={editNumberDialog} onClose={() => {
-        setEditNumberDialog(false);
-        setNumberToEdit(null);
-      }} maxWidth="sm" fullWidth>
+      <Dialog 
+        open={editNumberDialog} 
+        onClose={() => {
+          setEditNumberDialog(false);
+          setNumberToEdit(null);
+        }} 
+        maxWidth="sm" 
+        fullWidth
+        disableAutoFocus={false}
+        disableEnforceFocus={false}
+      >
         <DialogTitle>Edit Phone Number</DialogTitle>
         <DialogContent>
           {numberToEdit && (
@@ -666,10 +704,15 @@ const AudioTelephonyPage = () => {
       </Dialog>
 
       {/* Delete Phone Number Confirmation Dialog */}
-      <Dialog open={deleteNumberDialog} onClose={() => {
-        setDeleteNumberDialog(false);
-        setNumberToDelete(null);
-      }}>
+      <Dialog 
+        open={deleteNumberDialog} 
+        onClose={() => {
+          setDeleteNumberDialog(false);
+          setNumberToDelete(null);
+        }}
+        disableAutoFocus={false}
+        disableEnforceFocus={false}
+      >
         <DialogTitle>Delete Phone Number</DialogTitle>
         <DialogContent>
           <Typography>
@@ -695,7 +738,14 @@ const AudioTelephonyPage = () => {
       </Dialog>
 
       {/* Add Transfer Number Dialog */}
-      <Dialog open={addTransferNumberDialog} onClose={() => setAddTransferNumberDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog 
+        open={addTransferNumberDialog} 
+        onClose={() => setAddTransferNumberDialog(false)} 
+        maxWidth="sm" 
+        fullWidth
+        disableAutoFocus={false}
+        disableEnforceFocus={false}
+      >
         <DialogTitle>Add Transfer Number</DialogTitle>
         <DialogContent>
           <TransferNumberForm
@@ -707,10 +757,17 @@ const AudioTelephonyPage = () => {
       </Dialog>
 
       {/* Edit Transfer Number Dialog */}
-      <Dialog open={editTransferNumberDialog} onClose={() => {
-        setEditTransferNumberDialog(false);
-        setTransferNumberToEdit(null);
-      }} maxWidth="sm" fullWidth>
+      <Dialog 
+        open={editTransferNumberDialog} 
+        onClose={() => {
+          setEditTransferNumberDialog(false);
+          setTransferNumberToEdit(null);
+        }} 
+        maxWidth="sm" 
+        fullWidth
+        disableAutoFocus={false}
+        disableEnforceFocus={false}
+      >
         <DialogTitle>Edit Transfer Number</DialogTitle>
         <DialogContent>
           {transferNumberToEdit && (

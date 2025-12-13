@@ -21,14 +21,15 @@ export const useSystemPageState = () => {
     queryKey: ['crm-tasks-config'],
     queryFn: () => configService.getCRMTasksConfig(),
     onSuccess: (data) => {
-      if (data?.config) {
+      if (data?.data) {
         // Config is already in the correct format from the backend
       }
     }
   });
 
   // Transform backend config to frontend format
-  const crmTasksConfig = crmTasksConfigData?.config || {
+  // The service normalizes the response, so data is in crmTasksConfigData.data
+  const crmTasksConfig = crmTasksConfigData?.data || {
     createBooking: { enabled: true, requireConfirmation: true },
     reschedule: { enabled: true, requireConfirmation: true },
     cancel: { enabled: true, requireConfirmation: true },
@@ -61,15 +62,36 @@ export const useSystemPageState = () => {
     queryKey: ['system-config'],
     queryFn: () => systemService.getSystemConfig(),
     onSuccess: (data) => {
-      if (data) {
-        Object.keys(data).forEach(key => {
+      // Handle normalized response structure
+      // Backend returns { success: true, config: {...} }
+      // Service normalizes to { success: true, data: {...} }
+      const config = data?.data?.config || data?.config || data?.data || data;
+      
+      if (config) {
+        Object.keys(config).forEach(key => {
           if (key in control._defaultValues) {
-            setValue(key, data[key]);
+            setValue(key, config[key]);
           }
         });
       }
     }
   });
+
+  // Update form values when system config is loaded (useEffect for reliability)
+  useEffect(() => {
+    if (systemConfig) {
+      // Handle normalized response structure
+      const config = systemConfig?.data?.config || systemConfig?.config || systemConfig?.data || systemConfig;
+      
+      if (config) {
+        Object.keys(config).forEach(key => {
+          if (key in control._defaultValues) {
+            setValue(key, config[key]);
+          }
+        });
+      }
+    }
+  }, [systemConfig, setValue, control]);
 
   // Use custom hooks for data fetching
   const { models, isLoading: modelsLoading } = useAIModels();
@@ -95,12 +117,15 @@ export const useSystemPageState = () => {
 
   // Save configuration mutation
   const saveConfigMutation = useMutation({
-    mutationFn: systemService.updateSystemConfig,
+    mutationFn: (data) => systemService.updateSystemConfig(data),
     onSuccess: () => {
       showSuccess('System configuration saved successfully');
       queryClient.invalidateQueries(['system-config']);
     },
-    onError: () => showError('Failed to save system configuration')
+    onError: (error) => {
+      console.error('System config save error:', error);
+      showError(`Failed to save system configuration: ${error.message || 'Unknown error'}`);
+    }
   });
 
   // Save privacy configuration mutation
@@ -115,12 +140,15 @@ export const useSystemPageState = () => {
 
   // Save CRM tasks configuration mutation
   const saveCRMTasksConfigMutation = useMutation({
-    mutationFn: configService.updateCRMTasksConfig,
+    mutationFn: (config) => configService.updateCRMTasksConfig(config),
     onSuccess: () => {
       showSuccess('CRM tasks configuration saved successfully');
       queryClient.invalidateQueries(['crm-tasks-config']);
     },
-    onError: () => showError('Failed to save CRM tasks configuration')
+    onError: (error) => {
+      console.error('CRM tasks config save error:', error);
+      showError(`Failed to save CRM tasks configuration: ${error.message || 'Unknown error'}`);
+    }
   });
 
   const onSubmit = (data) => {
@@ -140,6 +168,13 @@ export const useSystemPageState = () => {
   };
 
   const handleSaveCrmTasksConfig = () => {
+    // Validate that crmTasksConfig exists and has the required structure
+    if (!crmTasksConfig) {
+      showError('CRM tasks configuration is not loaded. Please refresh the page.');
+      console.error('crmTasksConfig is undefined');
+      return;
+    }
+
     // Prepare config data in the format expected by the backend
     const configData = {
       createBooking: crmTasksConfig.createBooking,
@@ -150,21 +185,36 @@ export const useSystemPageState = () => {
       dryRunEnforced: crmTasksConfig.dryRunEnforced,
       auditLogging: crmTasksConfig.auditLogging
     };
-    saveCRMTasksConfigMutation.mutate(configData);
+
+    // Validate that all required properties exist
+    const hasInvalidData = Object.values(configData).some(value => value === undefined);
+    if (hasInvalidData) {
+      showError('Invalid configuration data. Please check all fields are properly set.');
+      console.error('Invalid configData:', configData);
+      console.error('crmTasksConfig:', crmTasksConfig);
+      return;
+    }
+
+    console.log('Saving CRM tasks config:', configData);
+    saveCRMTasksConfigMutation.mutate(configData, {
+      onError: (error) => {
+        console.error('Failed to save CRM tasks config:', error);
+        showError(`Failed to save CRM tasks configuration: ${error.message || 'Unknown error'}`);
+      }
+    });
   };
 
   const handleCrmTaskToggle = (taskKey, field, value) => {
     // Update local state optimistically
     // The actual save happens when handleSaveCrmTasksConfig is called
-    // For now, we'll need to update the query cache directly
     queryClient.setQueryData(['crm-tasks-config'], (oldData) => {
-      if (!oldData?.config) return oldData;
+      if (!oldData?.data) return oldData;
       return {
         ...oldData,
-        config: {
-          ...oldData.config,
+        data: {
+          ...oldData.data,
           [taskKey]: {
-            ...oldData.config[taskKey],
+            ...oldData.data[taskKey],
             [field]: value
           }
         }
@@ -175,11 +225,11 @@ export const useSystemPageState = () => {
   const handleCrmGeneralToggle = (field, value) => {
     // Update local state optimistically
     queryClient.setQueryData(['crm-tasks-config'], (oldData) => {
-      if (!oldData?.config) return oldData;
+      if (!oldData?.data) return oldData;
       return {
         ...oldData,
-        config: {
-          ...oldData.config,
+        data: {
+          ...oldData.data,
           [field]: value
         }
       };

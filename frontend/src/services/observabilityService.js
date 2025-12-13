@@ -152,17 +152,25 @@ class ObservabilityService extends BaseService {
    */
   async exportData(format = 'json', filters = {}) {
     const response = await this.get('/export', { format, ...filters }, {
-      responseType: format === 'csv' ? 'blob' : 'json',
-      normalizeResponse: format !== 'csv' // Don't normalize CSV responses
+      responseType: format === 'csv' ? 'text' : 'json', // Use 'text' for CSV to get string
+      normalizeResponse: false // Don't normalize, handle manually
     });
     
-    // For CSV, response.data is the blob directly
+    // For CSV, response.data is the CSV text string
     if (format === 'csv') {
-      return response.data;
+      // Backend sends CSV as text with headers, return as string
+      return typeof response.data === 'string' ? response.data : response.data?.data || '';
     }
     
-    // For JSON, return normalized data
-    return response.data?.data || response.data;
+    // For JSON, backend returns: { success: true, data: { format, data, filename } }
+    // Or directly: { format, data, filename }
+    if (response.data?.success !== undefined) {
+      // Response wrapped in success object
+      return response.data.data || response.data;
+    }
+    
+    // Direct response structure
+    return response.data;
   }
 }
 

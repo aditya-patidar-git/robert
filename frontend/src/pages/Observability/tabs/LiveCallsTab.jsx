@@ -18,6 +18,7 @@ import {
   Visibility,
   Info
 } from '@mui/icons-material';
+import { formatDuration, formatPhoneNumber } from '../../../utils/formatters';
 
 const LiveCallsTab = ({
   liveCalls,
@@ -25,6 +26,26 @@ const LiveCallsTab = ({
   handleViewTimeline,
   handleViewToolTraces
 }) => {
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'queued':
+        return 'default';
+      case 'ringing':
+        return 'warning';
+      case 'in-progress':
+        return 'success';
+      default:
+        return 'primary';
+    }
+  };
+
+  const formatLatency = (latency) => {
+    if (latency === null || latency === undefined || latency === 0) {
+      return 'N/A';
+    }
+    return `${latency}ms`;
+  };
+
   return (
     <Paper>
       <Box sx={{ p: 2 }}>
@@ -37,7 +58,13 @@ const LiveCallsTab = ({
           <CircularProgress />
         </Box>
       ) : liveCalls.length === 0 ? (
-        <Box sx={{ p: 3, textAlign: 'center' }}>
+        <Box sx={{ 
+          p: 3, 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center',
+          minHeight: 200
+        }}>
           <Typography color="text.secondary">No active calls</Typography>
         </Box>
       ) : (
@@ -58,15 +85,24 @@ const LiveCallsTab = ({
             <TableBody>
               {liveCalls.map((call) => (
                 <TableRow key={call.callSid}>
-                  <TableCell>{call.callSid}</TableCell>
-                  <TableCell>{call.from}</TableCell>
-                  <TableCell>{call.to}</TableCell>
                   <TableCell>
-                    <Chip label={call.status} size="small" color="primary" />
+                    <Typography variant="body2" fontFamily="monospace" fontSize="0.75rem">
+                      {call.callSid}
+                    </Typography>
                   </TableCell>
-                  <TableCell>{call.duration}s</TableCell>
-                  <TableCell>{call.latency}ms</TableCell>
-                  <TableCell>{call.language}</TableCell>
+                  <TableCell>{call.from ? formatPhoneNumber(call.from) : 'N/A'}</TableCell>
+                  <TableCell>{call.to ? formatPhoneNumber(call.to) : 'N/A'}</TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={call.status} 
+                      size="small" 
+                      color={getStatusColor(call.status)}
+                      variant="filled"
+                    />
+                  </TableCell>
+                  <TableCell>{formatDuration(call.duration)}</TableCell>
+                  <TableCell>{formatLatency(call.latency)}</TableCell>
+                  <TableCell>{call.language || 'N/A'}</TableCell>
                   <TableCell>
                     <Tooltip title="View Timeline">
                       <IconButton size="small" onClick={() => handleViewTimeline(call.callSid)}>

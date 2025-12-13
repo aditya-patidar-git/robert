@@ -10,13 +10,11 @@ import {
 import {
   Build,
   Settings,
-  Business,
-  Lock
+  Business
 } from '@mui/icons-material';
 import { useSystemPageState } from './hooks/useSystemPageState';
 import MCPToolsTab from './tabs/MCPToolsTab';
 import CRMTasksTab from './tabs/CRMTasksTab';
-import SecurityPrivacyTab from './tabs/SecurityPrivacyTab';
 import GeneralSettingsTab from './tabs/GeneralSettingsTab';
 
 const SystemConfigPage = () => {
@@ -26,9 +24,6 @@ const SystemConfigPage = () => {
     control,
     handleSubmit,
     watch,
-    privacyConfigData,
-    privacyLoading,
-    savePrivacyConfigMutation,
     saveConfigMutation,
     isOwner,
     crmTasksConfig,
@@ -36,7 +31,6 @@ const SystemConfigPage = () => {
     handleCrmGeneralToggle,
     handleSaveCrmTasksConfig,
     saveCRMTasksConfigMutation,
-    handleSavePrivacyConfig,
     onSubmit
   } = useSystemPageState();
 
@@ -85,7 +79,6 @@ const SystemConfigPage = () => {
         >
           <Tab label="MCP Tools" icon={<Build />} iconPosition="start" />
           <Tab label="CRM Tasks" icon={<Business />} iconPosition="start" />
-          <Tab label="Security & Privacy" icon={<Lock />} iconPosition="start" />
           <Tab label="General Settings" icon={<Settings />} iconPosition="start" />
         </Tabs>
       </Paper>
@@ -107,21 +100,8 @@ const SystemConfigPage = () => {
           />
         )}
 
-        {/* Tab C: Security & Privacy */}
+        {/* Tab C: General Settings */}
         {currentTab === 2 && (
-          <SecurityPrivacyTab
-            control={control}
-            watch={watch}
-            privacyConfigData={privacyConfigData}
-            privacyLoading={privacyLoading}
-            savePrivacyConfigMutation={savePrivacyConfigMutation}
-            handleSubmit={handleSubmit}
-            handleSavePrivacyConfig={handleSavePrivacyConfig}
-          />
-        )}
-
-        {/* Tab D: General Settings */}
-        {currentTab === 3 && (
           <GeneralSettingsTab
             control={control}
             watch={watch}

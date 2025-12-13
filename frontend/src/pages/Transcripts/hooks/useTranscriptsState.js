@@ -119,8 +119,14 @@ export const useTranscriptsState = () => {
       showSuccess('Transcripts exported successfully');
       setExportDialog(false);
     },
-    onError: () => {
-      showError('Failed to export transcripts');
+    onError: (error, variables) => {
+      // Check if error indicates opt-out scenario
+      const errorMessage = error?.response?.data?.error || error?.message || '';
+      if (errorMessage.includes('not available') || errorMessage.includes('opt') || errorMessage.includes('consent')) {
+        showError('Transcript not available - customer opted out of recording consent');
+      } else {
+        showError('Failed to export transcripts');
+      }
       setExportDialog(false);
     }
   });

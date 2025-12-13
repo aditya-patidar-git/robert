@@ -1,0 +1,17 @@
+[
+  {
+    "id": "audit_1765625709065_b646e348",
+    "eventType": "data_exported",
+    "eventData": {
+      "exportId": "export_1765625709065_2d83e5cb",
+      "userIdentifier": "69326ac2de14cd6631d36ef2",
+      "dataTypes": [
+        "transcripts",
+        "recordings",
+        "metadata"
+      ]
+    },
+    "timestamp": "2025-12-13T11:35:09.065Z",
+    "system": "robert-ai"
+  }
+]

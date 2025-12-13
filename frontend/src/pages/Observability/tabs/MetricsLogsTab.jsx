@@ -113,6 +113,7 @@ const MetricsLogsTab = ({
                   <RechartsTooltip />
                   <Legend />
                   <Bar dataKey="calls" fill="#1976d2" name="Total Calls" />
+                  <Bar dataKey="errors" fill="#d32f2f" name="Errors" />
                 </BarChart>
               </ResponsiveContainer>
             )}

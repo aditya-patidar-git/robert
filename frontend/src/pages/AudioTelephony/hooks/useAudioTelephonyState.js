@@ -90,7 +90,7 @@ export const useAudioTelephonyState = () => {
 
   // Use custom hooks
   const { isLoading: audioLoading } = useAudioConfig({ setValue, watch, reset, getValues });
-  const { isLoading: telephonyLoading } = useTelephonyConfig({ setValue, watch });
+  const { isLoading: telephonyLoading } = useTelephonyConfig({ setValue, watch, reset });
   const { models: availableModels } = useAIModels();
   const { mappings: languageMappings, isLoading: mappingsLoading, previewingVoice, setPreviewingVoice } = useLanguageVoiceMappings();
   const { isLoading: capabilitiesLoading } = useModelCapabilities();
