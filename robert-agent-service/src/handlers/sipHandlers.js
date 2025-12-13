@@ -48,6 +48,14 @@ export const handleCallAccept = async (req, res) => {
       });
     }
 
+    // Create SIP session and track status
+    sipService.createSession(call_id, {
+      from: from,
+      to: to,
+      callType: 'SIP'
+    });
+    sipService.trackStatus(call_id, 'accepted', { from, to });
+
     // Get configuration
     const phoneNumber = from || to;
     const currentLanguage = conversations[call_id]?.language || 'en';
@@ -124,6 +132,9 @@ export const handleCallStatus = async (req, res) => {
 
     console.log(`📞 [SIP] Call status update - call_id: ${call_id}, status: ${status}`);
 
+    // Track status change
+    sipService.trackStatus(call_id, status);
+
     // Update CallRecord
     try {
       await CallRecord.findOneAndUpdate(
@@ -139,6 +150,7 @@ export const handleCallStatus = async (req, res) => {
     const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
     if (['completed', 'failed', 'busy', 'no-answer'].includes(status)) {
       sessionManagementService.deleteSession(call_id);
+      sipService.deleteSession(call_id);
     }
 
     res.sendStatus(200);

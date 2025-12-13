@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
+import urlValidation from '../utils/urlValidation.js';
 import { 
   getRealisticUserAgent, 
   getStealthBrowserArgs, 
@@ -42,6 +43,24 @@ class BrowserAgentService {
     if (!fs.existsSync(this.auditDir)) {
       fs.mkdirSync(this.auditDir, { recursive: true });
     }
+  }
+
+  /**
+   * Safely navigate to URL with SSRF protection
+   * @param {Object} page - Playwright page object
+   * @param {string} url - URL to navigate to
+   * @param {Object} options - Navigation options
+   * @returns {Promise<void>}
+   */
+  async safeNavigate(page, url, options = {}) {
+    // Validate URL before navigation
+    const validation = urlValidation.validateUrl(url);
+    if (!validation.valid) {
+      throw new Error(`SSRF protection: ${validation.error}`);
+    }
+
+    // Navigate to validated URL
+    await page.goto(url, options);
   }
 
   async getBrowser() {
