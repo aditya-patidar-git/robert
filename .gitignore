@@ -1,6 +1,6 @@
 # Node modules
 node_modules/
-docs/
+prompt-docs/
 # Logs
 logs
 .cursor
@@ -38,6 +38,8 @@ pids
 *.seed
 *.pid.lock
 *.md
+!documentation/
+!documentation/*.md
 # Coverage
 coverage/
 *.lcov
