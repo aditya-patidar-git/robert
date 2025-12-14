@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Box,
@@ -44,6 +44,7 @@ import voiceService from '../../services/voiceService';
 const ModelVoiceSelection = ({ 
   control,
   watch,
+  setValue,
   fallbackChain = [],
   setFallbackChain,
   showFallbackChain = true,
@@ -82,6 +83,28 @@ const ModelVoiceSelection = ({
            model.capabilities?.realtime === true ||
            (model.id && (model.id.includes('realtime') || model.id.includes('gpt-realtime')));
   });
+
+  // Validate selectedModel value against available options
+  const selectedModelValue = watch('selectedModel');
+  
+  // Proactively reset invalid values if setValue is available
+  useEffect(() => {
+    if (!setValue || !selectedModelValue) {
+      return;
+    }
+    
+    // Only validate once models have loaded
+    if (voiceBasedModels.length === 0) {
+      return;
+    }
+    
+    // Check if the current value is valid
+    const isValid = voiceBasedModels.some(model => model.id === selectedModelValue);
+    if (!isValid) {
+      console.warn(`[ModelVoiceSelection] Invalid selectedModel value "${selectedModelValue}" not found in available models. Resetting to empty.`);
+      setValue('selectedModel', '', { shouldValidate: false });
+    }
+  }, [selectedModelValue, voiceBasedModels, setValue]);
 
   // Get compatible voices for the selected model
   const getCompatibleVoices = useCallback((modelId) => {
@@ -279,18 +302,37 @@ const ModelVoiceSelection = ({
           <Controller
             name="selectedModel"
             control={control}
-            render={({ field }) => (
-              <FormControl sx={{ minWidth: 200 }}>
-                <InputLabel>Primary AI Model</InputLabel>
-                <Select {...field} label="Primary AI Model">
-                  {voiceBasedModels.map((model) => (
-                    <MenuItem key={model.id} value={model.id}>
-                      {model.name || model.id}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
+            render={({ field }) => {
+              // Ensure value is valid or empty string
+              const validValue = voiceBasedModels.length > 0 && 
+                                voiceBasedModels.some(model => model.id === field.value)
+                ? field.value 
+                : '';
+              
+              return (
+                <FormControl sx={{ minWidth: 200 }}>
+                  <InputLabel>Primary AI Model</InputLabel>
+                  <Select 
+                    {...field} 
+                    value={validValue}
+                    label="Primary AI Model"
+                    onChange={(e) => {
+                      field.onChange(e.target.value);
+                    }}
+                  >
+                    {voiceBasedModels.length === 0 ? (
+                      <MenuItem disabled>Loading models...</MenuItem>
+                    ) : (
+                      voiceBasedModels.map((model) => (
+                        <MenuItem key={model.id} value={model.id}>
+                          {model.name || model.id}
+                        </MenuItem>
+                      ))
+                    )}
+                  </Select>
+                </FormControl>
+              );
+            }}
           />
 
           <Controller

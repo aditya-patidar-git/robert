@@ -160,17 +160,87 @@ const LanguageVoiceMapping = ({
     );
   };
 
-  // Handle voice preview
+  // Handle voice preview with language-specific text and direct playback
   const handleVoicePreview = async (voiceId, languageCode) => {
-    if (!showPreview) return;
+    if (!showPreview || !voiceId) return;
+    
     try {
       setPreviewingVoice({ voiceId, languageCode });
-      const sampleText = `Hello, this is a voice preview for ${languageCode}.`;
-      await voiceService.previewVoice(voiceId, sampleText);
-      showSuccess('Voice preview generated');
+      
+      // Use standard English text - it will be translated automatically
+      const sampleText = 'Hello, this is a voice preview.';
+      
+      // Call preview API with translation to target language
+      const previewResult = await voiceService.previewVoice(voiceId, sampleText, { 
+        translateTo: languageCode 
+      });
+      
+      // Extract audio URL from response (handle multiple possible structures)
+      const audioUrl = previewResult?.audioUrl || previewResult?.url || 
+                      previewResult?.preview?.audioUrl || previewResult?.preview?.url ||
+                      previewResult?.data?.audioUrl || previewResult?.data?.url ||
+                      previewResult?.data?.preview?.audioUrl || previewResult?.data?.preview?.url;
+      
+      if (!audioUrl) {
+        console.error('🔴 [LANGUAGE_VOICE_PREVIEW] No audio URL in response:', previewResult);
+        showError('Preview generated but audio URL not found');
+        setPreviewingVoice(null);
+        return;
+      }
+      
+      // Build full audio URL
+      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
+      const fullAudioUrl = audioUrl.startsWith('http') 
+        ? audioUrl 
+        : `${API_BASE}${audioUrl.startsWith('/') ? '' : '/'}${audioUrl}`;
+      
+      // Get auth token
+      const token = localStorage.getItem('authToken');
+      
+      // Fetch audio as blob with authentication
+      const response = await fetch(fullAudioUrl, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Create and play audio element
+      const audio = new Audio(blobUrl);
+      
+      // Cleanup on end
+      const handleEnded = () => {
+        URL.revokeObjectURL(blobUrl);
+        setPreviewingVoice(null);
+      };
+      
+      // Handle errors
+      const handleError = (e) => {
+        console.error('🔴 [LANGUAGE_VOICE_PREVIEW] Audio playback error:', e);
+        URL.revokeObjectURL(blobUrl);
+        setPreviewingVoice(null);
+        showError('Failed to play audio preview');
+      };
+      
+      audio.addEventListener('ended', handleEnded);
+      audio.addEventListener('error', handleError);
+      
+      // Play immediately
+      await audio.play();
+      
+      // Get language name for success message
+      const mapping = languageMappings.find(m => m.languageCode === languageCode);
+      const languageName = mapping?.languageName || languageCode;
+      showSuccess(`Playing preview in ${languageName}...`);
+      
     } catch (error) {
-      showError('Failed to preview voice');
-    } finally {
+      console.error('🔴 [LANGUAGE_VOICE_PREVIEW] Error:', error);
+      showError(error.message || 'Failed to preview voice');
       setPreviewingVoice(null);
     }
   };
@@ -455,7 +525,7 @@ const LanguageVoiceMapping = ({
                           disabled={!mapping.voiceId || (previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode)}
                         >
                           {previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode ? (
-                            <Stop />
+                            <CircularProgress size={20} />
                           ) : (
                             <PlayArrow />
                           )}

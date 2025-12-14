@@ -54,7 +54,7 @@ class VoiceService extends BaseService {
    * Preview voice with custom text
    * @param {string} voiceId - Voice ID
    * @param {string} text - Text to preview
-   * @param {Object} options - Additional options (modelId, etc.)
+   * @param {Object} options - Additional options (modelId, translateTo, etc.)
    * @returns {Promise<Object>} Preview result
    */
   async previewVoice(voiceId, text, options = {}) {
@@ -66,6 +66,11 @@ class VoiceService extends BaseService {
     // Add modelId if provided
     if (options.modelId) {
       requestBody.modelId = options.modelId;
+    }
+    
+    // Add translateTo if provided (language code to translate text to)
+    if (options.translateTo) {
+      requestBody.translateTo = options.translateTo;
     }
     
     const response = await this.post('/preview', requestBody);

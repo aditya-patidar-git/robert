@@ -15,6 +15,7 @@ const AIConfigurationTab = ({ state, handlers }) => {
     control,
     handleSubmit,
     watch,
+    setValue,
     currentVersion,
     promptVersions,
     versionsLoading,
@@ -240,6 +241,7 @@ const AIConfigurationTab = ({ state, handlers }) => {
         <ModelVoiceSelection 
           control={control}
           watch={watch}
+          setValue={setValue}
           fallbackChain={fallbackChain}
           setFallbackChain={setFallbackChain}
           showFallbackChain={true}
