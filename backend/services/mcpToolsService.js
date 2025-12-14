@@ -201,37 +201,124 @@ class MCPToolsService {
   }
 
   async executeEmail(parameters, callContext) {
-    const { to, subject, body, template } = parameters;
-    
-    // Mock email implementation
-    const emailTemplates = {
-      'booking_confirmation': {
-        subject: 'Booking Confirmation - Universal Motorcycle Training',
-        body: 'Your booking has been confirmed. Details will be sent shortly.'
-      },
-      'booking_reminder': {
-        subject: 'Booking Reminder - Universal Motorcycle Training',
-        body: 'This is a reminder about your upcoming booking.'
-      },
-      'cancellation': {
-        subject: 'Booking Cancelled - Universal Motorcycle Training',
-        body: 'Your booking has been cancelled as requested.'
+    try {
+      const { to, subject, body, template, templateData = {} } = parameters;
+      
+      // Import email service
+      const emailService = (await import('./emailService.js')).default;
+
+      // Validate recipient
+      if (!to) {
+        return {
+          success: false,
+          error: 'Recipient email address (to) is required'
+        };
       }
-    };
 
-    const templateData = emailTemplates[template] || {
-      subject: subject,
-      body: body
-    };
+      if (!emailService.validateEmailAddress(to)) {
+        return {
+          success: false,
+          error: `Invalid email address: ${to}`
+        };
+      }
 
-    return {
-      success: true,
-      messageId: 'msg_' + Date.now(),
-      to: to,
-      subject: templateData.subject,
-      body: templateData.body,
-      sentAt: new Date().toISOString()
-    };
+      // Simple template definitions (can be enhanced with full templates later)
+      const emailTemplates = {
+        'booking_confirmation': {
+          subject: `Booking Confirmation - Universal Motorcycle Training${templateData.bookingReference ? ` - ${templateData.bookingReference}` : ''}`,
+          body: templateData.customerName 
+            ? `Dear ${templateData.customerName},\n\nYour booking has been confirmed with Universal Motorcycle Training.\n\n`
+            : 'Your booking has been confirmed with Universal Motorcycle Training.\n\n' +
+              (templateData.bookingReference ? `Booking Reference: ${templateData.bookingReference}\n` : '') +
+              (templateData.date ? `Date: ${templateData.date}\n` : '') +
+              (templateData.time ? `Time: ${templateData.time}\n` : '') +
+              (templateData.centre ? `Centre: ${templateData.centre}\n` : '') +
+              '\nPlease arrive 15 minutes before your scheduled time.\n\n' +
+              'If you need to make any changes to your booking, please contact us as soon as possible.\n\n' +
+              'Best regards,\nUniversal Motorcycle Training'
+        },
+        'booking_reminder': {
+          subject: 'Reminder: Your Booking Tomorrow - Universal Motorcycle Training',
+          body: templateData.customerName
+            ? `Dear ${templateData.customerName},\n\nThis is a reminder about your upcoming booking with Universal Motorcycle Training.\n\n`
+            : 'This is a reminder about your upcoming booking with Universal Motorcycle Training.\n\n' +
+              (templateData.bookingReference ? `Booking Reference: ${templateData.bookingReference}\n` : '') +
+              (templateData.date ? `Date: ${templateData.date}\n` : '') +
+              (templateData.time ? `Time: ${templateData.time}\n` : '') +
+              (templateData.centre ? `Centre: ${templateData.centre}\n` : '') +
+              '\nPlease remember to arrive 15 minutes before your scheduled time.\n\n' +
+              'Best regards,\nUniversal Motorcycle Training'
+        },
+        'cancellation': {
+          subject: `Booking Cancelled - Universal Motorcycle Training${templateData.bookingReference ? ` - ${templateData.bookingReference}` : ''}`,
+          body: templateData.customerName
+            ? `Dear ${templateData.customerName},\n\nYour booking has been cancelled as requested.\n\n`
+            : 'Your booking has been cancelled as requested.\n\n' +
+              (templateData.bookingReference ? `Booking Reference: ${templateData.bookingReference}\n` : '') +
+              (templateData.date ? `Original Date: ${templateData.date}\n` : '') +
+              (templateData.refundInfo ? `\nRefund Information:\n${templateData.refundInfo}\n` : '') +
+              '\nIf you have any questions or would like to make a new booking, please contact us.\n\n' +
+              'Best regards,\nUniversal Motorcycle Training'
+        }
+      };
+
+      let finalSubject = subject;
+      let finalBody = body;
+
+      // If template is provided, use it
+      if (template) {
+        const templateDef = emailTemplates[template];
+        
+        if (!templateDef) {
+          return {
+            success: false,
+            error: `Template "${template}" not found. Available templates: booking_confirmation, booking_reminder, cancellation`
+          };
+        }
+
+        finalSubject = templateDef.subject;
+        finalBody = templateDef.body;
+      } else {
+        // Use provided subject and body
+        if (!subject || !body) {
+          return {
+            success: false,
+            error: 'Either template or both subject and body are required'
+          };
+        }
+      }
+
+      // Send email via SMTP
+      const result = await emailService.sendEmail({
+        to,
+        subject: finalSubject,
+        text: finalBody
+      });
+
+      if (result.success) {
+        console.log(`✅ MCP email sent: ${result.messageId || 'logged'}`);
+        return {
+          success: true,
+          messageId: result.messageId,
+          to,
+          subject: finalSubject,
+          body: finalBody,
+          sentAt: new Date().toISOString(),
+          logged: result.logged || false
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error || 'Failed to send email'
+        };
+      }
+    } catch (error) {
+      console.error('❌ Error in MCP email tool:', error);
+      return {
+        success: false,
+        error: error.message || 'Unknown error sending email'
+      };
+    }
   }
 
   async executeCRM(parameters, callContext) {

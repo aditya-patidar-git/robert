@@ -33,11 +33,12 @@ class TwilioMetricsService {
       // Retry logic: Twilio metrics may take up to 90 seconds to be available
       while (retries > 0 && !metrics) {
         try {
-          // Fetch call metrics from Twilio Voice Insights
-          const insightsMetrics = await this.client.insights.v1.calls(callSid).metrics.fetch();
+          // Fetch call data from Twilio Voice Insights (metrics are included in the call object)
+          const callInsights = await this.client.insights.v1.calls(callSid).fetch();
           
-          if (insightsMetrics && insightsMetrics.metrics) {
-            metrics = this._extractMetrics(insightsMetrics.metrics);
+          // Metrics are available in the call object's metrics property
+          if (callInsights && callInsights.metrics) {
+            metrics = this._extractMetrics(callInsights.metrics);
             
             // Only proceed if we have at least one metric
             if (metrics.latency !== null || metrics.jitter !== null || metrics.packetLoss !== null) {

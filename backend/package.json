@@ -23,6 +23,7 @@
     "js-tiktoken": "^1.0.21",
     "mongoose": "^8.18.1",
     "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.0",
     "openai": "^6.1.0",
     "pdf-parse": "^2.2.16",
     "playwright": "^1.56.1",

@@ -2130,6 +2130,45 @@ class BrowserAgentService {
         };
       }
 
+      // Send email confirmation if booking was successful and customer email is available
+      if (result.success && args.customerEmail) {
+        try {
+          const emailService = (await import('./emailService.js')).default;
+          const { getTemplate } = await import('./emailTemplates.js');
+          
+          // Extract booking details from result if available
+          const bookingDetails = result.sessionDetails || result.result || {};
+          const templateData = {
+            customerName: args.customerName || bookingDetails.customerName || 'Customer',
+            bookingReference: bookingDetails.bookingReference || args.bookingReference || 'N/A',
+            courseType: args.courseType || bookingDetails.courseType || 'N/A',
+            date: args.bookingDate || bookingDetails.date || 'N/A',
+            time: args.bookingTime || bookingDetails.time || 'N/A',
+            centre: args.centre || bookingDetails.centre || 'N/A',
+            address: bookingDetails.address,
+            policyNote: callContext.policyCheck?.policyNote
+          };
+
+          // Send booking confirmation email (non-blocking)
+          emailService.sendTemplateEmail(
+            'booking_confirmation',
+            templateData,
+            args.customerEmail
+          ).then(emailResult => {
+            if (emailResult.success) {
+              console.log(`✅ [${auditId}] Booking confirmation email sent to ${args.customerEmail}`);
+            } else {
+              console.warn(`⚠️ [${auditId}] Failed to send booking confirmation email: ${emailResult.error}`);
+            }
+          }).catch(emailError => {
+            console.warn(`⚠️ [${auditId}] Error sending booking confirmation email (non-critical):`, emailError.message);
+          });
+        } catch (emailServiceError) {
+          // Don't fail booking if email service fails
+          console.warn(`⚠️ [${auditId}] Could not send booking confirmation email (non-critical):`, emailServiceError.message);
+        }
+      }
+
       return {
         success: result.success,
         result: result.result || result,
