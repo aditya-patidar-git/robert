@@ -3,6 +3,7 @@ import AIConfig from '../database/models/AIConfig.js';
 import AudioConfig from '../database/models/AudioConfig.js';
 import TelephonyConfig from '../database/models/TelephonyConfig.js';
 import ToolConfig from '../database/models/ToolConfig.js';
+import ConversationBehaviorConfig from '../database/models/ConversationBehaviorConfig.js';
 import multilingualService from '../services/multilingualService.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
@@ -19,13 +20,15 @@ class ConfigManager {
       ai: null,
       audio: null,
       telephony: null,
-      tools: null
+      tools: null,
+      conversationBehavior: null
     };
     this.lastFetch = {
       ai: 0,
       audio: 0,
       telephony: 0,
-      tools: 0
+      tools: 0,
+      conversationBehavior: 0
     };
     this.cacheTTL = 30000; // 30 seconds
     this.pollInterval = null;
@@ -45,7 +48,8 @@ class ConfigManager {
         this.refreshAIConfig(),
         this.refreshAudioConfig(),
         this.refreshTelephonyConfig(),
-        this.refreshToolConfig()
+        this.refreshToolConfig(),
+        this.refreshConversationBehaviorConfig()
       ]);
     } catch (error) {
       console.error('Error refreshing configs:', error);
@@ -148,6 +152,30 @@ class ConfigManager {
   getAllToolConfigs() {
     const toolsMap = this.cache.tools || new Map();
     return Array.from(toolsMap.values());
+  }
+
+  async refreshConversationBehaviorConfig() {
+    const now = Date.now();
+    if (this.cache.conversationBehavior && (now - this.lastFetch.conversationBehavior) < this.cacheTTL) {
+      return this.cache.conversationBehavior;
+    }
+
+    try {
+      const config = await ConversationBehaviorConfig.findOne({ isActive: true }).lean();
+      this.cache.conversationBehavior = config;
+      this.lastFetch.conversationBehavior = now;
+      if (config) {
+        console.log('✅ Conversation Behavior Config refreshed');
+      }
+      return config;
+    } catch (error) {
+      console.error('Error refreshing conversation behavior config:', error);
+      return this.cache.conversationBehavior || null;
+    }
+  }
+
+  getConversationBehaviorConfig() {
+    return this.cache.conversationBehavior || null;
   }
 
   // Get merged config for a specific phone number (supports per-number profiles)

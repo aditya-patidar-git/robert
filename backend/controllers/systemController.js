@@ -2,16 +2,18 @@ import AudioConfig from "../models/AudioConfig.js";
 import TelephonyConfig from "../models/TelephonyConfig.js";
 import PrivacyConfig from "../models/PrivacyConfig.js";
 import AIConfig from "../models/AIConfig.js";
+import ConversationBehaviorConfig from "../models/ConversationBehaviorConfig.js";
 
 // GET /api/system/config
 export const getSystemConfig = async (req, res) => {
   try {
     // Get all relevant configurations
-    const [audioConfig, telephonyConfig, privacyConfig, aiConfig] = await Promise.all([
+    const [audioConfig, telephonyConfig, privacyConfig, aiConfig, conversationBehaviorConfig] = await Promise.all([
       AudioConfig.findOne({ isActive: true }),
       TelephonyConfig.findOne({ isActive: true }),
       PrivacyConfig.findOne({ isActive: true }),
-      AIConfig.findOne({ isActive: true })
+      AIConfig.findOne({ isActive: true }),
+      ConversationBehaviorConfig.findOne({ isActive: true })
     ]);
 
     // Combine into system config
@@ -46,7 +48,10 @@ export const getSystemConfig = async (req, res) => {
       // Privacy Settings (from PrivacyConfig)
       transcriptRetention: privacyConfig?.retentionSettings?.transcriptRetention ?? 90,
       recordingRetention: privacyConfig?.retentionSettings?.recordingRetention ?? 90,
-      metadataRetention: privacyConfig?.retentionSettings?.metadataRetention ?? 365
+      metadataRetention: privacyConfig?.retentionSettings?.metadataRetention ?? 365,
+      
+      // Conversation Behavior Settings (from ConversationBehaviorConfig)
+      conversationBehavior: conversationBehaviorConfig || null
     };
 
     res.json({

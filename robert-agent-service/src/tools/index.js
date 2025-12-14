@@ -515,7 +515,8 @@ class ToolExecutor {
 
     try {
       // Execute with timeout
-      const executionPromise = tool.execute(parameters, callContext);
+      // Pass progress callback if provided
+      const executionPromise = tool.execute(parameters, { ...callContext, progressCallback });
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error(`Tool execution timeout: ${toolName} (exceeded ${timeout}ms)`)), timeout);
       });

@@ -18,7 +18,9 @@ class CRMBrowserTool {
       }
       
       // Call browser agent service with callContext
-      const result = await browserAgentService.executeTask(task, args, callContext);
+      // Create progress callback that forwards to progressIndicatorService
+      const progressCallback = callContext.progressCallback || null;
+      const result = await browserAgentService.executeTask(task, args, callContext, progressCallback);
       
       // If the result already indicates failure, return it gracefully
       if (!result.success) {

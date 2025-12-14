@@ -10,6 +10,13 @@ import multilingualService from "../services/multilingualService.js";
 import toolOrchestrator from "../services/toolOrchestrator.js";
 import kbaService from "../services/kbaService.js";
 import complaintDetectionService from "../services/complaintDetectionService.js";
+import progressIndicatorService from "../services/progressIndicatorService.js";
+import silenceDetectionService from "../services/silenceDetectionService.js";
+import conversationQualityService from "../services/conversationQualityService.js";
+import errorRecoveryService from "../services/errorRecoveryService.js";
+import adaptiveTimingService from "../services/adaptiveTimingService.js";
+import turnTakingStateMachine, { STATES } from "../services/turnTakingStateMachine.js";
+import proactiveAssistanceService from "../services/proactiveAssistanceService.js";
 import CallRecord from "../database/models/CallRecord.js";
 
 // Media Stream WebSocket Handler for Realtime API
@@ -89,8 +96,8 @@ export const handleMediaStreamConnection = (ws, req) => {
     let pendingTranscriptions = []; // Array to queue transcriptions during interruption
     let lastProcessedTranscriptionTime = 0; // Timestamp of last processed transcription
     let lastTranscriptionReceivedTime = 0; // Track when we last received a transcription (to distinguish barge-in from normal input)
-    let agentFinishedSpeakingTime = 0; // Track when agent finished speaking (for 5-6 second user speaking window)
-    const USER_SPEAKING_WINDOW_MS = 6000; // 6 second window for user to speak after agent finishes
+    let agentFinishedSpeakingTime = 0; // Track when agent finished speaking (for adaptive user speaking window)
+    let userSpeakingWindowMs = 6000; // Will be set adaptively based on caller behavior
     let userSpeechStartedTime = 0; // Track when user speech started (to distinguish barge-in from normal input)
     
     // Initial greeting tracking
@@ -105,14 +112,21 @@ export const handleMediaStreamConnection = (ws, req) => {
         respondedAt: null
     };
     let consentTimeout = null;
-    const CONSENT_TIMEOUT_MS = 10000; // 10 seconds to respond to consent question
+    const CONSENT_TIMEOUT_MS = 20000; // 20 seconds to respond to consent question (increased for better UX)
     
     // Tool execution tracking
     const pendingToolCalls = new Map(); // call_id -> { name, arguments, startTime }
     
     // VAD Calibration tracking
     let calibrationSamples = []; // Array to store initial audio samples for calibration
-    let calibrationStartTime = null; // When calibration period started
+    let calibrationStartTime = null;
+    
+    // Speech Continuation Grace Period tracking
+    let speechStoppedTime = 0; // Timestamp when speech_stopped fired
+    let speechContinuationGraceTimer = null; // Timer for grace period
+    let speechResumedDuringGrace = false; // Flag if speech resumed
+    let gracePeriodExtensionCount = 0; // Track extensions
+    let pendingTranscriptionsAfterGrace = []; // Transcriptions waiting for grace period // When calibration period started
     let calibrationComplete = false; // Whether calibration has been completed
     let calibratedThreshold = null; // The calibrated threshold value
     const CALIBRATION_DURATION_MS = 3000; // 3 seconds of audio for calibration
@@ -357,6 +371,24 @@ export const handleMediaStreamConnection = (ws, req) => {
         try { if (upFfmpeg) upFfmpeg.kill('SIGKILL'); } catch (_) {}
         
         if (callSid) {
+            // Cleanup services
+            progressIndicatorService.endToolExecution(callSid);
+            silenceDetectionService.reset(callSid);
+            errorRecoveryService.clearRetryCount(callSid);
+            adaptiveTimingService.resetCallerProfile(callSid);
+            turnTakingStateMachine.reset(callSid);
+            proactiveAssistanceService.clearCache(callSid);
+            
+            // Cleanup speech continuation grace period
+            if (speechContinuationGraceTimer) {
+                clearTimeout(speechContinuationGraceTimer);
+                speechContinuationGraceTimer = null;
+            }
+            speechStoppedTime = 0;
+            speechResumedDuringGrace = false;
+            gracePeriodExtensionCount = 0;
+            pendingTranscriptionsAfterGrace = [];
+            
             // Update database with transcript and mark call as completed when WebSocket disconnects
             try {
                 const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
@@ -685,6 +717,7 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Get dynamic config for this phone number (with current language)
             const currentLanguage = conversations[callSid]?.language || 'en';
             const config = configManager.getConfigForNumber(phoneNumber, currentLanguage);
+            const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
             console.log('📋 Using config:', {
                 voice: config.voice.id,
                 temperature: config.temperature,
@@ -788,8 +821,10 @@ export const handleMediaStreamConnection = (ws, req) => {
                 modifiedInstructions = `IMPORTANT: You must start every call with the following exact sequence:
 1. First, say: "${consentNotice}"
 2. Then immediately ask: "${consentQuestion}"
-3. Wait for the caller's response (yes, no, or silence)
-4. After they respond, continue with: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+3. WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
+4. Only after they respond, continue with: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+
+CRITICAL: You MUST ask the consent question before proceeding with any other conversation. Do not skip this step.
 
 ${config.instructions}`;
                 
@@ -798,6 +833,7 @@ ${config.instructions}`;
                 recordingConsentState.requestedAt = new Date();
                 conversations[callSid].recordingConsent.requested = true;
                 conversations[callSid].recordingConsent.requestedAt = new Date();
+                console.log(`📋 [${callSid}] Recording consent will be requested - instructions modified to include consent flow`);
             }
             
             const openaiUrl = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview';
@@ -947,18 +983,22 @@ ${config.instructions}`;
                                 console.log(`🎯 [${callSid}] Initial greeting sent immediately`);
                                 
                                 // Set timeout for consent response (if consent was requested)
+                                // Note: Timeout starts after initial greeting is sent, which should include the consent question
                                 if (recordingConsentState.requested && recordingConsentState.given === null) {
+                                    console.log(`⏱️ [${callSid}] Starting consent timeout (${CONSENT_TIMEOUT_MS/1000}s) - waiting for caller response`);
                                     consentTimeout = setTimeout(() => {
                                         if (recordingConsentState.given === null) {
-                                            // No response - default to opt-out for GDPR safety
-                                            recordingConsentState.given = true;
+                                            // No response - default to opt-out for GDPR safety (explicit opt-in required)
+                                            recordingConsentState.given = false; // GDPR: Default to opt-out
                                             recordingConsentState.respondedAt = new Date();
-                                            conversations[callSid].recordingConsent.given = true;
+                                            conversations[callSid].recordingConsent.given = false; // GDPR: Default to opt-out
                                             conversations[callSid].recordingConsent.respondedAt = new Date();
-                                            conversations[callSid].recordingConsent.optOutReason = "No response within timeout";
-                                            console.log(`⏰ [${callSid}] Recording consent timeout - defaulting to opt-out (GDPR safety)`);
+                                            conversations[callSid].recordingConsent.optOutReason = "No response within timeout - defaulting to opt-out for GDPR compliance";
+                                            console.log(`⏰ [${callSid}] Recording consent timeout expired - defaulting to opt-out (GDPR compliance)`);
                                         }
                                     }, CONSENT_TIMEOUT_MS);
+                                } else if (recordingConsentState.requested) {
+                                    console.log(`✅ [${callSid}] Consent already responded to, skipping timeout`);
                                 }
                             } catch (err) {
                                 explicitResponseRequested = false; // Reset if send fails
@@ -976,7 +1016,15 @@ ${config.instructions}`;
                     if (event.type === 'response.created') {
                         activeResponseId = event.response?.id;
                         // Note: item_id comes from conversation.item.created, not response.created
-                        responseStartTime = Date.now(); // Track when this response was created
+                        const currentTime = Date.now();
+                        responseStartTime = currentTime; // Track when this response was created
+                        
+                        // Track response latency if we have a previous transcription time
+                        const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                        if (conversationBehaviorConfig?.qualityMetrics?.trackLatency && lastProcessedTranscriptionTime > 0) {
+                            const latency = currentTime - lastProcessedTranscriptionTime;
+                            conversationQualityService.trackResponseLatency(callSid, latency);
+                        }
                         
                         // Log response creation details for debugging
                         console.log(`📝 [${callSid}] Response created - ID: ${activeResponseId}, modalities: ${JSON.stringify(event.response?.modalities || [])}, isResponding: ${isResponding}`);
@@ -994,7 +1042,7 @@ ${config.instructions}`;
                             const timeSinceAgentFinished = agentFinishedSpeakingTime > 0 ? currentTime - agentFinishedSpeakingTime : Infinity;
                             // Validate times are reasonable (not negative or extremely large)
                             const isRecentTranscription = lastTranscriptionReceivedTime > 0 && timeSinceTranscription >= 0 && timeSinceTranscription < 3000; // 3 second window
-                            const isWithinUserSpeakingWindow = agentFinishedSpeakingTime > 0 && timeSinceAgentFinished >= 0 && timeSinceAgentFinished < USER_SPEAKING_WINDOW_MS; // 6 second window
+                            const isWithinUserSpeakingWindow = agentFinishedSpeakingTime > 0 && timeSinceAgentFinished >= 0 && timeSinceAgentFinished < userSpeakingWindowMs;
                             
                             // Log warning if transcription time seems invalid
                             if (lastTranscriptionReceivedTime > 0 && (timeSinceTranscription < 0 || timeSinceTranscription > 3600000)) {
@@ -1140,13 +1188,24 @@ ${config.instructions}`;
                         if (wasInitialGreeting && status !== 'interrupted' && status !== 'cancelled') {
                             hasInitialGreetingCompleted = true;
                             console.log(`✅ [${callSid}] Initial greeting completed - now waiting for user input`);
-                            console.log(`👂 [${callSid}] Agent is now listening - user has ${USER_SPEAKING_WINDOW_MS/1000} seconds to speak`);
+                            console.log(`👂 [${callSid}] Agent is now listening - user has ${userSpeakingWindowMs/1000} seconds to speak`);
                             // CRITICAL: After initial greeting, wait for user input before creating any new responses
                             waitingForUser = true;
                             isResponding = false;
                             activeResponseId = null;
                             // Mark when agent finished speaking (for user speaking window)
-                            agentFinishedSpeakingTime = Date.now();
+                            const finishedTime = Date.now();
+                            agentFinishedSpeakingTime = finishedTime;
+                            
+                            // Track agent finished speaking for adaptive timing
+                            adaptiveTimingService.trackCallerBehavior(callSid, 'agent_finished', finishedTime);
+                            
+                            // Start silence detection monitoring
+                            const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                            if (conversationBehaviorConfig?.silenceDetection?.enabled) {
+                                silenceDetectionService.agentFinishedSpeaking(callSid);
+                                silenceDetectionService.startMonitoring(callSid, openaiWs, conversationBehaviorConfig);
+                            }
                             
                             // Check for previous call memories and request consent if needed
                             checkAndRequestMemoryConsent();
@@ -1208,7 +1267,23 @@ ${config.instructions}`;
                                     
                                     // Mark when agent finished speaking (for user speaking window)
                                     agentFinishedSpeakingTime = Date.now();
-                                    console.log(`👂 [${callSid}] Agent finished speaking (audio playback grace period completed) - user has ${USER_SPEAKING_WINDOW_MS/1000} seconds to speak`);
+                                    // Recalculate adaptive window based on recent behavior
+                                    if (conversationBehaviorConfig?.conversationFlow?.adaptivePacing) {
+                                        const baseWindow = conversationBehaviorConfig.conversationFlow.userSpeakingWindowMs || 6000;
+                                        userSpeakingWindowMs = adaptiveTimingService.calculateAdaptiveWindow(
+                                            callSid,
+                                            baseWindow,
+                                            conversationBehaviorConfig.conversationFlow
+                                        );
+                                    }
+                                    console.log(`👂 [${callSid}] Agent finished speaking (audio playback grace period completed) - user has ${userSpeakingWindowMs/1000} seconds to speak`);
+                                    
+                                    // Start silence detection monitoring
+                                    const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                                    if (conversationBehaviorConfig?.silenceDetection?.enabled) {
+                                        silenceDetectionService.agentFinishedSpeaking(callSid);
+                                        silenceDetectionService.startMonitoring(callSid, openaiWs, conversationBehaviorConfig);
+                                    }
                                     
                                     // Fix: After acknowledgment response, ensure state is ready for next barge-in
                                     if (wasAcknowledgmentResponse) {
@@ -1221,14 +1296,67 @@ ${config.instructions}`;
                             }, AUDIO_PLAYBACK_GRACE_PERIOD);
                             
                             // Mark when response.done occurred (but audio might still be playing)
-                            agentFinishedSpeakingTime = Date.now();
+                            const finishedTime = Date.now();
+                            agentFinishedSpeakingTime = finishedTime;
+                            
+                            // Track agent finished speaking for adaptive timing
+                            adaptiveTimingService.trackCallerBehavior(callSid, 'agent_finished', finishedTime);
+                            
+                            // Start silence detection monitoring
+                            const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                            if (conversationBehaviorConfig?.silenceDetection?.enabled) {
+                                silenceDetectionService.agentFinishedSpeaking(callSid);
+                                silenceDetectionService.startMonitoring(callSid, openaiWs, conversationBehaviorConfig);
+                            }
                         }
                     }
                     
                     // Handle barge-in: user speech detected during active response
                     if (event.type === 'input_audio_buffer.speech_started') {
+                        // Get conversation behavior config once at the start of this handler
+                        const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                        
                         // Track when user speech started
-                        userSpeechStartedTime = Date.now();
+                        const speechStartTime = Date.now();
+                        userSpeechStartedTime = speechStartTime;
+                        
+                        // Track user speech for adaptive timing
+                        adaptiveTimingService.trackCallerBehavior(callSid, 'user_spoke', speechStartTime);
+                        
+                        // Check if we're in grace period (speech continuation detection)
+                        const speechContinuation = conversationBehaviorConfig?.conversationFlow?.speechContinuation;
+                        
+                        if (speechContinuation?.enabled && speechContinuationGraceTimer && speechStoppedTime > 0) {
+                            const timeSinceSpeechStopped = Date.now() - speechStoppedTime;
+                            const gracePeriodMs = speechContinuation.gracePeriodMs || 1500;
+                            
+                            if (timeSinceSpeechStopped < gracePeriodMs) {
+                                // Speech resumed during grace period
+                                speechResumedDuringGrace = true;
+                                gracePeriodExtensionCount++;
+                                
+                                // Cancel grace period timer
+                                if (speechContinuationGraceTimer) {
+                                    clearTimeout(speechContinuationGraceTimer);
+                                    speechContinuationGraceTimer = null;
+                                }
+                                
+                                const maxExtensions = speechContinuation.maxGracePeriodExtensions || 2;
+                                if (gracePeriodExtensionCount <= maxExtensions) {
+                                    console.log(`🔄 [${callSid}] Speech resumed during grace period (extension ${gracePeriodExtensionCount}/${maxExtensions}, ${Math.round(timeSinceSpeechStopped)}ms after speech stopped) - continuing to listen`);
+                                    // Don't process transcriptions, continue listening
+                                    // Reset speech stopped time but keep transcriptions for when speech actually stops
+                                    speechStoppedTime = 0;
+                                    return; // Exit early, don't process as barge-in
+                                } else {
+                                    console.log(`⚠️ [${callSid}] Max grace period extensions reached (${gracePeriodExtensionCount}) - processing transcriptions`);
+                                    // Process transcriptions despite extensions
+                                    speechResumedDuringGrace = false;
+                                    gracePeriodExtensionCount = 0;
+                                    speechStoppedTime = 0;
+                                }
+                            }
+                        }
                         
                         // CRITICAL: Barge-in ONLY occurs when agent is actively speaking (isResponding = true)
                         // AND user speech started AFTER the response was created
@@ -1262,10 +1390,10 @@ ${config.instructions}`;
                             // Normal user input - agent is waiting, not responding
                             // Check if we're within the user speaking window
                             const timeSinceAgentFinished = agentFinishedSpeakingTime > 0 ? Date.now() - agentFinishedSpeakingTime : Infinity;
-                            const isWithinWindow = timeSinceAgentFinished < USER_SPEAKING_WINDOW_MS;
+                            const isWithinWindow = timeSinceAgentFinished < userSpeakingWindowMs;
                             
                             if (isWithinWindow) {
-                                console.log(`👤 [${callSid}] User speech started (normal input - agent is waiting, user has ${Math.round((USER_SPEAKING_WINDOW_MS - timeSinceAgentFinished) / 1000)}s remaining in speaking window)`);
+                                console.log(`👤 [${callSid}] User speech started (normal input - agent is waiting, user has ${Math.round((userSpeakingWindowMs - timeSinceAgentFinished) / 1000)}s remaining in speaking window)`);
                             } else {
                                 console.log(`👤 [${callSid}] User speech started (normal input - agent is waiting, not responding)`);
                             }
@@ -1278,10 +1406,31 @@ ${config.instructions}`;
                         const isMultipleInterruption = isInterrupted;
                         console.log(`🛑 [${callSid}] Barge-in detected! User is interrupting agent response ${activeResponseId} (agent was actively speaking)${isMultipleInterruption ? ' - multiple interruption' : ''}`);
                         
+                        // Track interruption for quality metrics
+                        // conversationBehaviorConfig already declared at line 1324
+                        if (conversationBehaviorConfig?.qualityMetrics?.trackInterruptions) {
+                            conversationQualityService.trackInterruption(callSid);
+                        }
+                        
+                        // Track interruption for adaptive timing
+                        adaptiveTimingService.trackCallerBehavior(callSid, 'interruption', Date.now());
+                        
                         // Set interruption flags (even if already set - this handles multiple interruptions)
                         isInterrupted = true;
                         interruptionStartTime = Date.now();
                         pendingTranscriptions = []; // Clear any pending transcriptions
+                        
+                        // Cancel grace period if active (interruption takes precedence)
+                        if (speechContinuationGraceTimer) {
+                            clearTimeout(speechContinuationGraceTimer);
+                            speechContinuationGraceTimer = null;
+                            console.log(`🛑 [${callSid}] Cancelled grace period due to interruption`);
+                        }
+                        speechStoppedTime = 0;
+                        speechResumedDuringGrace = false;
+                        gracePeriodExtensionCount = 0;
+                        // Clear pending transcriptions after grace - interruption takes precedence
+                        pendingTranscriptionsAfterGrace = [];
                         
                         // Save IDs before clearing
                         const responseIdToCancel = activeResponseId;
@@ -1341,62 +1490,132 @@ ${config.instructions}`;
                         // Check for memory consent response (if consent was requested and not yet responded)
                         if (conversations[callSid]?.memoryConsent?.requested && conversations[callSid]?.memoryConsent?.given === null) {
                             const transcriptLower = transcript.toLowerCase().trim();
-                            const consentKeywords = ['yes', 'yeah', 'yep', 'okay', 'ok', 'sure', 'consent', 'agree', 'fine', 'alright', 'please', 'go ahead'];
-                            const declineKeywords = ['no', 'nope', "don't", 'refuse', 'decline', 'not', 'disagree', "don't want"];
+                            
+                            // Use same robust detection patterns as recording consent
+                            const explicitConsentPatterns = [
+                                /^(yes|yeah|yep|yup|okay|ok|sure|absolutely|definitely|of course|certainly|i consent|i agree|i do|go ahead|please do)$/i,
+                                /^(yes|yeah|yep|okay|ok|sure|i consent|i agree|please do)\s/i,
+                                /\b(yes|yeah|yep|okay|ok|sure|i consent|i agree|go ahead|please do)\b/i
+                            ];
+                            
+                            const explicitDeclinePatterns = [
+                                /^(no|nope|nah|not|don't|do not|refuse|decline|disagree|i don't|i do not)\s/i,
+                                /\b(no|nope|refuse|decline|disagree|don't consent|do not consent|i don't want|i do not want)\b/i,
+                                /\b(not|don't|do not)\s+(consent|agree|want|allow|permit)\b/i
+                            ];
+                            
+                            const ambiguousDeclinePatterns = [
+                                /\b(not sure|unsure|maybe|perhaps|i don't know|i'm not sure|i think not|probably not)\b/i,
+                                /\b(no thanks|no thank you|that's ok|that's okay)\b/i
+                            ];
                             
                             let consentDetected = false;
                             let declineDetected = false;
                             
-                            for (const keyword of consentKeywords) {
-                                if (transcriptLower.includes(keyword)) {
-                                    consentDetected = true;
+                            // First check for explicit decline (highest priority)
+                            for (const pattern of explicitDeclinePatterns) {
+                                if (pattern.test(transcriptLower)) {
+                                    declineDetected = true;
                                     break;
                                 }
                             }
                             
-                            for (const keyword of declineKeywords) {
-                                if (transcriptLower.includes(keyword)) {
-                                    declineDetected = true;
-                                    break;
+                            // Check for ambiguous phrases that should default to decline
+                            if (!declineDetected) {
+                                for (const pattern of ambiguousDeclinePatterns) {
+                                    if (pattern.test(transcriptLower)) {
+                                        declineDetected = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            // Only check for consent if no decline detected
+                            if (!declineDetected) {
+                                for (const pattern of explicitConsentPatterns) {
+                                    if (pattern.test(transcriptLower)) {
+                                        // Double-check it's not a negative phrase
+                                        if (!transcriptLower.match(/\b(not|don't|do not|no)\s+(yes|okay|ok|sure|consent|agree)\b/i)) {
+                                            consentDetected = true;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                             
                             if (consentDetected && !declineDetected) {
                                 conversations[callSid].memoryConsent.given = true;
                                 conversations[callSid].memoryConsent.respondedAt = new Date();
-                                console.log(`✅ [${callSid}] Memory consent GIVEN by user`);
+                                console.log(`✅ [${callSid}] Memory consent GIVEN by user: "${transcript}"`);
                                 
                                 // Inject full memory context now that consent is given
                                 injectMemoryContext();
                             } else if (declineDetected) {
                                 conversations[callSid].memoryConsent.given = false;
                                 conversations[callSid].memoryConsent.respondedAt = new Date();
-                                console.log(`❌ [${callSid}] Memory consent DECLINED by user`);
+                                console.log(`❌ [${callSid}] Memory consent DECLINED by user: "${transcript}"`);
+                            } else {
+                                // Ambiguous or unclear response - log for debugging but wait for more input
+                                console.log(`⚠️ [${callSid}] Unclear memory consent response, waiting for clarification: "${transcript}"`);
                             }
                         }
                         
                         // Check for recording consent response (if consent was requested and not yet responded)
                         if (recordingConsentState.requested && recordingConsentState.given === null) {
                             const transcriptLower = transcript.toLowerCase().trim();
-                            const consentKeywords = ['yes', 'yeah', 'yep', 'okay', 'ok', 'sure', 'consent', 'agree', 'fine', 'alright'];
-                            const declineKeywords = ['no', 'nope', "don't", 'refuse', 'decline', 'not', 'disagree'];
+                            
+                            // More robust consent detection patterns
+                            // Check for explicit consent phrases first (higher priority)
+                            const explicitConsentPatterns = [
+                                /^(yes|yeah|yep|yup|okay|ok|sure|absolutely|definitely|of course|certainly|i consent|i agree|i do|go ahead)$/i,
+                                /^(yes|yeah|yep|okay|ok|sure|i consent|i agree)\s/i,
+                                /\b(yes|yeah|yep|okay|ok|sure|i consent|i agree)\b/i
+                            ];
+                            
+                            // Check for explicit decline phrases (higher priority)
+                            const explicitDeclinePatterns = [
+                                /^(no|nope|nah|not|don't|do not|refuse|decline|disagree|i don't|i do not)\s/i,
+                                /\b(no|nope|refuse|decline|disagree|don't consent|do not consent|i don't want|i do not want)\b/i,
+                                /\b(not|don't|do not)\s+(consent|agree|want|allow|permit)\b/i
+                            ];
+                            
+                            // Check for ambiguous phrases that should be treated as decline
+                            const ambiguousDeclinePatterns = [
+                                /\b(not sure|unsure|maybe|perhaps|i don't know|i'm not sure|i think not|probably not)\b/i,
+                                /\b(no thanks|no thank you|that's ok|that's okay)\b/i
+                            ];
                             
                             let consentDetected = false;
                             let declineDetected = false;
                             
-                            // Check for consent
-                            for (const keyword of consentKeywords) {
-                                if (transcriptLower.includes(keyword)) {
-                                    consentDetected = true;
+                            // First check for explicit decline (highest priority for GDPR safety)
+                            for (const pattern of explicitDeclinePatterns) {
+                                if (pattern.test(transcriptLower)) {
+                                    declineDetected = true;
                                     break;
                                 }
                             }
                             
-                            // Check for decline
-                            for (const keyword of declineKeywords) {
-                                if (transcriptLower.includes(keyword)) {
-                                    declineDetected = true;
-                                    break;
+                            // Check for ambiguous phrases that should default to decline
+                            if (!declineDetected) {
+                                for (const pattern of ambiguousDeclinePatterns) {
+                                    if (pattern.test(transcriptLower)) {
+                                        declineDetected = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            // Only check for consent if no decline detected
+                            if (!declineDetected) {
+                                for (const pattern of explicitConsentPatterns) {
+                                    if (pattern.test(transcriptLower)) {
+                                        // Double-check it's not a negative phrase
+                                        if (!transcriptLower.match(/\b(not|don't|do not|no)\s+(yes|okay|ok|sure|consent|agree)\b/i)) {
+                                            consentDetected = true;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                             
@@ -1410,7 +1629,7 @@ ${config.instructions}`;
                                     clearTimeout(consentTimeout);
                                     consentTimeout = null;
                                 }
-                                console.log(`✅ [${callSid}] Recording consent GIVEN by user`);
+                                console.log(`✅ [${callSid}] Recording consent GIVEN by user: "${transcript}"`);
                             } else if (declineDetected) {
                                 recordingConsentState.given = false;
                                 recordingConsentState.respondedAt = new Date();
@@ -1422,9 +1641,12 @@ ${config.instructions}`;
                                     clearTimeout(consentTimeout);
                                     consentTimeout = null;
                                 }
-                                console.log(`❌ [${callSid}] Recording consent DECLINED by user`);
+                                console.log(`❌ [${callSid}] Recording consent DECLINED by user: "${transcript}"`);
+                            } else {
+                                // Ambiguous or unclear response - log for debugging but wait for more input
+                                console.log(`⚠️ [${callSid}] Unclear consent response, waiting for clarification: "${transcript}"`);
                             }
-                            // If neither detected, wait for more input (silence/unclear will default to false later)
+                            // If neither detected clearly, wait for more input (silence/unclear will default to false on timeout)
                         }
                         
                         // Track when we received this transcription (for distinguishing barge-in from normal input)
@@ -1587,6 +1809,17 @@ ${config.instructions}`;
                                 timestamp: new Date(transcriptionTime)
                             });
                             
+                            // Reset silence detection when user speaks
+                            const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                            if (conversationBehaviorConfig?.silenceDetection?.enabled) {
+                                silenceDetectionService.userSpoke(callSid);
+                            }
+                            
+                            // Track user transcription for adaptive timing (if not already tracked from speech_started)
+                            if (userSpeechStartedTime === 0 || Math.abs(transcriptionTime - userSpeechStartedTime) > 1000) {
+                                adaptiveTimingService.trackCallerBehavior(callSid, 'user_spoke', transcriptionTime);
+                            }
+                            
                             // Detect and switch language if enabled (after initial greeting)
                             if (conversations[callSid].languageDetectionEnabled && hasInitialGreetingCompleted) {
                                 detectAndSwitchLanguage(transcript);
@@ -1618,34 +1851,28 @@ ${config.instructions}`;
                             }
                         }
                         
-                        // NORMAL USER INPUT: Process transcription when agent is waiting (not interrupting)
-                        // Double-check: ensure no active response before creating new one
-                        if (transcript && transcript !== lastUserTranscript && !isResponding && activeResponseId === null && waitingForUser) {
-                            lastUserTranscript = transcript;
-                            waitingForUser = false;
-                            isResponding = true; // Set flag before creating response
-                            lastProcessedTranscriptionTime = transcriptionTime; // Track this as the last processed
-                            console.log(`🎯 [${callSid}] Creating response to normal user input: "${transcript}" (agent was waiting, not interrupted)`);
-                            try {
-                                explicitResponseRequested = true; // Mark this as an explicit request
-                                openaiWs.send(JSON.stringify({
-                                    type: 'response.create',
-                                    response: {
-                                        modalities: ['audio', 'text']
-                                    }
-                                }));
-                            } catch (err) {
-                                explicitResponseRequested = false; // Reset if send fails
-                                isResponding = false; // Reset if send fails
-                                console.error(`❌ [${callSid}] Error creating response to user input:`, err);
+                        // NORMAL USER INPUT: Store transcription but don't process yet - wait for speech_stopped and grace period
+                        // We'll process transcriptions after grace period expires in speech_stopped handler
+                        if (transcript && transcript !== lastUserTranscript) {
+                            // Store transcription for processing after grace period
+                            if (!pendingTranscriptionsAfterGrace.find(t => t.transcript === transcript)) {
+                                pendingTranscriptionsAfterGrace.push({
+                                    transcript,
+                                    confidence,
+                                    time: transcriptionTime
+                                });
+                                console.log(`📝 [${callSid}] Stored transcription for processing after grace period: "${transcript}"`);
                             }
-                        } else if (transcript && transcript !== lastUserTranscript) {
-                            console.log(`⚠️ [${callSid}] Skipping response - isResponding: ${isResponding}, activeResponseId: ${activeResponseId}, waitingForUser: ${waitingForUser}, hasInitialGreetingCompleted: ${hasInitialGreetingCompleted}`);
                         }
                     }
                     
-                    // Handle when user speech ends - process the most recent transcription
+                    // Handle when user speech ends - process transcriptions after grace period
                     if (event.type === 'input_audio_buffer.speech_stopped') {
+                        // Get configuration for speech continuation
+                        const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                        const speechContinuation = conversationBehaviorConfig?.conversationFlow?.speechContinuation;
+                        
+                        // Handle interruption case first (existing logic - no grace period for interruptions)
                         if (isInterrupted && pendingTranscriptions.length > 0) {
                             // Get the most recent transcription (last one in the queue)
                             const latestTranscription = pendingTranscriptions[pendingTranscriptions.length - 1];
@@ -1782,6 +2009,121 @@ ${config.instructions}`;
                             } else {
                                 console.log(`⚠️ [${callSid}] Skipping acknowledgment - conditions not met: isResponding=${isResponding}, activeResponseId=${activeResponseId}, waitingForUser=${waitingForUser}, wsOpen=${openaiWs && openaiWs.readyState === WebSocket.OPEN}`);
                             }
+                        } else {
+                            // Normal speech stopped (not interrupted) - apply grace period
+                            if (speechContinuation?.enabled && waitingForUser && !isResponding && activeResponseId === null) {
+                                // Start grace period
+                                speechStoppedTime = Date.now();
+                                speechResumedDuringGrace = false;
+                                
+                                // Clear any existing grace timer
+                                if (speechContinuationGraceTimer) {
+                                    clearTimeout(speechContinuationGraceTimer);
+                                    speechContinuationGraceTimer = null;
+                                }
+                                
+                                const gracePeriodMs = speechContinuation.gracePeriodMs || 1500;
+                                
+                                // Check if silence is likely a pause using silence detection
+                                const pauseDetectionMs = speechContinuation.pauseDetectionMs || 800;
+                                const isLikelyPause = silenceDetectionService.isLikelyPause(callSid, pauseDetectionMs);
+                                
+                                // If likely a pause, extend grace period slightly
+                                const adjustedGracePeriod = isLikelyPause ? gracePeriodMs + 300 : gracePeriodMs;
+                                
+                                // Set grace period timer
+                                speechContinuationGraceTimer = setTimeout(() => {
+                                    if (!speechResumedDuringGrace && !isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                        // Grace period expired, no speech resumed - process transcriptions
+                                        console.log(`✅ [${callSid}] Grace period expired - processing ${pendingTranscriptionsAfterGrace.length} transcriptions`);
+                                        
+                                        // Process all pending transcriptions
+                                        if (pendingTranscriptionsAfterGrace.length > 0) {
+                                            // Get the most recent transcription
+                                            const latestTranscription = pendingTranscriptionsAfterGrace[pendingTranscriptionsAfterGrace.length - 1];
+                                            const transcript = latestTranscription.transcript;
+                                            const confidence = latestTranscription.confidence;
+                                            const transcriptionTime = latestTranscription.time;
+                                            
+                                            // Check confidence threshold
+                                            if (!config.uncertaintyGateEnabled || confidence >= config.confidenceThreshold) {
+                                                // Process transcription and create response
+                                                if (transcript && transcript !== lastUserTranscript && !isResponding && activeResponseId === null && waitingForUser) {
+                                                    lastUserTranscript = transcript;
+                                                    waitingForUser = false;
+                                                    isResponding = true;
+                                                    lastProcessedTranscriptionTime = transcriptionTime;
+                                                    
+                                                    console.log(`🎯 [${callSid}] Creating response after grace period: "${transcript}"`);
+                                                    try {
+                                                        explicitResponseRequested = true;
+                                                        openaiWs.send(JSON.stringify({
+                                                            type: 'response.create',
+                                                            response: {
+                                                                modalities: ['audio', 'text']
+                                                            }
+                                                        }));
+                                                    } catch (err) {
+                                                        explicitResponseRequested = false;
+                                                        isResponding = false;
+                                                        console.error(`❌ [${callSid}] Error creating response after grace period:`, err);
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Clear processed transcriptions
+                                            pendingTranscriptionsAfterGrace = [];
+                                        }
+                                        
+                                        // Reset grace period state
+                                        speechStoppedTime = 0;
+                                        gracePeriodExtensionCount = 0;
+                                    } else if (speechResumedDuringGrace) {
+                                        // Speech resumed, reset and continue listening
+                                        console.log(`🔄 [${callSid}] Speech resumed during grace period - continuing to listen`);
+                                        speechResumedDuringGrace = false;
+                                        gracePeriodExtensionCount = 0;
+                                        speechStoppedTime = 0;
+                                        // Keep transcriptions for next speech_stopped
+                                    }
+                                    speechContinuationGraceTimer = null;
+                                }, adjustedGracePeriod);
+                                
+                                console.log(`⏳ [${callSid}] Speech stopped - starting ${adjustedGracePeriod}ms grace period (${pendingTranscriptionsAfterGrace.length} transcriptions pending, likelyPause: ${isLikelyPause})`);
+                            } else if (!speechContinuation?.enabled) {
+                                // Grace period disabled - process immediately (legacy behavior)
+                                if (pendingTranscriptionsAfterGrace.length > 0) {
+                                    const latestTranscription = pendingTranscriptionsAfterGrace[pendingTranscriptionsAfterGrace.length - 1];
+                                    const transcript = latestTranscription.transcript;
+                                    const confidence = latestTranscription.confidence;
+                                    const transcriptionTime = latestTranscription.time;
+                                    
+                                    if (!config.uncertaintyGateEnabled || confidence >= config.confidenceThreshold) {
+                                        if (transcript && transcript !== lastUserTranscript && !isResponding && activeResponseId === null && waitingForUser) {
+                                            lastUserTranscript = transcript;
+                                            waitingForUser = false;
+                                            isResponding = true;
+                                            lastProcessedTranscriptionTime = transcriptionTime;
+                                            
+                                            console.log(`🎯 [${callSid}] Creating response immediately (grace period disabled): "${transcript}"`);
+                                            try {
+                                                explicitResponseRequested = true;
+                                                openaiWs.send(JSON.stringify({
+                                                    type: 'response.create',
+                                                    response: {
+                                                        modalities: ['audio', 'text']
+                                                    }
+                                                }));
+                                            } catch (err) {
+                                                explicitResponseRequested = false;
+                                                isResponding = false;
+                                                console.error(`❌ [${callSid}] Error creating response:`, err);
+                                            }
+                                        }
+                                    }
+                                    pendingTranscriptionsAfterGrace = [];
+                                }
+                            }
                         }
                     }
                     
@@ -1872,8 +2214,24 @@ ${config.instructions}`;
                             startTime: toolStartTime
                         });
                         
+                        // Start progress tracking
+                        const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                        if (conversationBehaviorConfig?.progressIndicators?.enabled) {
+                            progressIndicatorService.startToolExecution(callSid, name);
+                            
+                            // Check and send acknowledgment after threshold
+                            setTimeout(() => {
+                                if (!isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                    progressIndicatorService.checkAndSendAcknowledgment(callSid, openaiWs, conversationBehaviorConfig);
+                                }
+                            }, conversationBehaviorConfig.progressIndicators.acknowledgmentThresholdMs || 2000);
+                        }
+                        
                         console.log(`🔧 [${callSid}] Starting tool execution: ${name}`);
                         console.log(`🔧 [${callSid}] ========================================\n`);
+                        
+                        // Transition to TOOL_EXECUTING state
+                        turnTakingStateMachine.transition(callSid, STATES.TOOL_EXECUTING, { toolName: name });
                         
                         // Check if KBA is required for this tool
                         if (kbaService.requiresKBA(name, parameters)) {
@@ -1927,7 +2285,14 @@ ${config.instructions}`;
                             clientVerified: conversation.clientVerified || false
                         };
                         
-                        toolExecutor.execute(name, parameters, callContext)
+                        // Create progress callback for browser operations
+                        const progressCallback = (name === 'crm_browser') ? (progress) => {
+                            if (progress && progress.message && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                progressIndicatorService.sendProgressUpdate(callSid, progress.message, openaiWs);
+                            }
+                        } : null;
+                        
+                        toolExecutor.execute(name, parameters, callContext, progressCallback)
                             .then(async (executionResult) => {
                                 if (isClosed || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
                                     return;
@@ -1944,12 +2309,19 @@ ${config.instructions}`;
                                     }
                                     
                                     // Store availability data if returned from check_availability
-                                    if (executionResult.result.sessionDetails || executionResult.result.availableSlots) {
+                                    if (executionResult.result.sessionDetails || executionResult.result.selectedSlot || executionResult.result.allSlots) {
                                         if (!conversations[callSid]) {
                                             conversations[callSid] = {};
                                         }
-                                        conversations[callSid].lastAvailabilityCheck = executionResult.result.sessionDetails || executionResult.result;
-                                        console.log(`💾 [${callSid}] Stored availability data in conversation state`);
+                                        // Store the full availability result (allSlots, selectedSlot, etc.)
+                                        conversations[callSid].lastAvailabilityCheck = {
+                                            allSlots: executionResult.result.allSlots,
+                                            selectedSlot: executionResult.result.selectedSlot || executionResult.result.sessionDetails,
+                                            sessionDetails: executionResult.result.selectedSlot || executionResult.result.sessionDetails, // Keep for backward compatibility
+                                            monthYear: executionResult.result.monthYear,
+                                            ...executionResult.result // Include all fields
+                                        };
+                                        console.log(`💾 [${callSid}] Stored availability data in conversation state (${executionResult.result.allSlots?.length || 0} slots available)`);
                                     }
                                 }
                                 
@@ -1967,6 +2339,15 @@ ${config.instructions}`;
                                 const toolCallInfo = pendingToolCalls.get(call_id);
                                 const totalTime = Date.now() - (toolCallInfo?.startTime || toolStartTime);
                                 pendingToolCalls.delete(call_id);
+                                
+                                // End progress tracking
+                                progressIndicatorService.endToolExecution(callSid);
+                                
+                                // Track tool execution quality
+                                const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                                if (conversationBehaviorConfig?.qualityMetrics?.trackToolSuccess) {
+                                    conversationQualityService.trackToolExecution(callSid, name, executionResult.success, totalTime);
+                                }
                                 
                                 // Format result
                                 const output = executionResult.success 
@@ -2033,6 +2414,18 @@ ${config.instructions}`;
                                 const totalTime = toolCallInfo ? Date.now() - toolCallInfo.startTime : 0;
                                 pendingToolCalls.delete(call_id);
                                 
+                                // End progress tracking
+                                progressIndicatorService.endToolExecution(callSid);
+                                
+                                // Track tool execution failure
+                                const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                                if (conversationBehaviorConfig?.qualityMetrics?.trackToolSuccess) {
+                                    conversationQualityService.trackToolExecution(callSid, name, false, totalTime);
+                                }
+                                
+                                // Handle error with recovery service
+                                const errorResult = errorRecoveryService.handleToolError(callSid, name, error, conversationBehaviorConfig);
+                                
                                 console.error(`\n❌ [${callSid}] ========================================`);
                                 console.error(`❌ [${callSid}] TOOL EXECUTION FAILED`);
                                 console.error(`❌ [${callSid}] Tool: ${name}`);
@@ -2050,7 +2443,7 @@ ${config.instructions}`;
                                             call_id: call_id,
                                             output: JSON.stringify({
                                                 success: false,
-                                                error: error.message || 'Tool execution failed'
+                                                error: errorResult.userMessage || error.message || 'Tool execution failed'
                                             })
                                         }
                                     }));

@@ -35,6 +35,7 @@ import observabilityRoutes from "./routes/observabilityRoutes.js";
 import systemRoutes from "./routes/systemRoutes.js";
 import memoryRoutes from "./routes/memoryRoutes.js";
 import toolConfigRoutes from "./routes/toolConfigRoutes.js";
+import conversationBehaviorRoutes from "./routes/conversationBehaviorRoutes.js";
 import callCleanupService from "./services/callCleanupService.js";
 import { proxyRecording } from "./controllers/outboundController.js";
 import { protect as authenticateToken } from "./middleware/authMiddleware.js";
@@ -164,6 +165,9 @@ app.use("/api/system", systemRoutes);
 
 // Tool Configuration Routes
 app.use("/api/admin/tools", toolConfigRoutes);
+
+// Conversation Behavior Configuration Routes
+app.use("/api/conversation-behavior", conversationBehaviorRoutes);
 
 // Outbound Routes (Recording proxy) - requires authentication
 app.get("/api/outbound/recording/:callSid", authenticateToken, proxyRecording);
