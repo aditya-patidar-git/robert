@@ -401,13 +401,22 @@ export const handleMediaStreamConnection = (ws, req) => {
                 );
                 
                 console.log(`✅ [${callSid}] Saved transcript and marked call as completed (reason: ${reason})`);
+                
+                // Delete session after successful database update
+                sessionManagementService.deleteSession(callSid);
             } catch (err) {
                 console.error(`❌ [${callSid}] Error saving transcript in cleanup:`, err);
                 // Don't throw - cleanup should continue even if DB update fails
+                // Try to delete session even if DB update failed
+                try {
+                    const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
+                    sessionManagementService.deleteSession(callSid);
+                } catch (sessionErr) {
+                    console.warn(`⚠️ [${callSid}] Could not delete session:`, sessionErr.message);
+                }
             }
             
             delete realtimeClients[callSid];
-            sessionManagementService.deleteSession(callSid);
             pendingToolCalls.clear();
         }
     };

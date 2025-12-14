@@ -3,6 +3,7 @@ import { conversations } from "../shared/state.js";
 import summaryService from "../services/summaryService.js";
 import crossCallMemoryService from "../services/crossCallMemoryService.js";
 import twilioMetricsService from "../services/twilioMetricsService.js";
+import voicemailEmailService from "../services/voicemailEmailService.js";
 
 // Call status with live updates (no Socket.IO in agent service)
 export const callStatus = async (req, res) => {
@@ -88,6 +89,39 @@ export const callStatus = async (req, res) => {
         } catch (error) {
             console.error(`❌ [${CallSid}] Error storing call summary:`, error);
             // Don't block call completion if summary storage fails
+        }
+
+        // Check if this was a voicemail call and send notification email
+        try {
+            const callRecord = await CallRecord.findOne({ callSid: CallSid }).lean();
+            if (callRecord && callRecord.result === 'voicemail') {
+                console.log(`📧 [${CallSid}] Voicemail detected, sending notification email...`);
+                
+                const conversation = conversations[CallSid] || {};
+                const transcriptSummary = conversation.transcript 
+                    ? conversation.transcript
+                        .filter(t => t.role === 'user')
+                        .map(t => t.text)
+                        .join(' ')
+                        .substring(0, 500) // Limit transcript length
+                    : null;
+
+                // Send voicemail notification email
+                voicemailEmailService.sendVoicemailNotification({
+                    callSid: CallSid,
+                    callerId: From || conversation.from || 'Unknown',
+                    recordingUrl: callRecord.recordingUrl,
+                    transcript: transcriptSummary,
+                    duration: callRecord.duration ? `${Math.round(callRecord.duration / 60)} minutes` : null,
+                    timestamp: callRecord.createdAt || new Date()
+                }).catch(error => {
+                    console.error(`❌ [${CallSid}] Error sending voicemail notification:`, error);
+                    // Don't block call completion if email fails
+                });
+            }
+        } catch (error) {
+            console.error(`❌ [${CallSid}] Error checking voicemail status:`, error);
+            // Don't block call completion if voicemail check fails
         }
 
         // Fetch and save audio quality metrics from Twilio

@@ -1,6 +1,6 @@
-import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import ComplaintRecord from '../database/models/ComplaintRecord.js';
+import emailService from './emailService.js';
 
 dotenv.config();
 
@@ -8,29 +8,6 @@ class ComplaintEmailService {
   constructor() {
     this.complaintsEmail = 'complaints@universalmct.co.uk';
     this.managerEmail = 'john.mcgregor@universalmct.co.uk'; // From documentation
-    this.transporter = null;
-    this.initializeTransporter();
-  }
-
-  /**
-   * Initialize email transporter (SMTP or API)
-   */
-  initializeTransporter() {
-    // Check if SMTP is configured
-    if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
-      this.transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT) || 587,
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASSWORD
-        }
-      });
-      console.log('✅ Email transporter initialized (SMTP)');
-    } else {
-      console.log('⚠️ SMTP not configured. Email sending will be logged only.');
-    }
   }
 
   /**
@@ -87,71 +64,39 @@ class ComplaintEmailService {
   }
 
   /**
-   * Mask PII in email content
+   * Mask PII in email content (delegates to emailService)
    * @param {string} value - Value to mask
    * @returns {string} Masked value
    */
   maskPII(value) {
-    if (!value) return 'N/A';
-    if (value.includes('@')) {
-      // Email: mask middle part
-      const [local, domain] = value.split('@');
-      if (local.length > 2) {
-        return `${local[0]}***@${domain}`;
-      }
-      return `***@${domain}`;
-    }
-    if (value.match(/^\+?\d+$/)) {
-      // Phone: mask middle digits
-      if (value.length > 6) {
-        return `${value.substring(0, 3)}***${value.substring(value.length - 3)}`;
-      }
-      return '***';
-    }
-    return value;
+    return emailService.maskPII(value);
   }
 
   /**
    * Send complaint email
    * @param {object} complaintData - Complaint data
-   * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
+   * @returns {Promise<{success: boolean, messageId?: string, error?: string, logged?: boolean}>}
    */
   async sendComplaintEmail(complaintData) {
     try {
       const { subject, body } = this.generateComplaintEmail(complaintData);
 
-      if (!this.transporter) {
-        // Log email instead of sending (for development/testing)
-        console.log('📧 [EMAIL LOG] Complaint email would be sent:');
-        console.log(`📧 To: ${this.complaintsEmail}`);
-        console.log(`📧 CC: ${this.managerEmail}`);
-        console.log(`📧 Subject: ${subject}`);
-        console.log(`📧 Body:\n${body}`);
-
-        return {
-          success: true,
-          messageId: `log_${Date.now()}`,
-          logged: true
-        };
-      }
-
-      // Send email via SMTP
-      const mailOptions = {
-        from: process.env.SMTP_FROM || 'robert@universalmct.co.uk',
+      // Use general email service to send email
+      const result = await emailService.sendEmail({
         to: this.complaintsEmail,
         cc: this.managerEmail,
         subject,
         text: body,
-        html: body.replace(/\n/g, '<br>')
-      };
+        html: emailService.textToHtml(body)
+      });
 
-      const info = await this.transporter.sendMail(mailOptions);
-      console.log(`✅ Complaint email sent: ${info.messageId}`);
+      if (result.success) {
+        console.log(`✅ Complaint email sent: ${result.messageId || 'logged'}`);
+      } else {
+        console.error(`❌ Failed to send complaint email: ${result.error}`);
+      }
 
-      return {
-        success: true,
-        messageId: info.messageId
-      };
+      return result;
     } catch (error) {
       console.error('❌ Error sending complaint email:', error);
       return {
