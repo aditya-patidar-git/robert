@@ -27,13 +27,17 @@ export const AuthProvider = ({ children }) => {
         }
       });
       
-      // Only check auth status if we have a token
+      // Check for existing token in localStorage (shared across tabs)
       const token = localStorage.getItem('authToken');
       if (!token) {
+        console.log('🔍 No authToken found in localStorage');
         setUser(null);
         setIsAuthenticated(false);
+        setIsLoading(false);
         return;
       }
+      
+      console.log('🔍 Found authToken in localStorage, validating...');
       
       // Check if token is expired (basic JWT decode)
       try {
@@ -49,16 +53,19 @@ export const AuthProvider = ({ children }) => {
           throw new Error('Token expired');
         }
       } catch (jwtError) {
-        console.log('Token validation failed:', jwtError.message);
+        console.log('❌ Token validation failed:', jwtError.message);
         localStorage.removeItem('authToken');
         setUser(null);
         setIsAuthenticated(false);
+        setIsLoading(false);
         return;
       }
       
+      console.log('✅ Token is valid, fetching user profile...');
       const userData = await authService.getProfile();
       
       if (userData && userData.id) {
+        console.log('✅ Authentication successful, user logged in:', userData.email || userData.id);
         setUser(userData);
         setIsAuthenticated(true);
       } else {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
@@ -20,7 +20,7 @@ import { useToast } from '../../components/common/ToastProvider';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, isAuthenticated, isLoading: authLoading, user } = useAuth();
   const { showSuccess, showError } = useToast();
 
   const [showPassword, setShowPassword] = useState(false);
@@ -30,6 +30,14 @@ const LoginPage = () => {
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: { email: '', password: '' }
   });
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && user) {
+      console.log('✅ User already authenticated, redirecting to dashboard...');
+      navigate('/admin/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, authLoading, user, navigate]);
 
   const onSubmit = async (data) => {
     setIsLoading(true);
