@@ -449,10 +449,11 @@ class ToolExecutor {
    * @param {string} toolName - Name of the tool to execute
    * @param {object} parameters - Tool parameters
    * @param {object} callContext - Call context (callSid, phoneNumber, etc.)
+   * @param {Function} progressCallback - Optional callback for progress updates
    * @param {number} timeout - Execution timeout in ms (optional)
    * @returns {Promise<object>} Tool execution result
    */
-  async execute(toolName, parameters, callContext = {}, timeout = this.defaultTimeout) {
+  async execute(toolName, parameters, callContext = {}, progressCallback = null, timeout = this.defaultTimeout) {
     const startTime = Date.now();
     const callSid = callContext.callSid || 'unknown';
     const phoneNumber = callContext.phoneNumber || 'unknown';
@@ -516,7 +517,21 @@ class ToolExecutor {
     try {
       // Execute with timeout
       // Pass progress callback if provided
-      const executionPromise = tool.execute(parameters, { ...callContext, progressCallback });
+      let executionPromise;
+      if (progressCallback && typeof tool.execute === 'function') {
+        // Check if tool.execute accepts progressCallback as third parameter
+        if (tool.execute.length >= 3) {
+          // Tool accepts progressCallback as third parameter
+          executionPromise = tool.execute(parameters, callContext, progressCallback);
+        } else {
+          // Tool only accepts parameters and callContext, include progressCallback in callContext
+          executionPromise = tool.execute(parameters, { ...callContext, progressCallback });
+        }
+      } else {
+        // No progress callback, execute normally
+        executionPromise = tool.execute(parameters, callContext);
+      }
+      
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error(`Tool execution timeout: ${toolName} (exceeded ${timeout}ms)`)), timeout);
       });

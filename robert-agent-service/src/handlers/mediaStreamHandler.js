@@ -1248,6 +1248,9 @@ ${config.instructions}`;
                             // Always set a timer to clear after grace period
                             // This ensures barge-in detection works even if audio is still playing
                             setTimeout(() => {
+                                // Get conversation behavior config at the start of the callback
+                                const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+                                
                                 // Only clear if this is still the active response and not interrupted
                                 if (activeResponseId === responseIdForGracePeriod && !isInterrupted) {
                                     activeResponseId = null;
@@ -1279,7 +1282,6 @@ ${config.instructions}`;
                                     console.log(`👂 [${callSid}] Agent finished speaking (audio playback grace period completed) - user has ${userSpeakingWindowMs/1000} seconds to speak`);
                                     
                                     // Start silence detection monitoring
-                                    const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
                                     if (conversationBehaviorConfig?.silenceDetection?.enabled) {
                                         silenceDetectionService.agentFinishedSpeaking(callSid);
                                         silenceDetectionService.startMonitoring(callSid, openaiWs, conversationBehaviorConfig);
@@ -2219,10 +2221,21 @@ ${config.instructions}`;
                         if (conversationBehaviorConfig?.progressIndicators?.enabled) {
                             progressIndicatorService.startToolExecution(callSid, name);
                             
-                            // Check and send acknowledgment after threshold
+                            // Check and send acknowledgment after threshold, and ensure periodic updates start
                             setTimeout(() => {
                                 if (!isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
-                                    progressIndicatorService.checkAndSendAcknowledgment(callSid, openaiWs, conversationBehaviorConfig);
+                                    const sentAck = progressIndicatorService.checkAndSendAcknowledgment(callSid, openaiWs, conversationBehaviorConfig);
+                                    
+                                    // If acknowledgment wasn't sent but tool is still running, start periodic updates anyway
+                                    // This ensures updates continue even if acknowledgment logic didn't trigger
+                                    if (!sentAck) {
+                                        const execution = progressIndicatorService.getExecutionInfo(callSid);
+                                        if (execution) {
+                                            // Start periodic updates directly if acknowledgment wasn't sent
+                                            progressIndicatorService.startPeriodicUpdates(callSid, openaiWs, conversationBehaviorConfig);
+                                            console.log(`📊 [${callSid}] Started periodic updates directly (acknowledgment not sent)`);
+                                        }
+                                    }
                                 }
                             }, conversationBehaviorConfig.progressIndicators.acknowledgmentThresholdMs || 2000);
                         }
@@ -2230,7 +2243,11 @@ ${config.instructions}`;
                         console.log(`🔧 [${callSid}] Starting tool execution: ${name}`);
                         console.log(`🔧 [${callSid}] ========================================\n`);
                         
-                        // Transition to TOOL_EXECUTING state
+                        // Ensure state machine is initialized, then transition to TOOL_EXECUTING state
+                        const currentState = turnTakingStateMachine.getCurrentState(callSid);
+                        if (currentState === null) {
+                          turnTakingStateMachine.initialize(callSid);
+                        }
                         turnTakingStateMachine.transition(callSid, STATES.TOOL_EXECUTING, { toolName: name });
                         
                         // Check if KBA is required for this tool

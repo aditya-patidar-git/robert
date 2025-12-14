@@ -11,7 +11,9 @@ import {
   waitForRecaptchaReady,
   simulateHumanBehaviorBeforeSubmit,
   clearRecaptchaStorage,
-  enhanceBehavioralPatterns
+  enhanceBehavioralPatterns,
+  clickRecaptchaCheckbox,
+  checkForRecaptchaChallenge
 } from '../utils/stealthUtils.js';
 
 class BrowserAgentService {
@@ -267,7 +269,7 @@ class BrowserAgentService {
       
       // Perform login and save authentication state with retry logic
       console.log('🔐 Performing login and saving authentication state...');
-      const loginPage = await this.browserContext.newPage();
+      let loginPage = await this.browserContext.newPage();
     let loginAttempt = 0;
     const maxAttempts = 2;
     let lastError = null;
@@ -655,6 +657,26 @@ class BrowserAgentService {
         }
         if (recaptchaStatus.warnings.length > 0) {
           console.warn(`⚠️ reCAPTCHA warnings: ${recaptchaStatus.warnings.join(', ')}`);
+        }
+        
+        // CRITICAL: Click the reCAPTCHA checkbox if it's v2
+        if (recaptchaStatus.version === 'v2' && recaptchaStatus.hasRecaptcha) {
+          console.log('🔘 Clicking reCAPTCHA checkbox...');
+          const checkboxClicked = await clickRecaptchaCheckbox(loginPage);
+          if (checkboxClicked) {
+            console.log('✅ reCAPTCHA checkbox clicked successfully');
+            
+            // Check for image challenge and wait for resolution
+            const challengeDetected = await checkForRecaptchaChallenge(loginPage);
+            if (challengeDetected) {
+              console.warn('⚠️ Image challenge detected and not auto-resolved - login may fail');
+            }
+            
+            // Wait for reCAPTCHA to process after clicking
+            await loginPage.waitForTimeout(2000 + Math.random() * 1000);
+          } else {
+            console.warn('⚠️ Could not click reCAPTCHA checkbox - will proceed anyway');
+          }
         }
         
         // Extended post-fill observation period (2-4 seconds) with micro-interactions
@@ -1304,7 +1326,7 @@ class BrowserAgentService {
       try {
         // Route to course-specific service for create_booking
         if (task === 'create_booking' && args.courseType) {
-          return await this.executeCourseBooking(page, args, callContext, auditId);
+          return await this.executeCourseBooking(page, args, callContext, auditId, progressCallback);
         }
         
         // Always start with dry-run for other tasks
@@ -1616,6 +1638,26 @@ class BrowserAgentService {
       }
       if (recaptchaStatus.warnings.length > 0) {
         console.warn(`⚠️ reCAPTCHA warnings: ${recaptchaStatus.warnings.join(', ')}`);
+      }
+      
+      // CRITICAL: Click the reCAPTCHA checkbox if it's v2
+      if (recaptchaStatus.version === 'v2' && recaptchaStatus.hasRecaptcha) {
+        console.log('🔘 Clicking reCAPTCHA checkbox...');
+        const checkboxClicked = await clickRecaptchaCheckbox(page);
+        if (checkboxClicked) {
+          console.log('✅ reCAPTCHA checkbox clicked successfully');
+          
+          // Check for image challenge and wait for resolution
+          const challengeDetected = await checkForRecaptchaChallenge(page);
+          if (challengeDetected) {
+            console.warn('⚠️ Image challenge detected and not auto-resolved - login may fail');
+          }
+          
+          // Wait for reCAPTCHA to process after clicking
+          await page.waitForTimeout(2000 + Math.random() * 1000);
+        } else {
+          console.warn('⚠️ Could not click reCAPTCHA checkbox - will proceed anyway');
+        }
       }
       
       // Extended post-fill observation period (2-4 seconds) with micro-interactions
@@ -2084,7 +2126,7 @@ class BrowserAgentService {
     }
   }
 
-  async executeCourseBooking(page, args, callContext, auditId) {
+  async executeCourseBooking(page, args, callContext, auditId, progressCallback = null) {
     try {
       // Map course type to service module
       const courseServiceMap = {

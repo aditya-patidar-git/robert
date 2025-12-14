@@ -860,3 +860,265 @@ export async function enhanceBehavioralPatterns(page, options = {}) {
   console.log('✅ Behavioral patterns enhanced');
 }
 
+/**
+ * Clicks the reCAPTCHA checkbox if present
+ * @param {Page} page - Playwright page object
+ * @returns {Promise<boolean>} True if checkbox was clicked, false otherwise
+ */
+export async function clickRecaptchaCheckbox(page) {
+  try {
+    console.log('🔘 Attempting to click reCAPTCHA checkbox...');
+    
+    // Wait for reCAPTCHA iframe to be present - try multiple selectors
+    const iframeSelectors = [
+      'iframe[title="reCAPTCHA"]',
+      'iframe[src*="recaptcha"]',
+      'iframe[src*="google.com/recaptcha"]',
+      '.g-recaptcha iframe'
+    ];
+    
+    let recaptchaIframe = null;
+    let iframeSelector = null;
+    
+    // Find the iframe
+    for (const selector of iframeSelectors) {
+      const count = await page.locator(selector).count();
+      if (count > 0) {
+        recaptchaIframe = page.frameLocator(selector).first();
+        iframeSelector = selector;
+        console.log(`✅ Found reCAPTCHA iframe using selector: ${selector}`);
+        break;
+      }
+    }
+    
+    if (!recaptchaIframe) {
+      console.log('⚠️ reCAPTCHA iframe not found with any selector');
+      return false;
+    }
+    
+    // Wait for iframe to be fully loaded
+    await page.waitForTimeout(1500 + Math.random() * 500);
+    
+    // Try multiple methods to click the checkbox
+    // Method 1: Try clicking by role="checkbox" inside iframe
+    try {
+      const checkbox = recaptchaIframe.locator('[role="checkbox"]').first();
+      const isVisible = await checkbox.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (isVisible) {
+        // Check if already checked
+        const isChecked = await checkbox.getAttribute('aria-checked').catch(() => null);
+        if (isChecked === 'true') {
+          console.log('✅ reCAPTCHA checkbox is already checked');
+          return true;
+        }
+        
+        // Get bounding box for natural mouse movement
+        const box = await checkbox.boundingBox().catch(() => null);
+        if (box) {
+          // Get iframe position on page
+          const iframeElement = await page.locator(iframeSelector).first().boundingBox();
+          if (iframeElement) {
+            // Calculate absolute position
+            const absoluteX = iframeElement.x + box.x + box.width / 2;
+            const absoluteY = iframeElement.y + box.y + box.height / 2;
+            
+            // Move mouse to checkbox with natural path
+            const viewport = page.viewportSize() || { width: 1280, height: 720 };
+            const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
+            const checkboxPath = generateBezierPath(
+              currentPos.x,
+              currentPos.y,
+              absoluteX,
+              absoluteY,
+              10
+            );
+            
+            for (const point of checkboxPath) {
+              await page.mouse.move(point.x, point.y);
+              await page.waitForTimeout(40 + Math.random() * 60);
+            }
+            
+            // Small hesitation before clicking (human-like)
+            await page.waitForTimeout(300 + Math.random() * 300);
+            
+            // Click the checkbox inside iframe
+            await checkbox.click({ delay: 150 + Math.random() * 150 });
+            console.log('✅ Successfully clicked reCAPTCHA checkbox (role method)');
+            
+            // Wait for reCAPTCHA to process and verify it's checked
+            await page.waitForTimeout(1500 + Math.random() * 1000);
+            
+            // Verify checkbox is now checked
+            const isCheckedAfter = await checkbox.getAttribute('aria-checked').catch(() => null);
+            if (isCheckedAfter === 'true') {
+              console.log('✅ Verified: reCAPTCHA checkbox is now checked');
+              
+              // Check if image challenge appeared after checkbox click
+              const challengeDetected = await checkForRecaptchaChallenge(page);
+              if (challengeDetected) {
+                console.log('🖼️ reCAPTCHA image challenge detected - will wait for resolution');
+              }
+              
+              return true;
+            } else {
+              console.warn('⚠️ Checkbox click may not have registered');
+              // Still check for challenge in case it appeared
+              await checkForRecaptchaChallenge(page);
+            }
+            
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not click checkbox by role: ${e.message}`);
+    }
+    
+    // Method 2: Try clicking by class or ID inside iframe
+    try {
+      const checkboxSelectors = [
+        '.recaptcha-checkbox',
+        '#recaptcha-anchor',
+        '[class*="recaptcha-checkbox"]',
+        '[id*="recaptcha"]',
+        'span[role="checkbox"]'
+      ];
+      
+      for (const selector of checkboxSelectors) {
+        try {
+          const checkboxAlt = recaptchaIframe.locator(selector).first();
+          const isVisible = await checkboxAlt.isVisible({ timeout: 3000 }).catch(() => false);
+          
+          if (isVisible) {
+            await checkboxAlt.click({ delay: 150 + Math.random() * 150 });
+            console.log(`✅ Successfully clicked reCAPTCHA checkbox (selector: ${selector})`);
+            await page.waitForTimeout(1500 + Math.random() * 1000);
+            return true;
+          }
+        } catch (e) {
+          // Try next selector
+          continue;
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not click checkbox by alternative selectors: ${e.message}`);
+    }
+    
+    // Method 3: Try clicking using coordinates on the iframe (fallback)
+    try {
+      const iframeElement = await page.locator(iframeSelector).first().boundingBox();
+      if (iframeElement) {
+        // Click in the center-left area of the iframe (where checkbox typically is)
+        const clickX = iframeElement.x + iframeElement.width * 0.25; // 25% from left
+        const clickY = iframeElement.y + iframeElement.height / 2;
+        
+        // Move mouse to iframe checkbox area
+        const viewport = page.viewportSize() || { width: 1280, height: 720 };
+        const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
+        const iframePath = generateBezierPath(
+          currentPos.x,
+          currentPos.y,
+          clickX,
+          clickY,
+          10
+        );
+        
+        for (const point of iframePath) {
+          await page.mouse.move(point.x, point.y);
+          await page.waitForTimeout(40 + Math.random() * 60);
+        }
+        
+        await page.waitForTimeout(300 + Math.random() * 300);
+        await page.mouse.click(clickX, clickY, { delay: 150 + Math.random() * 150 });
+        console.log('✅ Successfully clicked reCAPTCHA checkbox (coordinate method)');
+        await page.waitForTimeout(1500 + Math.random() * 1000);
+        return true;
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not click checkbox by coordinates: ${e.message}`);
+    }
+    
+    console.warn('⚠️ Could not click reCAPTCHA checkbox - all methods failed');
+    return false;
+  } catch (error) {
+    console.error(`❌ Error clicking reCAPTCHA checkbox: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Checks for reCAPTCHA image challenge after checkbox click
+ * @param {Page} page - Playwright page object
+ * @returns {Promise<boolean>} True if challenge is detected
+ */
+export async function checkForRecaptchaChallenge(page) {
+  try {
+    // Wait a bit for challenge to appear (usually appears within 2-3 seconds)
+    await page.waitForTimeout(2000 + Math.random() * 2000);
+    
+    // Check for challenge iframe (different from checkbox iframe)
+    const challengeIframeSelectors = [
+      'iframe[src*="recaptcha/api2/bframe"]',
+      'iframe[src*="recaptcha/bframe"]',
+      'iframe[title*="recaptcha challenge"]'
+    ];
+    
+    for (const selector of challengeIframeSelectors) {
+      const count = await page.locator(selector).count();
+      if (count > 0) {
+        const iframe = page.locator(selector).first();
+        const src = await iframe.getAttribute('src').catch(() => '');
+        
+        // Challenge iframe has "bframe" in URL (not "anchor" which is the checkbox)
+        if (src.includes('bframe') && !src.includes('anchor')) {
+          console.log(`🖼️ reCAPTCHA image challenge detected (iframe: ${selector})`);
+          
+          // Wait for challenge to potentially auto-resolve (if behavior is good enough)
+          // Sometimes reCAPTCHA auto-resolves if behavioral patterns are human-like
+          const maxWaitTime = 8000 + Math.random() * 4000; // 8-12 seconds
+          console.log(`⏳ Waiting up to ${Math.round(maxWaitTime/1000)}s for challenge to resolve...`);
+          
+          const startTime = Date.now();
+          while (Date.now() - startTime < maxWaitTime) {
+            // Check if challenge iframe still exists
+            const stillExists = await page.locator(selector).count() > 0;
+            if (!stillExists) {
+              console.log('✅ Challenge iframe disappeared - challenge resolved');
+              return false; // Challenge was resolved
+            }
+            
+            // Check if we've been redirected (login successful)
+            const currentUrl = page.url();
+            if (!currentUrl.includes('/Account/Login')) {
+              const pageContent = await page.content().catch(() => '');
+              if (pageContent.includes('Dashboard') || pageContent.includes('Contacts')) {
+                console.log('✅ Challenge resolved - redirected to dashboard');
+                return false; // Challenge was resolved
+              }
+            }
+            
+            await page.waitForTimeout(1000);
+          }
+          
+          // Challenge still present after wait
+          const stillVisible = await page.locator(selector).count() > 0;
+          if (stillVisible) {
+            console.warn('⚠️ reCAPTCHA image challenge still present - login may fail');
+            console.warn('💡 Recommendation: Improve stealth patterns, use residential proxies, or integrate CAPTCHA solving service');
+            return true; // Challenge detected and not resolved
+          }
+          
+          return false; // Challenge was resolved
+        }
+      }
+    }
+    
+    // No challenge detected
+    return false;
+  } catch (error) {
+    console.warn(`⚠️ Error checking for reCAPTCHA challenge: ${error.message}`);
+    return false;
+  }
+}
+
