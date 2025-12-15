@@ -11,13 +11,15 @@ import {
   Build,
   Settings,
   Business,
-  Email
+  Email,
+  Chat
 } from '@mui/icons-material';
 import { useSystemPageState } from './hooks/useSystemPageState';
 import MCPToolsTab from './tabs/MCPToolsTab';
 import CRMTasksTab from './tabs/CRMTasksTab';
 import GeneralSettingsTab from './tabs/GeneralSettingsTab';
 import EmailTestTab from './tabs/EmailTestTab';
+import ConversationBehaviorTab from './tabs/ConversationBehaviorTab';
 
 const SystemConfigPage = () => {
   const {
@@ -82,6 +84,7 @@ const SystemConfigPage = () => {
           <Tab label="MCP Tools" icon={<Build />} iconPosition="start" />
           <Tab label="CRM Tasks" icon={<Business />} iconPosition="start" />
           <Tab label="General Settings" icon={<Settings />} iconPosition="start" />
+          <Tab label="Conversation Behavior" icon={<Chat />} iconPosition="start" />
           <Tab label="Email Test" icon={<Email />} iconPosition="start" />
         </Tabs>
       </Paper>
@@ -116,8 +119,13 @@ const SystemConfigPage = () => {
         )}
       </form>
 
-      {/* Tab D: Email Test (outside form since it's not part of form submission) */}
+      {/* Tab D: Conversation Behavior (outside form since it has its own save handler) */}
       {currentTab === 3 && (
+        <ConversationBehaviorTab />
+      )}
+
+      {/* Tab E: Email Test (outside form since it's not part of form submission) */}
+      {currentTab === 4 && (
         <EmailTestTab />
       )}
     </Box>

@@ -95,31 +95,111 @@ export function getStealthInitScript() {
         onMessage: undefined
       };
 
-      // Randomize Canvas fingerprinting
+      // Enhanced Canvas fingerprinting with improved noise injection
       const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+      const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+      const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+      
       CanvasRenderingContext2D.prototype.getImageData = function(x, y, width, height) {
         const imageData = originalGetImageData.apply(this, [x, y, width, height]);
-        // Add minimal random noise (1-2 pixels) to prevent fingerprinting
-        const noise = Math.random() * 0.0001; // Very small noise
+        // Add subtle random noise to prevent fingerprinting (more sophisticated)
+        const noiseLevel = 0.5 + Math.random() * 0.5; // 0.5-1.0
         for (let i = 0; i < imageData.data.length; i += 4) {
-          if (Math.random() < 0.01) { // Only modify 1% of pixels
-            imageData.data[i] = Math.min(255, Math.max(0, imageData.data[i] + (Math.random() - 0.5) * 2));
+          if (Math.random() < 0.015) { // Modify ~1.5% of pixels
+            const noise = (Math.random() - 0.5) * noiseLevel;
+            imageData.data[i] = Math.min(255, Math.max(0, imageData.data[i] + noise)); // R
+            imageData.data[i + 1] = Math.min(255, Math.max(0, imageData.data[i + 1] + noise)); // G
+            imageData.data[i + 2] = Math.min(255, Math.max(0, imageData.data[i + 2] + noise)); // B
+            // Alpha channel stays the same
           }
         }
         return imageData;
       };
+      
+      // Randomize toDataURL and toBlob to prevent canvas fingerprinting
+      HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
+        const canvas = this;
+        const context = canvas.getContext('2d');
+        if (context) {
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = canvas.width;
+          tempCanvas.height = canvas.height;
+          const tempContext = tempCanvas.getContext('2d');
+          tempContext.putImageData(imageData, 0, 0);
+          return originalToDataURL.call(tempCanvas, type, quality);
+        }
+        return originalToDataURL.call(this, type, quality);
+      };
+      
+      HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+        const canvas = this;
+        const context = canvas.getContext('2d');
+        if (context) {
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = canvas.width;
+          tempCanvas.height = canvas.height;
+          const tempContext = tempCanvas.getContext('2d');
+          tempContext.putImageData(imageData, 0, 0);
+          return originalToBlob.call(tempCanvas, callback, type, quality);
+        }
+        return originalToBlob.call(this, callback, type, quality);
+      };
 
-      // Randomize WebGL fingerprinting
+      // Enhanced WebGL fingerprint randomization
       const getParameter = WebGLRenderingContext.prototype.getParameter;
+      const getExtension = WebGLRenderingContext.prototype.getExtension;
+      const getSupportedExtensions = WebGLRenderingContext.prototype.getSupportedExtensions;
+      
+      // Randomize WebGL vendor and renderer (common GPU vendors)
+      const gpuVendors = ['Intel Inc.', 'NVIDIA Corporation', 'AMD', 'Google Inc. (Intel)'];
+      const gpuRenderers = [
+        'Intel Iris OpenGL Engine',
+        'Intel HD Graphics',
+        'NVIDIA GeForce GTX 1060',
+        'AMD Radeon RX 580',
+        'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
+      ];
+      const randomVendor = gpuVendors[Math.floor(Math.random() * gpuVendors.length)];
+      const randomRenderer = gpuRenderers[Math.floor(Math.random() * gpuRenderers.length)];
+      
       WebGLRenderingContext.prototype.getParameter = function(parameter) {
         if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
-          return 'Intel Inc.';
+          return randomVendor;
         }
         if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
-          return 'Intel Iris OpenGL Engine';
+          return randomRenderer;
+        }
+        // Randomize other WebGL parameters slightly
+        if (parameter === 7936) { // VENDOR
+          return randomVendor;
+        }
+        if (parameter === 7937) { // RENDERER
+          return randomRenderer;
+        }
+        if (parameter === 7938) { // VERSION
+          return 'WebGL 1.0 (OpenGL ES 2.0 Chromium)';
+        }
+        if (parameter === 34047) { // SHADING_LANGUAGE_VERSION
+          return 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)';
         }
         return getParameter.call(this, parameter);
       };
+      
+      // Randomize WebGL2 context if available
+      if (typeof WebGL2RenderingContext !== 'undefined') {
+        const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
+        WebGL2RenderingContext.prototype.getParameter = function(parameter) {
+          if (parameter === 37445 || parameter === 7936) {
+            return randomVendor;
+          }
+          if (parameter === 37446 || parameter === 7937) {
+            return randomRenderer;
+          }
+          return getParameter2.call(this, parameter);
+        };
+      }
 
       // Override Notification.permission
       Object.defineProperty(Notification, 'permission', {
@@ -149,19 +229,28 @@ export function getStealthInitScript() {
         configurable: true
       });
 
-      // Add realistic hardwareConcurrency
+      // Enhanced hardware properties with realistic variations
+      const cpuCores = [4, 6, 8, 12, 16][Math.floor(Math.random() * 5)];
+      const deviceMemory = [4, 8, 16, 32][Math.floor(Math.random() * 4)];
+      
       Object.defineProperty(navigator, 'hardwareConcurrency', {
-        get: () => 8,
+        get: () => cpuCores,
         configurable: true
       });
 
-      // Add realistic deviceMemory (if available)
+      // Add realistic deviceMemory with variations
       if ('deviceMemory' in navigator) {
         Object.defineProperty(navigator, 'deviceMemory', {
-          get: () => 8,
+          get: () => deviceMemory,
           configurable: true
         });
       }
+      
+      // Add realistic maxTouchPoints
+      Object.defineProperty(navigator, 'maxTouchPoints', {
+        get: () => 0, // Desktop, no touch
+        configurable: true
+      });
 
       // Override Connection API to return realistic values
       if ('connection' in navigator) {
@@ -176,26 +265,93 @@ export function getStealthInitScript() {
         });
       }
 
-      // Override Battery API
+      // Enhanced Battery API with realistic variations
       if ('getBattery' in navigator) {
         const originalGetBattery = navigator.getBattery;
         navigator.getBattery = function() {
+          const isCharging = Math.random() > 0.3; // 70% chance of charging
+          const batteryLevel = 0.5 + Math.random() * 0.5; // 50-100%
           return Promise.resolve({
-            charging: true,
-            chargingTime: 0,
-            dischargingTime: Infinity,
-            level: 0.8 + Math.random() * 0.2
+            charging: isCharging,
+            chargingTime: isCharging ? Math.floor(Math.random() * 3600) : Infinity,
+            dischargingTime: isCharging ? Infinity : Math.floor(Math.random() * 7200) + 3600,
+            level: batteryLevel,
+            onchargingchange: null,
+            onchargingtimechange: null,
+            ondischargingtimechange: null,
+            onlevelchange: null
           });
         };
       }
+      
+      // Add realistic AudioContext fingerprint randomization
+      if (window.AudioContext || window.webkitAudioContext) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const originalCreateAnalyser = AudioContextClass.prototype.createAnalyser;
+        const originalCreateOscillator = AudioContextClass.prototype.createOscillator;
+        
+        // Add subtle randomization to audio context
+        AudioContextClass.prototype.createAnalyser = function() {
+          const analyser = originalCreateAnalyser.call(this);
+          const originalGetFloatFrequencyData = analyser.getFloatFrequencyData;
+          analyser.getFloatFrequencyData = function(array) {
+            originalGetFloatFrequencyData.call(this, array);
+            // Add minimal noise to prevent fingerprinting
+            for (let i = 0; i < array.length; i++) {
+              if (Math.random() < 0.01) {
+                array[i] += (Math.random() - 0.5) * 0.1;
+              }
+            }
+          };
+          return analyser;
+        };
+      }
+      
+      // Add realistic font enumeration (prevent font fingerprinting)
+      if (document.fonts && document.fonts.check) {
+        const originalCheck = document.fonts.check;
+        document.fonts.check = function(font, text) {
+          // Return realistic font availability
+          const commonFonts = ['Arial', 'Times New Roman', 'Courier New', 'Verdana', 'Georgia'];
+          if (commonFonts.some(f => font.includes(f))) {
+            return true;
+          }
+          return originalCheck.call(this, font, text);
+        };
+      }
 
-      // Add realistic screen properties
+      // Enhanced screen properties with randomization
+      const screenResolutions = [
+        { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040 },
+        { width: 1366, height: 768, availWidth: 1366, availHeight: 728 },
+        { width: 1280, height: 720, availWidth: 1280, availHeight: 680 },
+        { width: 1600, height: 900, availWidth: 1600, availHeight: 860 },
+        { width: 1440, height: 900, availWidth: 1440, availHeight: 860 }
+      ];
+      const randomScreen = screenResolutions[Math.floor(Math.random() * screenResolutions.length)];
+      
+      Object.defineProperty(screen, 'width', {
+        get: () => randomScreen.width,
+        configurable: true
+      });
+      Object.defineProperty(screen, 'height', {
+        get: () => randomScreen.height,
+        configurable: true
+      });
       Object.defineProperty(screen, 'availWidth', {
-        get: () => 1280,
+        get: () => randomScreen.availWidth,
         configurable: true
       });
       Object.defineProperty(screen, 'availHeight', {
-        get: () => 720,
+        get: () => randomScreen.availHeight,
+        configurable: true
+      });
+      Object.defineProperty(screen, 'colorDepth', {
+        get: () => 24,
+        configurable: true
+      });
+      Object.defineProperty(screen, 'pixelDepth', {
+        get: () => 24,
         configurable: true
       });
 
@@ -318,51 +474,133 @@ export function generateBezierPath(startX, startY, endX, endY, steps = 20) {
 
 /**
  * Waits for reCAPTCHA to execute and generate a token
- * This gives reCAPTCHA time to analyze user behavior and calculate score
+ * Enhanced to detect v2/v3, monitor scores, check token generation, detect errors
  * @param {Page} page - Playwright page object
  * @param {number} maxWaitTime - Maximum time to wait in milliseconds (default: 5000)
- * @returns {Promise<Object>} Object with ready status and token info
+ * @returns {Promise<Object>} Detailed status object with ready, version, score, token, errors
  */
 export async function waitForRecaptchaReady(page, maxWaitTime = 5000) {
   try {
     console.log('⏳ Waiting for reCAPTCHA to execute and calculate score...');
     
-    // Wait for grecaptcha to be available
-    const recaptchaReady = await page.evaluate(async (maxWait) => {
+    // Wait for grecaptcha to be available with enhanced detection
+    const recaptchaStatus = await page.evaluate(async (maxWait) => {
       return new Promise((resolve) => {
         const startTime = Date.now();
+        let status = {
+          ready: false,
+          hasRecaptcha: false,
+          version: null, // 'v2' or 'v3'
+          siteKey: null,
+          token: null,
+          score: null, // For v3
+          errors: [],
+          warnings: [],
+          timestamp: Date.now()
+        };
         
         const checkRecaptcha = () => {
-          if (window.grecaptcha && window.grecaptcha.ready) {
-            window.grecaptcha.ready(() => {
-              // Check if reCAPTCHA has executed
-              const hasRecaptcha = !!(
-                document.querySelector('iframe[src*="recaptcha"]') ||
-                document.querySelector('.g-recaptcha') ||
-                document.querySelector('[data-sitekey]')
-              );
-              
-              // Try to find site key
-              const siteKeyElement = document.querySelector('[data-sitekey]') || 
-                                   document.querySelector('.g-recaptcha');
-              const siteKey = siteKeyElement?.getAttribute('data-sitekey') || null;
-              
-              resolve({
-                ready: true,
-                hasRecaptcha: hasRecaptcha,
-                siteKey: siteKey,
-                timestamp: Date.now()
-              });
-            });
-          } else if (Date.now() - startTime < maxWait) {
-            setTimeout(checkRecaptcha, 100);
-          } else {
-            resolve({
-              ready: false,
-              hasRecaptcha: false,
-              siteKey: null,
-              timestamp: Date.now()
-            });
+          try {
+            // Check for reCAPTCHA v2 elements
+            const v2Elements = {
+              iframe: document.querySelector('iframe[src*="recaptcha/api"]'),
+              grecaptchaDiv: document.querySelector('.g-recaptcha'),
+              siteKeyElement: document.querySelector('[data-sitekey]')
+            };
+            
+            // Check for reCAPTCHA v3 (invisible, check for script)
+            const v3Script = document.querySelector('script[src*="recaptcha/api.js"]');
+            const v3SiteKey = v3Script ? v3Script.getAttribute('data-sitekey') : null;
+            
+            // Determine version
+            if (v2Elements.iframe || v2Elements.grecaptchaDiv || v2Elements.siteKeyElement) {
+              status.version = 'v2';
+              status.hasRecaptcha = true;
+              status.siteKey = v2Elements.siteKeyElement?.getAttribute('data-sitekey') || null;
+            } else if (v3Script || v3SiteKey) {
+              status.version = 'v3';
+              status.hasRecaptcha = true;
+              status.siteKey = v3SiteKey;
+            }
+            
+            // Check if grecaptcha is available
+            if (window.grecaptcha) {
+              if (window.grecaptcha.ready) {
+                window.grecaptcha.ready(() => {
+                  try {
+                    // Try to get token for v2
+                    if (status.version === 'v2' && status.siteKey) {
+                      try {
+                        const widgetId = window.grecaptcha.render ? 
+                          window.grecaptcha.render(status.siteKey, {}) : null;
+                        if (widgetId !== null && typeof widgetId === 'number') {
+                          const response = window.grecaptcha.getResponse(widgetId);
+                          if (response && response.length > 0) {
+                            status.token = response.substring(0, 50) + '...'; // Truncate for logging
+                          }
+                        }
+                      } catch (e) {
+                        status.warnings.push(`Could not get v2 token: ${e.message}`);
+                      }
+                    }
+                    
+                    // Try to get score for v3
+                    if (status.version === 'v3' && status.siteKey) {
+                      try {
+                        window.grecaptcha.execute(status.siteKey, { action: 'login' })
+                          .then(token => {
+                            if (token) {
+                              status.token = token.substring(0, 50) + '...';
+                            }
+                          })
+                          .catch(e => {
+                            status.warnings.push(`Could not execute v3: ${e.message}`);
+                          });
+                      } catch (e) {
+                        status.warnings.push(`Could not get v3 score: ${e.message}`);
+                      }
+                    }
+                    
+                    // Check for errors
+                    const errorElements = document.querySelectorAll('.grecaptcha-error, [class*="recaptcha-error"]');
+                    if (errorElements.length > 0) {
+                      errorElements.forEach(el => {
+                        const errorText = el.textContent || el.innerText;
+                        if (errorText) {
+                          status.errors.push(errorText.trim());
+                        }
+                      });
+                    }
+                    
+                    status.ready = true;
+                    status.timestamp = Date.now();
+                    resolve(status);
+                  } catch (e) {
+                    status.errors.push(`Error in ready callback: ${e.message}`);
+                    status.ready = true; // Still mark as ready even with errors
+                    status.timestamp = Date.now();
+                    resolve(status);
+                  }
+                });
+              } else {
+                // grecaptcha exists but ready() is not available
+                status.ready = true;
+                status.warnings.push('grecaptcha.ready() not available');
+                status.timestamp = Date.now();
+                resolve(status);
+              }
+            } else if (Date.now() - startTime < maxWait) {
+              setTimeout(checkRecaptcha, 100);
+            } else {
+              // Timeout
+              status.warnings.push('Timeout waiting for grecaptcha');
+              status.timestamp = Date.now();
+              resolve(status);
+            }
+          } catch (e) {
+            status.errors.push(`Error checking reCAPTCHA: ${e.message}`);
+            status.timestamp = Date.now();
+            resolve(status);
           }
         };
         
@@ -370,19 +608,42 @@ export async function waitForRecaptchaReady(page, maxWaitTime = 5000) {
       });
     }, maxWaitTime);
     
-    if (recaptchaReady.ready) {
-      console.log('✅ reCAPTCHA is ready');
-      if (recaptchaReady.hasRecaptcha) {
-        console.log('✅ reCAPTCHA elements detected on page');
+    // Log detailed status
+    if (recaptchaStatus.ready) {
+      console.log(`✅ reCAPTCHA is ready (${recaptchaStatus.version || 'unknown version'})`);
+      if (recaptchaStatus.hasRecaptcha) {
+        console.log(`   Site Key: ${recaptchaStatus.siteKey || 'not found'}`);
+        if (recaptchaStatus.token) {
+          console.log(`   Token: ${recaptchaStatus.token}`);
+        }
+        if (recaptchaStatus.score !== null) {
+          console.log(`   Score: ${recaptchaStatus.score}`);
+        }
+      }
+      if (recaptchaStatus.errors.length > 0) {
+        console.warn(`   Errors: ${recaptchaStatus.errors.join(', ')}`);
+      }
+      if (recaptchaStatus.warnings.length > 0) {
+        console.warn(`   Warnings: ${recaptchaStatus.warnings.join(', ')}`);
       }
     } else {
       console.log('⚠️ reCAPTCHA may not be fully ready, but continuing...');
     }
     
-    return recaptchaReady;
+    return recaptchaStatus;
   } catch (error) {
     console.log(`⚠️ Error checking reCAPTCHA status: ${error.message}`);
-    return { ready: false, hasRecaptcha: false, siteKey: null, timestamp: Date.now() };
+    return { 
+      ready: false, 
+      hasRecaptcha: false, 
+      version: null,
+      siteKey: null, 
+      token: null,
+      score: null,
+      errors: [error.message],
+      warnings: [],
+      timestamp: Date.now() 
+    };
   }
 }
 
@@ -406,19 +667,19 @@ export async function simulateHumanBehaviorBeforeSubmit(page, formLocator, submi
   await page.evaluate(() => {
     window.scrollBy(0, (Math.random() - 0.5) * 100);
   });
-  await page.waitForTimeout(500 + Math.random() * 500); // Reduced from 800-2000ms
+  await page.waitForTimeout(200 + Math.random() * 200); // Optimized: 200-400ms (reduced from 500-1000ms)
   
   // 2. Move mouse around the form area (simulate reading/checking)
   if (formBox) {
     const formCenterX = formBox.x + formBox.width / 2;
     const formCenterY = formBox.y + formBox.height / 2;
     
-    // Move to form area with natural curve
+    // Move to form area with natural curve (reduced point count for speed)
     const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
     const formPath = generateBezierPath(
       currentPos.x, currentPos.y,
       formCenterX, formCenterY,
-      15
+      8 // Optimized: reduced from 15 to 8 points
     );
     
     for (const point of formPath) {
@@ -426,18 +687,18 @@ export async function simulateHumanBehaviorBeforeSubmit(page, formLocator, submi
       await page.waitForTimeout(30 + Math.random() * 50);
     }
     
-    // Small micro-movements (human jitter)
-    for (let i = 0; i < 3; i++) {
+    // Small micro-movements (human jitter) - reduced count and duration
+    for (let i = 0; i < 2; i++) { // Optimized: reduced from 3 to 2
       await page.mouse.move(
         formCenterX + (Math.random() * 20 - 10),
         formCenterY + (Math.random() * 20 - 10)
       );
-      await page.waitForTimeout(150 + Math.random() * 200);
+      await page.waitForTimeout(100 + Math.random() * 100); // Optimized: 100-200ms (reduced from 150-350ms)
     }
   }
   
   // 3. Additional wait to let reCAPTCHA observe behavior
-  await page.waitForTimeout(1000 + Math.random() * 1000); // Reduced from 2000-4000ms
+  await page.waitForTimeout(400 + Math.random() * 200); // Optimized: 400-600ms (reduced from 1000-2000ms)
   
   // 4. Move to submit button with natural curve
   if (buttonBox && formBox) {
@@ -449,7 +710,7 @@ export async function simulateHumanBehaviorBeforeSubmit(page, formLocator, submi
     const buttonPath = generateBezierPath(
       formCenterX, formCenterY,
       buttonCenterX, buttonCenterY,
-      12
+      6 // Optimized: reduced from 12 to 6 points
     );
     
     for (const point of buttonPath) {
@@ -458,14 +719,406 @@ export async function simulateHumanBehaviorBeforeSubmit(page, formLocator, submi
     }
     
     // Hover over button with slight movements (human hesitation)
-    await page.waitForTimeout(300 + Math.random() * 400);
+    await page.waitForTimeout(150 + Math.random() * 100); // Optimized: 150-250ms (reduced from 300-700ms)
     await page.mouse.move(
       buttonCenterX + (Math.random() * 5 - 2.5),
       buttonCenterY + (Math.random() * 5 - 2.5)
     );
-    await page.waitForTimeout(200 + Math.random() * 300);
+    await page.waitForTimeout(100 + Math.random() * 50); // Optimized: 100-150ms (reduced from 200-500ms)
   }
   
   console.log('✅ Human-like behavior simulation complete');
+}
+
+/**
+ * Clears reCAPTCHA-related storage (localStorage, sessionStorage, IndexedDB)
+ * @param {Page} page - Playwright page object
+ * @returns {Promise<Object>} Object with cleared keys information
+ */
+export async function clearRecaptchaStorage(page) {
+  try {
+    console.log('🧹 Clearing reCAPTCHA storage (localStorage, sessionStorage, IndexedDB)...');
+    
+    const clearedInfo = await page.evaluate(() => {
+      const cleared = {
+        localStorage: [],
+        sessionStorage: [],
+        indexedDB: false
+      };
+      
+      // Clear localStorage
+      const localStorageKeys = Object.keys(localStorage);
+      localStorageKeys.forEach(key => {
+        if (key.includes('recaptcha') || key.includes('grecaptcha') || 
+            key.startsWith('_grecaptcha') || key.toLowerCase().includes('captcha')) {
+          localStorage.removeItem(key);
+          cleared.localStorage.push(key);
+        }
+      });
+      
+      // Clear sessionStorage
+      const sessionStorageKeys = Object.keys(sessionStorage);
+      sessionStorageKeys.forEach(key => {
+        if (key.includes('recaptcha') || key.includes('grecaptcha') || 
+            key.toLowerCase().includes('captcha')) {
+          sessionStorage.removeItem(key);
+          cleared.sessionStorage.push(key);
+        }
+      });
+      
+      // Clear IndexedDB if available
+      if (window.indexedDB) {
+        try {
+          // Delete reCAPTCHA-related databases
+          const dbNames = ['recaptcha', 'grecaptcha', '_grecaptcha'];
+          dbNames.forEach(dbName => {
+            try {
+              const deleteReq = indexedDB.deleteDatabase(dbName);
+              deleteReq.onsuccess = () => {
+                cleared.indexedDB = true;
+              };
+            } catch (e) {
+              // Ignore errors
+            }
+          });
+        } catch (e) {
+          // IndexedDB clearing is optional
+        }
+      }
+      
+      return cleared;
+    });
+    
+    console.log(`✅ Cleared ${clearedInfo.localStorage.length} localStorage keys, ${clearedInfo.sessionStorage.length} sessionStorage keys`);
+    if (clearedInfo.localStorage.length > 0) {
+      console.log(`   localStorage keys: ${clearedInfo.localStorage.join(', ')}`);
+    }
+    if (clearedInfo.sessionStorage.length > 0) {
+      console.log(`   sessionStorage keys: ${clearedInfo.sessionStorage.join(', ')}`);
+    }
+    
+    return clearedInfo;
+  } catch (error) {
+    console.warn(`⚠️ Error clearing reCAPTCHA storage: ${error.message}`);
+    return { localStorage: [], sessionStorage: [], indexedDB: false };
+  }
+}
+
+/**
+ * Enhances behavioral patterns for better reCAPTCHA observation
+ * @param {Page} page - Playwright page object
+ * @param {Object} options - Options for behavioral patterns
+ * @returns {Promise<void>}
+ */
+export async function enhanceBehavioralPatterns(page, options = {}) {
+  const {
+    preFormWait = 3000 + Math.random() * 2000, // 3-5 seconds
+    postFillWait = 2000 + Math.random() * 2000, // 2-4 seconds
+    enableScroll = true,
+    enableMouseMovements = true,
+    enableKeyboardEvents = true
+  } = options;
+  
+  console.log('🤖 Enhancing behavioral patterns for reCAPTCHA observation...');
+  
+  // Pre-form interaction: simulate reading behavior
+  if (enableScroll) {
+    // Random scrolls to simulate reading
+    const scrollCount = 2 + Math.floor(Math.random() * 3); // 2-4 scrolls
+    for (let i = 0; i < scrollCount; i++) {
+      await page.evaluate(() => {
+        window.scrollBy(0, (Math.random() - 0.5) * 200);
+      });
+      await page.waitForTimeout(300 + Math.random() * 500);
+    }
+  }
+  
+  // Random mouse movements during observation
+  if (enableMouseMovements) {
+    const viewport = page.viewportSize() || { width: 1280, height: 720 };
+    const movementCount = 3 + Math.floor(Math.random() * 4); // 3-6 movements
+    for (let i = 0; i < movementCount; i++) {
+      await page.mouse.move(
+        Math.random() * viewport.width,
+        Math.random() * viewport.height
+      );
+      await page.waitForTimeout(200 + Math.random() * 300);
+    }
+  }
+  
+  // Simulate keyboard events (focus/blur)
+  if (enableKeyboardEvents) {
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(100 + Math.random() * 200);
+    await page.keyboard.press('Shift+Tab');
+    await page.waitForTimeout(100 + Math.random() * 200);
+  }
+  
+  // Wait for observation period
+  await page.waitForTimeout(preFormWait);
+  
+  console.log('✅ Behavioral patterns enhanced');
+}
+
+/**
+ * Clicks the reCAPTCHA checkbox if present
+ * @param {Page} page - Playwright page object
+ * @returns {Promise<boolean>} True if checkbox was clicked, false otherwise
+ */
+export async function clickRecaptchaCheckbox(page) {
+  try {
+    console.log('🔘 Attempting to click reCAPTCHA checkbox...');
+    
+    // Wait for reCAPTCHA iframe to be present - try multiple selectors
+    const iframeSelectors = [
+      'iframe[title="reCAPTCHA"]',
+      'iframe[src*="recaptcha"]',
+      'iframe[src*="google.com/recaptcha"]',
+      '.g-recaptcha iframe'
+    ];
+    
+    let recaptchaIframe = null;
+    let iframeSelector = null;
+    
+    // Find the iframe
+    for (const selector of iframeSelectors) {
+      const count = await page.locator(selector).count();
+      if (count > 0) {
+        recaptchaIframe = page.frameLocator(selector).first();
+        iframeSelector = selector;
+        console.log(`✅ Found reCAPTCHA iframe using selector: ${selector}`);
+        break;
+      }
+    }
+    
+    if (!recaptchaIframe) {
+      console.log('⚠️ reCAPTCHA iframe not found with any selector');
+      return false;
+    }
+    
+    // Wait for iframe to be fully loaded
+    await page.waitForTimeout(1500 + Math.random() * 500);
+    
+    // Try multiple methods to click the checkbox
+    // Method 1: Try clicking by role="checkbox" inside iframe
+    try {
+      const checkbox = recaptchaIframe.locator('[role="checkbox"]').first();
+      const isVisible = await checkbox.isVisible({ timeout: 5000 }).catch(() => false);
+      
+      if (isVisible) {
+        // Check if already checked
+        const isChecked = await checkbox.getAttribute('aria-checked').catch(() => null);
+        if (isChecked === 'true') {
+          console.log('✅ reCAPTCHA checkbox is already checked');
+          return true;
+        }
+        
+        // Get bounding box for natural mouse movement
+        const box = await checkbox.boundingBox().catch(() => null);
+        if (box) {
+          // Get iframe position on page
+          const iframeElement = await page.locator(iframeSelector).first().boundingBox();
+          if (iframeElement) {
+            // Calculate absolute position
+            const absoluteX = iframeElement.x + box.x + box.width / 2;
+            const absoluteY = iframeElement.y + box.y + box.height / 2;
+            
+            // Move mouse to checkbox with natural path
+            const viewport = page.viewportSize() || { width: 1280, height: 720 };
+            const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
+            const checkboxPath = generateBezierPath(
+              currentPos.x,
+              currentPos.y,
+              absoluteX,
+              absoluteY,
+              10
+            );
+            
+            for (const point of checkboxPath) {
+              await page.mouse.move(point.x, point.y);
+              await page.waitForTimeout(40 + Math.random() * 60);
+            }
+            
+            // Small hesitation before clicking (human-like)
+            await page.waitForTimeout(300 + Math.random() * 300);
+            
+            // Click the checkbox inside iframe
+            await checkbox.click({ delay: 150 + Math.random() * 150 });
+            console.log('✅ Successfully clicked reCAPTCHA checkbox (role method)');
+            
+            // Wait for reCAPTCHA to process and verify it's checked
+            await page.waitForTimeout(1500 + Math.random() * 1000);
+            
+            // Verify checkbox is now checked
+            const isCheckedAfter = await checkbox.getAttribute('aria-checked').catch(() => null);
+            if (isCheckedAfter === 'true') {
+              console.log('✅ Verified: reCAPTCHA checkbox is now checked');
+              
+              // Check if image challenge appeared after checkbox click
+              const challengeDetected = await checkForRecaptchaChallenge(page);
+              if (challengeDetected) {
+                console.log('🖼️ reCAPTCHA image challenge detected - will wait for resolution');
+              }
+              
+              return true;
+            } else {
+              console.warn('⚠️ Checkbox click may not have registered');
+              // Still check for challenge in case it appeared
+              await checkForRecaptchaChallenge(page);
+            }
+            
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not click checkbox by role: ${e.message}`);
+    }
+    
+    // Method 2: Try clicking by class or ID inside iframe
+    try {
+      const checkboxSelectors = [
+        '.recaptcha-checkbox',
+        '#recaptcha-anchor',
+        '[class*="recaptcha-checkbox"]',
+        '[id*="recaptcha"]',
+        'span[role="checkbox"]'
+      ];
+      
+      for (const selector of checkboxSelectors) {
+        try {
+          const checkboxAlt = recaptchaIframe.locator(selector).first();
+          const isVisible = await checkboxAlt.isVisible({ timeout: 3000 }).catch(() => false);
+          
+          if (isVisible) {
+            await checkboxAlt.click({ delay: 150 + Math.random() * 150 });
+            console.log(`✅ Successfully clicked reCAPTCHA checkbox (selector: ${selector})`);
+            await page.waitForTimeout(1500 + Math.random() * 1000);
+            return true;
+          }
+        } catch (e) {
+          // Try next selector
+          continue;
+        }
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not click checkbox by alternative selectors: ${e.message}`);
+    }
+    
+    // Method 3: Try clicking using coordinates on the iframe (fallback)
+    try {
+      const iframeElement = await page.locator(iframeSelector).first().boundingBox();
+      if (iframeElement) {
+        // Click in the center-left area of the iframe (where checkbox typically is)
+        const clickX = iframeElement.x + iframeElement.width * 0.25; // 25% from left
+        const clickY = iframeElement.y + iframeElement.height / 2;
+        
+        // Move mouse to iframe checkbox area
+        const viewport = page.viewportSize() || { width: 1280, height: 720 };
+        const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
+        const iframePath = generateBezierPath(
+          currentPos.x,
+          currentPos.y,
+          clickX,
+          clickY,
+          10
+        );
+        
+        for (const point of iframePath) {
+          await page.mouse.move(point.x, point.y);
+          await page.waitForTimeout(40 + Math.random() * 60);
+        }
+        
+        await page.waitForTimeout(300 + Math.random() * 300);
+        await page.mouse.click(clickX, clickY, { delay: 150 + Math.random() * 150 });
+        console.log('✅ Successfully clicked reCAPTCHA checkbox (coordinate method)');
+        await page.waitForTimeout(1500 + Math.random() * 1000);
+        return true;
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not click checkbox by coordinates: ${e.message}`);
+    }
+    
+    console.warn('⚠️ Could not click reCAPTCHA checkbox - all methods failed');
+    return false;
+  } catch (error) {
+    console.error(`❌ Error clicking reCAPTCHA checkbox: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Checks for reCAPTCHA image challenge after checkbox click
+ * @param {Page} page - Playwright page object
+ * @returns {Promise<boolean>} True if challenge is detected
+ */
+export async function checkForRecaptchaChallenge(page) {
+  try {
+    // Wait a bit for challenge to appear (usually appears within 2-3 seconds)
+    await page.waitForTimeout(2000 + Math.random() * 2000);
+    
+    // Check for challenge iframe (different from checkbox iframe)
+    const challengeIframeSelectors = [
+      'iframe[src*="recaptcha/api2/bframe"]',
+      'iframe[src*="recaptcha/bframe"]',
+      'iframe[title*="recaptcha challenge"]'
+    ];
+    
+    for (const selector of challengeIframeSelectors) {
+      const count = await page.locator(selector).count();
+      if (count > 0) {
+        const iframe = page.locator(selector).first();
+        const src = await iframe.getAttribute('src').catch(() => '');
+        
+        // Challenge iframe has "bframe" in URL (not "anchor" which is the checkbox)
+        if (src.includes('bframe') && !src.includes('anchor')) {
+          console.log(`🖼️ reCAPTCHA image challenge detected (iframe: ${selector})`);
+          
+          // Wait for challenge to potentially auto-resolve (if behavior is good enough)
+          // Sometimes reCAPTCHA auto-resolves if behavioral patterns are human-like
+          const maxWaitTime = 8000 + Math.random() * 4000; // 8-12 seconds
+          console.log(`⏳ Waiting up to ${Math.round(maxWaitTime/1000)}s for challenge to resolve...`);
+          
+          const startTime = Date.now();
+          while (Date.now() - startTime < maxWaitTime) {
+            // Check if challenge iframe still exists
+            const stillExists = await page.locator(selector).count() > 0;
+            if (!stillExists) {
+              console.log('✅ Challenge iframe disappeared - challenge resolved');
+              return false; // Challenge was resolved
+            }
+            
+            // Check if we've been redirected (login successful)
+            const currentUrl = page.url();
+            if (!currentUrl.includes('/Account/Login')) {
+              const pageContent = await page.content().catch(() => '');
+              if (pageContent.includes('Dashboard') || pageContent.includes('Contacts')) {
+                console.log('✅ Challenge resolved - redirected to dashboard');
+                return false; // Challenge was resolved
+              }
+            }
+            
+            await page.waitForTimeout(1000);
+          }
+          
+          // Challenge still present after wait
+          const stillVisible = await page.locator(selector).count() > 0;
+          if (stillVisible) {
+            console.warn('⚠️ reCAPTCHA image challenge still present - login may fail');
+            console.warn('💡 Recommendation: Improve stealth patterns, use residential proxies, or integrate CAPTCHA solving service');
+            return true; // Challenge detected and not resolved
+          }
+          
+          return false; // Challenge was resolved
+        }
+      }
+    }
+    
+    // No challenge detected
+    return false;
+  } catch (error) {
+    console.warn(`⚠️ Error checking for reCAPTCHA challenge: ${error.message}`);
+    return false;
+  }
 }
 

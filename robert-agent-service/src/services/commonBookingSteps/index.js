@@ -15,7 +15,7 @@ export { sendSMSConfirmation } from './sendSMSConfirmation.js';
 export { validateAge } from './validateAge.js';
 export { takeScreenshot, extractLocationIdentifier } from './utils.js';
 export { findBooking } from './findBooking.js';
-export { checkAvailabilityAndNoteDetails, getAvailabilityUrl } from './checkAvailability.js';
+export { checkAvailabilityAndNoteDetails, getAvailabilityUrl, selectBestMatchingSlot } from './checkAvailability.js';
 export { rescheduleBooking } from './rescheduleBooking.js';
 export { cancelBooking } from './cancelBooking.js';
 export { updateCustomer } from './updateCustomer.js';

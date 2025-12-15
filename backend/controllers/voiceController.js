@@ -209,9 +209,9 @@ export const deleteVoice = async (req, res) => {
 // Preview voice using discovered voices
 export const previewVoice = async (req, res) => {
   try {
-    const { voiceId, text, modelId } = req.body;
+    const { voiceId, text, modelId, translateTo } = req.body;
     
-    console.log('🔵 [VOICE_PREVIEW] Preview request:', { voiceId, text: text?.substring(0, 50), modelId });
+    console.log('🔵 [VOICE_PREVIEW] Preview request:', { voiceId, text: text?.substring(0, 50), modelId, translateTo });
     
     if (!voiceId) {
       return res.status(400).json({ 
@@ -262,7 +262,45 @@ export const previewVoice = async (req, res) => {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const previewText = text || voice.sampleText || 'Hello, this is a voice preview.';
+    let previewText = text || voice.sampleText || 'Hello, this is a voice preview.';
+    
+    // Translate text if translateTo is provided and different from English
+    if (translateTo) {
+      const translateToLower = String(translateTo).toLowerCase().trim();
+      const baseLang = translateToLower.split('-')[0];
+      
+      // Check if it's not English (en, en-us, en-gb)
+      if (baseLang !== 'en') {
+        try {
+          // Translate the text using OpenAI
+          const translationResponse = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: `You are a professional translator. Translate the following English text to ${baseLang}. Return only the translation, no explanations, no additional text.`
+              },
+              {
+                role: 'user',
+                content: previewText
+              }
+            ],
+            temperature: 0.3,
+            max_tokens: 200
+          });
+          
+          const translatedText = translationResponse.choices[0]?.message?.content?.trim();
+          if (translatedText && translatedText.length > 0) {
+            previewText = translatedText;
+          } else {
+            console.warn('⚠️ [VOICE_PREVIEW] Translation returned empty, using original text');
+          }
+        } catch (translationError) {
+          console.error('🔴 [VOICE_PREVIEW] Translation failed:', translationError.message);
+          // Fallback to original text if translation fails
+        }
+      }
+    }
     
     console.log(`🔵 [VOICE_PREVIEW] Generating TTS for voice: ${voiceId}, model: ${primaryModelId || 'default'}, text: ${previewText.substring(0, 50)}...`);
 

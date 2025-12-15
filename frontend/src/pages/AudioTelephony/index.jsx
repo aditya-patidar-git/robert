@@ -72,6 +72,7 @@ const AudioTelephonyPage = () => {
   // Audio element ref for playback
   const audioRef = useRef(null);
   const blobUrlRef = useRef(null); // Store blob URL for cleanup
+  const intervalRef = useRef(null); // Store interval for cleanup
 
   // Fix accessibility issue: blur any focused elements when dialogs open
   useEffect(() => {
@@ -280,9 +281,13 @@ const AudioTelephonyPage = () => {
         blobUrlRef.current = blobUrl;
         
         // Wait for audio element to be available, then set src
-        const checkAudioElement = setInterval(() => {
+        // Store interval in ref for cleanup
+        intervalRef.current = setInterval(() => {
           if (audioRef.current) {
-            clearInterval(checkAudioElement);
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
             
             const audio = audioRef.current;
             audio.src = blobUrl;
@@ -305,6 +310,11 @@ const AudioTelephonyPage = () => {
             };
             
             const handleError = (e) => {
+              // Ignore errors from empty src (expected during cleanup)
+              if (!audio.src || audio.src === '') {
+                return;
+              }
+              
               console.error('🔴 [VOICE_PREVIEW] Audio playback error:', e);
               console.error('🔴 [VOICE_PREVIEW] Audio error details:', {
                 error: audio.error,
@@ -370,7 +380,12 @@ const AudioTelephonyPage = () => {
         }, 100);
         
         // Cleanup interval after 5 seconds if element not found
-        setTimeout(() => clearInterval(checkAudioElement), 5000);
+        setTimeout(() => {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+        }, 5000);
         
       } catch (error) {
         console.error('🔴 [VOICE_PREVIEW] Error fetching audio:', error);
@@ -383,6 +398,13 @@ const AudioTelephonyPage = () => {
     // Cleanup function
     return () => {
       console.log('🔵 [VOICE_PREVIEW] Cleaning up audio element');
+      
+      // Clear interval if still running
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = '';
@@ -611,6 +633,10 @@ const AudioTelephonyPage = () => {
                         setIsPlaying(false);
                       }}
                       onError={(e) => {
+                        // Ignore errors from empty src (expected during cleanup)
+                        if (!audioRef.current?.src || audioRef.current.src === '') {
+                          return;
+                        }
                         console.error('🔴 [VOICE_PREVIEW] Audio element error:', e);
                         if (audioRef.current?.error) {
                           console.error('🔴 [VOICE_PREVIEW] Audio error code:', audioRef.current.error.code);

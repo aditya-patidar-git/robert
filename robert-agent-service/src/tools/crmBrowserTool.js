@@ -3,7 +3,7 @@ import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatte
 import { conversations } from '../shared/state.js';
 
 class CRMBrowserTool {
-  async execute(parameters, callContext = {}) {
+  async execute(parameters, callContext = {}, progressCallback = null) {
     const { task, args } = parameters;
     const callSid = callContext.callSid || 'unknown';
     const phoneNumber = callContext.phoneNumber || 'unknown';
@@ -17,8 +17,11 @@ class CRMBrowserTool {
         callContext.callSid = callSid;
       }
       
+      // Use progressCallback from parameter, or fallback to callContext
+      const finalProgressCallback = progressCallback || callContext.progressCallback || null;
+      
       // Call browser agent service with callContext
-      const result = await browserAgentService.executeTask(task, args, callContext);
+      const result = await browserAgentService.executeTask(task, args, callContext, finalProgressCallback);
       
       // If the result already indicates failure, return it gracefully
       if (!result.success) {

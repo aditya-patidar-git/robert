@@ -1,53 +1,106 @@
-import React from 'react';
-import { Box, Paper, Typography, Card, CardContent, Chip, Button, LinearProgress } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Paper, Typography, Card, CardContent, Chip, Button, LinearProgress, CircularProgress } from '@mui/material';
 import { PlayArrow } from '@mui/icons-material';
+import { useToast } from '../../../components/common/ToastProvider';
 import ModelVoiceSelection from '../../../components/config/ModelVoiceSelection';
 import LanguageVoiceMapping from '../../../components/config/LanguageVoiceMapping';
+import voiceService from '../../../services/voiceService';
 
 const VoiceManagementTab = ({ state, handlers }) => {
   const {
     control,
     watch,
+    setValue,
     voicesData,
     voicesLoading
   } = state;
 
   const { handleVoicePreview } = handlers || {};
+  const { showSuccess, showError } = useToast();
+  const [previewingVoice, setPreviewingVoice] = useState(null);
 
-  // Safety check and wrapper for voice preview with detailed logging
-  const handlePreviewClick = (voice) => {
-    console.log('🔵 [VOICE_PREVIEW] Preview button clicked');
-    console.log('🔵 [VOICE_PREVIEW] Voice object:', voice);
-    console.log('🔵 [VOICE_PREVIEW] Handler available:', !!handleVoicePreview);
-    console.log('🔵 [VOICE_PREVIEW] Handler type:', typeof handleVoicePreview);
-    
-    if (!handleVoicePreview) {
-      console.error('🔴 [VOICE_PREVIEW] handleVoicePreview handler is not available');
-      console.error('🔴 [VOICE_PREVIEW] Handlers object:', handlers);
+  // Quick preview handler - direct audio playback without dialog
+  const handleQuickPreview = async (voice) => {
+    if (!voice || !voice.id) {
+      showError('Invalid voice selected');
       return;
     }
-    
-    if (!voice) {
-      console.error('🔴 [VOICE_PREVIEW] No voice object provided');
-      return;
-    }
-    
-    if (!voice.id) {
-      console.error('🔴 [VOICE_PREVIEW] Voice object missing id property:', voice);
-      return;
-    }
-    
-    console.log('✅ [VOICE_PREVIEW] Calling handleVoicePreview with voice:', {
-      id: voice.id,
-      name: voice.name,
-      language: voice.language
-    });
-    
+
     try {
-      handleVoicePreview(voice);
-      console.log('✅ [VOICE_PREVIEW] handleVoicePreview called successfully');
+      setPreviewingVoice(voice.id);
+      
+      // Use voice's language for translation if available
+      const languageCode = voice.language || 'en-US';
+      const sampleText = 'Hello, this is a voice preview.';
+      
+      // Call preview API - translate if not English
+      const previewResult = await voiceService.previewVoice(voice.id, sampleText, { 
+        translateTo: languageCode 
+      });
+      
+      // Extract audio URL from response
+      const audioUrl = previewResult?.audioUrl || previewResult?.url || 
+                      previewResult?.preview?.audioUrl || previewResult?.preview?.url ||
+                      previewResult?.data?.audioUrl || previewResult?.data?.url ||
+                      previewResult?.data?.preview?.audioUrl || previewResult?.data?.preview?.url;
+      
+      if (!audioUrl) {
+        console.error('🔴 [QUICK_VOICE_PREVIEW] No audio URL in response:', previewResult);
+        showError('Preview generated but audio URL not found');
+        setPreviewingVoice(null);
+        return;
+      }
+      
+      // Build full audio URL
+      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
+      const fullAudioUrl = audioUrl.startsWith('http') 
+        ? audioUrl 
+        : `${API_BASE}${audioUrl.startsWith('/') ? '' : '/'}${audioUrl}`;
+      
+      // Get auth token
+      const token = localStorage.getItem('authToken');
+      
+      // Fetch audio as blob with authentication
+      const response = await fetch(fullAudioUrl, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Create and play audio element
+      const audio = new Audio(blobUrl);
+      
+      // Cleanup on end
+      const handleEnded = () => {
+        URL.revokeObjectURL(blobUrl);
+        setPreviewingVoice(null);
+      };
+      
+      // Handle errors
+      const handleError = (e) => {
+        console.error('🔴 [QUICK_VOICE_PREVIEW] Audio playback error:', e);
+        URL.revokeObjectURL(blobUrl);
+        setPreviewingVoice(null);
+        showError('Failed to play audio preview');
+      };
+      
+      audio.addEventListener('ended', handleEnded);
+      audio.addEventListener('error', handleError);
+      
+      // Play immediately
+      await audio.play();
+      showSuccess(`Playing preview for ${voice.name}...`);
+      
     } catch (error) {
-      console.error('🔴 [VOICE_PREVIEW] Error calling handleVoicePreview:', error);
+      console.error('🔴 [QUICK_VOICE_PREVIEW] Error:', error);
+      showError(error.message || 'Failed to preview voice');
+      setPreviewingVoice(null);
     }
   };
 
@@ -57,6 +110,7 @@ const VoiceManagementTab = ({ state, handlers }) => {
       <ModelVoiceSelection 
         control={control}
         watch={watch}
+        setValue={setValue}
         showFallbackChain={false}
         showDefaultVoice={false}
       />
@@ -87,40 +141,44 @@ const VoiceManagementTab = ({ state, handlers }) => {
               gap: 3
             }}
           >
-            {(Array.isArray(voicesData) ? voicesData : (voicesData?.voices || [])).map((voice) => (
-              <Card 
-                key={voice.id}
-                sx={{ 
-                  border: watch('defaultVoice')?.id === voice.id ? 2 : 1,
-                  borderColor: watch('defaultVoice')?.id === voice.id ? 'primary.main' : 'divider'
-                }}
-              >
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                    <Typography variant="h6">{voice.name}</Typography>
-                    {voice.isDefault && <Chip label="Default" color="primary" size="small" />}
-                  </Box>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    {voice.description}
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                    <Chip label={voice.language} size="small" />
-                    <Chip label={voice.gender} size="small" />
-                    <Chip label={voice.provider} size="small" />
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                      size="small"
-                      startIcon={<PlayArrow />}
-                      onClick={() => handlePreviewClick(voice)}
-                      disabled={!handleVoicePreview}
-                    >
-                      Preview
-                    </Button>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
+            {(Array.isArray(voicesData) ? voicesData : (voicesData?.voices || [])).map((voice) => {
+              const isPreviewing = previewingVoice === voice.id;
+              
+              return (
+                <Card 
+                  key={voice.id}
+                  sx={{ 
+                    border: watch('defaultVoice')?.id === voice.id ? 2 : 1,
+                    borderColor: watch('defaultVoice')?.id === voice.id ? 'primary.main' : 'divider'
+                  }}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="h6">{voice.name}</Typography>
+                      {voice.isDefault && <Chip label="Default" color="primary" size="small" />}
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      {voice.description}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                      <Chip label={voice.language} size="small" />
+                      <Chip label={voice.gender} size="small" />
+                      <Chip label={voice.provider} size="small" />
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        size="small"
+                        startIcon={isPreviewing ? <CircularProgress size={16} /> : <PlayArrow />}
+                        onClick={() => handleQuickPreview(voice)}
+                        disabled={isPreviewing}
+                      >
+                        {isPreviewing ? 'Generating...' : 'Preview'}
+                      </Button>
+                    </Box>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </Box>
         )}
       </Paper>

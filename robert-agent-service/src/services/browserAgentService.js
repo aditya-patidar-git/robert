@@ -9,7 +9,11 @@ import {
   getStealthInitScript,
   generateBezierPath,
   waitForRecaptchaReady,
-  simulateHumanBehaviorBeforeSubmit
+  simulateHumanBehaviorBeforeSubmit,
+  clearRecaptchaStorage,
+  enhanceBehavioralPatterns,
+  clickRecaptchaCheckbox,
+  checkForRecaptchaChallenge
 } from '../utils/stealthUtils.js';
 
 class BrowserAgentService {
@@ -43,6 +47,83 @@ class BrowserAgentService {
     if (!fs.existsSync(this.auditDir)) {
       fs.mkdirSync(this.auditDir, { recursive: true });
     }
+  }
+
+  /**
+   * Determines if an error is reCAPTCHA-related
+   * @param {Error|string} error - Error object or error message
+   * @param {Object} context - Additional context (response, score, token, etc.)
+   * @returns {Object} Object with isRecaptchaFailure boolean and details
+   */
+  isRecaptchaFailure(error, context = {}) {
+    const errorMessage = typeof error === 'string' ? error : (error?.message || '');
+    const errorLower = errorMessage.toLowerCase();
+    
+    const recaptchaKeywords = [
+      'recaptcha', 'captcha', 'robot', 'automation', 'verification',
+      'suspicious', 'bot detection', 'invalid token', 'token missing',
+      'grecaptcha', 'g-recaptcha', 'reCAPTCHA'
+    ];
+    
+    const isKeywordMatch = recaptchaKeywords.some(keyword => errorLower.includes(keyword));
+    
+    // Check for low reCAPTCHA score
+    const lowScore = context.score !== undefined && context.score < 0.5;
+    
+    // Check for invalid/missing token
+    const invalidToken = context.tokenInvalid === true || context.tokenMissing === true;
+    
+    // Check for reCAPTCHA challenge
+    const hasChallenge = context.hasChallenge === true;
+    
+    // Check for reCAPTCHA timeout
+    const hasTimeout = errorLower.includes('timeout') && (errorLower.includes('recaptcha') || errorLower.includes('captcha'));
+    
+    const isRecaptchaFailure = isKeywordMatch || lowScore || invalidToken || hasChallenge || hasTimeout;
+    
+    const details = {
+      isRecaptchaFailure,
+      reason: isRecaptchaFailure ? (
+        isKeywordMatch ? 'keyword_match' :
+        lowScore ? 'low_score' :
+        invalidToken ? 'invalid_token' :
+        hasChallenge ? 'challenge_required' :
+        hasTimeout ? 'timeout' :
+        'unknown'
+      ) : null,
+      score: context.score,
+      tokenStatus: context.tokenInvalid ? 'invalid' : context.tokenMissing ? 'missing' : 'present',
+      errorMessage: errorMessage
+    };
+    
+    if (isRecaptchaFailure) {
+      console.log(`🚨 reCAPTCHA failure detected: ${details.reason}`);
+      if (details.score !== undefined) {
+        console.log(`   Score: ${details.score}`);
+      }
+      if (details.tokenStatus !== 'present') {
+        console.log(`   Token status: ${details.tokenStatus}`);
+      }
+    }
+    
+    return details;
+  }
+
+  /**
+   * Clears reCAPTCHA storage and prepares for retry
+   * @param {Page} page - Playwright page object
+   * @returns {Promise<void>}
+   */
+  async prepareRecaptchaRetry(page) {
+    console.log('🔄 Preparing for reCAPTCHA retry...');
+    
+    // Clear reCAPTCHA storage
+    await clearRecaptchaStorage(page);
+    
+    // Wait for fresh initialization
+    await page.waitForTimeout(500 + Math.random() * 500); // 500-1000ms
+    
+    console.log('✅ reCAPTCHA retry preparation complete');
   }
 
   /**
@@ -80,7 +161,7 @@ class BrowserAgentService {
     return this.browserInstance;
   }
 
-  async getContext() {
+  async getContext(progressCallback = null) {
     // Check if existing context is still valid
     if (this.browserContext) {
       try {
@@ -188,7 +269,7 @@ class BrowserAgentService {
       
       // Perform login and save authentication state with retry logic
       console.log('🔐 Performing login and saving authentication state...');
-      const loginPage = await this.browserContext.newPage();
+      let loginPage = await this.browserContext.newPage();
     let loginAttempt = 0;
     const maxAttempts = 2;
     let lastError = null;
@@ -200,37 +281,83 @@ class BrowserAgentService {
       try {
         if (isRetry) {
           console.log(`🔄 [RETRY ${loginAttempt}/${maxAttempts}] Retrying login with enhanced field handling...`);
+          
+          // Check if previous error was reCAPTCHA-related
+          const recaptchaFailureInfo = lastError ? this.isRecaptchaFailure(lastError, {}) : null;
+          const wasRecaptchaFailure = recaptchaFailureInfo?.isRecaptchaFailure || false;
+          
+          if (wasRecaptchaFailure) {
+            console.log('🚨 Previous failure was reCAPTCHA-related - clearing storage and creating fresh context...');
+            
+            // Close current page
+            try {
+              if (!loginPage.isClosed()) {
+                await loginPage.close();
+              }
+            } catch (e) {
+              console.warn('⚠️ Error closing page:', e.message);
+            }
+            
+            // Close and recreate context for fresh start
+            try {
+              if (this.browserContext) {
+                await this.browserContext.close();
+                this.browserContext = null;
+              }
+            } catch (e) {
+              console.warn('⚠️ Error closing context:', e.message);
+            }
+            
+            // Create fresh context with enhanced options
+            const browser = await this.getBrowser();
+            const contextOptions = {
+              userAgent: getRealisticUserAgent(),
+              viewport: { 
+                width: 1280 + Math.floor(Math.random() * 200) - 100, // Slight variation
+                height: 720 + Math.floor(Math.random() * 200) - 100
+              },
+              locale: 'en-GB',
+              timezoneId: 'Europe/London',
+              permissions: [],
+              colorScheme: 'light'
+            };
+            
+            this.browserContext = await browser.newContext(contextOptions);
+            await this.browserContext.addInitScript(getStealthInitScript());
+            console.log('✅ Fresh browser context created for reCAPTCHA retry');
+            
+            // Create new page
+            loginPage = await this.browserContext.newPage();
+          }
+          
           // On retry, navigate to login page again
-        await loginPage.goto(this.crmCredentials.loginUrl);
+          await loginPage.goto(this.crmCredentials.loginUrl);
           await loginPage.waitForLoadState('networkidle');
-          await loginPage.waitForTimeout(2000); // Extra wait on retry
+          
+          // Clear reCAPTCHA storage if it was a reCAPTCHA failure
+          if (wasRecaptchaFailure) {
+            await this.prepareRecaptchaRetry(loginPage);
+          }
+          
+          // Extended observation period on retry (especially for reCAPTCHA failures)
+          const observationTime = wasRecaptchaFailure ? 4000 + Math.random() * 2000 : 2000; // 4-6s for reCAPTCHA, 2s otherwise
+          await enhanceBehavioralPatterns(loginPage, {
+            preFormWait: observationTime,
+            enableScroll: true,
+            enableMouseMovements: true,
+            enableKeyboardEvents: true
+          });
         } else {
           await loginPage.goto(this.crmCredentials.loginUrl);
           await loginPage.waitForLoadState('networkidle');
-          await loginPage.waitForTimeout(3000);
           
-          // Simulate reading the page (human-like pause)
-          const readingTime = 2000 + Math.random() * 3000; // 2-5 seconds
-          await loginPage.waitForTimeout(readingTime);
-          
-          // Random small scroll to simulate reading
-          await loginPage.evaluate(() => {
-            window.scrollBy(0, Math.random() * 100);
+          // Extended pre-form interaction observation period (3-5 seconds)
+          await enhanceBehavioralPatterns(loginPage, {
+            preFormWait: 3000 + Math.random() * 2000, // 3-5 seconds
+            enableScroll: true,
+            enableMouseMovements: true,
+            enableKeyboardEvents: true
           });
-          await loginPage.waitForTimeout(500 + Math.random() * 500);
-          
-          // Initial natural mouse movements using Bezier curves
-          const viewport = loginPage.viewportSize() || { width: 1280, height: 720 };
-          const startX = Math.random() * viewport.width;
-          const startY = Math.random() * viewport.height;
-          const endX = 200 + Math.random() * 200;
-          const endY = 200 + Math.random() * 200;
-          
-          const bezierPath = generateBezierPath(startX, startY, endX, endY, 15);
-          for (const point of bezierPath) {
-            await loginPage.mouse.move(point.x, point.y);
-            await loginPage.waitForTimeout(50 + Math.random() * 100);
-          }
         }
         
         await loginPage.waitForLoadState('domcontentloaded');
@@ -421,33 +548,33 @@ class BrowserAgentService {
         const viewport = loginPage.viewportSize() || { width: 1280, height: 720 };
         const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
         
-        // Natural mouse movement pattern before clicking login
+        // Natural mouse movement pattern before clicking login (optimized for speed)
         const formBox = await loginPage.locator('form').first().boundingBox().catch(() => null);
         if (formBox) {
-          // Move to form area using Bezier curve
+          // Move to form area using Bezier curve (reduced point count)
           const formPath = generateBezierPath(
             currentPos.x, currentPos.y,
             formBox.x + formBox.width / 2,
             formBox.y + formBox.height / 2,
-            20
+            10 // Optimized: reduced from 20 to 10 points
           );
           for (const point of formPath) {
             await loginPage.mouse.move(point.x, point.y);
             await loginPage.waitForTimeout(40 + Math.random() * 60);
           }
-          await loginPage.waitForTimeout(300 + Math.random() * 200);
+          await loginPage.waitForTimeout(200 + Math.random() * 100); // Optimized: 200-300ms (reduced from 300-500ms)
         
-          // Small random micro-movements (human-like jitter)
-          for (let i = 0; i < 3; i++) {
+          // Small random micro-movements (human-like jitter) - reduced count
+          for (let i = 0; i < 2; i++) { // Optimized: reduced from 3 to 2
             await loginPage.mouse.move(
               formBox.x + formBox.width / 2 + (Math.random() * 20 - 10),
               formBox.y + formBox.height / 2 + (Math.random() * 20 - 10)
             );
-            await loginPage.waitForTimeout(100 + Math.random() * 150);
+            await loginPage.waitForTimeout(100 + Math.random() * 100); // Optimized: 100-200ms (reduced from 100-250ms)
           }
         }
         
-        // Move to login button using Bezier curve
+        // Move to login button using Bezier curve (reduced point count)
         const loginButtonBox = await loginButton.boundingBox().catch(() => null);
         if (loginButtonBox) {
           // Use form center or viewport center as starting point
@@ -459,7 +586,7 @@ class BrowserAgentService {
             startY,
             loginButtonBox.x + loginButtonBox.width / 2,
             loginButtonBox.y + loginButtonBox.height / 2,
-            15
+            8 // Optimized: reduced from 15 to 8 points
           );
           
           for (const point of buttonPath) {
@@ -468,12 +595,12 @@ class BrowserAgentService {
           }
           
           // Hover over button with slight movements (human hesitation)
-          await loginPage.waitForTimeout(400 + Math.random() * 300);
+          await loginPage.waitForTimeout(150 + Math.random() * 100); // Optimized: 150-250ms (reduced from 400-700ms)
           await loginPage.mouse.move(
             loginButtonBox.x + loginButtonBox.width / 2 + (Math.random() * 5 - 2.5),
             loginButtonBox.y + loginButtonBox.height / 2 + (Math.random() * 5 - 2.5)
           );
-          await loginPage.waitForTimeout(200 + Math.random() * 300);
+          await loginPage.waitForTimeout(100 + Math.random() * 50); // Optimized: 100-150ms (reduced from 200-500ms)
         }
         
         // Check for reCAPTCHA elements on the page before submission
@@ -521,18 +648,76 @@ class BrowserAgentService {
           console.log('⚠️ Could not check for reCAPTCHA elements:', e.message);
         }
         
-        // Wait for reCAPTCHA to execute and calculate score
-        await waitForRecaptchaReady(loginPage, 3000); // Reduced from 5000ms (usually ready faster)
+        // Wait for reCAPTCHA to execute and calculate score (enhanced detection)
+        const recaptchaStatus = await waitForRecaptchaReady(loginPage, 3000);
         
-        // Additional wait to let reCAPTCHA observe more behavior
-        await loginPage.waitForTimeout(1000 + Math.random() * 1000); // Reduced from 2000-4000ms
+        // Log reCAPTCHA status for audit trail
+        if (recaptchaStatus.errors.length > 0) {
+          console.warn(`⚠️ reCAPTCHA errors detected: ${recaptchaStatus.errors.join(', ')}`);
+        }
+        if (recaptchaStatus.warnings.length > 0) {
+          console.warn(`⚠️ reCAPTCHA warnings: ${recaptchaStatus.warnings.join(', ')}`);
+        }
+        
+        // CRITICAL: Click the reCAPTCHA checkbox if it's v2
+        if (recaptchaStatus.version === 'v2' && recaptchaStatus.hasRecaptcha) {
+          console.log('🔘 Clicking reCAPTCHA checkbox...');
+          const checkboxClicked = await clickRecaptchaCheckbox(loginPage);
+          if (checkboxClicked) {
+            console.log('✅ reCAPTCHA checkbox clicked successfully');
+            
+            // Check for image challenge and wait for resolution
+            const challengeDetected = await checkForRecaptchaChallenge(loginPage);
+            if (challengeDetected) {
+              console.warn('⚠️ Image challenge detected and not auto-resolved - login may fail');
+            }
+            
+            // Wait for reCAPTCHA to process after clicking
+            await loginPage.waitForTimeout(2000 + Math.random() * 1000);
+          } else {
+            console.warn('⚠️ Could not click reCAPTCHA checkbox - will proceed anyway');
+          }
+        }
+        
+        // Extended post-fill observation period (2-4 seconds) with micro-interactions
+        const postFillWait = 2000 + Math.random() * 2000; // 2-4 seconds
+        console.log(`⏳ Post-fill observation period: ${Math.round(postFillWait)}ms`);
+        
+        // Micro-interactions during observation (reuse formBox from above if available)
+        const postFillFormBox = formBox || await loginPage.locator('form').first().boundingBox().catch(() => null);
+        if (postFillFormBox) {
+          // Small mouse movements
+          for (let i = 0; i < 2; i++) {
+            await loginPage.mouse.move(
+              postFillFormBox.x + postFillFormBox.width / 2 + (Math.random() * 20 - 10),
+              postFillFormBox.y + postFillFormBox.height / 2 + (Math.random() * 20 - 10)
+            );
+            await loginPage.waitForTimeout(200 + Math.random() * 300);
+          }
+          
+          // Field focus/blur cycles
+          const loginNameField = loginPage.locator('#Loginname input.dx-texteditor-input');
+          const usernameField = loginPage.locator('#Username input.dx-texteditor-input');
+          await loginNameField.focus().catch(() => {});
+          await loginPage.waitForTimeout(100 + Math.random() * 200);
+          await usernameField.focus().catch(() => {});
+          await loginPage.waitForTimeout(100 + Math.random() * 200);
+          await loginPage.keyboard.press('Tab');
+          await loginPage.waitForTimeout(100 + Math.random() * 200);
+        }
+        
+        // Remaining wait time
+        const remainingWait = postFillWait - 1000; // Subtract time already spent
+        if (remainingWait > 0) {
+          await loginPage.waitForTimeout(remainingWait);
+        }
         
         // Simulate human behavior before clicking login button
         const formLocator = loginPage.locator('form').first();
         await simulateHumanBehaviorBeforeSubmit(loginPage, formLocator, loginButton);
         
         // Reading pause before clicking (human hesitation)
-        const preClickDelay = 500 + Math.random() * 1000;
+        const preClickDelay = 200 + Math.random() * 200; // Optimized: 200-400ms (reduced from 500-1500ms)
         await loginPage.waitForTimeout(preClickDelay);
         
         console.log(`🔐 Submitting login form${isRetry ? ' (RETRY)' : ''}...`);
@@ -645,16 +830,27 @@ class BrowserAgentService {
                 const jsonResponse = JSON.parse(responseBody);
                 
                 // Check for reCAPTCHA score in response (if server includes it)
-                if (jsonResponse.recaptchaScore !== undefined || jsonResponse.score !== undefined) {
-                  const score = jsonResponse.recaptchaScore || jsonResponse.score;
-                  console.log(`📊 reCAPTCHA Score from server: ${score}`);
-                  if (score < 0.5) {
-                    console.error(`🚨 LOW reCAPTCHA SCORE (${score}) - Likely detected as bot!`);
-                    console.error(`   Score interpretation: ${score >= 0.9 ? 'Human' : score >= 0.7 ? 'Likely Human' : score >= 0.5 ? 'Suspicious' : 'Bot'}`);
-                  } else if (score < 0.7) {
-                    console.warn(`⚠️ MODERATE reCAPTCHA SCORE (${score}) - May be flagged`);
+                const recaptchaScore = jsonResponse.recaptchaScore || jsonResponse.score;
+                const recaptchaContext = {
+                  score: recaptchaScore,
+                  tokenInvalid: false,
+                  tokenMissing: false,
+                  hasChallenge: false
+                };
+                
+                if (recaptchaScore !== undefined) {
+                  console.log(`📊 reCAPTCHA Score from server: ${recaptchaScore}`);
+                  const scoreInterpretation = recaptchaScore >= 0.9 ? 'Human' : 
+                                            recaptchaScore >= 0.7 ? 'Likely Human' : 
+                                            recaptchaScore >= 0.5 ? 'Suspicious' : 'Bot';
+                  console.log(`   Score interpretation: ${scoreInterpretation}`);
+                  
+                  if (recaptchaScore < 0.5) {
+                    console.error(`🚨 LOW reCAPTCHA SCORE (${recaptchaScore}) - Likely detected as bot!`);
+                  } else if (recaptchaScore < 0.7) {
+                    console.warn(`⚠️ MODERATE reCAPTCHA SCORE (${recaptchaScore}) - May be flagged`);
                   } else {
-                    console.log(`✅ GOOD reCAPTCHA SCORE (${score})`);
+                    console.log(`✅ GOOD reCAPTCHA SCORE (${recaptchaScore})`);
                   }
                 }
                 
@@ -662,22 +858,10 @@ class BrowserAgentService {
                 if (jsonResponse.errorMessage) {
                   console.error(`❌ Login failed: ${jsonResponse.errorMessage}`);
                   
-                  // ENHANCED: Check for reCAPTCHA-specific error messages
-                  const errorMsg = jsonResponse.errorMessage.toLowerCase();
-                  const isRecaptchaError = 
-                    errorMsg.includes('recaptcha') || 
-                    errorMsg.includes('captcha') ||
-                    errorMsg.includes('robot') ||
-                    errorMsg.includes('automation') ||
-                    errorMsg.includes('verification') ||
-                    errorMsg.includes('suspicious');
+                  // Enhanced reCAPTCHA failure detection
+                  const recaptchaFailureInfo = this.isRecaptchaFailure(jsonResponse.errorMessage, recaptchaContext);
                   
-                  if (isRecaptchaError) {
-                    console.error('🚨 CONFIRMED: This is a reCAPTCHA-related error!');
-                    console.error(`   Error message: "${jsonResponse.errorMessage}"`);
-                  }
-                  
-                  // ENHANCED: Analyze gToken with detailed logging
+                  // Enhanced: Analyze gToken with detailed logging
                   if (interceptedRequestData) {
                     const hasGToken = interceptedRequestData.includes('gToken=');
                     console.log(`📊 Request Analysis:`);
@@ -693,22 +877,27 @@ class BrowserAgentService {
                         
                         if (tokenLength < 100 || tokenValue === '0' || tokenValue === '' || tokenValue === 'null') {
                           console.error(`❌ reCAPTCHA token invalid (length: ${tokenLength})`);
-                          console.error('🚨 CONFIRMED: Invalid reCAPTCHA token - this is a reCAPTCHA issue!');
+                          recaptchaContext.tokenInvalid = true;
                         } else {
                           console.error(`⚠️ reCAPTCHA token present but rejected - likely automation detected`);
-                          console.error('🚨 CONFIRMED: Valid token but rejected - reCAPTCHA detected automation!');
                           console.error(`   This suggests the reCAPTCHA score was too low (< 0.5 typically)`);
                         }
                       }
                     } else {
                       console.error(`❌ reCAPTCHA token missing from request`);
-                      console.error('🚨 CONFIRMED: Missing reCAPTCHA token - this is a reCAPTCHA issue!');
+                      recaptchaContext.tokenMissing = true;
                     }
-                  } else {
-                    console.warn('⚠️ Could not analyze request data - interceptedRequestData is missing');
                   }
                   
-                  throw new Error(`Login failed: ${jsonResponse.errorMessage}`);
+                  // Create enhanced error with reCAPTCHA details
+                  const enhancedError = new Error(`Login failed: ${jsonResponse.errorMessage}`);
+                  enhancedError.recaptchaFailure = recaptchaFailureInfo.isRecaptchaFailure;
+                  enhancedError.recaptchaDetails = {
+                    ...recaptchaFailureInfo,
+                    context: recaptchaContext
+                  };
+                  
+                  throw enhancedError;
                 }
                 
                 // Check for success indicators in JSON response
@@ -762,12 +951,13 @@ class BrowserAgentService {
               if (errorText && errorText.trim().length > 0) {
                 console.error(`❌ Login error detected: ${errorText}`);
                 
-                // ENHANCED: Check if it's a reCAPTCHA error
-                const errorLower = errorText.toLowerCase();
-                if (errorLower.includes('recaptcha') || errorLower.includes('captcha') || 
-                    errorLower.includes('robot') || errorLower.includes('verification')) {
-                  console.error('🚨 CONFIRMED: Error message indicates reCAPTCHA issue!');
-                }
+                // Enhanced reCAPTCHA failure detection
+                const recaptchaFailureInfo = this.isRecaptchaFailure(errorText);
+                
+                // Create enhanced error with reCAPTCHA details
+                const enhancedError = new Error(`Login failed: ${errorText.trim()}`);
+                enhancedError.recaptchaFailure = recaptchaFailureInfo.isRecaptchaFailure;
+                enhancedError.recaptchaDetails = recaptchaFailureInfo;
                 
                 // Take screenshot when error is detected
                 try {
@@ -776,7 +966,8 @@ class BrowserAgentService {
                 } catch (screenshotError) {
                   console.warn('⚠️ Could not take error screenshot:', screenshotError.message);
                 }
-                throw new Error(`Login failed: ${errorText.trim()}`);
+                
+                throw enhancedError;
               }
             }
           } catch (e) {
@@ -815,6 +1006,11 @@ class BrowserAgentService {
         await loginPage.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 30000 });
         console.log(`✅ Login successful${isRetry ? ' (RETRY)' : ''}`);
         
+        // Report login completed if progress callback provided
+        if (progressCallback) {
+          progressCallback({ milestone: 'login_completed', message: 'Successfully logged in', progress: 20 });
+        }
+        
         // Don't navigate if already on dashboard - cookies are already in context
         const currentUrl = loginPage.url();
         if (!currentUrl.includes('/InContact') || currentUrl.includes('/Account/Login')) {
@@ -839,7 +1035,22 @@ class BrowserAgentService {
         
       } catch (error) {
         lastError = error;
+        
+        // Enhanced error logging with reCAPTCHA details
+        const recaptchaFailureInfo = error.recaptchaFailure !== undefined ? 
+          { isRecaptchaFailure: error.recaptchaFailure, ...error.recaptchaDetails } :
+          this.isRecaptchaFailure(error);
+        
         console.error(`❌ Login attempt ${loginAttempt}/${maxAttempts} failed:`, error.message);
+        if (recaptchaFailureInfo.isRecaptchaFailure) {
+          console.error(`🚨 reCAPTCHA failure detected (${recaptchaFailureInfo.reason})`);
+          if (recaptchaFailureInfo.score !== undefined) {
+            console.error(`   Score: ${recaptchaFailureInfo.score}`);
+          }
+          if (recaptchaFailureInfo.tokenStatus) {
+            console.error(`   Token status: ${recaptchaFailureInfo.tokenStatus}`);
+          }
+        }
         
         // Take a screenshot for debugging
         try {
@@ -851,11 +1062,21 @@ class BrowserAgentService {
         // If this was the last attempt, throw the error
         if (loginAttempt >= maxAttempts) {
           console.error(`❌ All ${maxAttempts} login attempts failed`);
+          
+          // Enhanced error message with reCAPTCHA details
+          let finalErrorMessage = `Failed to login after ${maxAttempts} attempts: ${error.message}`;
+          if (recaptchaFailureInfo.isRecaptchaFailure) {
+            finalErrorMessage += ` [reCAPTCHA failure: ${recaptchaFailureInfo.reason}]`;
+            if (recaptchaFailureInfo.score !== undefined) {
+              finalErrorMessage += ` [Score: ${recaptchaFailureInfo.score}]`;
+            }
+          }
+          
           // Close login page before throwing
           try {
             if (!loginPage.isClosed()) {
-        await loginPage.close();
-      }
+              await loginPage.close();
+            }
           } catch (closeError) {
             console.warn('⚠️ Error closing login page after failure:', closeError.message);
           }
@@ -871,11 +1092,15 @@ class BrowserAgentService {
             this.browserContext = null;
           }
           
-          throw new Error(`Failed to login after ${maxAttempts} attempts: ${error.message}`);
+          const finalError = new Error(finalErrorMessage);
+          finalError.recaptchaFailure = recaptchaFailureInfo.isRecaptchaFailure;
+          finalError.recaptchaDetails = recaptchaFailureInfo;
+          throw finalError;
         } else {
-          // Wait a bit before retrying
-          console.log(`⏳ Waiting 2 seconds before retry attempt ${loginAttempt + 1}...`);
-          await loginPage.waitForTimeout(2000);
+          // Wait before retrying (longer for reCAPTCHA failures)
+          const waitTime = recaptchaFailureInfo.isRecaptchaFailure ? 3000 : 2000;
+          console.log(`⏳ Waiting ${waitTime/1000}s before retry attempt ${loginAttempt + 1}...`);
+          await loginPage.waitForTimeout(waitTime);
         }
       }
     }
@@ -945,9 +1170,20 @@ class BrowserAgentService {
     }
   }
 
-  async executeTask(task, args, callContext = {}) {
+  async executeTask(task, args, callContext = {}, progressCallback = null) {
     const callSid = callContext.callSid || 'unknown';
     const executionKey = `${callSid}_${task}`;
+    
+    // Helper function to call progress callback if provided
+    const reportProgress = (milestone, message, progress = null) => {
+      if (progressCallback && typeof progressCallback === 'function') {
+        try {
+          progressCallback({ milestone, message, progress, timestamp: Date.now() });
+        } catch (err) {
+          console.warn(`⚠️ [${callSid}] Error in progress callback:`, err.message);
+        }
+      }
+    };
     
     // Check if there's already an active execution for this call and task
     if (this.activeExecutions.has(executionKey)) {
@@ -995,7 +1231,7 @@ class BrowserAgentService {
       shouldCloseContext = true; // Mark this context for cleanup since it's not the pooled one
     } else {
       // For other tasks (create_booking, reschedule, cancel, update_customer), use authenticated context
-      context = await this.getContext();
+      context = await this.getContext(reportProgress);
     }
     
     // Track all pages for cleanup
@@ -1090,7 +1326,7 @@ class BrowserAgentService {
       try {
         // Route to course-specific service for create_booking
         if (task === 'create_booking' && args.courseType) {
-          return await this.executeCourseBooking(page, args, callContext, auditId);
+          return await this.executeCourseBooking(page, args, callContext, auditId, progressCallback);
         }
         
         // Always start with dry-run for other tasks
@@ -1234,7 +1470,15 @@ class BrowserAgentService {
           
           console.log(`📚 [${auditId}] Checking availability for ${courseType}...`);
           const commonSteps = await import('./commonBookingSteps/index.js');
-          const availability = await commonSteps.checkAvailabilityAndNoteDetails(page, courseType, this.screenshotsDir);
+          
+          // Extract preferences from args if provided
+          const preferences = {
+            preferredDate: args.preferredDate,
+            preferredTime: args.preferredTime,
+            location: args.location
+          };
+          
+          const availability = await commonSteps.checkAvailabilityAndNoteDetails(page, courseType, this.screenshotsDir, preferences);
           const screenshot = await this.takeScreenshot(page, `${auditId}_${courseType.toLowerCase().replace(/\s+/g, '-')}_availability_check.png`);
           
           // Store availability data to file as fallback (for development/debugging)
@@ -1245,7 +1489,10 @@ class BrowserAgentService {
             
             const cacheData = {
               courseType: courseType,
-              sessionDetails: availability,
+              allSlots: availability.allSlots,
+              selectedSlot: availability.selectedSlot,
+              sessionDetails: availability.selectedSlot, // Keep for backward compatibility
+              monthYear: availability.monthYear,
               timestamp: new Date().toISOString(),
               callSid: callSidFromAuditId
             };
@@ -1258,8 +1505,11 @@ class BrowserAgentService {
           return {
             success: true,
             result: {
-              sessionDetails: availability, // Store as sessionDetails for consistency
-              ...availability // Also include all fields directly
+              allSlots: availability.allSlots, // All available slots
+              selectedSlot: availability.selectedSlot, // Best matching slot
+              sessionDetails: availability.selectedSlot, // Keep for backward compatibility
+              monthYear: availability.monthYear,
+              ...availability.selectedSlot // Also include slot fields directly for easy access
             },
             screenshots: [screenshot]
           };
@@ -1373,17 +1623,73 @@ class BrowserAgentService {
       await page.waitForTimeout(200 + Math.random() * 200);
       await passwordField.type(this.crmCredentials.password, { delay: 50 + Math.random() * 100 });
       await passwordField.blur();
-      await page.waitForTimeout(1000 + Math.random() * 500); // Reduced from 1500-2500ms
+      await page.waitForTimeout(300 + Math.random() * 200); // Optimized: 300-500ms (reduced from 1000-1500ms)
       
       // Trigger form events
       await page.locator('body').click({ position: { x: 100, y: 100 } });
-      await page.waitForTimeout(500); // Reduced from 1000ms
+      await page.waitForTimeout(200); // Optimized: 200ms (reduced from 500ms)
       
-      // Wait for reCAPTCHA to execute and calculate score
-      await waitForRecaptchaReady(page, 3000); // Reduced from 5000ms (usually ready faster)
+      // Wait for reCAPTCHA to execute and calculate score (enhanced detection)
+      const recaptchaStatus = await waitForRecaptchaReady(page, 3000);
       
-      // Additional wait to let reCAPTCHA observe more behavior
-      await page.waitForTimeout(1000 + Math.random() * 1000); // Reduced from 2000-4000ms
+      // Log reCAPTCHA status for audit trail
+      if (recaptchaStatus.errors.length > 0) {
+        console.warn(`⚠️ reCAPTCHA errors detected: ${recaptchaStatus.errors.join(', ')}`);
+      }
+      if (recaptchaStatus.warnings.length > 0) {
+        console.warn(`⚠️ reCAPTCHA warnings: ${recaptchaStatus.warnings.join(', ')}`);
+      }
+      
+      // CRITICAL: Click the reCAPTCHA checkbox if it's v2
+      if (recaptchaStatus.version === 'v2' && recaptchaStatus.hasRecaptcha) {
+        console.log('🔘 Clicking reCAPTCHA checkbox...');
+        const checkboxClicked = await clickRecaptchaCheckbox(page);
+        if (checkboxClicked) {
+          console.log('✅ reCAPTCHA checkbox clicked successfully');
+          
+          // Check for image challenge and wait for resolution
+          const challengeDetected = await checkForRecaptchaChallenge(page);
+          if (challengeDetected) {
+            console.warn('⚠️ Image challenge detected and not auto-resolved - login may fail');
+          }
+          
+          // Wait for reCAPTCHA to process after clicking
+          await page.waitForTimeout(2000 + Math.random() * 1000);
+        } else {
+          console.warn('⚠️ Could not click reCAPTCHA checkbox - will proceed anyway');
+        }
+      }
+      
+      // Extended post-fill observation period (2-4 seconds) with micro-interactions
+      const postFillWait = 2000 + Math.random() * 2000; // 2-4 seconds
+      console.log(`⏳ Post-fill observation period: ${Math.round(postFillWait)}ms`);
+      
+      // Micro-interactions during observation
+      const formBox = await page.locator('form').first().boundingBox().catch(() => null);
+      if (formBox) {
+        // Small mouse movements
+        for (let i = 0; i < 2; i++) {
+          await page.mouse.move(
+            formBox.x + formBox.width / 2 + (Math.random() * 20 - 10),
+            formBox.y + formBox.height / 2 + (Math.random() * 20 - 10)
+          );
+          await page.waitForTimeout(200 + Math.random() * 300);
+        }
+        
+        // Field focus/blur cycles
+        await loginNameField.focus().catch(() => {});
+        await page.waitForTimeout(100 + Math.random() * 200);
+        await usernameField.focus().catch(() => {});
+        await page.waitForTimeout(100 + Math.random() * 200);
+        await page.keyboard.press('Tab');
+        await page.waitForTimeout(100 + Math.random() * 200);
+      }
+      
+      // Remaining wait time
+      const remainingWait = postFillWait - 1000; // Subtract time already spent
+      if (remainingWait > 0) {
+        await page.waitForTimeout(remainingWait);
+      }
       
       // Simulate human behavior before clicking login button
       const formLocator = page.locator('form').first();
@@ -1787,7 +2093,15 @@ class BrowserAgentService {
       
       // Use common availability check function for all course types
       const commonSteps = await import('./commonBookingSteps/index.js');
-      const availability = await commonSteps.checkAvailabilityAndNoteDetails(page, courseType, this.screenshotsDir);
+      
+      // Extract preferences from args if provided
+      const preferences = {
+        preferredDate: args.preferredDate,
+        preferredTime: args.preferredTime,
+        location: args.location
+      };
+      
+      const availability = await commonSteps.checkAvailabilityAndNoteDetails(page, courseType, this.screenshotsDir, preferences);
       await this.takeScreenshot(page, `${auditId}_${courseType.toLowerCase().replace(/\s+/g, '-')}_availability_dryrun.png`);
       
       return {
@@ -1795,7 +2109,11 @@ class BrowserAgentService {
         result: {
           action: 'check_availability',
           courseType: courseType,
-          availability: availability
+          allSlots: availability.allSlots,
+          selectedSlot: availability.selectedSlot,
+          sessionDetails: availability.selectedSlot, // Keep for backward compatibility
+          monthYear: availability.monthYear,
+          availability: availability.selectedSlot // Keep for backward compatibility
         },
         requiresConfirmation: false
       };
@@ -1808,7 +2126,7 @@ class BrowserAgentService {
     }
   }
 
-  async executeCourseBooking(page, args, callContext, auditId) {
+  async executeCourseBooking(page, args, callContext, auditId, progressCallback = null) {
     try {
       // Map course type to service module
       const courseServiceMap = {
@@ -1994,9 +2312,38 @@ class BrowserAgentService {
       // Retrieve availability data from conversation if available
       const { conversations } = await import('../shared/state.js');
       const conversation = conversations[callContext.callSid] || {};
+      
+      // Check if we have availability data and need to re-match with preferences
       if (conversation.lastAvailabilityCheck) {
-        bookingArgs.sessionDetails = conversation.lastAvailabilityCheck;
-        console.log('📅 Using availability data from previous check (conversation state)');
+        const availabilityData = conversation.lastAvailabilityCheck;
+        
+        // Handle new format (with allSlots and selectedSlot)
+        if (availabilityData.allSlots && availabilityData.selectedSlot) {
+          // Re-match with current preferences if they differ from what was used before
+          const commonSteps = await import('./commonBookingSteps/index.js');
+          const preferences = {
+            preferredDate: args.preferredDate,
+            preferredTime: args.preferredTime,
+            location: args.location
+          };
+          
+          // Check if preferences have changed
+          const hasPreferences = preferences.preferredDate || preferences.preferredTime || preferences.location;
+          if (hasPreferences) {
+            // Re-select best matching slot with current preferences
+            const selectedSlot = commonSteps.selectBestMatchingSlot(availabilityData.allSlots, preferences);
+            bookingArgs.sessionDetails = selectedSlot;
+            console.log('📅 Re-matched availability with current preferences');
+          } else {
+            // Use previously selected slot
+            bookingArgs.sessionDetails = availabilityData.selectedSlot;
+            console.log('📅 Using previously selected slot from availability check');
+          }
+        } else {
+          // Handle old format (single sessionDetails object) - backward compatibility
+          bookingArgs.sessionDetails = availabilityData.sessionDetails || availabilityData;
+          console.log('📅 Using availability data from previous check (conversation state - old format)');
+        }
       } else {
         // FALLBACK: Try to load from file cache (for development/debugging)
         const availabilityCachePath = './availability-cache.json';
@@ -2007,12 +2354,34 @@ class BrowserAgentService {
             const cacheAge = Date.now() - new Date(cacheData.timestamp).getTime();
             const oneHour = 60 * 60 * 1000;
             
-            if (cacheAge < oneHour && cacheData.sessionDetails) {
+            if (cacheAge < oneHour && (cacheData.sessionDetails || cacheData.selectedSlot)) {
               // Optionally check if course type matches (for multi-course scenarios)
               if (!cacheData.courseType || cacheData.courseType === args.courseType || 
                   args.courseType === 'Introduction to Motorcycling' && cacheData.courseType === 'ITM') {
-                bookingArgs.sessionDetails = cacheData.sessionDetails;
-                console.log(`📅 Using availability data from file cache (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
+                
+                // Handle new format with preference matching
+                if (cacheData.allSlots && cacheData.selectedSlot) {
+                  const commonSteps = await import('./commonBookingSteps/index.js');
+                  const preferences = {
+                    preferredDate: args.preferredDate,
+                    preferredTime: args.preferredTime,
+                    location: args.location
+                  };
+                  
+                  const hasPreferences = preferences.preferredDate || preferences.preferredTime || preferences.location;
+                  if (hasPreferences) {
+                    bookingArgs.sessionDetails = commonSteps.selectBestMatchingSlot(cacheData.allSlots, preferences);
+                    console.log(`📅 Re-matched cached availability with preferences (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
+                  } else {
+                    bookingArgs.sessionDetails = cacheData.selectedSlot;
+                    console.log(`📅 Using cached selected slot (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
+                  }
+                } else {
+                  // Old format
+                  bookingArgs.sessionDetails = cacheData.sessionDetails;
+                  console.log(`📅 Using availability data from file cache (${Math.round(cacheAge / 1000 / 60)} minutes old)`);
+                }
+                
                 console.log(`📅 Cache course type: ${cacheData.courseType}, Requested: ${args.courseType}`);
               } else {
                 console.warn(`⚠️ [${auditId}] Cache exists but course type mismatch: cache=${cacheData.courseType}, requested=${args.courseType}`);
@@ -2073,8 +2442,20 @@ class BrowserAgentService {
         // Don't fail booking if policy check fails
       }
 
+      if (progressCallback) {
+        progressCallback({ milestone: 'form_filling_started', message: 'Filling in booking details...', progress: 50 });
+      }
+      
       // Execute workflow - all services now use executeBookingWorkflow
       const result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext);
+      
+      if (progressCallback) {
+        if (result.success) {
+          progressCallback({ milestone: 'confirmation_completed', message: 'Booking confirmed', progress: 100 });
+        } else {
+          progressCallback({ milestone: 'form_filling_completed', message: 'Details entered', progress: 70 });
+        }
+      }
 
       // If result indicates verification is required, return it with verification prompt
       if (result.requiresVerification) {
