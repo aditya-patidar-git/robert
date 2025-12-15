@@ -201,7 +201,7 @@ class ConfigService extends BaseService {
    * @param {Object} config - Privacy configuration
    * @returns {Promise<Object>} Updated configuration
    */
-  async updatePrivacyConfig(config) {
+  updatePrivacyConfig = async (config) => {
     return this.put('/config/privacy', config);
   }
 

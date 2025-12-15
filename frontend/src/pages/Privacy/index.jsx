@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Typography,
@@ -59,7 +59,7 @@ const PrivacyPage = () => {
   
   const canSeeAll = user?.role === 'owner' || user?.role === 'admin';
 
-  const { control, handleSubmit, watch, reset } = useForm({
+  const { control, handleSubmit, watch, reset, formState: { errors } } = useForm({
     defaultValues: {
       consentScript: '',
       transcriptRetention: 90,
@@ -77,23 +77,39 @@ const PrivacyPage = () => {
   const [breachDialog, setBreachDialog] = useState({ open: false });
   const [piaDialog, setPiaDialog] = useState({ open: false });
   const [dsarFormDialog, setDsarFormDialog] = useState({ open: false });
+  const [piaFormDialog, setPiaFormDialog] = useState({ open: false });
+  const [breachFormData, setBreachFormData] = useState({
+    description: '',
+    severity: 'medium',
+    affectedRecords: 0
+  });
+  const [piaActivity, setPiaActivity] = useState('');
 
   // Fetch privacy configuration
   const { data: privacyConfig, isLoading: configLoading } = useQuery({
     queryKey: ['privacy-config'],
-    queryFn: () => configService.getPrivacyConfig(),
-    onSuccess: (data) => {
-      if (data?.config) {
-        const config = data.config;
+    queryFn: () => configService.getPrivacyConfig()
+  });
+
+  // Update form when config data is loaded
+  useEffect(() => {
+    if (privacyConfig) {
+      // The service normalizes the response with dataPath: 'config'
+      // So privacyConfig is { success, data, error, metadata }
+      // The actual config is in privacyConfig.data
+      const config = privacyConfig.data || privacyConfig.config || privacyConfig;
+      
+      if (config) {
+        console.log('Loading privacy config into form:', config);
         reset({
           consentScript: config.consentScript || '',
-          transcriptRetention: config.transcriptRetention || 90,
-          recordingRetention: config.recordingRetention || 90,
-          metadataRetention: config.metadataRetention || 365
+          transcriptRetention: config.transcriptRetention ?? 90,
+          recordingRetention: config.recordingRetention ?? 90,
+          metadataRetention: config.metadataRetention ?? 365
         });
       }
     }
-  });
+  }, [privacyConfig, reset]);
 
   // Fetch DSAR requests
   const { data: dsarData, isLoading: dsarLoading } = useQuery({
@@ -129,8 +145,17 @@ const PrivacyPage = () => {
   const { data: complianceReportData, isLoading: complianceLoading } = useQuery({
     queryKey: ['compliance-report'],
     queryFn: async () => {
-      const response = await privacyService.generateComplianceReport('monthly');
-      return response.report;
+      try {
+        const response = await privacyService.generateComplianceReport('monthly');
+        // Handle normalized response structure
+        const report = response?.data?.report || response?.report || response;
+        // Always return a value, never undefined
+        return report || null;
+      } catch (error) {
+        console.error('Compliance report error:', error);
+        // Return null instead of undefined on error
+        return null;
+      }
     },
     enabled: canSeeAll && activeTab === 3
   });
@@ -143,7 +168,11 @@ const PrivacyPage = () => {
       showSuccess('Privacy configuration saved successfully');
       queryClient.invalidateQueries(['privacy-config']);
     },
-    onError: () => showError('Failed to save privacy configuration')
+    onError: (error) => {
+      console.error('Privacy config save error:', error);
+      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to save privacy configuration';
+      showError(errorMessage);
+    }
   });
 
   // Export user data mutation
@@ -203,24 +232,47 @@ const PrivacyPage = () => {
     mutationFn: (processingActivity) => privacyService.generatePrivacyImpactAssessment(processingActivity),
     onSuccess: (data) => {
       showSuccess('Privacy Impact Assessment generated');
-      setPiaDialog({ open: true, pia: data.pia });
+      // Handle normalized response structure
+      const pia = data?.data?.pia || data?.pia || data;
+      setPiaDialog({ open: true, pia });
+      setPiaFormDialog({ open: false });
+      setPiaActivity('');
     },
-    onError: () => showError('Failed to generate PIA')
+    onError: (error) => {
+      console.error('Generate PIA error:', error);
+      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to generate PIA';
+      showError(errorMessage);
+    }
   });
 
   // Report breach mutation
   const reportBreachMutation = useMutation({
-    mutationFn: (breachData) => privacyService.reportDataBreach({ breachData }),
+    mutationFn: (breachData) => privacyService.reportDataBreach(breachData),
     onSuccess: () => {
       showSuccess('Data breach reported successfully');
       setBreachDialog({ open: false });
+      setBreachFormData({
+        description: '',
+        severity: 'medium',
+        affectedRecords: 0
+      });
       queryClient.invalidateQueries(['audit-logs']);
     },
-    onError: () => showError('Failed to report data breach')
+    onError: (error) => {
+      console.error('Report breach error:', error);
+      const errorMessage = error?.message || error?.response?.data?.error || 'Failed to report data breach';
+      showError(errorMessage);
+    }
   });
 
   const onSubmit = (data) => {
+    console.log('Form submitted with data:', data);
     saveConfigMutation.mutate(data);
+  };
+
+  const onError = (errors) => {
+    console.error('Form validation errors:', errors);
+    showError('Please fix the form errors before submitting');
   };
 
   const handleExportData = (userId = null) => {
@@ -274,7 +326,7 @@ const PrivacyPage = () => {
 
       {canSeeAll ? (
         /* Admin/Owner View */
-        <form onSubmit={handleSubmit(onSubmit)}>
+        <form onSubmit={handleSubmit(onSubmit, onError)}>
           {/* Consent Script Editor */}
           <Paper sx={{ p: 3, mb: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
@@ -325,7 +377,7 @@ const PrivacyPage = () => {
             </Typography>
 
             <Grid container spacing={4}>
-              <Grid item xs={12} md={4}>
+              <Grid size={{ xs: 12, md: 4 }}>
                 <Typography variant="subtitle1" gutterBottom>
                   Transcript Retention: {watch('transcriptRetention')} days
                 </Typography>
@@ -354,7 +406,7 @@ const PrivacyPage = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} md={4}>
+              <Grid size={{ xs: 12, md: 4 }}>
                 <Typography variant="subtitle1" gutterBottom>
                   Recording Retention: {watch('recordingRetention')} days
                 </Typography>
@@ -382,7 +434,7 @@ const PrivacyPage = () => {
                 />
               </Grid>
 
-              <Grid item xs={12} md={4}>
+              <Grid size={{ xs: 12, md: 4 }}>
                 <Typography variant="subtitle1" gutterBottom>
                   Metadata Retention: {watch('metadataRetention')} days
                 </Typography>
@@ -464,7 +516,7 @@ const PrivacyPage = () => {
             </Typography>
 
             <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <Typography variant="subtitle2" gutterBottom fontWeight="bold">
                   Lawful Basis for Processing
                 </Typography>
@@ -476,7 +528,7 @@ const PrivacyPage = () => {
                   We process personal data based on consent and legitimate interest for service delivery and quality improvement.
                 </Typography>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <Typography variant="subtitle2" gutterBottom fontWeight="bold">
                   Privacy Policy
                 </Typography>
@@ -690,21 +742,23 @@ const PrivacyPage = () => {
                   </Box>
                 ) : (
                   <Grid container spacing={3}>
-                    {retentionPolicies?.retentionChecks && Object.entries(retentionPolicies.retentionChecks).map(([dataType, check]) => (
-                      <Grid item xs={12} md={4} key={dataType}>
-                        <Paper sx={{ p: 2 }}>
-                          <Typography variant="subtitle1" gutterBottom fontWeight="bold">
-                            {dataType.charAt(0).toUpperCase() + dataType.slice(1)}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Cutoff Date: {formatDateTime(check.cutoffDate)}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Records to Delete: {check.recordsToDelete || 0}
-                          </Typography>
-                        </Paper>
-                      </Grid>
-                    ))}
+                    {retentionPolicies?.retentionChecks && Object.entries(retentionPolicies.retentionChecks)
+                      .filter(([dataType, check]) => check !== null && check !== undefined)
+                      .map(([dataType, check]) => (
+                        <Grid size={{ xs: 12, md: 4 }} key={dataType}>
+                          <Paper sx={{ p: 2 }}>
+                            <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                              {dataType.charAt(0).toUpperCase() + dataType.slice(1)}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Cutoff Date: {check?.cutoffDate ? formatDateTime(check.cutoffDate) : 'N/A'}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Records to Delete: {check?.recordsToDelete || 0}
+                            </Typography>
+                          </Paper>
+                        </Grid>
+                      ))}
                   </Grid>
                 )}
               </Box>
@@ -723,7 +777,7 @@ const PrivacyPage = () => {
                 ) : (
                   complianceReport?.report && (
                     <Grid container spacing={3}>
-                      <Grid item xs={12} md={6}>
+                      <Grid size={{ xs: 12, md: 6 }}>
                         <Paper sx={{ p: 2 }}>
                           <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                             Metrics
@@ -735,7 +789,7 @@ const PrivacyPage = () => {
                           <Typography variant="body2">Data Deletions: {complianceReport.report.metrics.dataDeletions}</Typography>
                         </Paper>
                       </Grid>
-                      <Grid item xs={12} md={6}>
+                      <Grid size={{ xs: 12, md: 6 }}>
                         <Paper sx={{ p: 2 }}>
                           <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                             Compliance Status
@@ -782,7 +836,7 @@ const PrivacyPage = () => {
 
           {/* Additional Admin Sections */}
           <Grid container spacing={3} sx={{ mb: 3 }}>
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Paper sx={{ p: 3 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                   <Assessment color="primary" />
@@ -795,19 +849,14 @@ const PrivacyPage = () => {
                 </Typography>
                 <Button
                   variant="outlined"
-                  onClick={() => {
-                    const activity = prompt('Enter processing activity description:');
-                    if (activity) {
-                      generatePIAMutation.mutate(activity);
-                    }
-                  }}
+                  onClick={() => setPiaFormDialog({ open: true })}
                   disabled={generatePIAMutation.isLoading}
                 >
                   Generate PIA
                 </Button>
               </Paper>
             </Grid>
-            <Grid item xs={12} md={6}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <Paper sx={{ p: 3 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                   <BugReport color="error" />
@@ -833,12 +882,12 @@ const PrivacyPage = () => {
           {canSeeAll && (
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
               <Button
+                type="submit"
                 variant="contained"
                 size="large"
                 startIcon={<Save />}
                 disabled={saveConfigMutation.isLoading}
                 sx={{ minWidth: 150 }}
-                onClick={handleSubmit(onSubmit)}
               >
                 {saveConfigMutation.isLoading ? 'Saving...' : 'Save Configuration'}
               </Button>
@@ -1099,11 +1148,16 @@ const PrivacyPage = () => {
               rows={4}
               fullWidth
               required
-              id="breach-description"
+              value={breachFormData.description}
+              onChange={(e) => setBreachFormData({ ...breachFormData, description: e.target.value })}
             />
             <FormControl fullWidth>
               <InputLabel>Severity</InputLabel>
-              <Select defaultValue="medium" label="Severity" id="breach-severity">
+              <Select
+                value={breachFormData.severity}
+                label="Severity"
+                onChange={(e) => setBreachFormData({ ...breachFormData, severity: e.target.value })}
+              >
                 <MenuItem value="low">Low</MenuItem>
                 <MenuItem value="medium">Medium</MenuItem>
                 <MenuItem value="high">High</MenuItem>
@@ -1114,7 +1168,8 @@ const PrivacyPage = () => {
               label="Affected Records (estimated)"
               type="number"
               fullWidth
-              id="breach-records"
+              value={breachFormData.affectedRecords}
+              onChange={(e) => setBreachFormData({ ...breachFormData, affectedRecords: parseInt(e.target.value || '0') })}
             />
             <Alert severity="warning">
               Data breaches must be reported to the ICO within 72 hours if they pose a risk to individuals' rights and freedoms.
@@ -1122,20 +1177,26 @@ const PrivacyPage = () => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBreachDialog({ open: false })}>Cancel</Button>
+          <Button onClick={() => {
+            setBreachDialog({ open: false });
+            setBreachFormData({
+              description: '',
+              severity: 'medium',
+              affectedRecords: 0
+            });
+          }}>Cancel</Button>
           <Button
             variant="contained"
             color="error"
             onClick={() => {
-              const description = document.getElementById('breach-description')?.value;
-              const severity = document.getElementById('breach-severity')?.value;
-              const affectedRecords = parseInt(document.getElementById('breach-records')?.value || '0');
-              if (description && severity) {
+              if (breachFormData.description && breachFormData.severity) {
                 reportBreachMutation.mutate({
-                  description,
-                  severity,
-                  affectedRecords
+                  description: breachFormData.description,
+                  severity: breachFormData.severity,
+                  affectedRecords: breachFormData.affectedRecords
                 });
+              } else {
+                showError('Please fill in all required fields');
               }
             }}
             disabled={reportBreachMutation.isLoading}
@@ -1145,7 +1206,56 @@ const PrivacyPage = () => {
         </DialogActions>
       </Dialog>
 
-      {/* PIA Dialog */}
+      {/* PIA Form Dialog */}
+      <Dialog
+        open={piaFormDialog.open}
+        onClose={() => {
+          setPiaFormDialog({ open: false });
+          setPiaActivity('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Generate Privacy Impact Assessment</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Processing Activity Description"
+              multiline
+              rows={4}
+              fullWidth
+              required
+              value={piaActivity}
+              onChange={(e) => setPiaActivity(e.target.value)}
+              placeholder="Describe the processing activity for which you want to generate a PIA..."
+            />
+            <Alert severity="info">
+              A Privacy Impact Assessment will be generated based on your description, including data types, lawful basis, risks, and mitigations.
+            </Alert>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setPiaFormDialog({ open: false });
+            setPiaActivity('');
+          }}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              if (piaActivity.trim()) {
+                generatePIAMutation.mutate(piaActivity.trim());
+              } else {
+                showError('Please enter a processing activity description');
+              }
+            }}
+            disabled={generatePIAMutation.isLoading}
+          >
+            {generatePIAMutation.isLoading ? 'Generating...' : 'Generate PIA'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* PIA Results Dialog */}
       <Dialog
         open={piaDialog.open}
         onClose={() => setPiaDialog({ open: false })}

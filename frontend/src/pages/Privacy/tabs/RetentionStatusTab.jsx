@@ -31,16 +31,16 @@ const RetentionStatusTab = ({ state, handlers }) => {
       ) : (
         <Grid container spacing={3}>
           {retentionPolicies?.retentionChecks && Object.entries(retentionPolicies.retentionChecks).map(([dataType, check]) => (
-            <Grid item xs={12} md={4} key={dataType}>
+            <Grid size={{ xs: 12, md: 4 }} key={dataType}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                   {dataType.charAt(0).toUpperCase() + dataType.slice(1)}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Cutoff Date: {formatDateTime(check.cutoffDate)}
+                  Cutoff Date: {formatDateTime(check?.cutoffDate)}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Records to Delete: {check.recordsToDelete || 0}
+                  Records to Delete: {check?.recordsToDelete || 0}
                 </Typography>
               </Paper>
             </Grid>
