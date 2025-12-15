@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import CallRecord from '../models/callRecord.js';
 
 /**
@@ -17,6 +18,18 @@ class CallCleanupService {
    */
   async cleanupStaleCalls() {
     try {
+      // Wait for MongoDB connection before querying
+      if (mongoose.connection.readyState !== 1) {
+        console.log('⏳ [CALL CLEANUP] Waiting for MongoDB connection...');
+        await new Promise((resolve) => {
+          if (mongoose.connection.readyState === 1) {
+            resolve();
+          } else {
+            mongoose.connection.once('connected', resolve);
+          }
+        });
+      }
+
       const now = new Date();
       const thresholdTime = new Date(now.getTime() - this.staleThresholdMinutes * 60 * 1000);
 

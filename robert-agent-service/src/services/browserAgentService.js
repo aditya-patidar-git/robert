@@ -1528,189 +1528,94 @@ class BrowserAgentService {
     try {
       console.log('🔐 Logging into CRM...');
       
+      // Step 1: Navigate to CRM_LOGIN_URL
+      console.log('🔐 Navigating to CRM login URL...');
       await page.goto(this.crmCredentials.loginUrl);
       await page.waitForLoadState('networkidle');
-      
-      // Initial human-like behavior: simulate reading the page
-      console.log('📖 Simulating reading the login page...');
-      await page.waitForTimeout(2000 + Math.random() * 2000);
-      
-      // Small random scroll to simulate reading
-      await page.evaluate(() => {
-        window.scrollBy(0, Math.random() * 50);
-      });
-      await page.waitForTimeout(500 + Math.random() * 500);
       
       // Take screenshot of login page
       await this.takeScreenshot(page, `${auditId}_login_start.png`);
       
-      // Wait for form fields to be ready
-      await page.waitForSelector('#Loginname input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
-      await page.waitForSelector('#Username input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
-      await page.waitForSelector('#UserPassword input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
-      await page.waitForTimeout(1000);
+      // Step 2: Set authentication cookies
+      console.log('🍪 Setting authentication cookies...');
+      const crmHomeUrl = process.env.CRM_HOME_URL || 'https://takeabyte.co.uk/InContact';
+      const loginUrlObj = new URL(this.crmCredentials.loginUrl);
+      const domain = loginUrlObj.hostname;
       
-      // Get field locators
-      const loginNameField = page.locator('#Loginname input.dx-texteditor-input');
-      const usernameField = page.locator('#Username input.dx-texteditor-input');
-      const passwordField = page.locator('#UserPassword input.dx-texteditor-input');
-      const loginButton = page.locator('#btnLogin');
+      // Get cookie values from environment
+      const cName = process.env.CRM_LOGIN_NAME || this.crmCredentials.loginName;
+      const uName = process.env.CRM_USERNAME || this.crmCredentials.username;
       
-      // Fill login form with human-like typing
-      console.log('⌨️ Filling login form with human-like behavior...');
+      // Get .AspNetCore cookie values from environment
+      const antiforgeryCookieValue = process.env.CRM_ANTIFORGERY_COOKIE;
+      const aspNetCoreCookiesValue = process.env.CRM_SESSION_COOKIE;
       
-      // Move mouse to first field using Bezier curve
-      const loginNameBox = await loginNameField.boundingBox().catch(() => null);
-      if (loginNameBox) {
-        const viewportSize = page.viewportSize() || { width: 1280, height: 720 };
-        const currentMousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
-        const fieldPath = generateBezierPath(
-          currentMousePos.x, currentMousePos.y,
-          loginNameBox.x + loginNameBox.width / 2,
-          loginNameBox.y + loginNameBox.height / 2,
-          10
-        );
-        for (const point of fieldPath) {
-          await page.mouse.move(point.x, point.y);
-          await page.waitForTimeout(30 + Math.random() * 50);
+      // Validate required cookies are present
+      if (!antiforgeryCookieValue) {
+        throw new Error('CRM_ANTIFORGERY_COOKIE environment variable is required');
+      }
+      if (!aspNetCoreCookiesValue) {
+        throw new Error('CRM_SESSION_COOKIE environment variable is required');
+      }
+      
+      // Set cookies using Playwright's context API
+      await page.context().addCookies([
+        {
+          name: '.AspNetCore.Antiforgery.LaUgxCHdbb8',
+          value: antiforgeryCookieValue,
+          domain: domain,
+          path: '/',
+          httpOnly: true,
+          secure: true,
+          sameSite: 'Lax'
+        },
+        {
+          name: '.AspNetCore.Cookies',
+          value: aspNetCoreCookiesValue,
+          domain: domain,
+          path: '/',
+          httpOnly: true,
+          secure: true,
+          sameSite: 'Lax'
+        },
+        {
+          name: 'cName',
+          value: cName,
+          domain: domain,
+          path: '/',
+          httpOnly: false,
+          secure: true,
+          sameSite: 'Lax'
+        },
+        {
+          name: 'uName',
+          value: uName,
+          domain: domain,
+          path: '/',
+          httpOnly: false,
+          secure: true,
+          sameSite: 'Lax'
         }
-      }
+      ]);
       
-      // Fill Login Name
-      await loginNameField.click();
-      await page.waitForTimeout(200 + Math.random() * 200);
-      await loginNameField.type(this.crmCredentials.loginName, { delay: 30 + Math.random() * 50 });
-      await loginNameField.blur();
-      await page.waitForTimeout(1000 + Math.random() * 500);
+      console.log('✅ Cookies set successfully');
       
-      // Move to username field using Tab (more natural)
-      await page.keyboard.press('Tab');
-      await page.waitForTimeout(200 + Math.random() * 200);
+      // Step 3: Navigate to CRM_HOME_URL and reload
+      console.log('🔐 Navigating to CRM home URL...');
+      await page.goto(crmHomeUrl, { waitUntil: 'networkidle' });
+      await page.reload({ waitUntil: 'networkidle' });
+      await page.waitForTimeout(2000);
       
-      // Small mouse movement
-      const usernameBox = await usernameField.boundingBox().catch(() => null);
-      if (usernameBox) {
-        await page.mouse.move(
-          usernameBox.x + usernameBox.width / 2 + (Math.random() * 10 - 5),
-          usernameBox.y + usernameBox.height / 2 + (Math.random() * 10 - 5)
-        );
-        await page.waitForTimeout(100 + Math.random() * 100);
-      }
-      
-      // Fill Username
-      await usernameField.click();
-      await page.waitForTimeout(200 + Math.random() * 200);
-      await usernameField.type(this.crmCredentials.username, { delay: 30 + Math.random() * 50 });
-      await usernameField.blur();
-      await page.waitForTimeout(1000 + Math.random() * 500);
-      
-      // Move to password field using Tab
-      await page.keyboard.press('Tab');
-      await page.waitForTimeout(200 + Math.random() * 200);
-      
-      // Small mouse movement
-      const passwordBox = await passwordField.boundingBox().catch(() => null);
-      if (passwordBox) {
-        await page.mouse.move(
-          passwordBox.x + passwordBox.width / 2 + (Math.random() * 10 - 5),
-          passwordBox.y + passwordBox.height / 2 + (Math.random() * 10 - 5)
-        );
-        await page.waitForTimeout(100 + Math.random() * 100);
-      }
-      
-      // Fill Password (type slower for sensitive data)
-      await passwordField.click();
-      await page.waitForTimeout(200 + Math.random() * 200);
-      await passwordField.type(this.crmCredentials.password, { delay: 50 + Math.random() * 100 });
-      await passwordField.blur();
-      await page.waitForTimeout(300 + Math.random() * 200); // Optimized: 300-500ms (reduced from 1000-1500ms)
-      
-      // Trigger form events
-      await page.locator('body').click({ position: { x: 100, y: 100 } });
-      await page.waitForTimeout(200); // Optimized: 200ms (reduced from 500ms)
-      
-      // Wait for reCAPTCHA to execute and calculate score (enhanced detection)
-      const recaptchaStatus = await waitForRecaptchaReady(page, 3000);
-      
-      // Log reCAPTCHA status for audit trail
-      if (recaptchaStatus.errors.length > 0) {
-        console.warn(`⚠️ reCAPTCHA errors detected: ${recaptchaStatus.errors.join(', ')}`);
-      }
-      if (recaptchaStatus.warnings.length > 0) {
-        console.warn(`⚠️ reCAPTCHA warnings: ${recaptchaStatus.warnings.join(', ')}`);
-      }
-      
-      // CRITICAL: Click the reCAPTCHA checkbox if it's v2
-      if (recaptchaStatus.version === 'v2' && recaptchaStatus.hasRecaptcha) {
-        console.log('🔘 Clicking reCAPTCHA checkbox...');
-        const checkboxClicked = await clickRecaptchaCheckbox(page);
-        if (checkboxClicked) {
-          console.log('✅ reCAPTCHA checkbox clicked successfully');
-          
-          // Check for image challenge and wait for resolution
-          const challengeDetected = await checkForRecaptchaChallenge(page);
-          if (challengeDetected) {
-            console.warn('⚠️ Image challenge detected and not auto-resolved - login may fail');
-          }
-          
-          // Wait for reCAPTCHA to process after clicking
-          await page.waitForTimeout(2000 + Math.random() * 1000);
-        } else {
-          console.warn('⚠️ Could not click reCAPTCHA checkbox - will proceed anyway');
-        }
-      }
-      
-      // Extended post-fill observation period (2-4 seconds) with micro-interactions
-      const postFillWait = 2000 + Math.random() * 2000; // 2-4 seconds
-      console.log(`⏳ Post-fill observation period: ${Math.round(postFillWait)}ms`);
-      
-      // Micro-interactions during observation
-      const formBox = await page.locator('form').first().boundingBox().catch(() => null);
-      if (formBox) {
-        // Small mouse movements
-        for (let i = 0; i < 2; i++) {
-          await page.mouse.move(
-            formBox.x + formBox.width / 2 + (Math.random() * 20 - 10),
-            formBox.y + formBox.height / 2 + (Math.random() * 20 - 10)
-          );
-          await page.waitForTimeout(200 + Math.random() * 300);
-        }
-        
-        // Field focus/blur cycles
-        await loginNameField.focus().catch(() => {});
-        await page.waitForTimeout(100 + Math.random() * 200);
-        await usernameField.focus().catch(() => {});
-        await page.waitForTimeout(100 + Math.random() * 200);
-        await page.keyboard.press('Tab');
-        await page.waitForTimeout(100 + Math.random() * 200);
-      }
-      
-      // Remaining wait time
-      const remainingWait = postFillWait - 1000; // Subtract time already spent
-      if (remainingWait > 0) {
-        await page.waitForTimeout(remainingWait);
-      }
-      
-      // Simulate human behavior before clicking login button
-      const formLocator = page.locator('form').first();
-      await simulateHumanBehaviorBeforeSubmit(page, formLocator, loginButton);
-      
-      // Click Login button
-      console.log('🔐 Clicking login button...');
-      await loginButton.click();
-      
-      await page.waitForLoadState('networkidle');
-      
-      // Take screenshot after login attempt
+      // Take screenshot after navigation
       await this.takeScreenshot(page, `${auditId}_login_attempted.png`);
       
-      // Verify login success by looking for the sidebar with Contacts tab
+      // Step 4: Verify we're on Contacts page
       try {
         // Wait for the sidebar to appear with Contacts tab
         await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
         
         // Additional verification - check if login form is gone
-        const stillOnLoginPage = await page.locator('#Loginname').isVisible();
+        const stillOnLoginPage = await page.locator('#Loginname').isVisible({ timeout: 2000 }).catch(() => false);
         if (stillOnLoginPage) {
           throw new Error('Login failed - still on login page');
         }
@@ -2470,6 +2375,23 @@ class BrowserAgentService {
           auditId,
           screenshots: result.screenshots || [],
           courseType: args.courseType
+        };
+      }
+
+      // If result indicates preferences are required, return it with preference prompt
+      if (result.requiresPreferences) {
+        return {
+          success: false,
+          requiresPreferences: true,
+          missingPreferences: result.missingPreferences || [],
+          message: result.message || 'I need some additional information to proceed with your booking.',
+          validOptions: result.validOptions || {},
+          dryRun: true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: result.screenshots || [],
+          courseType: args.courseType,
+          sessionDetails: result.sessionDetails
         };
       }
 

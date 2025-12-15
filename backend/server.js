@@ -87,6 +87,9 @@ mongoose.connect(mongoUri)
     } catch (error) {
       console.error("❌ Service initialization error:", error);
     }
+
+    // Start call cleanup service after MongoDB connection is ready
+    callCleanupService.start();
   })
   .catch(err => {
     console.error("❌ [backend] MongoDB connection error:", err);
@@ -176,7 +179,4 @@ app.get("/api/outbound/recording/:callSid", authenticateToken, proxyRecording);
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  
-  // Start call cleanup service after server starts
-  callCleanupService.start();
 });

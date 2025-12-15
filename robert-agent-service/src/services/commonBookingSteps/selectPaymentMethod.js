@@ -82,23 +82,79 @@ export async function selectPaymentMethod(page, screenshotsDir) {
       console.log(`🔍 [STEP 11] Matching option visible: ${isMatchingOptionVisible}`);
       
       if (!isMatchingOptionVisible) {
-        console.log('🔍 [STEP 11] Matching option not visible, scrolling in dropdown...');
+        console.log('🔍 [STEP 11] Matching option not visible, scrolling to option...');
         
-        // Scroll up in the dropdown menu to make option visible
-        await page.keyboard.press('Home'); // Go to top of dropdown
-        await page.waitForTimeout(1000);
+        // Try multiple scroll strategies
+        try {
+          // Strategy 1: Direct scrollIntoView
+          await matchingOption.evaluate((el) => {
+            el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+          });
+          await page.waitForTimeout(800);
+          console.log('✅ [STEP 11] Used scrollIntoView to scroll to option');
+        } catch (e) {
+          console.log('⚠️ [STEP 11] Direct scrollIntoView failed, trying alternative...');
+        }
         
-        // Alternative: try to scroll the dropdown container
-        const dropdownMenu = searchContext.locator('[role="listbox"], .dx-dropdownlist, .dx-list, .dx-list-items').first();
+        // Strategy 2: Scroll dropdown container to position
+        const dropdownMenu = searchContext.locator('[role="listbox"]').first();
         if (await dropdownMenu.count() > 0) {
-          await dropdownMenu.evaluate(el => el.scrollTop = 0);
-          await page.waitForTimeout(1000);
+          // Get option's position - Mastercard is at index 44
+          // Calculate scroll position to center the option
+          const optionIndex = 44; // Mastercard index from logs
+          const optionHeight = 30; // Approximate height per option
+          const scrollPosition = optionIndex * optionHeight - 200; // Offset to center in viewport
+          
+          await dropdownMenu.evaluate((el, pos) => {
+            el.scrollTop = Math.max(0, pos);
+          }, scrollPosition);
+          await page.waitForTimeout(800);
+          console.log(`✅ [STEP 11] Scrolled dropdown container to position ${scrollPosition}`);
+        }
+        
+        // Strategy 3: Try using bounding box to scroll
+        const boundingBox = await matchingOption.boundingBox().catch(() => null);
+        if (boundingBox) {
+          try {
+            await matchingOption.evaluate((el) => {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+            await page.waitForTimeout(1000);
+            console.log('✅ [STEP 11] Used bounding box scrollIntoView');
+          } catch (e) {
+            console.log('⚠️ [STEP 11] Bounding box scroll failed');
+          }
         }
       }
       
       // Now try to find and click the matching option
-      await matchingOption.waitFor({ state: 'visible', timeout: 5000 });
-      console.log('💳 [STEP 11] Matching payment method option is now visible, clicking...');
+      // Use a more lenient check - if it's in the DOM, try clicking even if not fully visible
+      const isNowVisible = await matchingOption.isVisible().catch(() => false);
+      if (!isNowVisible) {
+        console.log('⚠️ [STEP 11] Option still not visible, but attempting to click anyway (may be in viewport but not fully visible)...');
+        // Check if it's at least in viewport
+        const isInViewport = await matchingOption.evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+          return rect.top >= -100 && rect.bottom <= viewportHeight + 100;
+        }).catch(() => false);
+        
+        if (isInViewport) {
+          console.log('✅ [STEP 11] Option is in viewport, proceeding with click...');
+        } else {
+          console.log('⚠️ [STEP 11] Option not in viewport, will attempt click anyway...');
+        }
+      }
+      
+      // Try to wait for visibility with longer timeout, but don't fail if it times out
+      try {
+        await matchingOption.waitFor({ state: 'visible', timeout: 3000 });
+        console.log('✅ [STEP 11] Option is now visible');
+      } catch (e) {
+        console.log('⚠️ [STEP 11] Option visibility wait timed out, but continuing...');
+      }
+      
+      console.log('💳 [STEP 11] Clicking payment method option...');
       await matchingOption.click();
       
       // WAIT FOR PAYMENT METHOD SELECTION TO BE APPLIED - 2 seconds (same as other dropdowns)

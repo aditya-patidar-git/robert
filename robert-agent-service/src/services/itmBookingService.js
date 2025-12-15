@@ -281,6 +281,26 @@ class ITMBookingService {
           console.warn('⚠️ Failed to send confirmation email (non-critical):', emailError.message);
         }
 
+        // STEP 11: Send Terms & Conditions email
+        try {
+          console.log('📧 Step 11: Sending Terms & Conditions email...');
+          await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-terms-email-sent.png', this.screenshotsDir));
+          console.log('✅ Step 11 completed: Terms & Conditions email sent');
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send Terms & Conditions email (non-critical):', emailError.message);
+        }
+
+        // STEP 12: Send SMS confirmation
+        try {
+          console.log('📱 Step 12: Sending SMS confirmation...');
+          await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'itm');
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-12-sms-sent.png', this.screenshotsDir));
+          console.log('✅ Step 12 completed: SMS confirmation sent');
+        } catch (smsError) {
+          console.warn('⚠️ Failed to send SMS confirmation (non-critical):', smsError.message);
+        }
+
       } else {
         // NEW CLIENT WORKFLOW
         // STEP 4: Navigate to Diaries and select session
@@ -370,6 +390,26 @@ class ITMBookingService {
           confirmationEmailSent = true;
         } catch (emailError) {
           console.warn('⚠️ Failed to send confirmation email (non-critical):', emailError.message);
+        }
+
+        // STEP 10: Send Terms & Conditions email
+        try {
+          console.log('📧 Step 10: Sending Terms & Conditions email...');
+          await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-terms-email-sent.png', this.screenshotsDir));
+          console.log('✅ Step 10 completed: Terms & Conditions email sent');
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send Terms & Conditions email (non-critical):', emailError.message);
+        }
+
+        // STEP 11: Send SMS confirmation
+        try {
+          console.log('📱 Step 11: Sending SMS confirmation...');
+          await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'itm');
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-sms-sent.png', this.screenshotsDir));
+          console.log('✅ Step 11 completed: SMS confirmation sent');
+        } catch (smsError) {
+          console.warn('⚠️ Failed to send SMS confirmation (non-critical):', smsError.message);
         }
       }
 
@@ -919,90 +959,155 @@ async checkAvailabilityAndNoteDetails(page) {
       console.log('⏳ [STEP 8] Waiting for booking options to be visible...');
       await page.waitForTimeout(2000);
       
-      // Select bike type from Booking options (ITM only offers 3 options as per documents)
-      console.log('🚲 [STEP 8] Selecting bike type from Booking options...');
+      // Scroll to booking options section
+      console.log('📜 [STEP 8] Scrolling to booking options section...');
       await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
       await page.waitForTimeout(2000);
       
-      const bikeType = bookingArgs.bikeType || '125cc automatic';
+      // Find all booking option groups
+      console.log('📋 [STEP 8] Finding all booking option groups...');
+      const allGroups = searchContext.locator('.jqxInputBookingOptionsSelectGroupOuter');
+      const groupCount = await allGroups.count();
+      console.log(`📊 [STEP 8] Found ${groupCount} booking option group(s)`);
       
-      const bikeTypeMap = {
-        '125cc automatic': /125cc automatic.*scooter/i,
-        '50cc automatic': /50cc automatic/i,
-        '125cc manual': /125cc manual.*geared/i
-      };
+      if (groupCount === 0) {
+        throw new Error('No booking option groups found on price page');
+      }
       
-      const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
-      console.log(`✅ [STEP 8] Selecting bike type: ${bikeType}`);
-      
-      // Find and select the bike type option using div-based checkbox structure
-      // Options are in: .jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable
-      // Checkbox is: .jqx_inputBookingOptionsSelect_check
-      // Option text is in: .optionName span
-      const allOptions = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
-      const optionCount = await allOptions.count();
-      console.log(`🔍 [STEP 8] Found ${optionCount} selectable booking options`);
-      
-      let matchingOption = null;
-      let matchingRowIndex = -1;
-      
-      // Iterate through all options to find matching bike type
-      for (let i = 0; i < optionCount; i++) {
-        const optionRow = allOptions.nth(i);
-        const optionNameSpan = optionRow.locator('.optionName span');
+      // Process each group
+      for (let groupIndex = 0; groupIndex < groupCount; groupIndex++) {
+        const group = allGroups.nth(groupIndex);
         
-        if (await optionNameSpan.count() > 0) {
-          const optionText = await optionNameSpan.textContent();
-          const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+        // Get group heading to identify what question this group is asking
+        const groupHeading = group.locator('h1.jqx_formBoilerPlateText.jqx_formHeading span').first();
+        const headingText = await groupHeading.textContent().catch(() => '');
+        const normalizedHeading = headingText ? headingText.trim() : '';
+        
+        console.log(`📋 [STEP 8] Processing group ${groupIndex + 1}/${groupCount}: "${normalizedHeading || '(no heading)'}"`);
+        
+        // Skip groups that are not relevant for ITM
+        if (normalizedHeading.toLowerCase().includes('cbt course type')) {
+          console.log(`⏭️ [STEP 8] Skipping "CBT course type" group (not relevant for ITM)`);
+          continue;
+        }
+        
+        if (normalizedHeading.toLowerCase().includes('full licence')) {
+          console.log(`⏭️ [STEP 8] Skipping "Full Licence courses" group (not relevant for ITM)`);
+          continue;
+        }
+        
+        // Handle bike type group (group_id="0" or no specific heading)
+        // This is the main group we need to handle for ITM
+        const groupOptions = group.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+        const optionCount = await groupOptions.count();
+        console.log(`   Found ${optionCount} options in this group`);
+        
+        if (optionCount === 0) {
+          console.log(`⚠️ [STEP 8] No options found in group "${normalizedHeading}", skipping...`);
+          continue;
+        }
+        
+        // For bike type group, select the appropriate bike type
+        if (!normalizedHeading || normalizedHeading === '' || normalizedHeading.toLowerCase().includes('bike') || normalizedHeading.toLowerCase().includes('motorcycle')) {
+          console.log('🚲 [STEP 8] This appears to be the bike type group, selecting bike type...');
           
-          // Check if option text matches the bike type pattern
-          if (normalizedText && bikePattern.test(normalizedText)) {
-            console.log(`✅ [STEP 8] Found matching option at index ${i}: "${optionText}"`);
-            matchingOption = optionRow;
-            matchingRowIndex = i;
-            break;
+          const bikeType = bookingArgs.bikeType || '125cc automatic';
+          const bikeTypeMap = {
+            '125cc automatic': /125cc automatic.*scooter/i,
+            '50cc automatic': /50cc automatic/i,
+            '125cc manual': /125cc manual.*geared/i
+          };
+          
+          const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
+          console.log(`✅ [STEP 8] Selecting bike type: ${bikeType}`);
+          
+          let matchingOption = null;
+          let matchingRowIndex = -1;
+          
+          // Find matching bike type option in this group
+          for (let i = 0; i < optionCount; i++) {
+            const optionRow = groupOptions.nth(i);
+            const optionNameSpan = optionRow.locator('.optionName span');
+            
+            if (await optionNameSpan.count() > 0) {
+              const optionText = await optionNameSpan.textContent();
+              const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+              
+              if (normalizedText && bikePattern.test(normalizedText)) {
+                console.log(`✅ [STEP 8] Found matching bike type option at index ${i}: "${optionText}"`);
+                matchingOption = optionRow;
+                matchingRowIndex = i;
+                break;
+              }
+            }
           }
-        }
-      }
-      
-      if (matchingOption && matchingRowIndex >= 0) {
-        // Click the checkbox div inside the matching row
-        const checkDiv = matchingOption.locator('.jqx_inputBookingOptionsSelect_check').first();
-        if (await checkDiv.count() > 0) {
-          await checkDiv.click();
-          console.log(`✅ [STEP 8] Clicked checkbox for bike type option at index ${matchingRowIndex}`);
-        } else {
-          // Fallback: click the row itself
-          await matchingOption.click();
-          console.log(`✅ [STEP 8] Clicked row for bike type option at index ${matchingRowIndex}`);
-        }
-      } else {
-        // Fallback: try selecting first available option
-        console.log('⚠️ [STEP 8] No matching bike type option found, selecting first available option');
-        const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-        if (await firstOption.count() > 0) {
-          const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
-          if (await checkDiv.count() > 0) {
-            await checkDiv.click();
-            console.log('✅ [STEP 8] Selected first available option as fallback');
+          
+          if (matchingOption && matchingRowIndex >= 0) {
+            const checkDiv = matchingOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+            if (await checkDiv.count() > 0) {
+              await checkDiv.click();
+              const selectedText = await matchingOption.locator('.optionName span').textContent();
+              console.log(`✅ [STEP 8] Selected bike type: "${selectedText}"`);
+              await page.waitForTimeout(500);
+            } else {
+              await matchingOption.click();
+              const selectedText = await matchingOption.locator('.optionName span').textContent();
+              console.log(`✅ [STEP 8] Clicked bike type row: "${selectedText}"`);
+              await page.waitForTimeout(500);
+            }
           } else {
-            await firstOption.click();
-            console.log('✅ [STEP 8] Clicked first available option row as fallback');
+            console.log(`⚠️ [STEP 8] No matching bike type found in this group, selecting first available option`);
+            const firstOption = groupOptions.first();
+            const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+            if (await checkDiv.count() > 0) {
+              await checkDiv.click();
+              const selectedText = await firstOption.locator('.optionName span').textContent();
+              console.log(`✅ [STEP 8] Selected first option as fallback: "${selectedText}"`);
+            } else {
+              await firstOption.click();
+              const selectedText = await firstOption.locator('.optionName span').textContent();
+              console.log(`✅ [STEP 8] Clicked first option row as fallback: "${selectedText}"`);
+            }
+            await page.waitForTimeout(500);
           }
         } else {
-          throw new Error('No selectable booking options found on price page');
+          // For other groups, check if selection is required
+          // Get group attributes to check requirements
+          const groupContainer = group.locator('.jqxInputBookingOptionsSelectGroup').first();
+          const selectAtLeast = await groupContainer.getAttribute('data-select_at_least').catch(() => '0');
+          const selectAtMost = await groupContainer.getAttribute('data-select_at_most').catch(() => '255');
+          
+          console.log(`   Group "${normalizedHeading}": select_at_least=${selectAtLeast}, select_at_most=${selectAtMost}`);
+          
+          // If selection is required (select_at_least > 0), select first option
+          if (parseInt(selectAtLeast) > 0) {
+            console.log(`⚠️ [STEP 8] Group "${normalizedHeading}" requires at least ${selectAtLeast} selection(s), selecting first option...`);
+            const firstOption = groupOptions.first();
+            const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+            if (await checkDiv.count() > 0) {
+              await checkDiv.click();
+              const optionText = await firstOption.locator('.optionName span').textContent();
+              console.log(`✅ [STEP 8] Selected first option in "${normalizedHeading}": "${optionText}"`);
+              await page.waitForTimeout(500);
+            } else {
+              await firstOption.click();
+              const optionText = await firstOption.locator('.optionName span').textContent();
+              console.log(`✅ [STEP 8] Clicked first option in "${normalizedHeading}": "${optionText}"`);
+              await page.waitForTimeout(500);
+            }
+          } else {
+            console.log(`ℹ️ [STEP 8] Group "${normalizedHeading}" does not require selection (select_at_least=0), skipping...`);
+          }
         }
       }
       
+      console.log(`✅ [STEP 8] Processed all booking option groups`);
+      
+      // Wait for all selections to register
       await page.waitForTimeout(1000);
       
-      console.log(`✅ [STEP 8] Selected bike type option from booking form`);
-      
-      // Wait for selection to register
-      await page.waitForTimeout(1000);
-      
-      // Take screenshot after selection
-      await commonSteps.takeScreenshot(targetPage, this.screenshotsDir, 'bike-option-selected.png');
+      // Take screenshot after all selections
+      await commonSteps.takeScreenshot(targetPage, 'bike-option-selected.png', this.screenshotsDir);
       
       // Click NEXT button using the specific ID from HTML structure
       console.log('➡️ [STEP 8] Clicking NEXT...');

@@ -55,10 +55,5 @@ LanguageVoiceMappingSchema.statics.initializeDefaults = async function() {
 
 const LanguageVoiceMapping = mongoose.model("LanguageVoiceMapping", LanguageVoiceMappingSchema);
 
-// Initialize defaults on model load
-LanguageVoiceMapping.initializeDefaults().catch(err => {
-  console.error('Error initializing language/voice mappings:', err);
-});
-
 export default LanguageVoiceMapping;
 

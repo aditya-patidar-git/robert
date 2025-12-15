@@ -1,8 +1,7 @@
 import { takeScreenshot } from './utils.js';
-import { waitForRecaptchaReady, simulateHumanBehaviorBeforeSubmit, generateBezierPath } from '../../utils/stealthUtils.js';
 
 /**
- * Step 2: Login to CRM
+ * Step 2: Login to CRM using cookie-based authentication
  * @param {Page} page - Playwright page object
  * @param {Object} credentials - CRM credentials object
  * @param {string} credentials.loginUrl - CRM login URL
@@ -47,127 +46,88 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
       return true; // Return success status
     }
     
+    // Step 1: Navigate to CRM_LOGIN_URL
+    console.log('🔐 [STEP 2] Navigating to CRM login URL...');
     await page.goto(credentials.loginUrl);
     await page.waitForLoadState('networkidle');
-    
-    // Initial human-like behavior: simulate reading the page
-    console.log('📖 Simulating reading the login page...');
-    await page.waitForTimeout(2000 + Math.random() * 2000);
-    
-    // Small random scroll to simulate reading
-    await page.evaluate(() => {
-      window.scrollBy(0, Math.random() * 50);
-    });
-    await page.waitForTimeout(500 + Math.random() * 500);
     
     // Take screenshot of login page
     await takeScreenshot(page, 'login-page-loaded.png', screenshotsDir);
     
-    // Wait for form fields to be ready
-    await page.waitForSelector('#Loginname input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
-    await page.waitForSelector('#Username input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
-    await page.waitForSelector('#UserPassword input.dx-texteditor-input', { state: 'visible', timeout: 15000 });
-    await page.waitForTimeout(1000);
+    // Step 2: Set authentication cookies
+    console.log('🍪 [STEP 2] Setting authentication cookies...');
+    const crmHomeUrl = process.env.CRM_HOME_URL || 'https://takeabyte.co.uk/InContact';
+    const loginUrlObj = new URL(credentials.loginUrl);
+    const domain = loginUrlObj.hostname;
     
-    // Get field locators
-    const loginNameField = page.locator('#Loginname input.dx-texteditor-input');
-    const usernameField = page.locator('#Username input.dx-texteditor-input');
-    const passwordField = page.locator('#UserPassword input.dx-texteditor-input');
-    const loginButton = page.locator('#btnLogin');
+    // Get cookie values from environment
+    const cName = process.env.CRM_LOGIN_NAME || credentials.loginName;
+    const uName = process.env.CRM_USERNAME || credentials.username;
     
-    // Fill login form with human-like typing
-    console.log('⌨️ Filling login form with human-like behavior...');
+    // Get .AspNetCore cookie values from environment
+    const antiforgeryCookieValue = process.env.CRM_ANTIFORGERY_COOKIE;
+    const aspNetCoreCookiesValue = process.env.CRM_SESSION_COOKIE;
     
-    // Move mouse to first field using Bezier curve
-    const loginNameBox = await loginNameField.boundingBox().catch(() => null);
-    if (loginNameBox) {
-      const viewportSize = page.viewportSize() || { width: 1280, height: 720 };
-      const currentMousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
-      const fieldPath = generateBezierPath(
-        currentMousePos.x, currentMousePos.y,
-        loginNameBox.x + loginNameBox.width / 2,
-        loginNameBox.y + loginNameBox.height / 2,
-        10
-      );
-      for (const point of fieldPath) {
-        await page.mouse.move(point.x, point.y);
-        await page.waitForTimeout(30 + Math.random() * 50);
+    // Validate required cookies are present
+    if (!antiforgeryCookieValue) {
+      throw new Error('CRM_ANTIFORGERY_COOKIE environment variable is required');
+    }
+    if (!aspNetCoreCookiesValue) {
+      throw new Error('CRM_SESSION_COOKIE environment variable is required');
+    }
+    
+    // Set cookies using Playwright's context API
+    await page.context().addCookies([
+      {
+        name: '.AspNetCore.Antiforgery.LaUgxCHdbb8',
+        value: antiforgeryCookieValue,
+        domain: domain,
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax'
+      },
+      {
+        name: '.AspNetCore.Cookies',
+        value: aspNetCoreCookiesValue,
+        domain: domain,
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax'
+      },
+      {
+        name: 'cName',
+        value: cName,
+        domain: domain,
+        path: '/',
+        httpOnly: false,
+        secure: true,
+        sameSite: 'Lax'
+      },
+      {
+        name: 'uName',
+        value: uName,
+        domain: domain,
+        path: '/',
+        httpOnly: false,
+        secure: true,
+        sameSite: 'Lax'
       }
-    }
+    ]);
     
-    // Fill Login Name
-    await loginNameField.click();
-    await page.waitForTimeout(200 + Math.random() * 200);
-    await loginNameField.type(credentials.loginName, { delay: 30 + Math.random() * 50 });
-    await loginNameField.blur();
-    await page.waitForTimeout(1000 + Math.random() * 500);
+    console.log('✅ [STEP 2] Cookies set successfully');
     
-    // Move to username field using Tab (more natural)
-    await page.keyboard.press('Tab');
-    await page.waitForTimeout(200 + Math.random() * 200);
+    // Step 3: Navigate to CRM_HOME_URL and reload
+    console.log('🔐 [STEP 2] Navigating to CRM home URL...');
+    await page.goto(crmHomeUrl, { waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(2000);
     
-    // Small mouse movement
-    const usernameBox = await usernameField.boundingBox().catch(() => null);
-    if (usernameBox) {
-      await page.mouse.move(
-        usernameBox.x + usernameBox.width / 2 + (Math.random() * 10 - 5),
-        usernameBox.y + usernameBox.height / 2 + (Math.random() * 10 - 5)
-      );
-      await page.waitForTimeout(100 + Math.random() * 100);
-    }
-    
-    // Fill Username
-    await usernameField.click();
-    await page.waitForTimeout(200 + Math.random() * 200);
-    await usernameField.type(credentials.username, { delay: 30 + Math.random() * 50 });
-    await usernameField.blur();
-    await page.waitForTimeout(1000 + Math.random() * 500);
-    
-    // Move to password field using Tab
-    await page.keyboard.press('Tab');
-    await page.waitForTimeout(200 + Math.random() * 200);
-    
-    // Small mouse movement
-    const passwordBox = await passwordField.boundingBox().catch(() => null);
-    if (passwordBox) {
-      await page.mouse.move(
-        passwordBox.x + passwordBox.width / 2 + (Math.random() * 10 - 5),
-        passwordBox.y + passwordBox.height / 2 + (Math.random() * 10 - 5)
-      );
-      await page.waitForTimeout(100 + Math.random() * 100);
-    }
-    
-    // Fill Password (type slower for sensitive data)
-    await passwordField.click();
-    await page.waitForTimeout(200 + Math.random() * 200);
-    await passwordField.type(credentials.password, { delay: 50 + Math.random() * 100 });
-    await passwordField.blur();
-    await page.waitForTimeout(1000 + Math.random() * 500); // Reduced from 1500-2500ms
-    
-    // Trigger form events
-    await page.locator('body').click({ position: { x: 100, y: 100 } });
-    await page.waitForTimeout(500); // Reduced from 1000ms
-    
-    // Wait for reCAPTCHA to execute and calculate score
-    await waitForRecaptchaReady(page, 3000); // Reduced from 5000ms (usually ready faster)
-    
-    // Additional wait to let reCAPTCHA observe more behavior
-    await page.waitForTimeout(1000 + Math.random() * 1000); // Reduced from 2000-4000ms
-    
-    // Simulate human behavior before clicking login button
-    const formLocator = page.locator('form').first();
-    await simulateHumanBehaviorBeforeSubmit(page, formLocator, loginButton);
-    
-    // Click Login button
-    console.log('🔐 Clicking login button...');
-    await loginButton.click();
-    
-    await page.waitForLoadState('networkidle');
-    
-    // Take screenshot after login attempt
+    // Take screenshot after navigation
     await takeScreenshot(page, 'login-attempted.png', screenshotsDir);
     
-    // Verify login success by looking for the sidebar with Contacts tab
+    // Step 4: Verify we're on Contacts page
     let loginSucceeded = false;
     try {
       // Wait for the sidebar to appear with Contacts tab
@@ -195,7 +155,7 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     const finalUrl = page.url();
     if (finalUrl.includes('bookcbtnow.com') || finalUrl.includes('gateway.aspx')) {
       console.log('🔐 [STEP 2] Page is on availability URL after login, navigating to CRM dashboard...');
-      await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
+      await page.goto(crmHomeUrl, { waitUntil: 'networkidle' });
       await page.waitForTimeout(2000);
       
       // Verify we're on the dashboard
@@ -205,7 +165,7 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     } else if (!finalUrl.includes('takeabyte.co.uk/InContact') || finalUrl.includes('/Account/Login')) {
       // If we're not on CRM dashboard or still on login page, navigate to dashboard
       console.log('🔐 [STEP 2] Navigating to CRM dashboard...');
-      await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
+      await page.goto(crmHomeUrl, { waitUntil: 'networkidle' });
       await page.waitForTimeout(2000);
       await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
       console.log('✅ [STEP 2] Successfully navigated to CRM dashboard');
