@@ -19,7 +19,10 @@ import {
   addPhoneNumber,
   updatePhoneNumber,
   removePhoneNumber,
-  testPhoneNumber
+  testPhoneNumber,
+  testSipConnection,
+  getSipStatus,
+  updateSipSettings
 } from "../controllers/telephonyConfigController.js";
 import {
   getVoices,
@@ -56,6 +59,11 @@ router.post("/config/telephony/numbers", addPhoneNumber);
 router.put("/config/telephony/numbers/:number", updatePhoneNumber);
 router.delete("/config/telephony/numbers/:number", removePhoneNumber);
 router.post("/config/telephony/numbers/:number/test", testPhoneNumber);
+
+// SIP Configuration Routes
+router.post("/config/telephony/sip/test-connection", testSipConnection);
+router.get("/config/telephony/sip/status", getSipStatus);
+router.put("/config/telephony/sip/settings", updateSipSettings);
 
 // Voice Management Routes
 router.get("/voices", getVoices);

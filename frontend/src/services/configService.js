@@ -137,7 +137,12 @@ class ConfigService extends BaseService {
    * @returns {Promise<Object>} Telephony configuration
    */
   async getTelephonyConfig() {
-    return this.get('/audio-telephony/config/telephony');
+    console.log('🔍 [TELEPHONY_CONFIG] Fetching telephony config...');
+    const result = await this.get('/audio-telephony/config/telephony');
+    console.log('🔍 [TELEPHONY_CONFIG] Raw result:', result);
+    console.log('🔍 [TELEPHONY_CONFIG] result.data:', result?.data);
+    console.log('🔍 [TELEPHONY_CONFIG] result.config:', result?.config);
+    return result;
   }
 
   /**

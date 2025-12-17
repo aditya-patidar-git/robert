@@ -116,7 +116,23 @@ const TelephonyConfigSchema = new mongoose.Schema({
     region: { 
       type: String,
       default: 'europe'
-    }
+    },
+    openaiSipEnabled: { 
+      type: Boolean, 
+      default: false 
+    },
+    openaiSipEndpoint: String,
+    openaiSipWebhookUrl: String,
+    twilioSipTrunkSid: String,
+    twilioSipUsername: String,
+    twilioSipPassword: String, // Encrypted
+    testConnectionStatus: { 
+      type: String, 
+      enum: ['not_tested', 'success', 'failed'], 
+      default: 'not_tested' 
+    },
+    testConnectionLastAttempt: Date,
+    testConnectionError: String
   },
   // Recording Settings
   recordingSettings: {

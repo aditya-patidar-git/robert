@@ -12,7 +12,9 @@ import {
   Settings,
   Business,
   Email,
-  Chat
+  Chat,
+  Payment,
+  Description
 } from '@mui/icons-material';
 import { useSystemPageState } from './hooks/useSystemPageState';
 import MCPToolsTab from './tabs/MCPToolsTab';
@@ -20,6 +22,9 @@ import CRMTasksTab from './tabs/CRMTasksTab';
 import GeneralSettingsTab from './tabs/GeneralSettingsTab';
 import EmailTestTab from './tabs/EmailTestTab';
 import ConversationBehaviorTab from './tabs/ConversationBehaviorTab';
+import PaymentGatewayTab from './tabs/PaymentGatewayTab';
+import EmailSMSTemplatesTab from './tabs/EmailSMSTemplatesTab';
+import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
 
 const SystemConfigPage = () => {
   const {
@@ -63,6 +68,9 @@ const SystemConfigPage = () => {
         >
           Configure MCP tools, model capabilities, and system-wide settings
         </Typography>
+        <Box sx={{ mt: 1 }}>
+          <ConfigSyncStatus configType="all" showDetails={true} />
+        </Box>
       </Box>
 
       {/* Tabs */}
@@ -86,6 +94,8 @@ const SystemConfigPage = () => {
           <Tab label="General Settings" icon={<Settings />} iconPosition="start" />
           <Tab label="Conversation Behavior" icon={<Chat />} iconPosition="start" />
           <Tab label="Email Test" icon={<Email />} iconPosition="start" />
+          <Tab label="Payment Gateway" icon={<Payment />} iconPosition="start" />
+          <Tab label="Email/SMS Templates" icon={<Description />} iconPosition="start" />
         </Tabs>
       </Paper>
 
@@ -127,6 +137,16 @@ const SystemConfigPage = () => {
       {/* Tab E: Email Test (outside form since it's not part of form submission) */}
       {currentTab === 4 && (
         <EmailTestTab />
+      )}
+
+      {/* Tab F: Payment Gateway (outside form since it has its own save handler) */}
+      {currentTab === 5 && (
+        <PaymentGatewayTab />
+      )}
+
+      {/* Tab G: Email/SMS Templates (outside form since it has its own save handler) */}
+      {currentTab === 6 && (
+        <EmailSMSTemplatesTab />
       )}
     </Box>
   );

@@ -19,6 +19,7 @@ import KnowledgeBaseManagementTab from './tabs/KnowledgeBaseManagementTab';
 import AIConfigurationTab from './tabs/AIConfigurationTab';
 import SystemOperationsTab from './tabs/SystemOperationsTab';
 import AnalyticsMonitoringTab from './tabs/AnalyticsMonitoringTab';
+import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
 import kbService from '../../services/kbService';
 import aiService from '../../services/aiService';
 import promptVersionService from '../../services/promptVersionService';
@@ -500,6 +501,9 @@ const AIKnowledgePage = () => {
         >
           Manage knowledge base files and AI prompt configurations
         </Typography>
+        <Box sx={{ mt: 1 }}>
+          <ConfigSyncStatus configType="ai" showDetails={true} />
+        </Box>
       </Box>
 
       {/* Tabs */}
