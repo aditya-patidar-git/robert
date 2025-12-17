@@ -31,7 +31,7 @@ const VoiceManagementTab = ({ state, handlers }) => {
       
       // Use voice's language for translation if available
       const languageCode = voice.language || 'en-US';
-      const sampleText = 'Hello, this is a voice preview.';
+      const sampleText = 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
       
       // Call preview API - translate if not English
       const previewResult = await voiceService.previewVoice(voice.id, sampleText, { 

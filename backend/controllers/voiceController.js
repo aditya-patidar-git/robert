@@ -95,7 +95,7 @@ export const createVoice = async (req, res) => {
       id,
       name,
       description,
-      language: language || "en-US",
+      language: language || "en-GB",
       gender: gender || "neutral",
       provider: provider || "openai",
       capabilities: capabilities || {
@@ -103,7 +103,7 @@ export const createVoice = async (req, res) => {
         streaming: true,
         bargeIn: true
       },
-      sampleText: sampleText || "Hello, this is a voice preview sample.",
+      sampleText: sampleText || "Good afternoon! This is Robert from Universal Motorcycle Training. I'd like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.",
       createdBy: req.user?.id || "admin"
     });
 
@@ -262,7 +262,7 @@ export const previewVoice = async (req, res) => {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    let previewText = text || voice.sampleText || 'Hello, this is a voice preview.';
+    let previewText = text || voice.sampleText || 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
     
     // Translate text if translateTo is provided and different from English
     if (translateTo) {
@@ -302,32 +302,24 @@ export const previewVoice = async (req, res) => {
       }
     }
     
-    console.log(`🔵 [VOICE_PREVIEW] Generating TTS for voice: ${voiceId}, model: ${primaryModelId || 'default'}, text: ${previewText.substring(0, 50)}...`);
+    console.log(`🔵 [VOICE_PREVIEW] Generating audio preview for voice: ${voiceId}, model: ${primaryModelId || 'default'}, text: ${previewText.substring(0, 50)}...`);
 
     try {
-      // Determine TTS model based on primary model
-      // For realtime models, use tts-1-hd for better quality
-      // For other models, use tts-1
-      let ttsModel = 'tts-1';
-      if (primaryModelId && primaryModelId.includes('realtime')) {
-        ttsModel = 'tts-1-hd';
-        console.log('🔵 [VOICE_PREVIEW] Using HD TTS model for realtime model');
-      }
-
-      // Map voice ID to OpenAI voice name
-      // OpenAI supports: alloy, echo, fable, onyx, nova, shimmer, ash, ballads, coral, sage, verse
-      // Our voice IDs might be different, so we need to map them
+      // Map voice ID to OpenAI voice name for Chat Completions API with audio
+      // Chat Completions API supports: alloy, echo, fable, onyx, nova, shimmer, coral, verse, ballad, ash, sage, marin, cedar
+      // Note: 'ballads' (plural) must be 'ballad' (singular) for Chat Completions API
+      // Note: 'marin' and 'cedar' are supported directly in Chat Completions API
       const voiceMapping = {
         'ash': 'ash',
-        'cedar': 'onyx',
-        'marin': 'nova',
+        'cedar': 'cedar',  // Direct support in Chat Completions API
+        'marin': 'marin',  // Direct support in Chat Completions API
         'nova': 'nova',
         'alloy': 'alloy',
         'echo': 'echo',
         'fable': 'fable',
         'onyx': 'onyx',
         'shimmer': 'shimmer',
-        'ballads': 'ballads',
+        'ballads': 'ballad',  // Must be singular 'ballad' for Chat Completions API
         'coral': 'coral',
         'sage': 'sage',
         'verse': 'verse'
@@ -335,18 +327,79 @@ export const previewVoice = async (req, res) => {
       
       const openaiVoice = voiceMapping[voiceId.toLowerCase()] || 'ash';
       console.log(`🔵 [VOICE_PREVIEW] Mapped voice ${voiceId} to OpenAI voice: ${openaiVoice}`);
+      console.log(`🔵 [VOICE_PREVIEW] Voice language from discovery service: ${voice.language}`);
+      console.log(`🔵 [VOICE_PREVIEW] translateTo parameter: ${translateTo}`);
 
-      // Call OpenAI TTS API
-      const mp3 = await openai.audio.speech.create({
-        model: ttsModel,
-        voice: openaiVoice,
-        input: previewText,
+      // Determine system instructions based on language for accent control
+      // Priority: translateTo parameter (for Language/Voice Mapping previews) > voice.language (from database)
+      // Use very explicit and strong instructions for accent control
+      let systemInstructions = 'You are a helpful assistant that can generate audio from text. Speak clearly and naturally.';
+      
+      // Determine which language code to use for accent control
+      let accentLanguage = null;
+      if (translateTo) {
+        const translateToLower = String(translateTo).toLowerCase().trim();
+        if (translateToLower === 'en-gb') {
+          accentLanguage = 'en-GB';
+        } else if (translateToLower === 'en-us') {
+          accentLanguage = 'en-US';
+        }
+      }
+      
+      // Fall back to voice.language if translateTo doesn't specify an English variant
+      if (!accentLanguage) {
+        if (voice.language === 'en-GB' || voice.language?.toLowerCase() === 'en-gb') {
+          accentLanguage = 'en-GB';
+        } else if (voice.language === 'en-US' || voice.language?.toLowerCase() === 'en-us') {
+          accentLanguage = 'en-US';
+        }
+      }
+
+      if (accentLanguage === 'en-GB') {
+        systemInstructions = 'You are a helpful assistant that can generate audio from text. CRITICAL: You MUST speak with a clear, authentic British English accent. Use British pronunciation patterns, British intonation, and British speech rhythm. Pronounce words like a native British English speaker from England. Enunciate clearly with British English phonetics. This is essential - the accent must be distinctly British, not American.';
+        console.log('🔵 [VOICE_PREVIEW] Using STRONG British English accent instructions (from ' + (translateTo ? 'translateTo parameter' : 'voice.language') + ')');
+      } else if (accentLanguage === 'en-US') {
+        systemInstructions = 'You are a helpful assistant that can generate audio from text. Speak in a clear American English accent with proper pronunciation.';
+        console.log('🔵 [VOICE_PREVIEW] Using American English accent instructions (from ' + (translateTo ? 'translateTo parameter' : 'voice.language') + ')');
+      } else {
+        console.log(`⚠️ [VOICE_PREVIEW] Unknown language: ${accentLanguage || voice.language}, using default instructions`);
+      }
+
+      // Use Chat Completions API with audio output for accurate accent control
+      // This matches what the realtime API uses and allows accent control via system instructions
+      console.log('🔵 [VOICE_PREVIEW] Using Chat Completions API with audio output for accent-accurate preview');
+      
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-audio-preview',
+        modalities: ['text', 'audio'],
+        audio: {
+          voice: openaiVoice,
+          format: 'mp3'
+        },
+        messages: [
+          {
+            role: 'system',
+            content: systemInstructions
+          },
+          {
+            role: 'user',
+            content: previewText
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 200
       });
 
-      // Convert the response to a buffer
-      const buffer = Buffer.from(await mp3.arrayBuffer());
+      // Extract audio data from response
+      const audioData = completion.choices[0]?.message?.audio?.data;
+      if (!audioData) {
+        throw new Error('No audio data in Chat Completions response');
+      }
+
+      // Decode base64 audio to buffer
+      const buffer = Buffer.from(audioData, 'base64');
       
-      console.log(`✅ [VOICE_PREVIEW] TTS generated successfully, size: ${buffer.length} bytes`);
+      console.log(`✅ [VOICE_PREVIEW] Audio generated successfully, size: ${buffer.length} bytes`);
 
       // Save audio file
       const { filename, url } = await audioStorageService.saveAudio(buffer, voiceId, previewText);
@@ -361,7 +414,7 @@ export const previewVoice = async (req, res) => {
         duration: Math.ceil(buffer.length / 16000), // Rough estimate: ~16KB per second for MP3
         format: "mp3",
         modelId: primaryModelId,
-        ttsModel,
+        audioModel: 'gpt-4o-audio-preview',
         voice: {
           name: voice.name,
           language: voice.language,
@@ -374,18 +427,18 @@ export const previewVoice = async (req, res) => {
         preview: previewData
       });
       
-    } catch (ttsError) {
-      console.error('🔴 [VOICE_PREVIEW] OpenAI TTS API error:', ttsError);
+    } catch (audioError) {
+      console.error('🔴 [VOICE_PREVIEW] OpenAI Chat Completions API error:', audioError);
       console.error('🔴 [VOICE_PREVIEW] Error details:', {
-        message: ttsError.message,
-        status: ttsError.status,
-        code: ttsError.code
+        message: audioError.message,
+        status: audioError.status,
+        code: audioError.code
       });
       
       return res.status(500).json({ 
         status: "error", 
-        message: `Failed to generate audio: ${ttsError.message}`,
-        error: process.env.NODE_ENV === 'development' ? ttsError.stack : undefined
+        message: `Failed to generate audio: ${audioError.message}`,
+        error: process.env.NODE_ENV === 'development' ? audioError.stack : undefined
       });
     }
   } catch (err) {

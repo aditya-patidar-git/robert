@@ -168,7 +168,7 @@ const LanguageVoiceMapping = ({
       setPreviewingVoice({ voiceId, languageCode });
       
       // Use standard English text - it will be translated automatically
-      const sampleText = 'Hello, this is a voice preview.';
+      const sampleText = 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
       
       // Call preview API with translation to target language
       const previewResult = await voiceService.previewVoice(voiceId, sampleText, { 
@@ -521,10 +521,10 @@ const LanguageVoiceMapping = ({
                         <IconButton
                           size="small"
                           color="primary"
-                          onClick={() => handleVoicePreview(mapping.voiceId, mapping.languageCode)}
-                          disabled={!mapping.voiceId || (previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode)}
+                          onClick={() => handleVoicePreview(mapping.voiceId, mapping.localeCode || mapping.languageCode)}
+                          disabled={!mapping.voiceId || (previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === (mapping.localeCode || mapping.languageCode))}
                         >
-                          {previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === mapping.languageCode ? (
+                          {previewingVoice?.voiceId === mapping.voiceId && previewingVoice?.languageCode === (mapping.localeCode || mapping.languageCode) ? (
                             <CircularProgress size={20} />
                           ) : (
                             <PlayArrow />

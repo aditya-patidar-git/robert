@@ -68,7 +68,7 @@ class VoiceDiscoveryService {
         id: 'cedar',
         name: 'Cedar',
         description: 'A calm and confident male voice',
-        language: 'en-US',
+        language: 'en-GB',
         gender: 'male',
         provider: 'openai',
         isDefault: false,
@@ -83,7 +83,7 @@ class VoiceDiscoveryService {
         id: 'marin',
         name: 'Marin',
         description: 'A friendly and expressive female voice',
-        language: 'en-US',
+        language: 'en-GB',
         gender: 'female',
         provider: 'openai',
         isDefault: false,
@@ -98,8 +98,143 @@ class VoiceDiscoveryService {
         id: 'nova',
         name: 'Nova',
         description: 'A standard female voice',
-        language: 'en-US',
+        language: 'en-GB',
         gender: 'female',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'alloy',
+        name: 'Alloy',
+        description: 'A versatile and balanced neutral voice',
+        language: 'en-GB',
+        gender: 'neutral',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'echo',
+        name: 'Echo',
+        description: 'A clear and articulate male voice',
+        language: 'en-GB',
+        gender: 'male',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'fable',
+        name: 'Fable',
+        description: 'A warm and expressive male voice',
+        language: 'en-GB',
+        gender: 'male',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'onyx',
+        name: 'Onyx',
+        description: 'A deep and authoritative male voice',
+        language: 'en-GB',
+        gender: 'male',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'shimmer',
+        name: 'Shimmer',
+        description: 'A bright and cheerful female voice',
+        language: 'en-GB',
+        gender: 'female',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'ballads',
+        name: 'Ballads',
+        description: 'A melodic and expressive voice',
+        language: 'en-GB',
+        gender: 'neutral',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'coral',
+        name: 'Coral',
+        description: 'A vibrant and energetic female voice',
+        language: 'en-GB',
+        gender: 'female',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'sage',
+        name: 'Sage',
+        description: 'A wise and thoughtful voice',
+        language: 'en-GB',
+        gender: 'neutral',
+        provider: 'openai',
+        isDefault: false,
+        capabilities: {
+          realtime: true,
+          streaming: true,
+          bargeIn: true
+        },
+        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
+      },
+      {
+        id: 'verse',
+        name: 'Verse',
+        description: 'A poetic and rhythmic voice',
+        language: 'en-GB',
+        gender: 'neutral',
         provider: 'openai',
         isDefault: false,
         capabilities: {

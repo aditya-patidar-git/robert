@@ -855,7 +855,10 @@ ${config.instructions}`;
                 console.log(`📋 [${callSid}] Recording consent will be requested - instructions modified to include consent flow`);
             }
             
-            const openaiUrl = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview';
+            // Use model from database configuration, fallback to default if not available
+            const modelId = config.model?.id || 'gpt-4o-realtime-preview';
+            const openaiUrl = `wss://api.openai.com/v1/realtime?model=${modelId}`;
+            console.log(`📋 [${callSid}] Using model from config: ${modelId}`);
             openaiWs = new WebSocket(openaiUrl, {
                 headers: {
                     'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,

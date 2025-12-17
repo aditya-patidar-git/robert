@@ -52,7 +52,7 @@ export const getConfig = async (req, res) => {
         voice: {
           id: defaultVoiceId,
           name: "Ash",
-          language: "en-US"
+          language: "en-GB"
         },
         uncertaintyGate: {
           enabled: true,

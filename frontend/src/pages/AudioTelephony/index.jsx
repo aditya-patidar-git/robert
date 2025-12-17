@@ -201,7 +201,7 @@ const AudioTelephonyPage = () => {
     const primaryModelId = watch('selectedModelId') || watch('selectedModel');
     console.log('🔵 [VOICE_PREVIEW] Primary model ID:', primaryModelId);
     
-    const previewText = text || selectedVoice.sampleText || 'Hello, this is a voice preview.';
+    const previewText = text || selectedVoice.sampleText || 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
     console.log('🔵 [VOICE_PREVIEW] Calling mutation with:', { 
       voiceId: selectedVoice.id, 
       text: previewText,
@@ -672,7 +672,7 @@ const AudioTelephonyPage = () => {
             startIcon={<PlayArrow />}
             onClick={() => {
               const textField = document.querySelector('textarea[aria-label="Preview Text"]');
-              const text = textField?.value || selectedVoice?.sampleText || 'Hello, this is a voice preview.';
+              const text = textField?.value || selectedVoice?.sampleText || 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
               handlePlayPreview(text);
             }}
             disabled={voicePreviewMutation.isLoading || !selectedVoice}
