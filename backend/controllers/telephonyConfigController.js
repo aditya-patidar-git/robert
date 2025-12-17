@@ -1,4 +1,7 @@
 import TelephonyConfig from "../models/TelephonyConfig.js";
+import sipConfigService from "../services/sipConfigService.js";
+import connectionTestService from "../services/connectionTestService.js";
+import configSyncService from "../services/configSyncService.js";
 
 // Get current telephony configuration
 export const getTelephonyConfig = async (req, res) => {
@@ -111,6 +114,12 @@ export const updateTelephonyConfig = async (req, res) => {
 
     config.createdBy = req.user?.id || "admin";
     await config.save();
+
+    // Notify config change
+    configSyncService.notifyConfigChange('telephony', null, {
+      changedBy: req.user?.id || req.user?.username || 'admin',
+      action: 'update'
+    });
 
     res.json({
       status: "success",
@@ -278,6 +287,145 @@ export const testPhoneNumber = async (req, res) => {
     res.status(500).json({ 
       status: "error", 
       message: "Internal server error" 
+    });
+  }
+};
+
+// Test SIP connection
+export const testSipConnection = async (req, res) => {
+  try {
+    const config = await TelephonyConfig.findOne({ isActive: true });
+    
+    if (!config || !config.sipSettings) {
+      return res.status(404).json({
+        status: "error",
+        message: "SIP configuration not found"
+      });
+    }
+
+    // Decrypt password for testing if needed
+    let sipConfig = { ...config.sipSettings.toObject() };
+    if (sipConfig.twilioSipPassword) {
+      try {
+        sipConfig.twilioSipPassword = sipConfigService.decryptSipPassword(sipConfig.twilioSipPassword);
+      } catch (err) {
+        // Password might not be encrypted yet, use as-is
+        console.warn('Could not decrypt SIP password, using as-is for test');
+      }
+    }
+
+    // Test connection
+    const testResult = await sipConfigService.testSipConnection(sipConfig);
+
+    // Update config with test results
+    config.sipSettings.testConnectionStatus = testResult.success ? 'success' : 'failed';
+    config.sipSettings.testConnectionLastAttempt = new Date();
+    config.sipSettings.testConnectionError = testResult.error || null;
+    await config.save();
+
+    res.json({
+      status: "success",
+      testResult: {
+        success: testResult.success,
+        status: testResult.status,
+        message: testResult.message,
+        error: testResult.error,
+        data: testResult.data
+      }
+    });
+  } catch (err) {
+    console.error("Error testing SIP connection:", err);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+};
+
+// Get SIP connection status
+export const getSipStatus = async (req, res) => {
+  try {
+    const config = await TelephonyConfig.findOne({ isActive: true });
+    
+    if (!config || !config.sipSettings) {
+      return res.status(404).json({
+        status: "error",
+        message: "SIP configuration not found"
+      });
+    }
+
+    const sipSettings = config.sipSettings.toObject();
+    
+    // Mask password for display
+    const displayConfig = sipConfigService.prepareForDisplay(sipSettings);
+
+    res.json({
+      status: "success",
+      sipSettings: displayConfig
+    });
+  } catch (err) {
+    console.error("Error fetching SIP status:", err);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error"
+    });
+  }
+};
+
+// Update SIP settings only
+export const updateSipSettings = async (req, res) => {
+  try {
+    const sipSettings = req.body;
+
+    let config = await TelephonyConfig.findOne({ isActive: true });
+    
+    if (!config) {
+      config = new TelephonyConfig();
+    }
+
+    // Validate configuration
+    const validation = sipConfigService.validateSipConfig(sipSettings);
+    if (!validation.valid) {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid SIP configuration",
+        errors: validation.errors
+      });
+    }
+
+    // Prepare for storage (encrypt sensitive fields)
+    const preparedSettings = sipConfigService.prepareForStorage(sipSettings);
+
+    // Merge with existing settings
+    config.sipSettings = {
+      ...config.sipSettings.toObject(),
+      ...preparedSettings
+    };
+
+    config.createdBy = req.user?.id || "admin";
+    await config.save();
+
+    // Notify config change
+    configSyncService.notifyConfigChange('telephony', 'sip', {
+      changedBy: req.user?.id || req.user?.username || 'admin',
+      action: 'update'
+    });
+
+    // Prepare for response (mask sensitive fields)
+    const displaySettings = sipConfigService.prepareForDisplay(config.sipSettings.toObject());
+
+    res.json({
+      status: "success",
+      message: "SIP settings updated successfully",
+      sipSettings: displaySettings
+    });
+  } catch (err) {
+    console.error("Error updating SIP settings:", err);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      error: err.message
     });
   }
 };

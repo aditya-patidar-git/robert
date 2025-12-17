@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import AIConfig from '../models/AIConfig.js';
+import ModelHistory from '../models/ModelHistory.js';
 
 dotenv.config();
 
@@ -46,6 +47,24 @@ class ModelDiscoveryService {
       models.forEach(model => {
         this.capabilityRegistry.set(model.id, model);
       });
+
+      // Update capability registry and track history
+      const previousRegistry = new Map(this.capabilityRegistry);
+      this.capabilityRegistry.clear();
+      
+      for (const model of models) {
+        this.capabilityRegistry.set(model.id, model);
+        
+        // Track model history
+        await this.trackModelHistory(model, previousRegistry.get(model.id));
+      }
+
+      // Mark removed models
+      for (const [modelId, previousModel] of previousRegistry.entries()) {
+        if (!this.capabilityRegistry.has(modelId)) {
+          await this.markModelRemoved(modelId);
+        }
+      }
 
       this.lastDiscovery = new Date();
       
@@ -450,6 +469,159 @@ class ModelDiscoveryService {
         knownLimitations: ['Requires realtime audio setup']
       }
     ];
+  }
+
+  // Track model history
+  async trackModelHistory(model, previousModel) {
+    try {
+      const capabilities = {
+        contextLimit: model.contextLimit,
+        supportsTools: model.supportsTools,
+        supportsAudio: model.supportsAudio,
+        supportsRealtime: model.supportsRealtime,
+        supportsFileSearch: model.supportsFileSearch,
+        supportsMultimodal: model.supportsMultimodal || false
+      };
+
+      // Find existing history or create new
+      let history = await ModelHistory.findOne({ modelId: model.id })
+        .sort({ discoveredAt: -1 });
+
+      if (!history) {
+        // Create new history entry
+        history = new ModelHistory({
+          modelId: model.id,
+          modelName: model.name || model.id,
+          discoveredAt: new Date(),
+          capabilities,
+          status: 'available',
+          lastSeen: new Date()
+        });
+        await history.save();
+      } else {
+        // Check for changes
+        const changes = [];
+        
+        if (previousModel) {
+          Object.keys(capabilities).forEach(key => {
+            if (previousModel.capabilities?.[key] !== capabilities[key]) {
+              changes.push({
+                field: key,
+                oldValue: previousModel.capabilities?.[key],
+                newValue: capabilities[key],
+                changedAt: new Date()
+              });
+            }
+          });
+        }
+
+        // Update existing history
+        history.lastSeen = new Date();
+        history.status = 'available';
+        
+        if (changes.length > 0) {
+          history.changes.push(...changes);
+        }
+        
+        history.capabilities = capabilities;
+        await history.save();
+      }
+    } catch (error) {
+      console.error('Error tracking model history:', error);
+    }
+  }
+
+  // Mark model as removed
+  async markModelRemoved(modelId) {
+    try {
+      const history = await ModelHistory.findOne({ modelId })
+        .sort({ discoveredAt: -1 });
+      
+      if (history && history.status !== 'removed') {
+        history.status = 'removed';
+        history.changes.push({
+          field: 'status',
+          oldValue: 'available',
+          newValue: 'removed',
+          changedAt: new Date()
+        });
+        await history.save();
+      }
+    } catch (error) {
+      console.error('Error marking model as removed:', error);
+    }
+  }
+
+  // Get model history
+  async getModelHistory(modelId) {
+    try {
+      return await ModelHistory.find({ modelId })
+        .sort({ discoveredAt: -1 })
+        .lean();
+    } catch (error) {
+      console.error('Error getting model history:', error);
+      return [];
+    }
+  }
+
+  // Get all model history
+  async getAllModelHistory(filters = {}) {
+    try {
+      const query = {};
+      if (filters.status) {
+        query.status = filters.status;
+      }
+      if (filters.modelId) {
+        query.modelId = filters.modelId;
+      }
+
+      return await ModelHistory.find(query)
+        .sort({ lastSeen: -1 })
+        .lean();
+    } catch (error) {
+      console.error('Error getting all model history:', error);
+      return [];
+    }
+  }
+
+  // Get model alerts (deprecated/removed models)
+  async getModelAlerts() {
+    try {
+      const alerts = [];
+      
+      const deprecated = await ModelHistory.find({ status: 'deprecated' })
+        .sort({ lastSeen: -1 })
+        .lean();
+      
+      const removed = await ModelHistory.find({ status: 'removed' })
+        .sort({ lastSeen: -1 })
+        .lean();
+
+      deprecated.forEach(model => {
+        alerts.push({
+          type: 'deprecated',
+          modelId: model.modelId,
+          modelName: model.modelName,
+          lastSeen: model.lastSeen,
+          message: `Model ${model.modelName || model.modelId} has been deprecated`
+        });
+      });
+
+      removed.forEach(model => {
+        alerts.push({
+          type: 'removed',
+          modelId: model.modelId,
+          modelName: model.modelName,
+          lastSeen: model.lastSeen,
+          message: `Model ${model.modelName || model.modelId} has been removed`
+        });
+      });
+
+      return alerts;
+    } catch (error) {
+      console.error('Error getting model alerts:', error);
+      return [];
+    }
   }
 }
 

@@ -42,16 +42,56 @@ class PrivacyService extends BaseService {
   }
 
   /**
+   * Get DSAR request details
+   * @param {string} dsarId - DSAR ID
+   * @returns {Promise<Object>} DSAR request details
+   */
+  async getDSARRequestDetails(dsarId) {
+    return this.get(`/dsar/${dsarId}`);
+  }
+
+  /**
+   * Preview DSAR data
+   * @param {string} dsarId - DSAR ID
+   * @param {Array<string>} dataTypes - Data types to preview
+   * @returns {Promise<Object>} Preview data
+   */
+  async previewDSARData(dsarId, dataTypes) {
+    return this.post(`/dsar/${dsarId}/preview`, { dataTypes });
+  }
+
+  /**
+   * Generate DSAR export
+   * @param {string} dsarId - DSAR ID
+   * @param {Array<string>} dataTypes - Data types to export
+   * @returns {Promise<Object>} Export data
+   */
+  async generateDSARExport(dsarId, dataTypes) {
+    return this.post(`/dsar/${dsarId}/export`, { dataTypes });
+  }
+
+  /**
+   * Get DSAR request timeline
+   * @param {string} dsarId - DSAR ID
+   * @returns {Promise<Object>} Timeline events
+   */
+  async getDSARRequestTimeline(dsarId) {
+    return this.get(`/dsar/${dsarId}/timeline`);
+  }
+
+  /**
    * Process DSAR request
    * @param {string} dsarId - DSAR ID
-   * @param {string} action - Action to perform
+   * @param {string} action - Action to perform ('approve' or 'reject')
    * @param {string} adminUser - Admin user processing the request
+   * @param {string} notes - Optional notes
    * @returns {Promise<Object>} Processing result
    */
-  async processDSARRequest(dsarId, action, adminUser) {
-    return this.post(`/dsar/${dsarId}/process`, {
+  async processDSARRequest(dsarId, action, adminUser, notes) {
+    return this.put(`/dsar/${dsarId}/process`, {
       action,
-      adminUser
+      adminUser,
+      notes
     });
   }
 
