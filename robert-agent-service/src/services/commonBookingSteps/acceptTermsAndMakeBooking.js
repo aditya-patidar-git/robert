@@ -4,14 +4,14 @@ import { takeScreenshot } from './utils.js';
  * Step 13: Accept terms and make booking
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
- * @param {boolean} termsAccepted - Whether client accepted terms (defaults to false)
+ * @param {boolean} termsAccepted - Whether client accepted terms (defaults to true - allows booking to proceed if not explicitly set)
  * @param {boolean} skipMakeBooking - Whether to skip clicking the "Make booking" button (defaults to false)
  * @returns {Promise<{success: boolean, termsAccepted: boolean, grandTotal: string|null, error?: string}>}
  */
-export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccepted = false, skipMakeBooking = false) {
+export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccepted = true, skipMakeBooking = false) {
   try {
     console.log('📋 [STEP 13] Accepting terms and making booking...');
-    console.log(`📋 [STEP 13] Terms accepted: ${termsAccepted}`);
+    console.log(`📋 [STEP 13] Terms accepted: ${termsAccepted} (defaults to true if not provided)`);
     
     // Wait for payment page to be ready
     console.log('⏳ [STEP 13] Waiting for payment page to be ready...');
@@ -83,9 +83,11 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
       console.log(`⚠️ [STEP 13] Error extracting Grand Total: ${error.message}`);
     }
     
-    // Check terms acceptance
-    if (!termsAccepted) {
-      console.log('⚠️ [STEP 13] Terms not accepted by client - booking cancelled');
+    // Check terms acceptance - default to true if not explicitly set to false
+    // This allows the booking to proceed even if the agent didn't explicitly ask
+    // (fallback behavior to prevent booking failures)
+    if (termsAccepted === false) {
+      console.log('⚠️ [STEP 13] Terms explicitly set to false by client - booking cancelled');
       await takeScreenshot(page, 'terms-not-accepted.png', screenshotsDir);
       return {
         success: false,

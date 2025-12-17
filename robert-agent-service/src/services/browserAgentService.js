@@ -28,7 +28,7 @@ class BrowserAgentService {
     this.screenshotsDir = './screenshots';
     this.auditDir = './audit-logs';
     // Lock mechanism to prevent concurrent executions per call
-    this.activeExecutions = new Map(); // Map<executionKey, { task, startTime, lastHeartbeat }>
+    this.activeExecutions = new Map(); // Map<executionKey, { task, startTime, lastHeartbeat, phase, cancelToken }>
     // Execution lock configuration
     this.executionLockTimeout = parseInt(process.env.EXECUTION_LOCK_TIMEOUT_MINUTES || '2', 10) * 60 * 1000; // Default 2 minutes
     this.executionHeartbeatInterval = parseInt(process.env.EXECUTION_HEARTBEAT_INTERVAL_SECONDS || '30', 10) * 1000; // Default 30 seconds
@@ -267,845 +267,47 @@ class BrowserAgentService {
       // Inject stealth script to remove automation indicators
       await this.browserContext.addInitScript(getStealthInitScript());
       
-      // Perform login and save authentication state with retry logic
-      console.log('🔐 Performing login and saving authentication state...');
+      // Perform cookie-based login and save authentication state
+      console.log('🔐 Performing cookie-based login and saving authentication state...');
       let loginPage = await this.browserContext.newPage();
-    let loginAttempt = 0;
-    const maxAttempts = 2;
-    let lastError = null;
-    
-    while (loginAttempt < maxAttempts) {
-      loginAttempt++;
-      const isRetry = loginAttempt > 1;
       
       try {
-        if (isRetry) {
-          console.log(`🔄 [RETRY ${loginAttempt}/${maxAttempts}] Retrying login with enhanced field handling...`);
-          
-          // Check if previous error was reCAPTCHA-related
-          const recaptchaFailureInfo = lastError ? this.isRecaptchaFailure(lastError, {}) : null;
-          const wasRecaptchaFailure = recaptchaFailureInfo?.isRecaptchaFailure || false;
-          
-          if (wasRecaptchaFailure) {
-            console.log('🚨 Previous failure was reCAPTCHA-related - clearing storage and creating fresh context...');
-            
-            // Close current page
-            try {
-              if (!loginPage.isClosed()) {
-                await loginPage.close();
-              }
-            } catch (e) {
-              console.warn('⚠️ Error closing page:', e.message);
-            }
-            
-            // Close and recreate context for fresh start
-            try {
-              if (this.browserContext) {
-                await this.browserContext.close();
-                this.browserContext = null;
-              }
-            } catch (e) {
-              console.warn('⚠️ Error closing context:', e.message);
-            }
-            
-            // Create fresh context with enhanced options
-            const browser = await this.getBrowser();
-            const contextOptions = {
-              userAgent: getRealisticUserAgent(),
-              viewport: { 
-                width: 1280 + Math.floor(Math.random() * 200) - 100, // Slight variation
-                height: 720 + Math.floor(Math.random() * 200) - 100
-              },
-              locale: 'en-GB',
-              timezoneId: 'Europe/London',
-              permissions: [],
-              colorScheme: 'light'
-            };
-            
-            this.browserContext = await browser.newContext(contextOptions);
-            await this.browserContext.addInitScript(getStealthInitScript());
-            console.log('✅ Fresh browser context created for reCAPTCHA retry');
-            
-            // Create new page
-            loginPage = await this.browserContext.newPage();
-          }
-          
-          // On retry, navigate to login page again
-          await loginPage.goto(this.crmCredentials.loginUrl);
-          await loginPage.waitForLoadState('networkidle');
-          
-          // Clear reCAPTCHA storage if it was a reCAPTCHA failure
-          if (wasRecaptchaFailure) {
-            await this.prepareRecaptchaRetry(loginPage);
-          }
-          
-          // Extended observation period on retry (especially for reCAPTCHA failures)
-          const observationTime = wasRecaptchaFailure ? 4000 + Math.random() * 2000 : 2000; // 4-6s for reCAPTCHA, 2s otherwise
-          await enhanceBehavioralPatterns(loginPage, {
-            preFormWait: observationTime,
-            enableScroll: true,
-            enableMouseMovements: true,
-            enableKeyboardEvents: true
-          });
-        } else {
-          await loginPage.goto(this.crmCredentials.loginUrl);
-          await loginPage.waitForLoadState('networkidle');
-          
-          // Extended pre-form interaction observation period (3-5 seconds)
-          await enhanceBehavioralPatterns(loginPage, {
-            preFormWait: 3000 + Math.random() * 2000, // 3-5 seconds
-            enableScroll: true,
-            enableMouseMovements: true,
-            enableKeyboardEvents: true
-          });
-        }
-        
-        await loginPage.waitForLoadState('domcontentloaded');
-        await loginPage.waitForTimeout(1000);
-        await loginPage.waitForSelector('#Loginname input.dx-texteditor-input', { 
-          state: 'visible',
-          timeout: 15000 
-        });
-        await loginPage.waitForSelector('#Username input.dx-texteditor-input', { 
-          state: 'visible',
-          timeout: 15000 
-        });
-        await loginPage.waitForSelector('#UserPassword input.dx-texteditor-input', { 
-          state: 'visible',
-          timeout: 15000 
-        });
-        
-        // Wait for login button to be visible and enabled
-        const loginButton = loginPage.locator('#btnLogin');
-        await loginButton.waitFor({ state: 'visible', timeout: 15000 });
-        
-        // Additional wait to ensure JavaScript is fully initialized
-        await loginPage.waitForTimeout(1000);
-        
-        console.log(`🔐 Login form ready, filling fields${isRetry ? ' (RETRY with enhanced handling)' : ''}...`);
-        
-        // Get field locators
-        const loginNameField = loginPage.locator('#Loginname input.dx-texteditor-input');
-        const usernameField = loginPage.locator('#Username input.dx-texteditor-input');
-        const passwordField = loginPage.locator('#UserPassword input.dx-texteditor-input');
-        
-        // Clear any existing values first (in case of stale state or previous failed attempt)
-        console.log('🧹 Clearing any existing field values...');
-        await loginNameField.waitFor({ state: 'visible' });
-        await loginNameField.click({ clickCount: 3 }); // Triple-click to select all
-        await loginNameField.press('Backspace');
-        await loginPage.waitForTimeout(500);
-        
-        await usernameField.waitFor({ state: 'visible' });
-        await usernameField.click({ clickCount: 3 });
-        await usernameField.press('Backspace');
-        await loginPage.waitForTimeout(500);
-        
-        await passwordField.waitFor({ state: 'visible' });
-        await passwordField.click({ clickCount: 3 });
-        await passwordField.press('Backspace');
-        await loginPage.waitForTimeout(500);
-        
-        // Fill login form fields with human-like behavior
-        // Move mouse to first field using Bezier curve
-        const loginNameBox = await loginNameField.boundingBox().catch(() => null);
-        if (loginNameBox) {
-          const viewportSize = loginPage.viewportSize() || { width: 1280, height: 720 };
-          const currentMousePos = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
-          const fieldPath = generateBezierPath(
-            currentMousePos.x, currentMousePos.y,
-            loginNameBox.x + loginNameBox.width / 2,
-            loginNameBox.y + loginNameBox.height / 2,
-            10
-          );
-          for (const point of fieldPath) {
-            await loginPage.mouse.move(point.x, point.y);
-            await loginPage.waitForTimeout(30 + Math.random() * 50);
-          }
-        }
-        
-        await loginNameField.click();
-        await loginPage.waitForTimeout(200 + Math.random() * 200);
-        // Type with variable speed (faster for common words)
-        await loginNameField.type(this.crmCredentials.loginName, { delay: 30 + Math.random() * 50 });
-        await loginNameField.blur();
-        await loginPage.waitForTimeout(isRetry ? 2000 : 1500);
-        
-        const loginNameValue = await loginNameField.inputValue();
-        if (loginNameValue !== this.crmCredentials.loginName) {
-          await loginNameField.click({ clickCount: 3 });
-          await loginNameField.press('Backspace');
-          await loginPage.waitForTimeout(500);
-          await loginNameField.type(this.crmCredentials.loginName, { delay: 50 });
-          await loginNameField.blur();
-          await loginPage.waitForTimeout(1000);
-          const retryValue = await loginNameField.inputValue();
-          if (retryValue !== this.crmCredentials.loginName) {
-            throw new Error(`Login name not filled correctly. Expected: "${this.crmCredentials.loginName}", Got: "${retryValue}"`);
-        }
-        }
-        
-        // Move to username field using Tab key (more natural)
-        await loginPage.keyboard.press('Tab');
-        await loginPage.waitForTimeout(200 + Math.random() * 200);
-        // Small random micro-movement while hovering
-        const usernameBox = await usernameField.boundingBox().catch(() => null);
-        if (usernameBox) {
-          await loginPage.mouse.move(
-            usernameBox.x + usernameBox.width / 2 + (Math.random() * 10 - 5),
-            usernameBox.y + usernameBox.height / 2 + (Math.random() * 10 - 5)
-          );
-          await loginPage.waitForTimeout(100 + Math.random() * 100);
-        }
-        await usernameField.click();
-        await loginPage.waitForTimeout(200 + Math.random() * 200);
-        await usernameField.type(this.crmCredentials.username, { delay: 30 + Math.random() * 50 });
-        await usernameField.blur();
-        await loginPage.waitForTimeout(isRetry ? 2000 : 1500);
-        
-        const usernameValue = await usernameField.inputValue();
-        if (usernameValue !== this.crmCredentials.username) {
-          await usernameField.click({ clickCount: 3 });
-          await usernameField.press('Backspace');
-          await loginPage.waitForTimeout(500);
-          await usernameField.type(this.crmCredentials.username, { delay: 50 });
-          await usernameField.blur();
-          await loginPage.waitForTimeout(1000);
-          const retryValue = await usernameField.inputValue();
-          if (retryValue !== this.crmCredentials.username) {
-            throw new Error(`Username not filled correctly. Expected: "${this.crmCredentials.username}", Got: "${retryValue}"`);
-        }
-        }
-        
-        // Move to password field using Tab key
-        await loginPage.keyboard.press('Tab');
-        await loginPage.waitForTimeout(200 + Math.random() * 200);
-        // Small random micro-movement
-        const passwordBox = await passwordField.boundingBox().catch(() => null);
-        if (passwordBox) {
-          await loginPage.mouse.move(
-            passwordBox.x + passwordBox.width / 2 + (Math.random() * 10 - 5),
-            passwordBox.y + passwordBox.height / 2 + (Math.random() * 10 - 5)
-          );
-          await loginPage.waitForTimeout(100 + Math.random() * 100);
-        }
-        await passwordField.click();
-        await loginPage.waitForTimeout(200 + Math.random() * 200);
-        // Type password slower (more careful with sensitive data)
-        await passwordField.type(this.crmCredentials.password, { delay: 50 + Math.random() * 100 });
-        await passwordField.blur();
-        await loginPage.waitForTimeout(isRetry ? 1500 : 1000); // Reduced from 2000/1500ms
-        
-        const passwordLength = (await passwordField.inputValue()).length;
-        if (passwordLength !== this.crmCredentials.password.length) {
-          await passwordField.click({ clickCount: 3 });
-          await passwordField.press('Backspace');
-          await loginPage.waitForTimeout(500);
-          await passwordField.type(this.crmCredentials.password, { delay: 50 });
-          await passwordField.blur();
-          await loginPage.waitForTimeout(1000);
-          const retryLength = (await passwordField.inputValue()).length;
-          if (retryLength !== this.crmCredentials.password.length) {
-            throw new Error(`Password not filled correctly. Expected length: ${this.crmCredentials.password.length}, Got: ${retryLength}`);
-          }
-        }
-        
-        // Trigger form events and wait for validation
-        await loginPage.locator('body').click({ position: { x: 100, y: 100 } });
-        await loginPage.waitForTimeout(1500);
-        
-        await loginNameField.dispatchEvent('input');
-        await loginNameField.dispatchEvent('change');
-        await loginNameField.dispatchEvent('blur');
-        await usernameField.dispatchEvent('input');
-        await usernameField.dispatchEvent('change');
-        await usernameField.dispatchEvent('blur');
-        await passwordField.dispatchEvent('input');
-        await passwordField.dispatchEvent('change');
-        await passwordField.dispatchEvent('blur');
-        
-        await loginPage.waitForTimeout(isRetry ? 2500 : 2000);
-        
-        // Verify login button is enabled
-        let buttonEnabled = false;
-        let buttonCheckAttempts = 0;
-        const maxButtonChecks = 5;
-        
-        while (buttonCheckAttempts < maxButtonChecks && !buttonEnabled) {
-          buttonCheckAttempts++;
-          buttonEnabled = await loginButton.isEnabled();
-          if (buttonEnabled) break;
-          if (buttonCheckAttempts < maxButtonChecks) {
-            await loginPage.waitForTimeout(1000);
-          }
-        }
-        
-        if (!buttonEnabled) {
-          throw new Error(`Login button is disabled after ${maxButtonChecks} checks - form may not be ready`);
-        }
-        
-        // Enhanced human-like behavior for reCAPTCHA with Bezier curves
-        const viewport = loginPage.viewportSize() || { width: 1280, height: 720 };
-        const currentPos = { x: viewport.width / 2, y: viewport.height / 2 };
-        
-        // Natural mouse movement pattern before clicking login (optimized for speed)
-        const formBox = await loginPage.locator('form').first().boundingBox().catch(() => null);
-        if (formBox) {
-          // Move to form area using Bezier curve (reduced point count)
-          const formPath = generateBezierPath(
-            currentPos.x, currentPos.y,
-            formBox.x + formBox.width / 2,
-            formBox.y + formBox.height / 2,
-            10 // Optimized: reduced from 20 to 10 points
-          );
-          for (const point of formPath) {
-            await loginPage.mouse.move(point.x, point.y);
-            await loginPage.waitForTimeout(40 + Math.random() * 60);
-          }
-          await loginPage.waitForTimeout(200 + Math.random() * 100); // Optimized: 200-300ms (reduced from 300-500ms)
-        
-          // Small random micro-movements (human-like jitter) - reduced count
-          for (let i = 0; i < 2; i++) { // Optimized: reduced from 3 to 2
-            await loginPage.mouse.move(
-              formBox.x + formBox.width / 2 + (Math.random() * 20 - 10),
-              formBox.y + formBox.height / 2 + (Math.random() * 20 - 10)
-            );
-            await loginPage.waitForTimeout(100 + Math.random() * 100); // Optimized: 100-200ms (reduced from 100-250ms)
-          }
-        }
-        
-        // Move to login button using Bezier curve (reduced point count)
-        const loginButtonBox = await loginButton.boundingBox().catch(() => null);
-        if (loginButtonBox) {
-          // Use form center or viewport center as starting point
-          const startX = formBox ? formBox.x + formBox.width / 2 : viewport.width / 2;
-          const startY = formBox ? formBox.y + formBox.height / 2 : viewport.height / 2;
-          
-          const buttonPath = generateBezierPath(
-            startX,
-            startY,
-            loginButtonBox.x + loginButtonBox.width / 2,
-            loginButtonBox.y + loginButtonBox.height / 2,
-            8 // Optimized: reduced from 15 to 8 points
-          );
-          
-          for (const point of buttonPath) {
-            await loginPage.mouse.move(point.x, point.y);
-            await loginPage.waitForTimeout(50 + Math.random() * 80);
-          }
-          
-          // Hover over button with slight movements (human hesitation)
-          await loginPage.waitForTimeout(150 + Math.random() * 100); // Optimized: 150-250ms (reduced from 400-700ms)
-          await loginPage.mouse.move(
-            loginButtonBox.x + loginButtonBox.width / 2 + (Math.random() * 5 - 2.5),
-            loginButtonBox.y + loginButtonBox.height / 2 + (Math.random() * 5 - 2.5)
-          );
-          await loginPage.waitForTimeout(100 + Math.random() * 50); // Optimized: 100-150ms (reduced from 200-500ms)
-        }
-        
-        // Check for reCAPTCHA elements on the page before submission
-        console.log('🔍 Checking for reCAPTCHA elements on page...');
-        try {
-          const recaptchaChecks = {
-            iframe: await loginPage.locator('iframe[src*="recaptcha"]').count(),
-            grecaptchaDiv: await loginPage.locator('.g-recaptcha').count(),
-            grecaptchaScript: await loginPage.locator('script[src*="recaptcha"]').count(),
-            recaptchaBadge: await loginPage.locator('[class*="recaptcha"]').count()
-          };
-
-          console.log('📊 reCAPTCHA Detection Results:');
-          console.log(`   - reCAPTCHA iframes found: ${recaptchaChecks.iframe}`);
-          console.log(`   - .g-recaptcha divs found: ${recaptchaChecks.grecaptchaDiv}`);
-          console.log(`   - reCAPTCHA scripts found: ${recaptchaChecks.grecaptchaScript}`);
-          console.log(`   - reCAPTCHA badges/classes found: ${recaptchaChecks.recaptchaBadge}`);
-
-          if (recaptchaChecks.iframe > 0 || recaptchaChecks.grecaptchaDiv > 0) {
-            console.log('✅ reCAPTCHA is present on the login page');
-            
-            // Try to get reCAPTCHA status
-            try {
-              const recaptchaStatus = await loginPage.evaluate(() => {
-                if (window.grecaptcha) {
-                  return {
-                    ready: window.grecaptcha.ready !== undefined,
-                    getResponse: typeof window.grecaptcha.getResponse === 'function'
-                  };
-                }
-                return null;
-              });
-              if (recaptchaStatus) {
-                console.log(`   - grecaptcha object available: ${recaptchaStatus.ready}`);
-                console.log(`   ⚠️ Note: Actual score (0.0-1.0) is only available server-side`);
-                console.log(`   The server verifies the token with Google and receives the score`);
-              }
-            } catch (e) {
-              console.log('   - Could not check grecaptcha object:', e.message);
-            }
-          } else {
-            console.log('⚠️ No reCAPTCHA elements detected on page (may be invisible or loaded dynamically)');
-          }
-        } catch (e) {
-          console.log('⚠️ Could not check for reCAPTCHA elements:', e.message);
-        }
-        
-        // Wait for reCAPTCHA to execute and calculate score (enhanced detection)
-        const recaptchaStatus = await waitForRecaptchaReady(loginPage, 3000);
-        
-        // Log reCAPTCHA status for audit trail
-        if (recaptchaStatus.errors.length > 0) {
-          console.warn(`⚠️ reCAPTCHA errors detected: ${recaptchaStatus.errors.join(', ')}`);
-        }
-        if (recaptchaStatus.warnings.length > 0) {
-          console.warn(`⚠️ reCAPTCHA warnings: ${recaptchaStatus.warnings.join(', ')}`);
-        }
-        
-        // CRITICAL: Click the reCAPTCHA checkbox if it's v2
-        if (recaptchaStatus.version === 'v2' && recaptchaStatus.hasRecaptcha) {
-          console.log('🔘 Clicking reCAPTCHA checkbox...');
-          const checkboxClicked = await clickRecaptchaCheckbox(loginPage);
-          if (checkboxClicked) {
-            console.log('✅ reCAPTCHA checkbox clicked successfully');
-            
-            // Check for image challenge and wait for resolution
-            const challengeDetected = await checkForRecaptchaChallenge(loginPage);
-            if (challengeDetected) {
-              console.warn('⚠️ Image challenge detected and not auto-resolved - login may fail');
-            }
-            
-            // Wait for reCAPTCHA to process after clicking
-            await loginPage.waitForTimeout(2000 + Math.random() * 1000);
-          } else {
-            console.warn('⚠️ Could not click reCAPTCHA checkbox - will proceed anyway');
-          }
-        }
-        
-        // Extended post-fill observation period (2-4 seconds) with micro-interactions
-        const postFillWait = 2000 + Math.random() * 2000; // 2-4 seconds
-        console.log(`⏳ Post-fill observation period: ${Math.round(postFillWait)}ms`);
-        
-        // Micro-interactions during observation (reuse formBox from above if available)
-        const postFillFormBox = formBox || await loginPage.locator('form').first().boundingBox().catch(() => null);
-        if (postFillFormBox) {
-          // Small mouse movements
-          for (let i = 0; i < 2; i++) {
-            await loginPage.mouse.move(
-              postFillFormBox.x + postFillFormBox.width / 2 + (Math.random() * 20 - 10),
-              postFillFormBox.y + postFillFormBox.height / 2 + (Math.random() * 20 - 10)
-            );
-            await loginPage.waitForTimeout(200 + Math.random() * 300);
-          }
-          
-          // Field focus/blur cycles
-          const loginNameField = loginPage.locator('#Loginname input.dx-texteditor-input');
-          const usernameField = loginPage.locator('#Username input.dx-texteditor-input');
-          await loginNameField.focus().catch(() => {});
-          await loginPage.waitForTimeout(100 + Math.random() * 200);
-          await usernameField.focus().catch(() => {});
-          await loginPage.waitForTimeout(100 + Math.random() * 200);
-          await loginPage.keyboard.press('Tab');
-          await loginPage.waitForTimeout(100 + Math.random() * 200);
-        }
-        
-        // Remaining wait time
-        const remainingWait = postFillWait - 1000; // Subtract time already spent
-        if (remainingWait > 0) {
-          await loginPage.waitForTimeout(remainingWait);
-        }
-        
-        // Simulate human behavior before clicking login button
-        const formLocator = loginPage.locator('form').first();
-        await simulateHumanBehaviorBeforeSubmit(loginPage, formLocator, loginButton);
-        
-        // Reading pause before clicking (human hesitation)
-        const preClickDelay = 200 + Math.random() * 200; // Optimized: 200-400ms (reduced from 500-1500ms)
-        await loginPage.waitForTimeout(preClickDelay);
-        
-        console.log(`🔐 Submitting login form${isRetry ? ' (RETRY)' : ''}...`);
-        
-        // Intercept request for error analysis only
-        let interceptedRequestData = null;
-        const requestHandler = (request) => {
-          const url = request.url();
-          if (url.includes('/Account/Login') && (url.includes('handler=Wm_TryLogin') || url.includes('Wm_TryLogin'))) {
-            interceptedRequestData = request.postData();
-          }
-        };
-        loginPage.on('request', requestHandler);
-        
-        // Try multiple submission methods
-        let submissionSuccessful = false;
-        let lastResponse = null;
-        
-        // Method 1: Form submit
-        try {
-          const formElement = await loginPage.locator('form').first();
-          const formExists = await formElement.count() > 0;
-          
-          if (formExists) {
-            const [response] = await Promise.all([
-              loginPage.waitForResponse(
-                response => {
-                  const url = response.url();
-                  return url.includes('/Account/Login') || url.includes('/InContact/Account');
-                },
-                { timeout: 15000 }
-              ).catch(() => null),
-              loginPage.evaluate(() => {
-                const form = document.querySelector('form');
-                if (form) {
-                  form.submit();
-                  return true;
-                }
-                return false;
-              })
-            ]);
-            
-            if (response) {
-              lastResponse = response;
-              submissionSuccessful = true;
-            }
-          }
-        } catch (formSubmitError) {
-          // Continue to next method
-        }
-        
-        // Method 2: Enter key
-        if (!submissionSuccessful) {
-          try {
-            await passwordField.focus();
-            await loginPage.waitForTimeout(500);
-            
-            const [response] = await Promise.all([
-              loginPage.waitForResponse(
-                response => {
-                  const url = response.url();
-                  return url.includes('/Account/Login') && url.includes('handler=Wm_TryLogin');
-                },
-                { timeout: 20000 }
-              ).catch(() => null),
-              passwordField.press('Enter', { delay: 100 + Math.random() * 100 })
-            ]);
-            
-            if (response) {
-              lastResponse = response;
-              submissionSuccessful = true;
-            }
-          } catch (enterError) {
-            // Continue to next method
-          }
-        }
-        
-        // Method 3: Button click
-        if (!submissionSuccessful) {
-          try {
-            const [response] = await Promise.all([
-              loginPage.waitForResponse(
-                response => {
-                  const url = response.url();
-                  return url.includes('/Account/Login') && url.includes('handler=Wm_TryLogin');
-                },
-                { timeout: 20000 }
-              ).catch(() => null),
-              loginButton.click({ delay: 100 + Math.random() * 100 })
-            ]);
-            
-            if (response) {
-              lastResponse = response;
-              submissionSuccessful = true;
-            }
-          } catch (buttonError) {
-            // All methods failed
-          }
-        }
-        
-        loginPage.off('request', requestHandler);
-        
-        // CRITICAL: Parse JSON response body immediately to check for errors
-        if (lastResponse) {
-          try {
-            const responseBody = await lastResponse.text().catch(() => '');
-            
-            if (responseBody) {
-              try {
-                const jsonResponse = JSON.parse(responseBody);
-                
-                // Check for reCAPTCHA score in response (if server includes it)
-                const recaptchaScore = jsonResponse.recaptchaScore || jsonResponse.score;
-                const recaptchaContext = {
-                  score: recaptchaScore,
-                  tokenInvalid: false,
-                  tokenMissing: false,
-                  hasChallenge: false
-                };
-                
-                if (recaptchaScore !== undefined) {
-                  console.log(`📊 reCAPTCHA Score from server: ${recaptchaScore}`);
-                  const scoreInterpretation = recaptchaScore >= 0.9 ? 'Human' : 
-                                            recaptchaScore >= 0.7 ? 'Likely Human' : 
-                                            recaptchaScore >= 0.5 ? 'Suspicious' : 'Bot';
-                  console.log(`   Score interpretation: ${scoreInterpretation}`);
-                  
-                  if (recaptchaScore < 0.5) {
-                    console.error(`🚨 LOW reCAPTCHA SCORE (${recaptchaScore}) - Likely detected as bot!`);
-                  } else if (recaptchaScore < 0.7) {
-                    console.warn(`⚠️ MODERATE reCAPTCHA SCORE (${recaptchaScore}) - May be flagged`);
-                  } else {
-                    console.log(`✅ GOOD reCAPTCHA SCORE (${recaptchaScore})`);
-                  }
-                }
-                
-                // Check for error message in JSON response
-                if (jsonResponse.errorMessage) {
-                  console.error(`❌ Login failed: ${jsonResponse.errorMessage}`);
-                  
-                  // Enhanced reCAPTCHA failure detection
-                  const recaptchaFailureInfo = this.isRecaptchaFailure(jsonResponse.errorMessage, recaptchaContext);
-                  
-                  // Enhanced: Analyze gToken with detailed logging
-                  if (interceptedRequestData) {
-                    const hasGToken = interceptedRequestData.includes('gToken=');
-                    console.log(`📊 Request Analysis:`);
-                    console.log(`   - gToken present: ${hasGToken}`);
-                    
-                    if (hasGToken) {
-                      const tokenMatch = interceptedRequestData.match(/gToken=([^&]+)/);
-                      if (tokenMatch && tokenMatch[1]) {
-                        const tokenValue = decodeURIComponent(tokenMatch[1]);
-                        const tokenLength = tokenValue.length;
-                        console.log(`   - gToken length: ${tokenLength}`);
-                        console.log(`   - gToken value (first 50 chars): ${tokenValue.substring(0, 50)}...`);
-                        
-                        if (tokenLength < 100 || tokenValue === '0' || tokenValue === '' || tokenValue === 'null') {
-                          console.error(`❌ reCAPTCHA token invalid (length: ${tokenLength})`);
-                          recaptchaContext.tokenInvalid = true;
-                        } else {
-                          console.error(`⚠️ reCAPTCHA token present but rejected - likely automation detected`);
-                          console.error(`   This suggests the reCAPTCHA score was too low (< 0.5 typically)`);
-                        }
-                      }
-                    } else {
-                      console.error(`❌ reCAPTCHA token missing from request`);
-                      recaptchaContext.tokenMissing = true;
-                    }
-                  }
-                  
-                  // Create enhanced error with reCAPTCHA details
-                  const enhancedError = new Error(`Login failed: ${jsonResponse.errorMessage}`);
-                  enhancedError.recaptchaFailure = recaptchaFailureInfo.isRecaptchaFailure;
-                  enhancedError.recaptchaDetails = {
-                    ...recaptchaFailureInfo,
-                    context: recaptchaContext
-                  };
-                  
-                  throw enhancedError;
-                }
-                
-                // Check for success indicators in JSON response
-                if (jsonResponse.newPage || jsonResponse.login_token) {
-                  console.log('✅ Login successful according to JSON response');
-                  console.log(`📡 JSON response:`, JSON.stringify(jsonResponse, null, 2));
-                  // Continue to DOM verification below
-                } else {
-                  // No error but also no success indicators - log for debugging
-                  console.log(`⚠️ JSON response has no error but also no success indicators:`, JSON.stringify(jsonResponse, null, 2));
-                }
-              } catch (jsonParseError) {
-                // Not JSON, log as text
-                if (responseBody.length < 1000) {
-                  console.log(`📡 Response body (not JSON): ${responseBody.substring(0, 500)}`);
-                } else {
-                  console.log(`📡 Response body preview: ${responseBody.substring(0, 200)}...`);
-                }
-              }
-            }
-          } catch (bodyError) {
-            console.log('⚠️ Could not read response body:', bodyError.message);
-          }
-        }
-        
-        // Wait for either success or error (don't just wait for networkidle)
-        console.log('🔐 Waiting for login response to process...');
-        await loginPage.waitForTimeout(3000); // Give time for error messages to appear
-        
-        // Check for error messages first (before waiting for success)
-        const errorIndicators = [
-          loginPage.locator('text=/invalid/i'),
-          loginPage.locator('text=/incorrect/i'),
-          loginPage.locator('text=/error/i'),
-          loginPage.locator('text=/recaptcha/i'),
-          loginPage.locator('text=/captcha/i'),
-          loginPage.locator('text=/robot/i'),
-          loginPage.locator('text=/verification/i'),
-          loginPage.locator('.dx-error-message'),
-          loginPage.locator('[class*="error"]'),
-          loginPage.locator('.alert-danger'),
-          loginPage.locator('.validation-summary-errors'),
-          loginPage.locator('[role="alert"]')
-        ];
-        
-        for (const errorLocator of errorIndicators) {
-          try {
-            const isVisible = await errorLocator.first().isVisible({ timeout: 2000 }).catch(() => false);
-            if (isVisible) {
-              const errorText = await errorLocator.first().textContent().catch(() => '');
-              if (errorText && errorText.trim().length > 0) {
-                console.error(`❌ Login error detected: ${errorText}`);
-                
-                // Enhanced reCAPTCHA failure detection
-                const recaptchaFailureInfo = this.isRecaptchaFailure(errorText);
-                
-                // Create enhanced error with reCAPTCHA details
-                const enhancedError = new Error(`Login failed: ${errorText.trim()}`);
-                enhancedError.recaptchaFailure = recaptchaFailureInfo.isRecaptchaFailure;
-                enhancedError.recaptchaDetails = recaptchaFailureInfo;
-                
-                // Take screenshot when error is detected
-                try {
-                  await loginPage.screenshot({ path: `./screenshots/login-error-detected-${Date.now()}.png` });
-                  console.log('📸 Screenshot saved: login-error-detected-*.png');
-                } catch (screenshotError) {
-                  console.warn('⚠️ Could not take error screenshot:', screenshotError.message);
-                }
-                
-                throw enhancedError;
-              }
-            }
-          } catch (e) {
-            // Continue checking other indicators
-            if (e.message.includes('Login failed')) {
-              throw e; // Re-throw if it's our error
-            }
-          }
-        }
-        
-        // Check if still on login page (another indicator of failure)
-        const stillOnLoginPage = await loginPage.locator('#Loginname').isVisible({ timeout: 3000 }).catch(() => false);
-        if (stillOnLoginPage) {
-          // Wait a bit more and check again - sometimes the page takes time to redirect
-          await loginPage.waitForTimeout(3000);
-          const stillOnLoginPage2 = await loginPage.locator('#Loginname').isVisible({ timeout: 2000 }).catch(() => false);
-          if (stillOnLoginPage2) {
-            // Check one more time after waiting for network idle
-            await loginPage.waitForLoadState('networkidle').catch(() => {});
-            await loginPage.waitForTimeout(2000);
-            const stillOnLoginPage3 = await loginPage.locator('#Loginname').isVisible({ timeout: 2000 }).catch(() => false);
-            if (stillOnLoginPage3) {
-              // Take screenshot before throwing error
-              try {
-                await loginPage.screenshot({ path: `./screenshots/login-still-on-page-${Date.now()}.png` });
-                console.log('📸 Screenshot saved: login-still-on-page-*.png');
-              } catch (screenshotError) {
-                console.warn('⚠️ Could not take screenshot:', screenshotError.message);
-              }
-            throw new Error('Login failed - still on login page after submission');
-            }
-          }
-        }
-        
-        // Wait for successful login
-        await loginPage.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 30000 });
-        console.log(`✅ Login successful${isRetry ? ' (RETRY)' : ''}`);
-        
-        // Report login completed if progress callback provided
-        if (progressCallback) {
-          progressCallback({ milestone: 'login_completed', message: 'Successfully logged in', progress: 20 });
-        }
-        
-        // Don't navigate if already on dashboard - cookies are already in context
-        const currentUrl = loginPage.url();
-        if (!currentUrl.includes('/InContact') || currentUrl.includes('/Account/Login')) {
-          // Navigate to CRM dashboard - cookies in context will persist
-          await loginPage.goto('https://takeabyte.co.uk/InContact', { 
-            waitUntil: 'domcontentloaded',
-            timeout: 30000 
-          });
-          await loginPage.waitForTimeout(2000); // Allow page to settle
-        }
-        
-        // Trust that cookies in context work - no need to verify
-        // Session expiration will be detected if we get redirected to login page
+        // Use cookie-based authentication instead of form-based login
+        await this.loginToCRM(loginPage, 'context-init');
         
         // Save authentication state for future browser restarts
         await this.browserContext.storageState({ path: authFilePath });
         this.authenticatedPage = loginPage;
-        console.log('✅ Session established and saved (cookies persist in context)');
-        
-        // Success! Break out of retry loop
-        break;
+        console.log('✅ Cookie-based session established and saved');
         
       } catch (error) {
-        lastError = error;
+        console.error('❌ Cookie-based login failed:', error.message);
         
-        // Enhanced error logging with reCAPTCHA details
-        const recaptchaFailureInfo = error.recaptchaFailure !== undefined ? 
-          { isRecaptchaFailure: error.recaptchaFailure, ...error.recaptchaDetails } :
-          this.isRecaptchaFailure(error);
-        
-        console.error(`❌ Login attempt ${loginAttempt}/${maxAttempts} failed:`, error.message);
-        if (recaptchaFailureInfo.isRecaptchaFailure) {
-          console.error(`🚨 reCAPTCHA failure detected (${recaptchaFailureInfo.reason})`);
-          if (recaptchaFailureInfo.score !== undefined) {
-            console.error(`   Score: ${recaptchaFailureInfo.score}`);
-          }
-          if (recaptchaFailureInfo.tokenStatus) {
-            console.error(`   Token status: ${recaptchaFailureInfo.tokenStatus}`);
-          }
-        }
-        
-        // Take a screenshot for debugging
+        // Close login page before throwing
         try {
-          await loginPage.screenshot({ path: `./screenshots/login-error-attempt-${loginAttempt}-${Date.now()}.png` });
-        } catch (screenshotError) {
-          console.warn('⚠️ Could not take screenshot:', screenshotError.message);
+          if (!loginPage.isClosed()) {
+            await loginPage.close();
+          }
+        } catch (closeError) {
+          console.warn('⚠️ Error closing login page after failure:', closeError.message);
         }
         
-        // If this was the last attempt, throw the error
-        if (loginAttempt >= maxAttempts) {
-          console.error(`❌ All ${maxAttempts} login attempts failed`);
-          
-          // Enhanced error message with reCAPTCHA details
-          let finalErrorMessage = `Failed to login after ${maxAttempts} attempts: ${error.message}`;
-          if (recaptchaFailureInfo.isRecaptchaFailure) {
-            finalErrorMessage += ` [reCAPTCHA failure: ${recaptchaFailureInfo.reason}]`;
-            if (recaptchaFailureInfo.score !== undefined) {
-              finalErrorMessage += ` [Score: ${recaptchaFailureInfo.score}]`;
-            }
-          }
-          
-          // Close login page before throwing
+        // Close the context since login failed
+        if (this.browserContext) {
           try {
-            if (!loginPage.isClosed()) {
-              await loginPage.close();
-            }
+            await this.browserContext.close();
+            console.log('🧹 Closed browser context after login failure');
           } catch (closeError) {
-            console.warn('⚠️ Error closing login page after failure:', closeError.message);
+            console.warn('⚠️ Error closing context after login failure:', closeError.message);
           }
-          
-          // Close the context since login failed - this allows retry with fresh context
-          if (this.browserContext) {
-            try {
-              await this.browserContext.close();
-              console.log('🧹 Closed browser context after login failure');
-            } catch (closeError) {
-              console.warn('⚠️ Error closing context after login failure:', closeError.message);
-            }
-            this.browserContext = null;
-          }
-          
-          const finalError = new Error(finalErrorMessage);
-          finalError.recaptchaFailure = recaptchaFailureInfo.isRecaptchaFailure;
-          finalError.recaptchaDetails = recaptchaFailureInfo;
-          throw finalError;
-        } else {
-          // Wait before retrying (longer for reCAPTCHA failures)
-          const waitTime = recaptchaFailureInfo.isRecaptchaFailure ? 3000 : 2000;
-          console.log(`⏳ Waiting ${waitTime/1000}s before retry attempt ${loginAttempt + 1}...`);
-          await loginPage.waitForTimeout(waitTime);
+          this.browserContext = null;
         }
+        
+        throw error;
       }
     }
-    }
     
+    // Keep authenticated page open for reuse (session cookies remain active)
     // Keep authenticated page open for reuse (session cookies remain active)
     this.browserInitialized = true;
     return this.browserContext;
@@ -1197,7 +399,49 @@ class BrowserAgentService {
         console.warn(`⚠️ [${callSid}] Execution lock was stuck for ${Math.round(elapsedTime / 1000)}s (timeout: ${this.executionLockTimeout / 1000}s), force clearing to allow retry`);
         this.activeExecutions.delete(executionKey);
       } else {
-        console.log(`⚠️ [${callSid}] Task "${task}" is already running (started ${Math.round(elapsedTime / 1000)}s ago, last heartbeat: ${Math.round(timeSinceHeartbeat / 1000)}s ago). Rejecting concurrent execution.`);
+        // SMART OVERRIDE: Handle cases where first call is waiting and second call has the needed information
+        let shouldOverride = false;
+        let overrideReason = '';
+        
+        // Case 1: Second call with agreedSlot while first call is in Step 1 (availability check)
+        if (task === 'create_booking' && args.agreedSlot && activeExecution.phase === 'step1_availability') {
+          shouldOverride = true;
+          overrideReason = 'Second call with agreedSlot detected while first call is in Step 1 (prevents duplicate availability check)';
+        }
+        // Case 2: First call is waiting for preferences (bikeType, etc.) and second call has them
+        else if (task === 'create_booking' && (activeExecution.phase === 'step7_booking_options' || activeExecution.phase === 'waiting_for_preferences')) {
+          // Check if second call has preferences that first call might be missing
+          if (args.bikeType || args.preferredDate || args.preferredTime || args.location || args.instructor) {
+            shouldOverride = true;
+            overrideReason = `Second call with preferences (bikeType, etc.) detected while first call is waiting for preferences (phase: ${activeExecution.phase})`;
+          }
+        }
+        // Case 3: Second call has agreedSlot and first call is in early stages (before Step 6)
+        else if (task === 'create_booking' && args.agreedSlot && 
+                 (activeExecution.phase === 'step2_login' || 
+                  activeExecution.phase === 'step3_workflow_type' || 
+                  activeExecution.phase === 'step4_5_find_client' ||
+                  activeExecution.phase === 'step4_select_session')) {
+          shouldOverride = true;
+          overrideReason = `Second call with agreedSlot detected while first call is in ${activeExecution.phase} (allows retry with complete information)`;
+        }
+        
+        if (shouldOverride) {
+          console.log(`🔄 [${callSid}] Smart override: ${overrideReason}`);
+          
+          // Signal cancellation to the first call
+          if (activeExecution.cancelToken) {
+            activeExecution.cancelToken.cancelled = true;
+            activeExecution.cancelToken.reason = overrideReason;
+          }
+          
+          // Clear the first execution lock
+          this.activeExecutions.delete(executionKey);
+          
+          // Log the cancellation
+          console.log(`✅ [${callSid}] First call cancelled. Proceeding with second call that has complete information.`);
+        } else {
+          console.log(`⚠️ [${callSid}] Task "${task}" is already running (started ${Math.round(elapsedTime / 1000)}s ago, last heartbeat: ${Math.round(timeSinceHeartbeat / 1000)}s ago, phase: ${activeExecution.phase || 'unknown'}). Rejecting concurrent execution.`);
         return {
           success: false,
           error: `Task "${task}" is already in progress for this call. Please wait for it to complete.`,
@@ -1205,12 +449,21 @@ class BrowserAgentService {
         };
       }
     }
+    }
     
-    // Mark execution as active with heartbeat tracking
+    // Create cancellation token for this execution
+    const cancelToken = {
+      cancelled: false,
+      reason: null
+    };
+    
+    // Mark execution as active with heartbeat tracking and phase
     this.activeExecutions.set(executionKey, {
       task,
       startTime: Date.now(),
-      lastHeartbeat: Date.now()
+      lastHeartbeat: Date.now(),
+      phase: 'initializing', // Will be updated as workflow progresses
+      cancelToken: cancelToken
     });
     
     // Check if this is an availability check (public page, no auth needed)
@@ -1326,7 +579,12 @@ class BrowserAgentService {
       try {
         // Route to course-specific service for create_booking
         if (task === 'create_booking' && args.courseType) {
-          return await this.executeCourseBooking(page, args, callContext, auditId, progressCallback);
+          // Get cancelToken from execution lock for cancellation support
+          const executionKey = `${callSid}_${task}`;
+          const execution = this.activeExecutions.get(executionKey);
+          const cancelToken = execution ? execution.cancelToken : null;
+          
+          return await this.executeCourseBooking(page, args, callContext, auditId, progressCallback, cancelToken, executionKey);
         }
         
         // Always start with dry-run for other tasks
@@ -2031,7 +1289,16 @@ class BrowserAgentService {
     }
   }
 
-  async executeCourseBooking(page, args, callContext, auditId, progressCallback = null) {
+  // Helper method to update execution phase
+  updateExecutionPhase(executionKey, phase) {
+    const execution = this.activeExecutions.get(executionKey);
+    if (execution) {
+      execution.phase = phase;
+      execution.lastHeartbeat = Date.now();
+    }
+  }
+
+  async executeCourseBooking(page, args, callContext, auditId, progressCallback = null, cancelToken = null, executionKey = null) {
     try {
       // Map course type to service module
       const courseServiceMap = {
@@ -2188,18 +1455,40 @@ class BrowserAgentService {
       // Determine workflowType intelligently
       let workflowType = args.workflowType;
       if (!workflowType) {
-        // If customer info is available, assume existing; otherwise assume new
+        // For ITM, don't auto-determine - let the booking service handle it after availability check
+        // According to documentation: Step 1 (availability) comes before Step 3 (workflowType)
+        if (courseType === 'ITM' || courseType === 'Introduction to Motorcycling') {
+          // Don't set workflowType - let ITM booking service handle it in Step 3 after Step 1
+          workflowType = undefined;
+          console.log('📋 WorkflowType will be determined by ITM booking service after availability check (Step 1 → Step 3)');
+        } else {
+          // For other courses, auto-determine as before
         if (args.customerMobile || args.customerPhone || args.customerEmail) {
           workflowType = 'existing';
           console.log('📋 WorkflowType determined: existing (customer info available)');
         } else {
           workflowType = 'new';
           console.log('📋 WorkflowType determined: new (no customer info available)');
+          }
         }
       } else {
         console.log(`📋 WorkflowType explicitly set: ${workflowType}`);
       }
 
+      // CRITICAL: Check if we're resuming from a previous requiresPreferences response
+      // If the previous call returned requiresPreferences with resumeFromStep, preserve it
+      const { conversations } = await import('../shared/state.js');
+      const conversation = conversations[callContext.callSid] || {};
+      const previousResult = conversation.lastBookingResult || {};
+      const resumeFromStep = previousResult.resumeFromStep;
+      const resumeContext = previousResult.resumeContext;
+      
+      // Log resume detection for debugging
+      if (resumeFromStep && resumeContext) {
+        console.log(`🔄 [${auditId}] Detected resume from Step ${resumeFromStep} - will skip Steps 1-6`);
+        console.log(`🔄 [${auditId}] Resume context:`, resumeContext);
+      }
+      
       // Prepare booking arguments
       const bookingArgs = {
         customerEmail: args.customerEmail,
@@ -2208,15 +1497,22 @@ class BrowserAgentService {
         preferredDate: args.preferredDate,
         preferredTime: args.preferredTime,
         location: args.location,
+        instructor: args.instructor, // Add instructor preference
         bikeType: args.bikeType,
         cbtType: args.cbtType, // For CBT: 'standard' or 'renewal'
         duration: args.duration, // For Gear Conversion: '2', '3', or '4'
-        workflowType: workflowType
+        workflowType: workflowType,
+        // CRITICAL: Include agreedSlot and selectedSlot if provided
+        // This allows the booking service to skip availability check when slot is already agreed
+        agreedSlot: args.agreedSlot,
+        selectedSlot: args.selectedSlot,
+        // CRITICAL: Include resume information if we're continuing from requiresPreferences
+        resumeFromStep: resumeFromStep,
+        resumeContext: resumeContext
       };
       
       // Retrieve availability data from conversation if available
-      const { conversations } = await import('../shared/state.js');
-      const conversation = conversations[callContext.callSid] || {};
+      // Note: conversations and conversation are already declared above (lines 1480-1481)
       
       // Check if we have availability data and need to re-match with preferences
       if (conversation.lastAvailabilityCheck) {
@@ -2352,13 +1648,77 @@ class BrowserAgentService {
       }
       
       // Execute workflow - all services now use executeBookingWorkflow
-      const result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext);
+      // Pass cancelToken and executionKey for phase tracking and cancellation support
+      const result = await bookingService.executeBookingWorkflow(page, bookingArgs, callContext, cancelToken, executionKey, (phase) => {
+        // Phase update callback - update execution lock phase
+        if (executionKey) {
+          this.updateExecutionPhase(executionKey, phase);
+        }
+      });
+      
+      // Log the result to debug workflow return values
+      console.log(`📋 [${auditId}] ITM booking workflow result:`, {
+        success: result.success,
+        cancelled: result.cancelled || false,
+        requiresWorkflowType: result.requiresWorkflowType,
+        requiresVerification: result.requiresVerification,
+        requiresPreferences: result.requiresPreferences,
+        requiresCustomerInfo: result.requiresCustomerInfo,
+        retryPrompt: result.retryPrompt ? 'present' : 'absent',
+        error: result.error ? result.error.substring(0, 100) : 'none',
+        message: result.message ? result.message.substring(0, 100) : 'none'
+      });
+      
+      // If workflow was cancelled, return early with cancellation status
+      // This allows the second call (with agreedSlot) to proceed
+      // CRITICAL: Make it clear this is NOT booking completion - just a workflow replacement
+      if (result.cancelled) {
+        console.log(`🛑 [${auditId}] Workflow was cancelled - this is expected when replaced by a call with agreedSlot`);
+        return {
+          success: false,
+          cancelled: true,
+          message: result.message || 'The previous booking request was replaced by a new request with complete information. The booking is NOT complete - please wait for the new request to finish.',
+          dryRun: true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: result.screenshots || [],
+          courseType: args.courseType,
+          // CRITICAL: Add explicit flag to prevent agent from declaring booking complete
+          isCancellation: true,
+          bookingNotComplete: true
+        };
+      }
       
       if (progressCallback) {
-        if (result.success) {
+        // CRITICAL: Only declare "Booking confirmed" if:
+        // 1. result.success is true AND
+        // 2. Payment is completed (paymentCompleted: true OR confirmationEmailSent: true) AND
+        // 3. No structured response flags are present (not waiting for anything) AND
+        // 4. Not a cancellation
+        const paymentIsComplete = result.paymentCompleted === true || result.confirmationEmailSent === true;
+        const isActuallyComplete = result.success && 
+                                   paymentIsComplete && // CRITICAL: Payment must be completed
+                                   !result.requiresVerification &&
+                                   !result.requiresPreferences &&
+                                   !result.requiresWorkflowType &&
+                                   !result.requiresBookingContinuation &&
+                                   !result.requiresCustomerInfo &&
+                                   !result.requiresSlotSelection &&
+                                   !result.cancelled &&
+                                   !result.isCancellation;
+        
+        if (isActuallyComplete) {
+          // CRITICAL: Only send "Booking confirmed" when payment is actually completed
           progressCallback({ milestone: 'confirmation_completed', message: 'Booking confirmed', progress: 100 });
+        } else if (result.success && !paymentIsComplete) {
+          // Success but payment not completed yet - explicitly say NOT confirmed
+          progressCallback({ milestone: 'payment_pending', message: 'Processing payment - booking not yet confirmed', progress: 80 });
+        } else if (result.success) {
+          // Success but still waiting for something - explicitly say NOT confirmed
+          progressCallback({ milestone: 'form_filling_completed', message: 'Details entered - booking not yet confirmed', progress: 70 });
         } else {
-          progressCallback({ milestone: 'form_filling_completed', message: 'Details entered', progress: 70 });
+          // Not successful - explicitly say NOT confirmed
+          progressCallback({ milestone: 'form_filling_completed', message: 'Details entered - booking not yet confirmed', progress: 70 });
         }
       }
 
@@ -2379,7 +1739,33 @@ class BrowserAgentService {
       }
 
       // If result indicates preferences are required, return it with preference prompt
+      // IMPORTANT: Clear execution lock when returning requiresPreferences so retry with preferences can proceed immediately
       if (result.requiresPreferences) {
+        // Clear execution lock to allow immediate retry with preferences
+        // The page stays open (authenticated page), so the retry can continue from where it left off
+        if (executionKey) {
+          const execution = this.activeExecutions.get(executionKey);
+          if (execution) {
+            console.log(`🔄 [${auditId}] Clearing execution lock for requiresPreferences - allowing immediate retry with preferences`);
+            this.activeExecutions.delete(executionKey);
+          }
+        }
+        
+        // CRITICAL: Store resume information in conversation state for next continuation call
+        if (result.resumeFromStep && result.resumeContext) {
+          const { conversations } = await import('../shared/state.js');
+          if (!conversations[callContext.callSid]) {
+            conversations[callContext.callSid] = {};
+          }
+          conversations[callContext.callSid].lastBookingResult = {
+            resumeFromStep: result.resumeFromStep,
+            resumeContext: result.resumeContext,
+            requiresPreferences: true,
+            missingPreferences: result.missingPreferences || []
+          };
+          console.log(`💾 [${auditId}] Stored resume information in conversation state (resumeFromStep: ${result.resumeFromStep})`);
+        }
+        
         return {
           success: false,
           requiresPreferences: true,
@@ -2391,7 +1777,10 @@ class BrowserAgentService {
           auditId,
           screenshots: result.screenshots || [],
           courseType: args.courseType,
-          sessionDetails: result.sessionDetails
+          sessionDetails: result.sessionDetails,
+          // CRITICAL: Include resume information in return value
+          resumeFromStep: result.resumeFromStep,
+          resumeContext: result.resumeContext
         };
       }
 
@@ -2410,8 +1799,36 @@ class BrowserAgentService {
         };
       }
 
+      // If result indicates workflowType is required (ITM bookings), return it
+      // Check this BEFORE the generic error handler to ensure it's not lost
+      if (result && (result.requiresWorkflowType === true || result.requiresWorkflowType === 'true')) {
+        // Clear execution lock to allow immediate retry with workflowType
+        // The page stays open (authenticated page), so the retry can continue from where it left off
+        if (executionKey) {
+          const execution = this.activeExecutions.get(executionKey);
+          if (execution) {
+            console.log(`🔄 [${auditId}] Clearing execution lock for requiresWorkflowType - allowing immediate retry with workflowType`);
+            this.activeExecutions.delete(executionKey);
+          }
+        }
+        
+        console.log(`✅ [${auditId}] Detected requiresWorkflowType: true, returning structured response`);
+        return {
+          success: false,
+          requiresWorkflowType: true,
+          message: result.message || 'I need to know if you have done training with us before. Have you done training with Universal Motorcycle Training before?',
+          sessionDetails: result.sessionDetails,
+          dryRun: true,
+          requiresConfirmation: false,
+          auditId,
+          screenshots: result.screenshots || [],
+          courseType: args.courseType
+        };
+      }
+
       // If result indicates failure, return it gracefully
-      if (!result.success) {
+      // BUT only if it's not a structured response that should be handled above
+      if (!result.success && !result.requiresWorkflowType && !result.requiresVerification && !result.requiresPreferences && !result.retryPrompt) {
         // Log the actual error for debugging
         console.error(`❌ [${auditId}] Course booking failed:`, result.error);
         if (result.technicalError) {
@@ -2431,6 +1848,15 @@ class BrowserAgentService {
           screenshots: result.screenshots || [],
           courseType: args.courseType
         };
+      }
+
+      // CRITICAL: Clear resume information if booking completed successfully
+      if (result.success && !result.requiresPreferences && !result.requiresVerification && !result.requiresWorkflowType) {
+        const { conversations } = await import('../shared/state.js');
+        if (conversations[callContext.callSid] && conversations[callContext.callSid].lastBookingResult) {
+          console.log(`🧹 [${auditId}] Clearing resume information - booking completed successfully`);
+          delete conversations[callContext.callSid].lastBookingResult;
+        }
       }
 
       // Send email confirmation if booking was successful and customer email is available

@@ -145,11 +145,21 @@ class ClientVerificationTool {
         
         console.log(`✅ [${callSid}] Client verification successful`);
         
+        // Check if we're in a booking context
+        // If clientDetails exists, we're likely in a booking flow (client was found during booking)
+        // Also check if there's any indication of an active booking process
+        const isBookingContext = !!conversation?.clientDetails;
+        
+        const baseMessage = isBookingContext
+          ? 'Identity verified successfully. All details match our records. You have been verified successfully. You must now continue with the booking by calling crm_browser with task: "create_booking" using the same parameters as before. Verification is a step in the booking process, not the end. Do NOT say "Booking is confirmed" - the booking workflow continues after verification.'
+          : 'Identity verified successfully. All details match our records.';
+        
         return {
           success: true,
           verified: true,
-          message: 'Identity verified successfully. All details match our records.',
-          verifiedFields: ['fullName', 'postcode', 'telephoneNumber'].filter(f => !mismatches.includes(f))
+          message: baseMessage,
+          verifiedFields: ['fullName', 'postcode', 'telephoneNumber'].filter(f => !mismatches.includes(f)),
+          requiresBookingContinuation: isBookingContext || undefined // Only set if in booking context
         };
       } else {
         // Check if we've exceeded max attempts (7 per field)

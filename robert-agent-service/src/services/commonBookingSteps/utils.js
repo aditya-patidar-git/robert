@@ -104,3 +104,52 @@ export function extractLocationIdentifier(locationText) {
   return null;
 }
 
+/**
+ * Clean email address by removing "Copy" button text and extracting only the email pattern
+ * Handles various formats:
+ * - "robert@gmail.comCopy" (Copy appended directly)
+ * - "robert@gmail.com\nCopy" (Copy on new line)
+ * - "robert@gmail.com" (already clean)
+ * @param {string} emailText - Raw email text that may contain "Copy" button text
+ * @returns {string|null} Cleaned email address or null if invalid
+ */
+export function cleanEmail(emailText) {
+  if (!emailText || typeof emailText !== 'string') {
+    return null;
+  }
+
+  let cleaned = emailText.trim();
+
+  // Method 1: Split on newline and take first part (Copy button is usually on new line)
+  const emailLines = cleaned.split('\n');
+  cleaned = emailLines[0].trim();
+
+  // Method 2: Use regex to extract email pattern if split didn't work or if email is malformed
+  if (!cleaned || !cleaned.includes('@')) {
+    const emailMatch = cleaned.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+    if (emailMatch) {
+      cleaned = emailMatch[0];
+    } else {
+      // Try on original text if cleaned version doesn't have email pattern
+      const originalMatch = emailText.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+      if (originalMatch) {
+        cleaned = originalMatch[0];
+      } else {
+        return null; // No valid email pattern found
+      }
+    }
+  }
+
+  // Method 3: Remove "Copy" text if it's appended directly (e.g., "robert@gmail.comCopy")
+  if (cleaned && cleaned.toLowerCase().endsWith('copy')) {
+    cleaned = cleaned.slice(0, -4).trim();
+  }
+
+  // Final validation: ensure it's a valid email format
+  if (!cleaned || !cleaned.includes('@')) {
+    return null;
+  }
+
+  return cleaned;
+}
+
