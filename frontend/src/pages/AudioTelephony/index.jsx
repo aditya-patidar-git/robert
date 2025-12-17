@@ -13,15 +13,17 @@ import {
   TextField,
   Alert
 } from '@mui/material';
-import { Save, PlayArrow, VolumeUp, Mic, Phone, Headset } from '@mui/icons-material';
+import { Save, PlayArrow, VolumeUp, Mic, Phone, Headset, Settings } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
 import { useAudioTelephonyState } from './hooks/useAudioTelephonyState';
 import AudioSettingsTab from './tabs/AudioSettingsTab';
 import VoiceManagementTab from './tabs/VoiceManagementTab';
 import TelephonyRoutingTab from './tabs/TelephonyRoutingTab';
 import CallQualityTab from './tabs/CallQualityTab';
+import SIPConfigurationTab from './tabs/SIPConfigurationTab';
 import PhoneNumberForm from './components/PhoneNumberForm';
 import TransferNumberForm from './components/TransferNumberForm';
+import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
 import configService from '../../services/configService';
 import voiceService from '../../services/voiceService';
 import { useQueryClient } from '@tanstack/react-query';
@@ -131,13 +133,19 @@ const AudioTelephonyPage = () => {
   });
 
   const addTransferNumberMutation = useMutation({
-    mutationFn: () => {
-      const transferNumbers = watch('transferNumbers') || [];
+    mutationFn: (transferNumbers) => {
       return configService.updateTelephonyConfig({ transferNumbers });
     },
-    onSuccess: () => {
+    onSuccess: async (response) => {
       showSuccess('Transfer number added successfully');
+      // Invalidate and refetch to get updated data
       queryClient.invalidateQueries(['telephony-config']);
+      // Wait a bit for the refetch to complete, then ensure form is updated
+      setTimeout(() => {
+        queryClient.refetchQueries(['telephony-config']).then(() => {
+          console.log('✅ [TRANSFER_NUMBERS] Refetch completed after add');
+        });
+      }, 100);
       setAddTransferNumberDialog(false);
     },
     onError: (error) => {
@@ -146,13 +154,19 @@ const AudioTelephonyPage = () => {
   });
 
   const updateTransferNumberMutation = useMutation({
-    mutationFn: () => {
-      const transferNumbers = watch('transferNumbers') || [];
+    mutationFn: (transferNumbers) => {
       return configService.updateTelephonyConfig({ transferNumbers });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       showSuccess('Transfer number updated successfully');
+      // Invalidate and refetch to get updated data
       queryClient.invalidateQueries(['telephony-config']);
+      // Wait a bit for the refetch to complete, then ensure form is updated
+      setTimeout(() => {
+        queryClient.refetchQueries(['telephony-config']).then(() => {
+          console.log('✅ [TRANSFER_NUMBERS] Refetch completed after update');
+        });
+      }, 100);
       setEditTransferNumberDialog(false);
       setTransferNumberToEdit(null);
     },
@@ -201,7 +215,7 @@ const AudioTelephonyPage = () => {
     const primaryModelId = watch('selectedModelId') || watch('selectedModel');
     console.log('🔵 [VOICE_PREVIEW] Primary model ID:', primaryModelId);
     
-    const previewText = text || selectedVoice.sampleText || 'Hello, this is a voice preview.';
+    const previewText = text || selectedVoice.sampleText || 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
     console.log('🔵 [VOICE_PREVIEW] Calling mutation with:', { 
       voiceId: selectedVoice.id, 
       text: previewText,
@@ -458,23 +472,30 @@ const AudioTelephonyPage = () => {
 
   const handleAddTransferNumber = useCallback((transferNumberData) => {
     const transferNumbers = watch('transferNumbers') || [];
-    setValue('transferNumbers', [...transferNumbers, transferNumberData]);
-    addTransferNumberMutation.mutate();
+    const updated = [...transferNumbers, transferNumberData];
+    // Update form state immediately for UI feedback
+    setValue('transferNumbers', updated, { shouldDirty: true });
+    // Pass the updated array directly to avoid timing issues with setValue
+    addTransferNumberMutation.mutate(updated);
   }, [watch, setValue, addTransferNumberMutation]);
 
   const handleEditTransferNumber = useCallback((index, transferNumberData) => {
     const transferNumbers = watch('transferNumbers') || [];
     const updated = [...transferNumbers];
     updated[index] = transferNumberData;
-    setValue('transferNumbers', updated);
-    updateTransferNumberMutation.mutate();
+    // Update form state immediately for UI feedback
+    setValue('transferNumbers', updated, { shouldDirty: true });
+    // Pass the updated array directly to avoid timing issues with setValue
+    updateTransferNumberMutation.mutate(updated);
   }, [watch, setValue, updateTransferNumberMutation]);
 
   const handleDeleteTransferNumber = useCallback((index) => {
     const transferNumbers = watch('transferNumbers') || [];
     const updated = transferNumbers.filter((_, i) => i !== index);
-    setValue('transferNumbers', updated);
-    updateTransferNumberMutation.mutate();
+    // Update form state immediately for UI feedback
+    setValue('transferNumbers', updated, { shouldDirty: true });
+    // Pass the updated array directly to avoid timing issues with setValue
+    updateTransferNumberMutation.mutate(updated);
   }, [watch, setValue, updateTransferNumberMutation]);
 
   const handleOpenEditTransferNumber = useCallback((index) => {
@@ -521,6 +542,9 @@ const AudioTelephonyPage = () => {
         >
           Configure voice processing settings, telephony routing, and call management
         </Typography>
+        <Box sx={{ mt: 1 }}>
+          <ConfigSyncStatus configType="telephony" showDetails={true} />
+        </Box>
       </Box>
 
       {/* Tabs Navigation */}
@@ -540,6 +564,7 @@ const AudioTelephonyPage = () => {
           <Tab label="Audio Settings" icon={<VolumeUp />} iconPosition="start" />
           <Tab label="Voice Management" icon={<Mic />} iconPosition="start" />
           <Tab label="Telephony Routing" icon={<Phone />} iconPosition="start" />
+          <Tab label="SIP Configuration" icon={<Settings />} iconPosition="start" />
           <Tab label="Call Quality" icon={<Headset />} iconPosition="start" />
         </Tabs>
       </Paper>
@@ -559,6 +584,10 @@ const AudioTelephonyPage = () => {
         )}
 
         {activeTab === 3 && (
+          <SIPConfigurationTab />
+        )}
+
+        {activeTab === 4 && (
           <CallQualityTab state={tabState} handlers={tabHandlers} />
         )}
 
@@ -655,7 +684,7 @@ const AudioTelephonyPage = () => {
               )}
               
               {/* Debug Info (only in development) */}
-              {process.env.NODE_ENV === 'development' && previewAudioUrl && (
+              {import.meta.env.DEV && previewAudioUrl && (
                 <Alert severity="info" sx={{ mt: 2 }}>
                   <Typography variant="caption" component="div">
                     Debug: Audio URL = {previewAudioUrl}
@@ -672,7 +701,7 @@ const AudioTelephonyPage = () => {
             startIcon={<PlayArrow />}
             onClick={() => {
               const textField = document.querySelector('textarea[aria-label="Preview Text"]');
-              const text = textField?.value || selectedVoice?.sampleText || 'Hello, this is a voice preview.';
+              const text = textField?.value || selectedVoice?.sampleText || 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
               handlePlayPreview(text);
             }}
             disabled={voicePreviewMutation.isLoading || !selectedVoice}

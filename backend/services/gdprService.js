@@ -303,6 +303,118 @@ class GDPRService {
     return mockDSARRequests;
   }
 
+  // Get full DSAR request details
+  async getDSARRequestDetails(dsarId) {
+    const requests = await this.getDSARRequests({});
+    const request = requests.find(req => req.id === dsarId);
+    
+    if (!request) {
+      throw new Error('DSAR request not found');
+    }
+
+    // Add additional details
+    return {
+      ...request,
+      timeline: await this.getDSARRequestTimeline(dsarId),
+      dataPreview: await this.previewDSARData(
+        request.requestorEmail || request.requestor,
+        request.requestedData || ['all']
+      )
+    };
+  }
+
+  // Preview DSAR data before export
+  async previewDSARData(userIdentifier, dataTypes = ['all']) {
+    // In a real implementation, this would query actual data
+    const preview = {
+      userIdentifier,
+      dataTypes,
+      summary: {
+        transcripts: 0,
+        recordings: 0,
+        metadata: 0,
+        callRecords: 0
+      },
+      sampleData: {
+        transcripts: [],
+        recordings: [],
+        metadata: [],
+        callRecords: []
+      }
+    };
+
+    // Mock data preview
+    if (dataTypes.includes('all') || dataTypes.includes('transcripts')) {
+      preview.summary.transcripts = 5; // Would be actual count
+      preview.sampleData.transcripts = [
+        { id: 'trans_001', date: new Date().toISOString(), duration: 120 }
+      ];
+    }
+
+    if (dataTypes.includes('all') || dataTypes.includes('recordings')) {
+      preview.summary.recordings = 3; // Would be actual count
+      preview.sampleData.recordings = [
+        { id: 'rec_001', date: new Date().toISOString(), duration: 120, size: 1024000 }
+      ];
+    }
+
+    return preview;
+  }
+
+  // Get DSAR request timeline
+  async getDSARRequestTimeline(dsarId) {
+    const request = await this.getDSARRequestDetails(dsarId);
+    
+    // Build timeline from request and audit logs
+    const timeline = [
+      {
+        event: 'request_created',
+        timestamp: request.createdAt,
+        description: 'DSAR request created',
+        user: request.requestorEmail
+      }
+    ];
+
+    // Add processing events if available
+    if (request.status === 'completed') {
+      timeline.push({
+        event: 'request_processed',
+        timestamp: request.updatedAt || request.createdAt,
+        description: 'DSAR request processed',
+        user: 'admin'
+      });
+    }
+
+    return timeline;
+  }
+
+  // Generate DSAR export (enhanced)
+  async generateDSARExport(dsarId, dataTypes = ['all']) {
+    const request = await this.getDSARRequestDetails(dsarId);
+    
+    // In a real implementation, this would:
+    // 1. Collect all data for the user
+    // 2. Format it according to GDPR requirements
+    // 3. Create a ZIP file
+    // 4. Store it securely
+    // 5. Return download URL
+
+    const exportData = {
+      exportId: `export_${dsarId}_${Date.now()}`,
+      dsarId,
+      userIdentifier: request.requestorEmail || request.requestor,
+      dataTypes,
+      generatedAt: new Date().toISOString(),
+      downloadUrl: `/api/gdpr/exports/${dsarId}/download`, // Would be actual secure URL
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+      fileSize: 0, // Would be actual size
+      recordCount: 0 // Would be actual count
+    };
+
+    await this.logAuditEvent('dsar_export_generated', exportData);
+    return exportData;
+  }
+
   // Privacy Impact Assessment
   async generatePrivacyImpactAssessment(processingActivity) {
     const pia = {

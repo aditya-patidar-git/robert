@@ -1,4 +1,4 @@
-import { takeScreenshot } from '../utils.js';
+import { takeScreenshot, cleanEmail } from '../utils.js';
 
 /**
  * Extract client details from the CRM contact details page
@@ -241,8 +241,13 @@ export async function extractClientDetails(iframe, page, screenshotsDir) {
         if (await emailContainer.count() > 0) {
           // Email is direct text, may have Copy button - extract just the email part
           const emailText = await emailContainer.textContent() || '';
-          email = emailText.split('\n')[0].trim(); // Get first line (before Copy button text)
-          console.log(`📝 [EXTRACT] Extracted Email: ${email}`);
+          // Use cleanEmail utility to properly remove "Copy" button text
+          email = cleanEmail(emailText) || '';
+          if (email) {
+            console.log(`📝 [EXTRACT] Extracted Email: ${email}`);
+          } else {
+            console.log(`⚠️ [EXTRACT] Could not extract valid email from: ${emailText}`);
+          }
         }
       }
     } catch (e) {

@@ -148,6 +148,11 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
       presetTemplateName = 'TfL – Beyond CBT Booking Confirmation';
     } else if (courseType === 'full-licence') {
       presetTemplateName = 'DAS/A2/A1/ERS/Full Licence Assessment SMS Booking Confirmation';
+    } else if (courseType === 'itm' || courseType === 'gear-conversion' || courseType === 'private-lesson') {
+      presetTemplateName = 'ITM / Gear Conversion / Private Motorcycling SMS Booking Confirmation';
+    } else if (courseType === 'cbt' || courseType === 'cbt-executive') {
+      // CBT courses may have their own SMS template, using ITM template as fallback
+      presetTemplateName = 'ITM / Gear Conversion / Private Motorcycling SMS Booking Confirmation';
     } else {
       presetTemplateName = 'TfL - 1-2-1 Motorcycle Skills Booking Confirmation – WITH TRAINING SITE ADDRESS'; // Default
     }

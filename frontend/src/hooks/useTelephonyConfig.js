@@ -18,14 +18,40 @@ export const useTelephonyConfig = (formMethods = null) => {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['telephony-config'],
-    queryFn: configService.getTelephonyConfig
+    queryFn: async () => {
+      console.log('🔍 [TELEPHONY_CONFIG] Query function called');
+      const result = await configService.getTelephonyConfig();
+      console.log('🔍 [TELEPHONY_CONFIG] Query result:', result);
+      return result;
+    },
+    enabled: true, // Explicitly enable the query
+    staleTime: 0, // Always refetch
+    cacheTime: 0 // Don't cache
   });
 
   // Update form values when config is loaded or updated
   useEffect(() => {
-    if (data?.config) {
-      const config = data.config;
-      const configId = config._id || config.updatedAt || JSON.stringify(config);
+    // Debug: Log the data structure
+    if (data) {
+      console.log('🔍 [TELEPHONY_CONFIG] Raw data:', data);
+      console.log('🔍 [TELEPHONY_CONFIG] data.data:', data?.data);
+      console.log('🔍 [TELEPHONY_CONFIG] data.config:', data?.config);
+      console.log('🔍 [TELEPHONY_CONFIG] data.success:', data?.success);
+    } else {
+      console.log('🔍 [TELEPHONY_CONFIG] No data yet, isLoading:', isLoading);
+    }
+    
+    // Handle both normalized response format { success, data: config } and direct config
+    // BaseService with dataPath: 'config' normalizes to { success: true, data: config }
+    const config = data?.data || data?.config || data;
+    
+    if (config) {
+      console.log('🔍 [TELEPHONY_CONFIG] Using config:', config);
+      console.log('🔍 [TELEPHONY_CONFIG] transferNumbers:', config.transferNumbers);
+      console.log('🔍 [TELEPHONY_CONFIG] transferNumbers length:', config.transferNumbers?.length);
+      // Use a more reliable config ID that includes transferNumbers to detect changes
+      const transferNumbersStr = JSON.stringify(config.transferNumbers || []);
+      const configId = `${config._id || 'default'}_${config.updatedAt || Date.now()}_${transferNumbersStr}`;
       
       // Use reset for initial load to ensure all nested objects are properly set
       if (!hasInitialized.current && reset) {
@@ -58,9 +84,9 @@ export const useTelephonyConfig = (formMethods = null) => {
         if (config.numbers) {
           setValue('numbers', [...(config.numbers || [])], { shouldDirty: false, shouldValidate: false });
         }
-        if (config.transferNumbers) {
-          setValue('transferNumbers', [...(config.transferNumbers || [])], { shouldDirty: false, shouldValidate: false });
-        }
+        // Always update transferNumbers - create new array reference to trigger re-render
+        const newTransferNumbers = config.transferNumbers ? [...config.transferNumbers] : [];
+        setValue('transferNumbers', newTransferNumbers, { shouldDirty: false, shouldValidate: false });
       }
     }
   }, [data, setValue, reset]);
@@ -76,8 +102,11 @@ export const useTelephonyConfig = (formMethods = null) => {
     }
   });
 
+  // Handle both normalized response format { success, data: config } and direct config
+  const config = data?.data || data?.config || data;
+
   return {
-    config: data?.config || null,
+    config: config || null,
     isLoading,
     error,
     saveConfig: saveConfigMutation.mutate,

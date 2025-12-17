@@ -1,5 +1,6 @@
 import AIConfig from "../../models/AIConfig.js";
 import PromptVersion from "../../models/PromptVersion.js";
+import configSyncService from "../../services/configSyncService.js";
 
 // Helper function to migrate old string format to new object format
 const migrateFallbackChain = (fallbackChain, defaultVoiceId = 'ash') => {
@@ -52,7 +53,7 @@ export const getConfig = async (req, res) => {
         voice: {
           id: defaultVoiceId,
           name: "Ash",
-          language: "en-US"
+          language: "en-GB"
         },
         uncertaintyGate: {
           enabled: true,
@@ -207,6 +208,12 @@ export const updateConfig = async (req, res) => {
 
     config.createdBy = req.user?.id || "admin";
     await config.save();
+
+    // Notify config change
+    configSyncService.notifyConfigChange('ai', null, {
+      changedBy: req.user?.id || req.user?.username || 'admin',
+      action: 'update'
+    });
 
     res.json({
       status: "success",

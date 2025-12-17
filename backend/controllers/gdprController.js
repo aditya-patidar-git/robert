@@ -40,17 +40,87 @@ export const createDSARRequest = async (req, res) => {
     }
 };
 
+// Get DSAR request details
+export const getDSARRequestDetails = async (req, res) => {
+    try {
+        const { dsarId } = req.params;
+        
+        const details = await gdprService.getDSARRequestDetails(dsarId);
+        
+        res.json({ success: true, request: details });
+    } catch (error) {
+        observabilityService.error('Get DSAR request details error', { dsarId: req.params.dsarId, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Preview DSAR data
+export const previewDSARData = async (req, res) => {
+    try {
+        const { dsarId } = req.params;
+        const { dataTypes } = req.body;
+        
+        const request = await gdprService.getDSARRequestDetails(dsarId);
+        const userIdentifier = request.requestorEmail || request.requestor;
+        
+        const preview = await gdprService.previewDSARData(
+            userIdentifier,
+            dataTypes || request.requestedData || ['all']
+        );
+        
+        res.json({ success: true, preview });
+    } catch (error) {
+        observabilityService.error('Preview DSAR data error', { dsarId: req.params.dsarId, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Generate DSAR export
+export const generateDSARExport = async (req, res) => {
+    try {
+        const { dsarId } = req.params;
+        const { dataTypes } = req.body;
+        
+        const exportData = await gdprService.generateDSARExport(dsarId, dataTypes);
+        
+        observabilityService.info('DSAR export generated', { dsarId, exportId: exportData.exportId });
+        res.json({ success: true, export: exportData });
+    } catch (error) {
+        observabilityService.error('Generate DSAR export error', { dsarId: req.params.dsarId, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Get DSAR request timeline
+export const getDSARRequestTimeline = async (req, res) => {
+    try {
+        const { dsarId } = req.params;
+        
+        const timeline = await gdprService.getDSARRequestTimeline(dsarId);
+        
+        res.json({ success: true, timeline });
+    } catch (error) {
+        observabilityService.error('Get DSAR timeline error', { dsarId: req.params.dsarId, error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 // Process DSAR request
 export const processDSARRequest = async (req, res) => {
     try {
         const { dsarId } = req.params;
-        const { action, adminUser } = req.body;
+        const { action, adminUser, notes } = req.body;
         
         if (!action || !adminUser) {
             return res.status(400).json({ success: false, error: 'Missing required fields' });
         }
         
         const result = await gdprService.processDSARRequest(dsarId, action, adminUser);
+        
+        // Add notes if provided
+        if (notes) {
+            result.notes = notes;
+        }
         
         observabilityService.info('DSAR request processed', { dsarId, action, adminUser });
         res.json({ success: true, result });

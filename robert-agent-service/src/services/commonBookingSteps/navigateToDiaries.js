@@ -120,10 +120,43 @@ export async function navigateToDiariesAndSelectSession(page, sessionDetails, sc
     await takeScreenshot(page, 'diaries-page-loaded.png', screenshotsDir);
     
     // Select date using the precise calendar interaction pattern
-    console.log(`📅 Selecting date from ${sessionDetails.startDate}...`);
+    console.log(`📅 Selecting date from startDate="${sessionDetails.startDate}", date="${sessionDetails.date}"...`);
     
-    // Parse the startDate (format: "2026-02-18T00:00:00")
-    const dateObj = new Date(sessionDetails.startDate);
+    // Parse the startDate (format: "2026-02-18T00:00:00" or "2026-02-18" or "17/12/2025")
+    let dateObj = null;
+    
+    if (sessionDetails.startDate) {
+      // Try ISO format first
+      dateObj = new Date(sessionDetails.startDate);
+      if (isNaN(dateObj.getTime())) {
+        // If ISO format fails, try DD/MM/YYYY format
+        const ddmmyyyyMatch = sessionDetails.startDate.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        if (ddmmyyyyMatch) {
+          const [, day, month, year] = ddmmyyyyMatch;
+          dateObj = new Date(`${year}-${month}-${day}`);
+          console.log(`📅 Parsed DD/MM/YYYY format: ${day}/${month}/${year} -> ${year}-${month}-${day}`);
+        }
+      }
+    } else if (sessionDetails.date) {
+      // Fallback: try to parse from date field
+      const ddmmyyyyMatch = sessionDetails.date.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (ddmmyyyyMatch) {
+        const [, day, month, year] = ddmmyyyyMatch;
+        dateObj = new Date(`${year}-${month}-${day}`);
+        console.log(`📅 Parsed DD/MM/YYYY format from date field: ${day}/${month}/${year} -> ${year}-${month}-${day}`);
+      } else {
+        // Try other date formats
+        dateObj = new Date(sessionDetails.date);
+      }
+    }
+    
+    // Validate date before using
+    if (!dateObj || isNaN(dateObj.getTime())) {
+      const errorMsg = `Invalid date format: startDate="${sessionDetails.startDate}", date="${sessionDetails.date}". Cannot proceed with date selection.`;
+      console.error(`❌ ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+    
     const year = dateObj.getFullYear();
     const month = dateObj.getMonth() + 1; // JavaScript months are 0-based
     const day = dateObj.getDate();

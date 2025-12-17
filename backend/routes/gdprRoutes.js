@@ -3,6 +3,10 @@ import {
     getDSARRequests,
     createDSARRequest,
     processDSARRequest,
+    getDSARRequestDetails,
+    previewDSARData,
+    generateDSARExport,
+    getDSARRequestTimeline,
     exportUserData,
     deleteUserData,
     getAuditLogs,
@@ -21,7 +25,11 @@ const router = express.Router();
 // DSAR Management
 router.get('/dsar', getDSARRequests);
 router.post('/dsar', createDSARRequest);
-router.post('/dsar/:dsarId/process', processDSARRequest);
+router.get('/dsar/:dsarId', getDSARRequestDetails);
+router.get('/dsar/:dsarId/timeline', getDSARRequestTimeline);
+router.post('/dsar/:dsarId/preview', previewDSARData);
+router.post('/dsar/:dsarId/export', generateDSARExport);
+router.put('/dsar/:dsarId/process', processDSARRequest);
 
 // Data Management
 router.post('/export/:userIdentifier', exportUserData);

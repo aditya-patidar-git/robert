@@ -1,14 +1,28 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, cleanEmail } from './utils.js';
 
 /**
  * Step 9: Lookup contact and wait
  * @param {Page} page - Playwright page object
- * @param {string} email - Client email address to lookup
+ * @param {string} email - Client email address to lookup (may contain "Copy" text)
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @param {string} [clientPostcode] - Optional postcode for verification when multiple results appear
  */
-export async function lookupContactAndWait(page, email, screenshotsDir) {
+export async function lookupContactAndWait(page, email, screenshotsDir, clientPostcode = null) {
   try {
     console.log('🔍 [STEP 9] Looking up contact...');
+    
+    // CRITICAL: Clean email before using it (remove "Copy" button text if present)
+    const cleanedEmail = cleanEmail(email);
+    if (!cleanedEmail) {
+      throw new Error(`Invalid email address provided: ${email}`);
+    }
+    
+    if (cleanedEmail !== email) {
+      console.log(`🧹 [STEP 9] Cleaned email: "${email}" → "${cleanedEmail}"`);
+    }
+    
+    // Use cleaned email for all operations
+    email = cleanedEmail;
     
     // WAIT FOR CONTACT PAGE TO LOAD - 3 seconds
     console.log('⏳ [STEP 9] Waiting for contact page to load...');
@@ -296,8 +310,11 @@ export async function lookupContactAndWait(page, email, screenshotsDir) {
       try {
         const emailSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
         if (await emailSpan.count() > 0) {
-          foundEmail = await emailSpan.textContent();
-          foundEmail = foundEmail ? foundEmail.trim() : null;
+          let emailText = await emailSpan.textContent();
+          if (emailText) {
+            // Use cleanEmail utility to properly remove "Copy" button text
+            foundEmail = cleanEmail(emailText);
+          }
         }
       } catch (e) {
         console.log(`⚠️ [STEP 9] Could not extract email from row ${i + 1}:`, e.message);
@@ -349,22 +366,93 @@ export async function lookupContactAndWait(page, email, screenshotsDir) {
       throw new Error(`No email matches found in search results for: ${email}`);
     }
     
-    // Try to find exact email match first
+    // Handle multiple matches with postcode verification (similar to findAndVerifyClient.js)
     let exactMatch = null;
-    const exactEmailMatch = matchingRows.find(m => m.email.toLowerCase().trim() === normalizedSearch);
-    if (exactEmailMatch) {
-      console.log(`✅ [STEP 9] Found exact email match at row ${exactEmailMatch.rowIndex + 1}`);
-      exactMatch = {
-        rowIndex: exactEmailMatch.rowIndex,
-        locator: resultRows.nth(exactEmailMatch.rowIndex)
-      };
-    } else {
-      // No exact match - use first match
-      console.log(`⚠️ [STEP 9] No exact email match, using first match at row ${matchingRows[0].rowIndex + 1}`);
+    
+    if (matchingRows.length === 1) {
+      // Single match - can proceed directly
+      console.log('✅ [STEP 9] Single email match found, proceeding...');
       exactMatch = {
         rowIndex: matchingRows[0].rowIndex,
         locator: resultRows.nth(matchingRows[0].rowIndex)
       };
+    } else {
+      // Multiple matches - need to verify email + postcode per document requirements
+      console.log(`⚠️ [STEP 9] Multiple email matches found (${matchingRows.length}). Per document, verifying email + postcode.`);
+      console.log('📋 [STEP 9] Extracted matches:');
+      matchingRows.forEach((match, idx) => {
+        console.log(`   ${idx + 1}. Email: ${match.email}, Postcode: ${match.postcode || 'Not visible in search results'}`);
+      });
+      
+      // Try to find exact email match first
+      const exactEmailMatch = matchingRows.find(m => {
+        const matchEmail = cleanEmail(m.email);
+        return matchEmail && matchEmail.toLowerCase().trim() === normalizedSearch;
+      });
+      
+      if (exactEmailMatch) {
+        // Exact email match found
+        if (clientPostcode && exactEmailMatch.postcode) {
+          // Verify postcode matches
+          const extractedPostcode = exactEmailMatch.postcode.toUpperCase().replace(/\s+/g, '').trim();
+          const searchPostcode = clientPostcode.toUpperCase().replace(/\s+/g, '').trim();
+          const postcodeMatches = extractedPostcode === searchPostcode;
+          
+          if (postcodeMatches) {
+            console.log(`✅ [STEP 9] Found exact email match with matching postcode at row ${exactEmailMatch.rowIndex + 1}`);
+            exactMatch = {
+              rowIndex: exactEmailMatch.rowIndex,
+              locator: resultRows.nth(exactEmailMatch.rowIndex)
+            };
+          } else {
+            console.log(`⚠️ [STEP 9] Exact email match found but postcode doesn't match. Searched: "${searchPostcode}", Found: "${extractedPostcode}"`);
+            // Still use this match but log warning (per document: verify both, but if only one matches, use it)
+            exactMatch = {
+              rowIndex: exactEmailMatch.rowIndex,
+              locator: resultRows.nth(exactEmailMatch.rowIndex)
+            };
+          }
+        } else {
+          // No postcode provided or not visible - use exact email match
+          console.log(`✅ [STEP 9] Found exact email match at row ${exactEmailMatch.rowIndex + 1} (no postcode verification available)`);
+          exactMatch = {
+            rowIndex: exactEmailMatch.rowIndex,
+            locator: resultRows.nth(exactEmailMatch.rowIndex)
+          };
+        }
+      } else {
+        // No exact email match - try to match by postcode if available
+        if (clientPostcode) {
+          const postcodeMatch = matchingRows.find(m => {
+            if (!m.postcode) return false;
+            const extractedPostcode = m.postcode.toUpperCase().replace(/\s+/g, '').trim();
+            const searchPostcode = clientPostcode.toUpperCase().replace(/\s+/g, '').trim();
+            return extractedPostcode === searchPostcode;
+          });
+          
+          if (postcodeMatch) {
+            console.log(`✅ [STEP 9] Found match with matching postcode at row ${postcodeMatch.rowIndex + 1}`);
+            exactMatch = {
+              rowIndex: postcodeMatch.rowIndex,
+              locator: resultRows.nth(postcodeMatch.rowIndex)
+            };
+          } else {
+            // No postcode match - use first match with warning
+            console.log(`⚠️ [STEP 9] No exact email or postcode match, using first match at row ${matchingRows[0].rowIndex + 1}`);
+            exactMatch = {
+              rowIndex: matchingRows[0].rowIndex,
+              locator: resultRows.nth(matchingRows[0].rowIndex)
+            };
+          }
+        } else {
+          // No postcode provided - use first match
+          console.log(`⚠️ [STEP 9] No exact email match and no postcode provided, using first match at row ${matchingRows[0].rowIndex + 1}`);
+          exactMatch = {
+            rowIndex: matchingRows[0].rowIndex,
+            locator: resultRows.nth(matchingRows[0].rowIndex)
+          };
+        }
+      }
     }
     
     // Click exact match using JavaScript (robust method from findAndVerifyClient.js)
@@ -417,7 +505,23 @@ export async function lookupContactAndWait(page, email, screenshotsDir) {
                     const emailText = emailSpan.nextElementSibling;
                     if (emailText) {
                       const emailSpanInner = emailText.querySelector('span');
-                      email = emailSpanInner ? emailSpanInner.textContent.trim() : '';
+                      if (emailSpanInner) {
+                        let emailTextContent = emailSpanInner.textContent.trim();
+                        // CRITICAL: Remove "Copy" button text and extract only the email address
+                        const emailLines = emailTextContent.split('\n');
+                        email = emailLines[0].trim();
+                        // Use regex to extract email pattern if split didn't work
+                        if (!email || !email.includes('@')) {
+                          const emailMatch = emailTextContent.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+                          if (emailMatch) {
+                            email = emailMatch[0];
+                          }
+                        }
+                        // Remove "Copy" text if appended directly
+                        if (email && email.toLowerCase().endsWith('copy')) {
+                          email = email.slice(0, -4).trim();
+                        }
+                      }
                     }
                   }
                   // Alternative: find email by looking for span with email pattern
@@ -425,8 +529,22 @@ export async function lookupContactAndWait(page, email, screenshotsDir) {
                     const allSpans = rows[index].querySelectorAll('span');
                     for (const span of allSpans) {
                       if (span.textContent.includes('@')) {
-                        email = span.textContent.trim();
-                        break;
+                        let emailTextContent = span.textContent.trim();
+                        // CRITICAL: Remove "Copy" button text and extract only the email address
+                        const emailLines = emailTextContent.split('\n');
+                        email = emailLines[0].trim();
+                        // Use regex to extract email pattern if split didn't work
+                        if (!email || !email.includes('@')) {
+                          const emailMatch = emailTextContent.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+                          if (emailMatch) {
+                            email = emailMatch[0];
+                          }
+                        }
+                        // Remove "Copy" text if appended directly
+                        if (email && email.toLowerCase().endsWith('copy')) {
+                          email = email.slice(0, -4).trim();
+                        }
+                        if (email) break;
                       }
                     }
                   }

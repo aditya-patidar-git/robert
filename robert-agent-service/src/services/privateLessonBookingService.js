@@ -272,6 +272,26 @@ class PrivateLessonBookingService {
           console.warn('⚠️ Failed to send confirmation email (non-critical):', emailError.message);
         }
 
+        // STEP 11: Send Terms & Conditions email
+        try {
+          console.log('📧 Step 11: Sending Terms & Conditions email...');
+          await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-terms-email-sent.png', this.screenshotsDir));
+          console.log('✅ Step 11 completed: Terms & Conditions email sent');
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send Terms & Conditions email (non-critical):', emailError.message);
+        }
+
+        // STEP 12: Send SMS confirmation
+        try {
+          console.log('📱 Step 12: Sending SMS confirmation...');
+          await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'private-lesson');
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-12-sms-sent.png', this.screenshotsDir));
+          console.log('✅ Step 12 completed: SMS confirmation sent');
+        } catch (smsError) {
+          console.warn('⚠️ Failed to send SMS confirmation (non-critical):', smsError.message);
+        }
+
       } else {
         // NEW CLIENT WORKFLOW
         // STEP 4: Navigate to Diaries and select session
@@ -360,6 +380,26 @@ class PrivateLessonBookingService {
           console.log('✅ Step 9 completed: Booking confirmation email sent');
         } catch (emailError) {
           console.warn('⚠️ Failed to send confirmation email (non-critical):', emailError.message);
+        }
+
+        // STEP 10: Send Terms & Conditions email
+        try {
+          console.log('📧 Step 10: Sending Terms & Conditions email...');
+          await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-terms-email-sent.png', this.screenshotsDir));
+          console.log('✅ Step 10 completed: Terms & Conditions email sent');
+        } catch (emailError) {
+          console.warn('⚠️ Failed to send Terms & Conditions email (non-critical):', emailError.message);
+        }
+
+        // STEP 11: Send SMS confirmation
+        try {
+          console.log('📱 Step 11: Sending SMS confirmation...');
+          await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'private-lesson');
+          screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-sms-sent.png', this.screenshotsDir));
+          console.log('✅ Step 11 completed: SMS confirmation sent');
+        } catch (smsError) {
+          console.warn('⚠️ Failed to send SMS confirmation (non-critical):', smsError.message);
         }
       }
 

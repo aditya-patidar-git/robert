@@ -74,6 +74,28 @@ class PromptVersionService extends BaseService {
   }
 
   /**
+   * Get version diff
+   * @param {string} versionId - Version ID
+   * @param {string} compareWith - Optional version ID to compare with
+   * @returns {Promise<Object>} Diff result
+   */
+  async getVersionDiff(versionId, compareWith = null) {
+    const params = compareWith ? { compareWith } : {};
+    const response = await this.get(`/${versionId}/diff`, params);
+    return response.data?.diff || response.data;
+  }
+
+  /**
+   * Restore version (create new from old)
+   * @param {string} versionId - Version ID to restore
+   * @param {string} changeReason - Reason for restore
+   * @returns {Promise<Object>} Restore result
+   */
+  async restoreVersion(versionId, changeReason = '') {
+    return this.post(`/${versionId}/restore`, { changeReason });
+  }
+
+  /**
    * Clear all inactive versions
    * @param {string} promptId - Prompt ID (default: 'global')
    * @returns {Promise<Object>} Clear result

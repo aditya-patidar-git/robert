@@ -4,6 +4,8 @@ import {
   getPromptVersion,
   getCurrentVersion,
   compareVersions,
+  getVersionDiff,
+  restoreVersion,
   rollbackToVersion,
   activateVersion,
   clearInactiveVersions
@@ -25,6 +27,12 @@ router.get('/:versionId', getPromptVersion);
 
 // Compare two versions
 router.get('/compare/:versionId1/:versionId2', compareVersions);
+
+// Get version diff
+router.get('/:versionId/diff', getVersionDiff);
+
+// Restore version (create new from old)
+router.post('/:versionId/restore', restoreVersion);
 
 // Activate a specific version
 router.put('/:versionId/activate', activateVersion);

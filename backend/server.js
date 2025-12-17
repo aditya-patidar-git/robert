@@ -36,7 +36,11 @@ import systemRoutes from "./routes/systemRoutes.js";
 import memoryRoutes from "./routes/memoryRoutes.js";
 import toolConfigRoutes from "./routes/toolConfigRoutes.js";
 import conversationBehaviorRoutes from "./routes/conversationBehaviorRoutes.js";
+import templateRoutes from "./routes/templateRoutes.js";
 import callCleanupService from "./services/callCleanupService.js";
+import websocketService from "./services/websocketService.js";
+import configSyncService, { setIO as setConfigSyncIO } from "./services/configSyncService.js";
+import { setIO as setWebSocketIO } from "./services/websocketService.js";
 import { proxyRecording } from "./controllers/outboundController.js";
 import { protect as authenticateToken } from "./middleware/authMiddleware.js";
 
@@ -52,6 +56,13 @@ export const io = new Server(httpServer, {
     credentials: true
   }
 });
+
+// Set io instance in services (must be done after io is created)
+setConfigSyncIO(io);
+setWebSocketIO(io);
+
+// Initialize WebSocket service
+websocketService.initialize();
 
 // Middlewares
 app.use(cors({
@@ -87,6 +98,9 @@ mongoose.connect(mongoUri)
     } catch (error) {
       console.error("❌ Service initialization error:", error);
     }
+
+    // Start call cleanup service after MongoDB connection is ready
+    callCleanupService.start();
   })
   .catch(err => {
     console.error("❌ [backend] MongoDB connection error:", err);
@@ -169,6 +183,9 @@ app.use("/api/admin/tools", toolConfigRoutes);
 // Conversation Behavior Configuration Routes
 app.use("/api/conversation-behavior", conversationBehaviorRoutes);
 
+// Template Routes (Email/SMS)
+app.use("/api/templates", templateRoutes);
+
 // Outbound Routes (Recording proxy) - requires authentication
 app.get("/api/outbound/recording/:callSid", authenticateToken, proxyRecording);
 
@@ -176,7 +193,4 @@ app.get("/api/outbound/recording/:callSid", authenticateToken, proxyRecording);
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
-  
-  // Start call cleanup service after server starts
-  callCleanupService.start();
 });

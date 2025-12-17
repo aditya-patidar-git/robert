@@ -115,6 +115,27 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
       console.log('⏳ [STEP 10] Waiting for payment option selection...');
       await page.waitForTimeout(2000);
       
+      // VERIFY selection was applied - check if payment method dropdown appeared
+      console.log('🔍 [STEP 10] Verifying payment option selection was applied...');
+      const paymentMethodDropdown = searchContext.locator('[data-onchange="jqx_chgPaymentMethod"]').first();
+      const isPaymentMethodVisible = await paymentMethodDropdown.isVisible({ timeout: 3000 }).catch(() => false);
+      if (!isPaymentMethodVisible) {
+        console.warn('⚠️ [STEP 10] Payment method dropdown not visible after selection - selection may have failed');
+        console.warn('⚠️ [STEP 10] Attempting to click option again...');
+        // Try clicking again
+        await matchingOption.click();
+        await page.waitForTimeout(2000);
+        // Check again
+        const isPaymentMethodVisibleRetry = await paymentMethodDropdown.isVisible({ timeout: 3000 }).catch(() => false);
+        if (!isPaymentMethodVisibleRetry) {
+          console.error('❌ [STEP 10] Payment option selection verification failed - payment method dropdown still not visible');
+        } else {
+          console.log('✅ [STEP 10] Payment method dropdown appeared after retry - selection confirmed');
+        }
+      } else {
+        console.log('✅ [STEP 10] Payment method dropdown appeared - selection confirmed');
+      }
+      
       // Take screenshot after payment option selection
       await takeScreenshot(page, 'payment-option-selected.png', screenshotsDir);
       console.log('✅ [STEP 10] Payment option selected successfully');

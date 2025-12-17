@@ -1,5 +1,6 @@
 import PrivacyConfig from "../models/PrivacyConfig.js";
 import observabilityService from "../services/observabilityService.js";
+import configSyncService from "../services/configSyncService.js";
 
 // Get current privacy configuration
 export const getPrivacyConfig = async (req, res) => {
@@ -153,6 +154,12 @@ export const updatePrivacyConfig = async (req, res) => {
 
     config.createdBy = req.user?.id || "admin";
     await config.save();
+
+    // Notify config change
+    configSyncService.notifyConfigChange('privacy', null, {
+      changedBy: req.user?.id || req.user?.username || 'admin',
+      action: 'update'
+    });
 
     observabilityService.info('Privacy config updated', { updatedBy: req.user?.id });
     res.json({

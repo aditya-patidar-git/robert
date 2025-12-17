@@ -231,8 +231,33 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           try {
             const emailSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
             if (await emailSpan.count() > 0) {
-              foundEmail = await emailSpan.textContent();
-              foundEmail = foundEmail ? foundEmail.trim() : null;
+              let emailText = await emailSpan.textContent();
+              if (emailText) {
+                emailText = emailText.trim();
+                // CRITICAL: Remove "Copy" button text and extract only the email address
+                // Email may be followed by "Copy" button text (e.g., "robert@gmail.comCopy")
+                // Method 1: Split on newline and take first part (Copy button is usually on new line)
+                const emailLines = emailText.split('\n');
+                foundEmail = emailLines[0].trim();
+                
+                // Method 2: Use regex to extract email pattern if split didn't work
+                if (!foundEmail || !foundEmail.includes('@')) {
+                  const emailMatch = emailText.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+                  if (emailMatch) {
+                    foundEmail = emailMatch[0];
+                  }
+                }
+                
+                // Method 3: Remove "Copy" text if it's appended directly (e.g., "robert@gmail.comCopy")
+                if (foundEmail && foundEmail.toLowerCase().endsWith('copy')) {
+                  foundEmail = foundEmail.slice(0, -4).trim();
+                }
+                
+                // Final validation: ensure it's a valid email format
+                if (foundEmail && !foundEmail.includes('@')) {
+                  foundEmail = null;
+                }
+              }
             }
           } catch (e) {
             console.log(`⚠️ [STEP 3-5] Could not extract email from row ${i + 1}:`, e.message);
@@ -441,7 +466,23 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
                         const emailText = emailSpan.nextElementSibling;
                         if (emailText) {
                           const emailSpanInner = emailText.querySelector('span');
-                          email = emailSpanInner ? emailSpanInner.textContent.trim() : '';
+                          if (emailSpanInner) {
+                            let emailTextContent = emailSpanInner.textContent.trim();
+                            // CRITICAL: Remove "Copy" button text and extract only the email address
+                            const emailLines = emailTextContent.split('\n');
+                            email = emailLines[0].trim();
+                            // Use regex to extract email pattern if split didn't work
+                            if (!email || !email.includes('@')) {
+                              const emailMatch = emailTextContent.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+                              if (emailMatch) {
+                                email = emailMatch[0];
+                              }
+                            }
+                            // Remove "Copy" text if appended directly
+                            if (email && email.toLowerCase().endsWith('copy')) {
+                              email = email.slice(0, -4).trim();
+                            }
+                          }
                         }
                       }
                       // Alternative: find email by looking for span with email pattern
@@ -449,8 +490,22 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
                         const allSpans = rows[index].querySelectorAll('span');
                         for (const span of allSpans) {
                           if (span.textContent.includes('@')) {
-                            email = span.textContent.trim();
-                            break;
+                            let emailTextContent = span.textContent.trim();
+                            // CRITICAL: Remove "Copy" button text and extract only the email address
+                            const emailLines = emailTextContent.split('\n');
+                            email = emailLines[0].trim();
+                            // Use regex to extract email pattern if split didn't work
+                            if (!email || !email.includes('@')) {
+                              const emailMatch = emailTextContent.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+                              if (emailMatch) {
+                                email = emailMatch[0];
+                              }
+                            }
+                            // Remove "Copy" text if appended directly
+                            if (email && email.toLowerCase().endsWith('copy')) {
+                              email = email.slice(0, -4).trim();
+                            }
+                            if (email) break;
                           }
                         }
                       }
@@ -653,8 +708,25 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
               try {
                 const emailSpan = firstResult.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
                 if (await emailSpan.count() > 0) {
-                  const emailText = await emailSpan.textContent();
-                  containsSearchValue = emailText && emailText.toLowerCase().includes(searchValue.toLowerCase());
+                  let emailText = await emailSpan.textContent();
+                  if (emailText) {
+                    emailText = emailText.trim();
+                    // CRITICAL: Remove "Copy" button text and extract only the email address
+                    const emailLines = emailText.split('\n');
+                    let cleanEmail = emailLines[0].trim();
+                    // Use regex to extract email pattern if split didn't work
+                    if (!cleanEmail || !cleanEmail.includes('@')) {
+                      const emailMatch = emailText.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+                      if (emailMatch) {
+                        cleanEmail = emailMatch[0];
+                      }
+                    }
+                    // Remove "Copy" text if appended directly
+                    if (cleanEmail && cleanEmail.toLowerCase().endsWith('copy')) {
+                      cleanEmail = cleanEmail.slice(0, -4).trim();
+                    }
+                    containsSearchValue = cleanEmail && cleanEmail.toLowerCase().includes(searchValue.toLowerCase());
+                  }
                 }
               } catch (e) {
                 // Fallback to text content check

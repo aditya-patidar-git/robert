@@ -194,7 +194,49 @@ class ToolExecutor {
       {
         type: 'function',
         name: 'crm_browser',
-        description: 'Perform CRM tasks using browser automation (bookings, reschedules, cancellations, customer updates, availability checks). For create_booking, courseType is required. For reschedule_booking and cancel_booking, bookingReference and customerEmail/customerMobile are required. For update_customer, customerEmail/customerMobile and at least one field to update are required. For check_availability, courseType is required. This tool opens a browser and performs the actual CRM operations.',
+        description: `Perform CRM tasks using browser automation (bookings, reschedules, cancellations, customer updates, availability checks).
+
+CRITICAL ITM (Introduction to Motorcycling) BOOKING FLOW - MUST FOLLOW THIS ORDER:
+1. FIRST: Call with task: "check_availability" and args: {courseType: "Introduction to Motorcycling"} to get available slots
+2. Present all available slots to the caller and ask for preferences (date, time, location, instructor)
+3. Agree on a specific slot with the caller
+4. OPTIONAL: Ask "Have you done training with us before?" BEFORE calling create_booking. If you ask this question, you MUST include workflowType: "existing" or "new" in the create_booking call based on the caller's answer.
+5. THEN: Call with task: "create_booking" and args: {courseType: "Introduction to Motorcycling", agreedSlot: <selected slot>, workflowType: "existing" or "new" (if you asked earlier), ...}
+6. If you did NOT ask the question earlier AND the tool returns requiresWorkflowType: true, THEN ask "Have you done training with us before?" and call create_booking again with workflowType: "existing" or "new"
+7. IMPORTANT: If you ask "Have you done training with us before?" at any point, you MUST include workflowType in the create_booking call. Do NOT call create_booking without workflowType if you already asked the question.
+
+CRITICAL: TERMS AND CONDITIONS ACCEPTANCE (TIMING IS STRICT):
+- 🚨 CRITICAL PROHIBITION: NEVER include termsAccepted in create_booking calls until AFTER card details are filled
+- 🚨 NEVER include termsAccepted before navigating to Diaries tab
+- 🚨 NEVER include termsAccepted before selecting booking options
+- 🚨 NEVER include termsAccepted before contact lookup
+- 🚨 NEVER include termsAccepted before payment step
+- 🚨 NEVER include termsAccepted in continuation calls for preferences (bikeType, etc.)
+- 🚨 NEVER include termsAccepted in continuation calls for verification
+- 🚨 NEVER include termsAccepted in ANY create_booking call before the payment step
+
+- CRITICAL TIMING: Ask for terms acceptance AFTER card details are filled, but BEFORE clicking "Make booking" button
+- The booking flow order is STRICT: Availability → Login → Workflow Type → Find Client → Diaries Tab → Booking Options → Contact Details → Payment (fill card details) → TERMS ACCEPTANCE (ask here ONLY) → Click "Make booking"
+- DO NOT ask for terms before Diaries tab
+- DO NOT ask for terms before selecting booking options
+- DO NOT ask for terms before contact lookup
+- DO NOT ask for terms before payment step
+- DO NOT ask for terms before card details are filled
+- Read the terms from the system prompt (valid UK licence, appropriate footwear, denim jeans/motorcycle trousers, arrive on time, 30% cancellation fee, Terms & Conditions)
+- Ask "Do you agree with the statements that I have just made?"
+- If client says "yes" → Include termsAccepted: true in the FINAL create_booking call (ONLY after card details are filled, just before clicking "Make booking")
+- If client says "no" → Address concerns, ask again. If still no, offer human transfer. If refused, terminate call.
+- If no response → System defaults to termsAccepted: true to allow booking to proceed
+- 🚨 CRITICAL: The ONLY time to include termsAccepted is in the FINAL create_booking call AFTER card details are filled, just before clicking "Make booking" button
+
+For all other courses (CBT, Private Lesson, etc.):
+- Follow standard booking flow
+- For create_booking, courseType is required
+- For reschedule_booking and cancel_booking, bookingReference and customerEmail/customerMobile are required
+- For update_customer, customerEmail/customerMobile and at least one field to update are required
+- For check_availability, courseType is required
+
+This tool opens a browser and performs the actual CRM operations.`,
         parameters: {
           type: 'object',
           properties: {
@@ -292,6 +334,41 @@ class ToolExecutor {
                 address: {
                   type: 'string',
                   description: 'New address for customer updates. Used for update_customer task.'
+                },
+                workflowType: {
+                  type: 'string',
+                  enum: ['existing', 'new'],
+                  description: 'Workflow type: "existing" for clients who have trained with us before, "new" for new clients. Required for ITM bookings after availability check.'
+                },
+                agreedSlot: {
+                  type: 'object',
+                  description: 'The specific slot that was agreed upon with the caller. Should include date, time, location, and optionally instructor. Used to skip availability check.',
+                  properties: {
+                    date: { type: 'string', description: 'Date of the slot (ISO format or date string)' },
+                    time: { type: 'string', description: 'Time of the slot (HH:MM format)' },
+                    location: { type: 'string', description: 'Location of the slot' },
+                    instructor: { type: 'string', description: 'Instructor name (optional)' },
+                    price: { type: 'string', description: 'Price of the slot (optional)' }
+                  }
+                },
+                selectedSlot: {
+                  type: 'object',
+                  description: 'Alternative name for agreedSlot - the selected slot from availability check.',
+                  properties: {
+                    date: { type: 'string', description: 'Date of the slot (ISO format or date string)' },
+                    time: { type: 'string', description: 'Time of the slot (HH:MM format)' },
+                    location: { type: 'string', description: 'Location of the slot' },
+                    instructor: { type: 'string', description: 'Instructor name (optional)' },
+                    price: { type: 'string', description: 'Price of the slot (optional)' }
+                  }
+                },
+                termsAccepted: {
+                  type: 'boolean',
+                  description: 'Whether the client has accepted the terms and conditions. You MUST ask the client to accept terms before payment. Read the terms: valid UK licence requirement, appropriate footwear, denim jeans/motorcycle trousers, arrive on time, 30% cancellation fee, and Terms & Conditions. Ask "Do you agree with the statements that I have just made?" If client says "yes", set this to true. If client says "no" or asks questions, address them and ask again. If still no agreement, offer human transfer. If no response is received, default to true to allow booking to proceed.'
+                },
+                instructor: {
+                  type: 'string',
+                  description: 'Preferred instructor name (optional)'
                 }
               },
               required: []
@@ -397,7 +474,7 @@ class ToolExecutor {
       {
         type: 'function',
         name: 'client_verification',
-        description: 'Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system. The caller must verbally confirm these three pieces of information match what is on file. Allow up to 7 attempts per field before offering to create a new profile.',
+        description: 'Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system. The caller must verbally confirm these three pieces of information match what is on file. Allow up to 7 attempts per field before offering to create a new profile. CRITICAL: After successful verification during a booking process, you MUST continue with the booking by calling crm_browser with task: "create_booking" using the same parameters as before. Verification is just one step in the booking process - the booking is NOT complete until you receive a success confirmation from the crm_browser tool.',
         parameters: {
           type: 'object',
           properties: {

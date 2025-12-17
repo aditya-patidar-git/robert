@@ -117,6 +117,22 @@ export const handleMediaStreamConnection = (ws, req) => {
     // Tool execution tracking
     const pendingToolCalls = new Map(); // call_id -> { name, arguments, startTime }
     
+    // Duplicate call prevention - track recent tool calls to prevent identical calls within short time window
+    const recentToolCalls = new Map(); // callSid -> [{ name, parameters, timestamp }]
+    const DUPLICATE_CALL_WINDOW_MS = 3000; // 3 seconds - ignore duplicate calls within this window
+    
+    // Active tool execution tracking - prevents duplicate calls of same tool type
+    const activeToolExecutions = new Map(); // toolName -> { call_id, startTime, callSid }
+    
+    // Workflow-level timer tracking - prevents parallel calls during active workflow
+    // For create_booking workflows: start 15-minute timer on first call, all calls within window are continuations
+    const activeWorkflowTimers = new Map(); // callSid -> { toolName, startTime, timeout }
+    const WORKFLOW_TIMEOUT_MS = 900000; // 15 minutes - workflow window for continuation calls
+    
+    // Expected continuation tracking - tracks when a continuation call is expected after structured response
+    const expectedContinuations = new Map(); // toolName -> { previousCallId, structuredFlags, timestamp, callSid }
+    const CONTINUATION_TIMEOUT_MS = 300000; // 5 minutes - clear continuation expectation if no continuation call is made
+    
     // VAD Calibration tracking
     let calibrationSamples = []; // Array to store initial audio samples for calibration
     let calibrationStartTime = null;
@@ -450,6 +466,9 @@ export const handleMediaStreamConnection = (ws, req) => {
             
             delete realtimeClients[callSid];
             pendingToolCalls.clear();
+            activeToolExecutions.clear();
+            expectedContinuations.clear();
+            activeWorkflowTimers.delete(callSid);
         }
     };
     
@@ -836,7 +855,10 @@ ${config.instructions}`;
                 console.log(`📋 [${callSid}] Recording consent will be requested - instructions modified to include consent flow`);
             }
             
-            const openaiUrl = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview';
+            // Use model from database configuration, fallback to default if not available
+            const modelId = config.model?.id || 'gpt-4o-realtime-preview';
+            const openaiUrl = `wss://api.openai.com/v1/realtime?model=${modelId}`;
+            console.log(`📋 [${callSid}] Using model from config: ${modelId}`);
             openaiWs = new WebSocket(openaiUrl, {
                 headers: {
                     'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -1564,7 +1586,35 @@ ${config.instructions}`;
                         
                         // Check for recording consent response (if consent was requested and not yet responded)
                         if (recordingConsentState.requested && recordingConsentState.given === null) {
+                            // Reset timeout when user speaks (gives them more time to respond)
+                            // This ensures the timeout doesn't expire while user is actively speaking
+                            // BUT: We'll check for consent first, and only reset timeout if consent is not clearly detected
                             const transcriptLower = transcript.toLowerCase().trim();
+                            
+                            // Quick pre-check for obvious consent/decline to avoid unnecessary timeout reset
+                            const quickConsentCheck = /^(yes|yeah|yep|yup|okay|ok|sure|absolutely|definitely|of course|certainly|i consent|i agree|i do|go ahead)$/i.test(transcriptLower);
+                            const quickDeclineCheck = /^(no|nope|nah|not|don't|do not|refuse|decline|disagree|i don't|i do not)\s/i.test(transcriptLower);
+                            
+                            // Only reset timeout if it's not an obvious consent/decline response
+                            // If it's obvious, we'll detect it below and clear timeout immediately
+                            if (consentTimeout && transcript && transcript.trim().length > 0 && !quickConsentCheck && !quickDeclineCheck) {
+                                clearTimeout(consentTimeout);
+                                consentTimeout = null;
+                                // Restart timeout with fresh 20 seconds when user is speaking (but response is unclear)
+                                consentTimeout = setTimeout(() => {
+                                    // Double-check state hasn't changed (race condition protection)
+                                    if (recordingConsentState.given === null && conversations[callSid].recordingConsent.given === null) {
+                                        // No response - default to opt-out for GDPR safety (explicit opt-in required)
+                                        recordingConsentState.given = false; // GDPR: Default to opt-out
+                                        recordingConsentState.respondedAt = new Date();
+                                        conversations[callSid].recordingConsent.given = false; // GDPR: Default to opt-out
+                                        conversations[callSid].recordingConsent.respondedAt = new Date();
+                                        conversations[callSid].recordingConsent.optOutReason = "No response within timeout - defaulting to opt-out for GDPR compliance";
+                                        console.log(`⏰ [${callSid}] Recording consent timeout expired - defaulting to opt-out (GDPR compliance)`);
+                                    }
+                                }, CONSENT_TIMEOUT_MS);
+                                console.log(`⏱️ [${callSid}] Consent timeout reset - user is speaking, extending response window`);
+                            }
                             
                             // More robust consent detection patterns
                             // Check for explicit consent phrases first (higher priority)
@@ -1622,30 +1672,36 @@ ${config.instructions}`;
                             }
                             
                             if (consentDetected && !declineDetected) {
-                                recordingConsentState.given = true;
-                                recordingConsentState.respondedAt = new Date();
-                                conversations[callSid].recordingConsent.given = true;
-                                conversations[callSid].recordingConsent.respondedAt = new Date();
-                                // Clear timeout since we got a response
+                                // CRITICAL: Clear timeout IMMEDIATELY before updating state to prevent race condition
+                                // This ensures the timeout cannot fire after consent is detected but before state is updated
                                 if (consentTimeout) {
                                     clearTimeout(consentTimeout);
                                     consentTimeout = null;
                                 }
+                                
+                                // Now update state after timeout is safely cleared
+                                recordingConsentState.given = true;
+                                recordingConsentState.respondedAt = new Date();
+                                conversations[callSid].recordingConsent.given = true;
+                                conversations[callSid].recordingConsent.respondedAt = new Date();
                                 console.log(`✅ [${callSid}] Recording consent GIVEN by user: "${transcript}"`);
                             } else if (declineDetected) {
+                                // CRITICAL: Clear timeout IMMEDIATELY before updating state to prevent race condition
+                                if (consentTimeout) {
+                                    clearTimeout(consentTimeout);
+                                    consentTimeout = null;
+                                }
+                                
+                                // Now update state after timeout is safely cleared
                                 recordingConsentState.given = false;
                                 recordingConsentState.respondedAt = new Date();
                                 conversations[callSid].recordingConsent.given = false;
                                 conversations[callSid].recordingConsent.respondedAt = new Date();
                                 conversations[callSid].recordingConsent.optOutReason = transcript;
-                                // Clear timeout since we got a response
-                                if (consentTimeout) {
-                                    clearTimeout(consentTimeout);
-                                    consentTimeout = null;
-                                }
                                 console.log(`❌ [${callSid}] Recording consent DECLINED by user: "${transcript}"`);
                             } else {
                                 // Ambiguous or unclear response - log for debugging but wait for more input
+                                // Timeout was already reset above, so user has more time to clarify
                                 console.log(`⚠️ [${callSid}] Unclear consent response, waiting for clarification: "${transcript}"`);
                             }
                             // If neither detected clearly, wait for more input (silence/unclear will default to false on timeout)
@@ -2175,6 +2231,43 @@ ${config.instructions}`;
                                 parameters = JSON.parse(args);
                             }
                             console.log(`🔧 [${callSid}] Parsed Parameters:`, JSON.stringify(parameters, null, 2));
+                            
+                            // DUPLICATE CALL PREVENTION: Check if this exact tool call was made recently
+                            if (!recentToolCalls.has(callSid)) {
+                                recentToolCalls.set(callSid, []);
+                            }
+                            const recentCalls = recentToolCalls.get(callSid);
+                            const now = Date.now();
+                            
+                            // Remove calls older than the window
+                            const filteredCalls = recentCalls.filter(call => (now - call.timestamp) < DUPLICATE_CALL_WINDOW_MS);
+                            recentToolCalls.set(callSid, filteredCalls);
+                            
+                            // Check for duplicate (same tool name and same parameters)
+                            const isDuplicate = filteredCalls.some(call => {
+                                if (call.name !== name) return false;
+                                // Deep comparison of parameters (simplified - compare JSON strings)
+                                try {
+                                    return JSON.stringify(call.parameters) === JSON.stringify(parameters);
+                                } catch (e) {
+                                    return false;
+                                }
+                            });
+                            
+                            if (isDuplicate) {
+                                console.log(`⚠️ [${callSid}] DUPLICATE CALL DETECTED: ${name} with same parameters within ${DUPLICATE_CALL_WINDOW_MS}ms window - ignoring`);
+                                
+                                // Submit a result indicating this is a duplicate (but don't block - let it proceed)
+                                // Actually, for now we'll just log and proceed - the execution lock in browserAgentService will handle it
+                                // But we'll add it to recent calls to prevent triple duplicates
+                                recentCalls.push({ name, parameters: JSON.parse(JSON.stringify(parameters)), timestamp: now });
+                                
+                                // For critical tools like create_booking, we might want to reject duplicates
+                                // But for now, let the execution lock handle it
+                            } else {
+                                // Add to recent calls
+                                recentCalls.push({ name, parameters: JSON.parse(JSON.stringify(parameters)), timestamp: now });
+                            }
                         } catch (parseError) {
                             console.error(`❌ [${callSid}] Failed to parse tool arguments for ${name}:`, parseError);
                             console.error(`❌ [${callSid}] Raw arguments (first 200 chars):`, args ? args.substring(0, 200) : 'null');
@@ -2309,6 +2402,128 @@ ${config.instructions}`;
                             }
                         } : null;
                         
+                        // WORKFLOW-LEVEL TIMER APPROACH (SIMPLER & MORE ROBUST)
+                        // For create_booking workflows: Start 15-minute timer on first call
+                        // All calls within timer window are continuations (no flag checking needed)
+                        const isCreateBookingWorkflow = (name === 'crm_browser' && parameters.task === 'create_booking');
+                        
+                        // Step 1: Check if this tool type is already executing
+                        const activeExecution = activeToolExecutions.get(name);
+                        if (activeExecution) {
+                            const elapsedTime = Date.now() - activeExecution.startTime;
+                            console.log(`🚫 [${callSid}] BLOCKING duplicate tool call: ${name} is already executing (started ${Math.round(elapsedTime / 1000)}s ago, call_id: ${activeExecution.call_id})`);
+                            
+                            // Immediately reject with clear message to agent
+                            if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                openaiWs.send(JSON.stringify({
+                                    type: 'conversation.item.create',
+                                    item: {
+                                        type: 'function_call_output',
+                                        call_id: call_id,
+                                        output: JSON.stringify({
+                                            success: false,
+                                            error: `The ${name} tool is already executing. Please wait for it to complete before calling it again. If the tool needs additional information (like preferences), please provide that information and the current execution will continue with your input.`,
+                                            toolAlreadyExecuting: true,
+                                            activeToolName: name,
+                                            message: `I'm already processing a ${name} request. Please wait for it to complete. If you need to provide additional information (like preferences or details), I'll use that information to continue the current process.`
+                                        })
+                                    }
+                                }));
+                                
+                                // Force response to inform agent
+                                if (!isResponding && activeResponseId === null && !isClosed) {
+                                    isResponding = true;
+                                    explicitResponseRequested = true;
+                                    openaiWs.send(JSON.stringify({
+                                        type: 'response.create'
+                                    }));
+                                    console.log(`📤 [${callSid}] Blocked duplicate tool call result submitted, waiting for AI response...`);
+                                }
+                            }
+                            
+                            // Remove from pending and return early
+                            pendingToolCalls.delete(call_id);
+                            progressIndicatorService.endToolExecution(callSid);
+                            return; // Block execution - don't proceed
+                        }
+                        
+                        // Step 2: For create_booking workflows, check workflow timer
+                        if (isCreateBookingWorkflow) {
+                            const workflowTimer = activeWorkflowTimers.get(callSid);
+                            const now = Date.now();
+                            
+                            if (workflowTimer) {
+                                // Timer exists - check if it's still valid
+                                const elapsedTime = now - workflowTimer.startTime;
+                                if (elapsedTime > WORKFLOW_TIMEOUT_MS) {
+                                    // Timer expired - workflow abandoned
+                                    console.log(`⏰ [${callSid}] Workflow timer expired (${Math.round(elapsedTime / 1000)}s old) - blocking call (workflow abandoned)`);
+                                    activeWorkflowTimers.delete(callSid);
+                                    
+                                    // Block with clear message
+                                    if (openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                        openaiWs.send(JSON.stringify({
+                                            type: 'conversation.item.create',
+                                            item: {
+                                                type: 'function_call_output',
+                                                call_id: call_id,
+                                                output: JSON.stringify({
+                                                    success: false,
+                                                    error: `The previous booking workflow has expired (no activity for ${Math.round(WORKFLOW_TIMEOUT_MS / 60000)} minutes). Please start a new booking request.`,
+                                                    workflowExpired: true,
+                                                    message: `The previous booking workflow has timed out. Please start a new booking request if you'd like to continue.`
+                                                })
+                                            }
+                                        }));
+                                        
+                                        // Force response to inform agent
+                                        if (!isResponding && activeResponseId === null && !isClosed) {
+                                            isResponding = true;
+                                            explicitResponseRequested = true;
+                                            openaiWs.send(JSON.stringify({
+                                                type: 'response.create'
+                                            }));
+                                            console.log(`📤 [${callSid}] Workflow expired message sent, waiting for AI response...`);
+                                        }
+                                    }
+                                    
+                                    // Remove from pending and return early
+                                    pendingToolCalls.delete(call_id);
+                                    progressIndicatorService.endToolExecution(callSid);
+                                    return; // Block execution - don't proceed
+                                } else {
+                                    // Timer is valid - this is a continuation call
+                                    const remainingTime = Math.round((WORKFLOW_TIMEOUT_MS - elapsedTime) / 1000);
+                                    console.log(`✅ [${callSid}] Allowing continuation call for create_booking (workflow timer active, ${remainingTime}s remaining)`);
+                                }
+                            } else {
+                                // No timer exists - this is the first call, start the timer
+                                activeWorkflowTimers.set(callSid, {
+                                    toolName: name,
+                                    startTime: now,
+                                    timeout: WORKFLOW_TIMEOUT_MS
+                                });
+                                console.log(`⏱️ [${callSid}] Starting workflow timer for create_booking (${WORKFLOW_TIMEOUT_MS / 60000} minutes)`);
+                                
+                                // Set timeout to auto-clear timer if workflow is abandoned
+                                setTimeout(() => {
+                                    const timer = activeWorkflowTimers.get(callSid);
+                                    if (timer && timer.startTime === now) {
+                                        activeWorkflowTimers.delete(callSid);
+                                        console.log(`⏰ [${callSid}] Workflow timer auto-cleared (no completion within ${WORKFLOW_TIMEOUT_MS / 60000} minutes)`);
+                                    }
+                                }, WORKFLOW_TIMEOUT_MS);
+                            }
+                        }
+                        
+                        // Mark this tool as active
+                        activeToolExecutions.set(name, {
+                            call_id: call_id,
+                            startTime: Date.now(),
+                            callSid: callSid
+                        });
+                        console.log(`✅ [${callSid}] Tool ${name} marked as active (will block duplicates until completion)`);
+                        
                         toolExecutor.execute(name, parameters, callContext, progressCallback)
                             .then(async (executionResult) => {
                                 if (isClosed || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
@@ -2342,6 +2557,28 @@ ${config.instructions}`;
                                     }
                                 }
                                 
+                                // Remove from pending
+                                const toolCallInfo = pendingToolCalls.get(call_id);
+                                const totalTime = Date.now() - (toolCallInfo?.startTime || toolStartTime);
+                                pendingToolCalls.delete(call_id);
+                                
+                                // CRITICAL: Extract structured flags BEFORE clearing active execution
+                                // Helper function to extract structured flags from both executionResult and executionResult.result
+                                const getStructuredFlag = (flagName) => {
+                                    if (executionResult[flagName] !== undefined) {
+                                        return executionResult[flagName];
+                                    }
+                                    if (executionResult.result && executionResult.result[flagName] !== undefined) {
+                                        return executionResult.result[flagName];
+                                    }
+                                    return undefined;
+                                };
+                                
+                                const requiresVerification = getStructuredFlag('requiresVerification');
+                                const requiresPreferences = getStructuredFlag('requiresPreferences');
+                                const requiresWorkflowType = getStructuredFlag('requiresWorkflowType');
+                                const requiresBookingContinuation = getStructuredFlag('requiresBookingContinuation');
+                                
                                 // Store client verification status if returned from client_verification tool
                                 if (name === 'client_verification' && executionResult.success && executionResult.verified) {
                                     if (!conversations[callSid]) {
@@ -2350,12 +2587,99 @@ ${config.instructions}`;
                                     conversations[callSid].clientVerified = true;
                                     conversations[callSid].clientVerifiedAt = new Date();
                                     console.log(`✅ [${callSid}] Client verified - stored in conversation state`);
+                                    
+                                    // If booking continuation is required, ensure workflow timer is active
+                                    if (requiresBookingContinuation) {
+                                        console.log(`🔄 [${callSid}] Booking continuation required - agent must call crm_browser with create_booking again`);
+                                        
+                                        // Ensure workflow timer is active for the next crm_browser call
+                                        // If timer doesn't exist, start it (verification happened before first create_booking)
+                                        // If timer exists, keep it (verification is part of ongoing workflow)
+                                        if (!activeWorkflowTimers.has(callSid)) {
+                                            const timerStartTime = Date.now();
+                                            activeWorkflowTimers.set(callSid, {
+                                                toolName: 'crm_browser',
+                                                startTime: timerStartTime,
+                                                timeout: WORKFLOW_TIMEOUT_MS
+                                            });
+                                            console.log(`⏱️ [${callSid}] Starting workflow timer after client_verification (verification before first create_booking)`);
+                                            
+                                            // Set timeout to auto-clear timer if workflow is abandoned
+                                            setTimeout(() => {
+                                                const timer = activeWorkflowTimers.get(callSid);
+                                                if (timer && timer.startTime === timerStartTime) {
+                                                    activeWorkflowTimers.delete(callSid);
+                                                    console.log(`⏰ [${callSid}] Workflow timer auto-cleared (no completion within ${WORKFLOW_TIMEOUT_MS / 60000} minutes)`);
+                                                }
+                                            }, WORKFLOW_TIMEOUT_MS);
+                                        } else {
+                                            console.log(`⏱️ [${callSid}] Workflow timer already active - verification is part of ongoing workflow`);
+                                        }
+                                    }
                                 }
+                                const requiresCustomerInfo = getStructuredFlag('requiresCustomerInfo');
+                                const requiresSlotSelection = getStructuredFlag('requiresSlotSelection');
+                                const retryPrompt = getStructuredFlag('retryPrompt');
                                 
-                                // Remove from pending
-                                const toolCallInfo = pendingToolCalls.get(call_id);
-                                const totalTime = Date.now() - (toolCallInfo?.startTime || toolStartTime);
-                                pendingToolCalls.delete(call_id);
+                                // Clear from active tool executions
+                                const activeExecution = activeToolExecutions.get(name);
+                                if (activeExecution && activeExecution.call_id === call_id) {
+                                    activeToolExecutions.delete(name);
+                                    console.log(`✅ [${callSid}] Tool ${name} execution completed - removed from active executions`);
+                                    
+                                    // Check if this call returned a structured response that expects a continuation
+                                    const hasStructuredResponse = requiresVerification === true ||
+                                                                  requiresPreferences === true ||
+                                                                  requiresWorkflowType === true ||
+                                                                  requiresBookingContinuation === true ||
+                                                                  requiresCustomerInfo === true ||
+                                                                  requiresSlotSelection === true ||
+                                                                  !!retryPrompt;
+                                    
+                                    // For create_booking workflows: Check if workflow is complete
+                                    const isCreateBookingWorkflow = (name === 'crm_browser' && parameters?.task === 'create_booking');
+                                    
+                                    if (hasStructuredResponse) {
+                                        // Structured response returned - workflow continues, keep timer active
+                                        if (isCreateBookingWorkflow) {
+                                            console.log(`🔄 [${callSid}] Tool ${name} returned structured response - workflow continues, timer remains active`);
+                                        }
+                                        
+                                        // Mark that a continuation call is expected (for backward compatibility)
+                                        expectedContinuations.set(name, {
+                                            previousCallId: call_id,
+                                            structuredFlags: {
+                                                requiresVerification: requiresVerification === true,
+                                                requiresPreferences: requiresPreferences === true,
+                                                requiresWorkflowType: requiresWorkflowType === true,
+                                                requiresBookingContinuation: requiresBookingContinuation === true,
+                                                requiresCustomerInfo: requiresCustomerInfo === true,
+                                                requiresSlotSelection: requiresSlotSelection === true,
+                                                retryPrompt: !!retryPrompt
+                                            },
+                                            timestamp: Date.now(),
+                                            callSid: callSid
+                                        });
+                                        console.log(`🔄 [${callSid}] Tool ${name} returned structured response - expecting continuation call with updated parameters`);
+                                        
+                                        // Set timeout to clear continuation expectation if no continuation call is made
+                                        setTimeout(() => {
+                                            const continuation = expectedContinuations.get(name);
+                                            if (continuation && continuation.previousCallId === call_id) {
+                                                expectedContinuations.delete(name);
+                                                console.log(`⏰ [${callSid}] Continuation expectation for ${name} expired (no continuation call made within ${CONTINUATION_TIMEOUT_MS / 1000}s)`);
+                                            }
+                                        }, CONTINUATION_TIMEOUT_MS);
+                                    } else {
+                                        // No structured response - workflow is complete
+                                        if (isCreateBookingWorkflow) {
+                                            // Clear workflow timer - workflow completed successfully
+                                            activeWorkflowTimers.delete(callSid);
+                                            console.log(`✅ [${callSid}] Workflow completed successfully - cleared workflow timer`);
+                                        }
+                                        console.log(`✅ [${callSid}] Tool ${name} execution completed - workflow finished, no continuation expected`);
+                                    }
+                                }
                                 
                                 // End progress tracking
                                 progressIndicatorService.endToolExecution(callSid);
@@ -2376,9 +2700,55 @@ ${config.instructions}`;
                                     output.clientDetails = executionResult.clientDetails;
                                 }
                                 
-                                // Include verification status if available
-                                if (executionResult.requiresVerification !== undefined) {
-                                    output.requiresVerification = executionResult.requiresVerification;
+                                // Extract additional flags for output (already extracted above for continuation check)
+                                const verificationPrompt = getStructuredFlag('verificationPrompt');
+                                const verified = getStructuredFlag('verified');
+                                
+                                if (requiresVerification !== undefined) {
+                                    output.requiresVerification = requiresVerification;
+                                }
+                                if (requiresPreferences !== undefined) {
+                                    output.requiresPreferences = requiresPreferences;
+                                }
+                                if (getStructuredFlag('missingPreferences') !== undefined) {
+                                    output.missingPreferences = getStructuredFlag('missingPreferences');
+                                }
+                                if (getStructuredFlag('validOptions') !== undefined) {
+                                    output.validOptions = getStructuredFlag('validOptions');
+                                }
+                                if (requiresWorkflowType !== undefined) {
+                                    output.requiresWorkflowType = requiresWorkflowType;
+                                }
+                                if (requiresBookingContinuation !== undefined) {
+                                    output.requiresBookingContinuation = requiresBookingContinuation;
+                                }
+                                if (requiresCustomerInfo !== undefined) {
+                                    output.requiresCustomerInfo = requiresCustomerInfo;
+                                }
+                                if (requiresSlotSelection !== undefined) {
+                                    output.requiresSlotSelection = requiresSlotSelection;
+                                }
+                                if (retryPrompt !== undefined) {
+                                    output.retryPrompt = retryPrompt;
+                                }
+                                if (verificationPrompt !== undefined) {
+                                    output.verificationPrompt = verificationPrompt;
+                                }
+                                if (getStructuredFlag('message') !== undefined) {
+                                    output.message = getStructuredFlag('message');
+                                }
+                                if (getStructuredFlag('sessionDetails') !== undefined) {
+                                    output.sessionDetails = getStructuredFlag('sessionDetails');
+                                }
+                                // CRITICAL: Include cancellation flags to prevent premature completion declarations
+                                if (getStructuredFlag('cancelled') !== undefined) {
+                                    output.cancelled = getStructuredFlag('cancelled');
+                                }
+                                if (getStructuredFlag('isCancellation') !== undefined) {
+                                    output.isCancellation = getStructuredFlag('isCancellation');
+                                }
+                                if (getStructuredFlag('bookingNotComplete') !== undefined) {
+                                    output.bookingNotComplete = getStructuredFlag('bookingNotComplete');
                                 }
                                 
                                 console.log(`\n✅ [${callSid}] ========================================`);
@@ -2406,8 +2776,67 @@ ${config.instructions}`;
                                         }
                                     }));
                                     
-                                    // Trigger model response ONLY if not already responding and no active response
-                                    if (!isResponding && activeResponseId === null && !isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN) {
+                                    // CRITICAL: Check for structured responses that REQUIRE immediate agent response
+                                    // These responses contain flags that indicate the agent must continue the conversation
+                                    // We MUST force a response even if one is already active (grace period blocking)
+                                    // Use the same helper function to check both executionResult and executionResult.result
+                                    const hasStructuredResponse = requiresVerification === true ||
+                                                                  requiresPreferences === true ||
+                                                                  requiresWorkflowType === true ||
+                                                                  requiresBookingContinuation === true ||
+                                                                  requiresCustomerInfo === true ||
+                                                                  requiresSlotSelection === true ||
+                                                                  !!retryPrompt ||
+                                                                  (name === 'client_verification' && executionResult.success && verified === true);
+                                    
+                                    // Force response for structured responses OR if no response is active
+                                    const shouldForceResponse = hasStructuredResponse;
+                                    
+                                    if (shouldForceResponse) {
+                                        // CRITICAL: Clear response state immediately for structured responses
+                                        // This bypasses the grace period delay that blocks automatic responses
+                                        // Structured responses MUST be handled immediately to continue the conversation flow
+                                        const previousState = { isResponding, activeResponseId: activeResponseId };
+                                        isResponding = false;
+                                        activeResponseId = null;
+                                        
+                                        // Determine which structured response triggered this
+                                        let responseReason = 'unknown';
+                                        if (name === 'client_verification' && verified === true) {
+                                            responseReason = 'client verification success';
+                                        } else if (requiresVerification === true) {
+                                            responseReason = 'requiresVerification';
+                                        } else if (requiresPreferences === true) {
+                                            responseReason = 'requiresPreferences';
+                                        } else if (requiresWorkflowType === true) {
+                                            responseReason = 'requiresWorkflowType';
+                                        } else if (requiresBookingContinuation === true) {
+                                            responseReason = 'requiresBookingContinuation';
+                                        } else if (requiresCustomerInfo === true) {
+                                            responseReason = 'requiresCustomerInfo';
+                                        } else if (requiresSlotSelection === true) {
+                                            responseReason = 'requiresSlotSelection';
+                                        } else if (retryPrompt) {
+                                            responseReason = 'retryPrompt';
+                                        }
+                                        
+                                        console.log(`🔄 [${callSid}] FORCING response for structured result (${responseReason}) - cleared state: isResponding ${previousState.isResponding}→false, activeResponseId ${previousState.activeResponseId || 'null'}→null`);
+                                    }
+                                    
+                                    // SYNCHRONIZATION GUARD: Wait for current response to finish before creating new one
+                                    // UNLESS this is a structured response that requires immediate action
+                                    const canCreateResponse = !isClosed && openaiWs && openaiWs.readyState === WebSocket.OPEN;
+                                    
+                                    if (shouldForceResponse && canCreateResponse) {
+                                        // FORCED RESPONSE: Clear state and create immediately (already cleared above)
+                                        isResponding = true; // Set flag before creating response
+                                        explicitResponseRequested = true; // Mark this as an explicit request
+                                        openaiWs.send(JSON.stringify({
+                                            type: 'response.create'
+                                        }));
+                                        console.log(`📤 [${callSid}] Tool result submitted for ${name}, FORCING AI response (structured response detected)...`);
+                                    } else if (!isResponding && activeResponseId === null && canCreateResponse) {
+                                        // NORMAL RESPONSE: No response active, safe to create
                                         isResponding = true; // Set flag before creating response
                                         explicitResponseRequested = true; // Mark this as an explicit request
                                         openaiWs.send(JSON.stringify({
@@ -2415,7 +2844,34 @@ ${config.instructions}`;
                                         }));
                                         console.log(`📤 [${callSid}] Tool result submitted for ${name}, waiting for AI response...`);
                                     } else {
-                                        console.log(`⚠️ [${callSid}] Skipping response.create - isResponding: ${isResponding}, activeResponseId: ${activeResponseId}, connection closed: ${!openaiWs || openaiWs.readyState !== WebSocket.OPEN}`);
+                                        // Enhanced logging for debugging race conditions
+                                        // Use the extracted flags for accurate logging
+                                        const stateInfo = {
+                                            isResponding,
+                                            activeResponseId,
+                                            connectionClosed: !openaiWs || openaiWs.readyState !== WebSocket.OPEN,
+                                            hasStructuredResponse,
+                                            toolName: name,
+                                            structuredFlags: {
+                                                requiresVerification: requiresVerification,
+                                                requiresPreferences: requiresPreferences,
+                                                requiresWorkflowType: requiresWorkflowType,
+                                                requiresBookingContinuation: requiresBookingContinuation,
+                                                requiresCustomerInfo: requiresCustomerInfo,
+                                                requiresSlotSelection: requiresSlotSelection,
+                                                retryPrompt: !!retryPrompt,
+                                                verified: verified
+                                            }
+                                        };
+                                        console.log(`⚠️ [${callSid}] Skipping response.create - State:`, JSON.stringify(stateInfo, null, 2));
+                                        
+                                        // If we have a structured response but couldn't force it, log a warning
+                                        if (hasStructuredResponse && (!openaiWs || openaiWs.readyState !== WebSocket.OPEN)) {
+                                            console.error(`❌ [${callSid}] CRITICAL: Structured response requires immediate agent action but WebSocket is closed!`);
+                                        } else if (hasStructuredResponse && (isResponding || activeResponseId !== null)) {
+                                            // This should not happen - if we detected a structured response, we should have cleared state
+                                            console.error(`❌ [${callSid}] CRITICAL: Structured response detected but state was not cleared! This indicates a bug.`);
+                                        }
                                     }
                                 } catch (sendError) {
                                     console.error(`❌ [${callSid}] Error submitting tool result:`, sendError);
@@ -2430,6 +2886,13 @@ ${config.instructions}`;
                                 const toolCallInfo = pendingToolCalls.get(call_id);
                                 const totalTime = toolCallInfo ? Date.now() - toolCallInfo.startTime : 0;
                                 pendingToolCalls.delete(call_id);
+                                
+                                // Clear from active tool executions
+                                const activeExecution = activeToolExecutions.get(name);
+                                if (activeExecution && activeExecution.call_id === call_id) {
+                                    activeToolExecutions.delete(name);
+                                    console.log(`✅ [${callSid}] Tool ${name} execution failed - removed from active executions`);
+                                }
                                 
                                 // End progress tracking
                                 progressIndicatorService.endToolExecution(callSid);

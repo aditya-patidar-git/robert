@@ -24,7 +24,50 @@ class CRMBrowserTool {
       const result = await browserAgentService.executeTask(task, args, callContext, finalProgressCallback);
       
       // If the result already indicates failure, return it gracefully
+      // BUT check for structured responses first (requiresWorkflowType, requiresPreferences, retryPrompt)
+      // These should be preserved and passed through, not replaced with generic error
       if (!result.success) {
+        // Check if this is a structured response that should be preserved
+        const hasStructuredResponse = result.requiresWorkflowType || 
+                                      result.requiresPreferences || 
+                                      result.retryPrompt ||
+                                      result.requiresVerification;
+        
+        if (hasStructuredResponse) {
+          // This is a structured response (e.g., requiresWorkflowType, requiresPreferences)
+          // Preserve all fields and return as-is - don't convert to generic error
+          console.log(`✅ [${callSid}] Preserving structured response:`, {
+            requiresWorkflowType: result.requiresWorkflowType,
+            requiresPreferences: result.requiresPreferences,
+            requiresVerification: result.requiresVerification,
+            retryPrompt: result.retryPrompt ? 'present' : 'absent'
+          });
+          
+          return {
+            success: result.success,
+            result: result.result,
+            dryRun: result.dryRun || false,
+            requiresConfirmation: result.requiresConfirmation || false,
+            requiresVerification: result.requiresVerification || false,
+            verificationPrompt: result.verificationPrompt,
+            retryPrompt: result.retryPrompt,
+            requiresCustomerInfo: result.requiresCustomerInfo || false,
+            requiresWorkflowType: result.requiresWorkflowType === true || result.requiresWorkflowType === 'true' ? true : false,
+            requiresPreferences: result.requiresPreferences === true || result.requiresPreferences === 'true' ? true : false,
+            missingPreferences: result.missingPreferences || [],
+            validOptions: result.validOptions || {},
+            sessionDetails: result.sessionDetails,
+            clientDetails: result.clientDetails,
+            auditId: result.auditId,
+            screenshots: result.screenshots || [],
+            courseType: result.courseType,
+            error: result.error, // Preserve original error if present
+            message: result.message, // CRITICAL: Preserve message for structured responses
+            confirmationMessage: result.confirmationMessage || (result.requiresConfirmation ? this.generateConfirmationMessage(result.result) : null)
+          };
+        }
+        
+        // This is a genuine error - format it as a user-friendly error
         const errorContext = getErrorContext(
           result.error ? new Error(result.error) : new Error('Unknown error'),
           task
@@ -76,11 +119,17 @@ class CRMBrowserTool {
         verificationPrompt: result.verificationPrompt,
         retryPrompt: result.retryPrompt,
         requiresCustomerInfo: result.requiresCustomerInfo || false,
+        requiresWorkflowType: result.requiresWorkflowType === true || result.requiresWorkflowType === 'true' ? true : false,
+        requiresPreferences: result.requiresPreferences === true || result.requiresPreferences === 'true' ? true : false,
+        missingPreferences: result.missingPreferences || [],
+        validOptions: result.validOptions || {},
+        sessionDetails: result.sessionDetails,
         clientDetails: result.clientDetails,
         auditId: result.auditId,
         screenshots: result.screenshots || [],
         courseType: result.courseType,
         error: result.error,
+        message: result.message,
         confirmationMessage: result.confirmationMessage || (result.requiresConfirmation ? this.generateConfirmationMessage(result.result) : null)
       };
     } catch (error) {

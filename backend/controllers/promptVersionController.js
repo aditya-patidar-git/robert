@@ -1,4 +1,5 @@
 import PromptVersion from "../models/PromptVersion.js";
+import diffService from "../services/diffService.js";
 
 // Get all versions for global prompt
 export const getPromptVersions = async (req, res) => {
@@ -108,55 +109,6 @@ export const getCurrentVersion = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching current version:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Internal server error"
-    });
-  }
-};
-
-// Compare two versions
-export const compareVersions = async (req, res) => {
-  try {
-    const { versionId1, versionId2 } = req.params;
-    
-    const [version1, version2] = await Promise.all([
-      PromptVersion.findById(versionId1),
-      PromptVersion.findById(versionId2)
-    ]);
-    
-    if (!version1 || !version2) {
-      return res.status(404).json({
-        status: "error",
-        message: "One or both versions not found"
-      });
-    }
-    
-    // Simple diff calculation
-    const diff = {
-      version1: {
-        id: version1._id,
-        version: version1.version,
-        content: version1.content,
-        createdAt: version1.createdAt,
-        createdBy: version1.createdBy
-      },
-      version2: {
-        id: version2._id,
-        version: version2.version,
-        content: version2.content,
-        createdAt: version2.createdAt,
-        createdBy: version2.createdBy
-      },
-      differences: calculateSimpleDiff(version1.content, version2.content)
-    };
-    
-    res.json({
-      status: "success",
-      comparison: diff
-    });
-  } catch (error) {
-    console.error("Error comparing versions:", error);
     res.status(500).json({
       status: "error",
       message: "Internal server error"
@@ -317,31 +269,180 @@ export const clearInactiveVersions = async (req, res) => {
   }
 };
 
-// Helper function to calculate simple diff
-function calculateSimpleDiff(text1, text2) {
-  const lines1 = text1.split('\n');
-  const lines2 = text2.split('\n');
-  
-  const maxLines = Math.max(lines1.length, lines2.length);
-  const differences = [];
-
-  for (let i = 0; i < maxLines; i++) {
-    const line1 = lines1[i] || '';
-    const line2 = lines2[i] || '';
+// Compare two versions
+export const compareVersions = async (req, res) => {
+  try {
+    const { versionId1, versionId2 } = req.params;
     
-    if (line1 !== line2) {
-      differences.push({
-        line: i + 1,
-        old: line1,
-        new: line2,
-        type: line1 === '' ? 'added' : line2 === '' ? 'removed' : 'modified'
+    const version1 = await PromptVersion.findById(versionId1);
+    const version2 = await PromptVersion.findById(versionId2);
+    
+    if (!version1 || !version2) {
+      return res.status(404).json({
+        status: "error",
+        message: "One or both versions not found"
       });
     }
+
+    // Use diff service for better comparison
+    const diff = diffService.compareVersions(version1.content, version2.content, { mode: 'lines' });
+    const formattedDiff = diffService.formatDiff(diff, { format: 'side-by-side' });
+
+    res.json({
+      status: "success",
+      version1: {
+        id: version1._id,
+        version: version1.version,
+        content: version1.content,
+        createdAt: version1.createdAt,
+        createdBy: version1.createdBy
+      },
+      version2: {
+        id: version2._id,
+        version: version2.version,
+        content: version2.content,
+        createdAt: version2.createdAt,
+        createdBy: version2.createdBy
+      },
+      diff: formattedDiff
+    });
+  } catch (error) {
+    console.error("Error comparing versions:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error"
+    });
   }
-  
-  return {
-    totalDifferences: differences.length,
-    changes: differences
-  };
-}
+};
+
+// Get diff between versions
+export const getVersionDiff = async (req, res) => {
+  try {
+    const { versionId } = req.params;
+    const { compareWith } = req.query; // Optional: compare with another version ID
+    
+    const version = await PromptVersion.findById(versionId);
+    
+    if (!version) {
+      return res.status(404).json({
+        status: "error",
+        message: "Version not found"
+      });
+    }
+
+    let compareVersion = null;
+    if (compareWith) {
+      compareVersion = await PromptVersion.findById(compareWith);
+      if (!compareVersion) {
+        return res.status(404).json({
+          status: "error",
+          message: "Compare version not found"
+        });
+      }
+    } else if (version.previousContent) {
+      // Compare with previous content if available
+      const diff = diffService.compareVersions(version.previousContent, version.content, { mode: 'lines' });
+      const formattedDiff = diffService.formatDiff(diff, { format: 'unified' });
+      
+      return res.json({
+        status: "success",
+        diff: formattedDiff
+      });
+    } else {
+      return res.status(400).json({
+        status: "error",
+        message: "No previous version or compare version specified"
+      });
+    }
+
+    // Compare with specified version
+    const diff = diffService.compareVersions(compareVersion.content, version.content, { mode: 'lines' });
+    const formattedDiff = diffService.formatDiff(diff, { format: 'unified' });
+
+    res.json({
+      status: "success",
+      diff: formattedDiff
+    });
+  } catch (error) {
+    console.error("Error getting version diff:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error"
+    });
+  }
+};
+
+// Restore version (create new version from old)
+export const restoreVersion = async (req, res) => {
+  try {
+    const { versionId } = req.params;
+    const { changeReason } = req.body;
+    
+    const sourceVersion = await PromptVersion.findById(versionId);
+    
+    if (!sourceVersion) {
+      return res.status(404).json({
+        status: "error",
+        message: "Version not found"
+      });
+    }
+
+    const promptId = sourceVersion.promptId;
+    
+    // Get current active version to use as previous content
+    const currentVersion = await PromptVersion.findOne({ promptId, isActive: true });
+    const previousContent = currentVersion ? currentVersion.content : '';
+    
+    // Get next version number
+    const maxVersion = await PromptVersion.findOne({ promptId })
+      .sort({ version: -1 });
+    const nextVersion = maxVersion ? maxVersion.version + 1 : 1;
+
+    // Create new version with content from source version
+    const restoredVersion = new PromptVersion({
+      promptId,
+      version: nextVersion,
+      content: sourceVersion.content,
+      previousContent: previousContent,
+      createdBy: req.user?.id || req.user?.username || 'admin',
+      changeReason: changeReason || `Restored from version ${sourceVersion.version}`,
+      isActive: true,
+      metadata: {
+        restoredFrom: sourceVersion._id,
+        restoredVersion: sourceVersion.version
+      }
+    });
+    
+    await restoredVersion.save();
+    
+    // Deactivate other versions
+    await PromptVersion.updateMany(
+      { promptId, _id: { $ne: restoredVersion._id } },
+      { isActive: false }
+    );
+    
+    // Update AIConfig.globalPrompt
+    const AIConfig = (await import("../models/AIConfig.js")).default;
+    let config = await AIConfig.findOne({ isActive: true });
+    if (!config) {
+      config = new AIConfig();
+    }
+    config.globalPrompt = sourceVersion.content;
+    config.createdBy = req.user?.id || req.user?.username || 'admin';
+    await config.save();
+    
+    res.json({
+      status: "success",
+      message: `Version ${sourceVersion.version} restored. New version ${nextVersion} created.`,
+      version: restoredVersion,
+      promptContent: restoredVersion.content
+    });
+  } catch (error) {
+    console.error("Error restoring version:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error"
+    });
+  }
+};
 

@@ -115,18 +115,95 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       throw new Error('No valid availability slots found');
     }
     
-    // Select the best matching slot based on preferences
-    const selectedSlot = selectBestMatchingSlot(allSlots, preferences);
+    // Sort slots chronologically by actual date (earliest first)
+    // This ensures we show the most recent/earliest available slots first
+    allSlots.sort((a, b) => {
+      // Try to parse dates from startDate (ISO format) or date field
+      let dateA = null;
+      let dateB = null;
+      
+      if (a.startDate) {
+        dateA = new Date(a.startDate);
+      } else if (a.date) {
+        // Try to parse date string like "Tue 16th" by combining with current context
+        dateA = parseDateFromSlotString(a.date, latestMonthYear);
+      }
+      
+      if (b.startDate) {
+        dateB = new Date(b.startDate);
+      } else if (b.date) {
+        dateB = parseDateFromSlotString(b.date, latestMonthYear);
+      }
+      
+      if (dateA && dateB) {
+        return dateA.getTime() - dateB.getTime(); // Earliest first
+      }
+      // If dates can't be parsed, keep original order
+      return 0;
+    });
     
-    console.log(`✅ [AVAILABILITY] Selected slot based on preferences:`, selectedSlot);
-    console.log(`   Date: ${selectedSlot.date}, Time: ${selectedSlot.time}, Location: ${selectedSlot.location}`);
+    // Extract month from each slot's actual date instead of using a single month
+    // This ensures each slot has the correct month/year
+    allSlots.forEach(slot => {
+      if (slot.startDate) {
+        const slotDate = new Date(slot.startDate);
+        if (!isNaN(slotDate.getTime())) {
+          const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                              'July', 'August', 'September', 'October', 'November', 'December'];
+          slot.monthYear = `${monthNames[slotDate.getMonth()]} ${slotDate.getFullYear()}`;
+        }
+      } else if (slot.date) {
+        // Fallback: try to extract month from date string
+        const parsedDate = parseDateFromSlotString(slot.date, latestMonthYear);
+        if (parsedDate && !isNaN(parsedDate.getTime())) {
+          const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                              'July', 'August', 'September', 'October', 'November', 'December'];
+          slot.monthYear = `${monthNames[parsedDate.getMonth()]} ${parsedDate.getFullYear()}`;
+        } else {
+          // Keep the latest month as fallback
+          slot.monthYear = latestMonthYear;
+        }
+      } else {
+        slot.monthYear = latestMonthYear;
+      }
+    });
+    
+    // Log the date range of extracted slots for debugging
+    if (allSlots.length > 0) {
+      const firstSlot = allSlots[0];
+      const lastSlot = allSlots[allSlots.length - 1];
+      console.log(`📅 [AVAILABILITY] Slot date range: ${firstSlot.date} (${firstSlot.monthYear}) to ${lastSlot.date} (${lastSlot.monthYear})`);
+    }
+    
+    // Select the best matching slot based on preferences
+    // Only auto-select if preferences are provided
+    let selectedSlot = null;
+    const hasPreferences = preferences.preferredDate || preferences.preferredTime || preferences.location;
+    
+    if (hasPreferences) {
+      selectedSlot = selectBestMatchingSlot(allSlots, preferences);
+      if (selectedSlot) {
+        console.log(`✅ [AVAILABILITY] Selected slot based on preferences:`, selectedSlot);
+        console.log(`   Date: ${selectedSlot.date}, Time: ${selectedSlot.time}, Location: ${selectedSlot.location}`);
+      } else {
+        console.log(`⚠️ [AVAILABILITY] No matching slot found for preferences, returning all slots`);
+      }
+    } else {
+      // No preferences provided - don't auto-select
+      console.log(`📋 [AVAILABILITY] No preferences provided - returning all slots for user selection`);
+    }
+    
+    // Return the earliest month for reference (from first slot after sorting)
+    const returnMonthYear = allSlots.length > 0 && allSlots[0].monthYear 
+      ? allSlots[0].monthYear 
+      : latestMonthYear;
     
     return {
       allSlots: allSlots,
-      selectedSlot: selectedSlot,
-      monthYear: latestMonthYear
+      selectedSlot: selectedSlot, // Will be null if no preferences or no match
+      monthYear: returnMonthYear // Return earliest month
     };
-    
+  
   } catch (error) {
     console.error(`❌ [AVAILABILITY] Error checking availability for ${courseType}:`, error);
     throw new Error(`Failed to check availability for ${courseType}: ${error.message}`);
@@ -146,10 +223,11 @@ export function selectBestMatchingSlot(allSlots, preferences = {}) {
   
   const { preferredDate, preferredTime, location } = preferences;
   
-  // If no preferences provided, return the first available slot (earliest)
+  // If no preferences provided, return null to indicate user should choose
+  // According to documentation: "Feel free to discuss with the client the availability"
   if (!preferredDate && !preferredTime && !location) {
-    console.log('📋 No preferences provided, selecting first available slot');
-    return allSlots[0];
+    console.log('📋 No preferences provided - returning null to indicate user selection needed');
+    return null; // Changed from allSlots[0] - don't auto-select
   }
   
   // Score each slot based on how well it matches preferences
@@ -293,6 +371,60 @@ function normalizeTime(timeStr) {
   }
   
   return normalized;
+}
+
+/**
+ * Parse date from slot string like "Tue 16th" by combining with month/year context
+ * @param {string} dateStr - Date string like "Tue 16th"
+ * @param {string} monthYearContext - Month/year context like "December 2025"
+ * @returns {Date|null} - Parsed date or null
+ */
+function parseDateFromSlotString(dateStr, monthYearContext) {
+  if (!dateStr) return null;
+  
+  try {
+    // Extract day number from strings like "Tue 16th" or "16th"
+    const dayMatch = dateStr.match(/(\d+)/);
+    if (!dayMatch) return null;
+    
+    const day = parseInt(dayMatch[1]);
+    
+    // Parse month/year from context like "December 2025"
+    let year = new Date().getFullYear();
+    let month = new Date().getMonth();
+    
+    if (monthYearContext) {
+      const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 
+                          'july', 'august', 'september', 'october', 'november', 'december'];
+      const contextLower = monthYearContext.toLowerCase();
+      
+      // Find month name in context
+      for (let i = 0; i < monthNames.length; i++) {
+        if (contextLower.includes(monthNames[i])) {
+          month = i;
+          break;
+        }
+      }
+      
+      // Extract year from context
+      const yearMatch = monthYearContext.match(/(\d{4})/);
+      if (yearMatch) {
+        year = parseInt(yearMatch[1]);
+      }
+    }
+    
+    // Create date
+    const date = new Date(year, month, day);
+    
+    // Validate the date is correct (handles month overflow)
+    if (date.getDate() === day && date.getMonth() === month && date.getFullYear() === year) {
+      return date;
+    }
+    
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /**

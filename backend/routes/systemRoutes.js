@@ -11,6 +11,17 @@ import {
   createBackup,
   restoreBackup
 } from "../controllers/systemController.js";
+import {
+  getPaymentGatewayConfig,
+  updatePaymentGatewayConfig,
+  testGatewayConnection,
+  getSupportedGateways
+} from "../controllers/paymentGatewayController.js";
+import {
+  getSyncStatus,
+  getConfigSyncStatus,
+  refreshConfig
+} from "../controllers/configSyncController.js";
 
 const router = express.Router();
 
@@ -33,6 +44,17 @@ router.put("/models/:modelId", updateModelConfig);
 // Backup Routes (placeholders)
 router.post("/backup", createBackup);
 router.post("/restore/:backupId", restoreBackup);
+
+// Payment Gateway Routes
+router.get("/payment-gateway/config", getPaymentGatewayConfig);
+router.put("/payment-gateway/config", updatePaymentGatewayConfig);
+router.post("/payment-gateway/test-connection", testGatewayConnection);
+router.get("/payment-gateway/supported-gateways", getSupportedGateways);
+
+// Config Sync Routes
+router.get("/config-sync/status", getSyncStatus);
+router.get("/config-sync/status/:configType", getConfigSyncStatus);
+router.post("/config-sync/refresh", refreshConfig);
 
 export default router;
 

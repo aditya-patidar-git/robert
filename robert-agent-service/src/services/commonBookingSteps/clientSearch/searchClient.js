@@ -210,8 +210,33 @@ export async function findMatchingClientRow(iframe, searchType, searchValue, ema
         try {
           const emailSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
           if (await emailSpan.count() > 0) {
-            foundEmail = await emailSpan.textContent();
-            foundEmail = foundEmail ? foundEmail.trim() : null;
+            let emailText = await emailSpan.textContent();
+            if (emailText) {
+              emailText = emailText.trim();
+              // CRITICAL: Remove "Copy" button text and extract only the email address
+              // Email may be followed by "Copy" button text (e.g., "robert@gmail.comCopy")
+              // Method 1: Split on newline and take first part (Copy button is usually on new line)
+              const emailLines = emailText.split('\n');
+              foundEmail = emailLines[0].trim();
+              
+              // Method 2: Use regex to extract email pattern if split didn't work
+              if (!foundEmail || !foundEmail.includes('@')) {
+                const emailMatch = emailText.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+                if (emailMatch) {
+                  foundEmail = emailMatch[0];
+                }
+              }
+              
+              // Method 3: Remove "Copy" text if it's appended directly (e.g., "robert@gmail.comCopy")
+              if (foundEmail && foundEmail.toLowerCase().endsWith('copy')) {
+                foundEmail = foundEmail.slice(0, -4).trim();
+              }
+              
+              // Final validation: ensure it's a valid email format
+              if (foundEmail && !foundEmail.includes('@')) {
+                foundEmail = null;
+              }
+            }
           }
         } catch (e) {
           console.log(`⚠️ [SEARCH] Could not extract email from row ${i + 1}:`, e.message);
