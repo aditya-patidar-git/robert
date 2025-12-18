@@ -7,13 +7,13 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import configManager from './configManager.js';
-import { handleMediaStreamConnection } from '../handlers/mediaStreamHandler.js';
+import { handleMediaStreamConnection } from '../handlers/mediaStream/index.js';
 import { makeCall, aiIntro, getAllCalls, handleIncomingCall } from '../handlers/callHandlers.js';
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
 import sipRoutes from '../routes/sipRoutes.js';
 import secretsManager from '../services/secretsManager.js';
-import browserAgentService from '../services/browserAgentService.js';
+import browserAgentService from '../services/browser/index.js';
 import toolExecutor from '../tools/index.js';
 import sessionManagementService from '../services/sessionManagementService.js';
 import scheduler from '../jobs/scheduler.js';
@@ -231,7 +231,7 @@ app.post('/api/tools/browser/execute', async (req, res) => {
       });
     }
 
-    const browserAgentService = (await import('../services/browserAgentService.js')).default;
+    const browserAgentService = (await import('../services/browser/index.js')).default;
     const result = await browserAgentService.executeTask(task, args || {}, callContext || {});
     
     res.json({ 
