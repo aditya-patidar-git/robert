@@ -11,6 +11,7 @@ import complaintSubmissionTool from './complaintSubmission.js';
 import clientVerificationTool from './clientVerification.js';
 import configManager from '../agent/configManager.js';
 import ToolConfig from '../database/models/ToolConfig.js';
+import { validateToolParameters } from '../utils/toolSchemaValidator.js';
 
 /**
  * Tool Executor for OpenAI Realtime API
@@ -540,6 +541,16 @@ This tool opens a browser and performs the actual CRM operations.`,
       throw new Error(`Unknown tool: ${toolName}`);
     }
 
+    // Validate tool parameters using Zod schema
+    const validation = validateToolParameters(toolName, parameters);
+    if (!validation.success) {
+      console.error(`❌ [${callSid}] Tool parameter validation failed for ${toolName}:`, validation.error);
+      throw new Error(`Invalid parameters for tool ${toolName}: ${validation.error}`);
+    }
+    
+    // Use validated parameters
+    const validatedParameters = validation.data;
+
     // Get tool configuration from ConfigManager
     const toolConfig = configManager.getToolConfig(toolName);
     
@@ -557,9 +568,9 @@ This tool opens a browser and performs the actual CRM operations.`,
     }
 
     // Check domain allowlist if URL is provided
-    if (parameters.url && toolConfig.domains && toolConfig.domains.length > 0) {
+    if (validatedParameters.url && toolConfig.domains && toolConfig.domains.length > 0) {
       try {
-        const url = new URL(parameters.url);
+        const url = new URL(validatedParameters.url);
         const domain = url.hostname;
         const isAllowed = toolConfig.domains.some(allowedDomain => 
           domain === allowedDomain || domain.endsWith('.' + allowedDomain)
@@ -587,7 +598,7 @@ This tool opens a browser and performs the actual CRM operations.`,
 
     const tool = this.tools.get(toolName);
     console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Executing tool: ${toolName}`);
-    console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Parameters:`, JSON.stringify(parameters, null, 2));
+    console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Parameters:`, JSON.stringify(validatedParameters, null, 2));
     console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Timeout: ${timeout}ms`);
     console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Call Context:`, { callSid, phoneNumber });
 
@@ -599,14 +610,14 @@ This tool opens a browser and performs the actual CRM operations.`,
         // Check if tool.execute accepts progressCallback as third parameter
         if (tool.execute.length >= 3) {
           // Tool accepts progressCallback as third parameter
-          executionPromise = tool.execute(parameters, callContext, progressCallback);
+          executionPromise = tool.execute(validatedParameters, callContext, progressCallback);
         } else {
           // Tool only accepts parameters and callContext, include progressCallback in callContext
-          executionPromise = tool.execute(parameters, { ...callContext, progressCallback });
+          executionPromise = tool.execute(validatedParameters, { ...callContext, progressCallback });
         }
       } else {
         // No progress callback, execute normally
-        executionPromise = tool.execute(parameters, callContext);
+        executionPromise = tool.execute(validatedParameters, callContext);
       }
       
       const timeoutPromise = new Promise((_, reject) => {

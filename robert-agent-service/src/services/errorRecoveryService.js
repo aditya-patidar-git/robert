@@ -1,11 +1,67 @@
 /**
  * Error Recovery Service
  * Provides user-friendly error messages and retry logic
+ * Enhanced with circuit breakers and comprehensive error handling
  */
+
+import circuitBreakerManager from '../utils/circuitBreaker.js';
+import retryHandler from '../utils/retryHandler.js';
+import { isRetryableError } from '../utils/retryHandler.js';
 
 class ErrorRecoveryService {
   constructor() {
     this.retryCounts = new Map(); // callSid -> { toolName -> count }
+    this.serviceMapping = {
+      'openai': 'openai',
+      'file_search': 'openai',
+      'web_search': 'brave',
+      'crm_browser': 'crm',
+      'crm': 'crm'
+    };
+  }
+
+  /**
+   * Detect service from tool name
+   * @param {string} toolName - Name of the tool
+   * @returns {string} Service name
+   */
+  getServiceName(toolName) {
+    return this.serviceMapping[toolName] || 'default';
+  }
+
+  /**
+   * Check if error is an OpenAI 5xx error
+   * @param {Error} error - Error object
+   * @returns {boolean} True if OpenAI 5xx error
+   */
+  isOpenAI5xxError(error) {
+    const statusCode = error.status || error.statusCode || error.response?.status;
+    if (statusCode && [500, 502, 503, 504].includes(statusCode)) {
+      return true;
+    }
+    
+    const errorMessage = (error.message || String(error)).toLowerCase();
+    const openai5xxIndicators = ['500', '502', '503', '504', 'internal server error', 'bad gateway', 'service unavailable', 'gateway timeout'];
+    return openai5xxIndicators.some(indicator => errorMessage.includes(indicator));
+  }
+
+  /**
+   * Check if error is a Twilio stream drop
+   * @param {Error} error - Error object
+   * @returns {boolean} True if Twilio stream drop
+   */
+  isTwilioStreamDrop(error) {
+    const errorMessage = (error.message || String(error)).toLowerCase();
+    const twilioIndicators = [
+      'websocket',
+      'stream',
+      'connection closed',
+      'connection reset',
+      'econnreset',
+      'twilio',
+      'media stream'
+    ];
+    return twilioIndicators.some(indicator => errorMessage.includes(indicator));
   }
 
   /**
@@ -17,6 +73,16 @@ class ErrorRecoveryService {
   getUserFriendlyMessage(error, toolName) {
     const errorMessage = error.message || String(error);
     const errorLower = errorMessage.toLowerCase();
+
+    // OpenAI 5xx errors
+    if (this.isOpenAI5xxError(error)) {
+      return "I'm experiencing some technical difficulties with my systems. Please hold on for a moment while I try again.";
+    }
+
+    // Twilio stream drop errors
+    if (this.isTwilioStreamDrop(error)) {
+      return "I'm having trouble with the connection. Let me reconnect and we can continue.";
+    }
 
     // Network/timeout errors
     if (errorLower.includes('timeout') || errorLower.includes('network') || errorLower.includes('connection')) {
@@ -34,8 +100,13 @@ class ErrorRecoveryService {
     }
 
     // Rate limit errors
-    if (errorLower.includes('rate limit') || errorLower.includes('too many requests')) {
+    if (errorLower.includes('rate limit') || errorLower.includes('too many requests') || errorLower.includes('429')) {
       return "I'm processing too many requests right now. Please wait a moment and try again.";
+    }
+
+    // Circuit breaker errors
+    if (errorLower.includes('circuit breaker') || errorLower.includes('unavailable')) {
+      return "The service is temporarily unavailable. Please try again in a moment.";
     }
 
     // Tool-specific messages
@@ -64,9 +135,10 @@ class ErrorRecoveryService {
    * @param {Error} error - Error object
    * @param {number} retryCount - Current retry count
    * @param {Object} config - ConversationBehaviorConfig errorHandling settings
+   * @param {string} toolName - Name of the tool (optional)
    * @returns {boolean} - True if should retry
    */
-  shouldRetry(error, retryCount, config) {
+  shouldRetry(error, retryCount, config, toolName = null) {
     if (!config?.errorHandling?.retryEnabled) {
       return false;
     }
@@ -76,22 +148,17 @@ class ErrorRecoveryService {
       return false;
     }
 
-    const errorMessage = error.message || String(error);
-    const errorLower = errorMessage.toLowerCase();
+    // Check circuit breaker state
+    if (toolName) {
+      const serviceName = this.getServiceName(toolName);
+      const breaker = circuitBreakerManager.getBreaker(serviceName);
+      if (breaker.isOpen()) {
+        return false; // Circuit is open, don't retry
+      }
+    }
 
-    // Retry on transient errors
-    const retryableErrors = [
-      'timeout',
-      'network',
-      'connection',
-      'rate limit',
-      'temporary',
-      '503',
-      '502',
-      '504'
-    ];
-
-    return retryableErrors.some(keyword => errorLower.includes(keyword));
+    // Check if error is retryable using retry handler utility
+    return isRetryableError(error);
   }
 
   /**
@@ -116,11 +183,21 @@ class ErrorRecoveryService {
   handleToolError(callSid, toolName, error, config) {
     const key = `${callSid}_${toolName}`;
     const currentRetryCount = this.retryCounts.get(key) || 0;
+    const serviceName = this.getServiceName(toolName);
 
-    const shouldRetry = this.shouldRetry(error, currentRetryCount, config);
+    // Update circuit breaker
+    const breaker = circuitBreakerManager.getBreaker(serviceName);
+    breaker.onFailure(error);
+
+    // Check if we should retry
+    const shouldRetry = this.shouldRetry(error, currentRetryCount, config, toolName);
     const userMessage = config?.errorHandling?.userFriendlyErrorMessages 
       ? this.getUserFriendlyMessage(error, toolName)
       : error.message;
+
+    // Detect specific error types
+    const isOpenAI5xx = this.isOpenAI5xxError(error);
+    const isTwilioDrop = this.isTwilioStreamDrop(error);
 
     if (shouldRetry) {
       const newRetryCount = currentRetryCount + 1;
@@ -128,24 +205,43 @@ class ErrorRecoveryService {
       const delay = this.getRetryDelay(currentRetryCount, config);
 
       console.log(`🔄 [${callSid}] Will retry ${toolName} (attempt ${newRetryCount}, delay: ${delay}ms)`);
+      if (isOpenAI5xx) {
+        console.warn(`⚠️ [${callSid}] OpenAI 5xx error detected for ${toolName}`);
+      }
+      if (isTwilioDrop) {
+        console.warn(`⚠️ [${callSid}] Twilio stream drop detected for ${toolName}`);
+      }
 
       return {
         shouldRetry: true,
         retryCount: newRetryCount,
         delay,
-        userMessage: `Let me try again... ${userMessage}`
+        userMessage: `Let me try again... ${userMessage}`,
+        isOpenAI5xx,
+        isTwilioDrop,
+        circuitState: breaker.getState()
       };
     } else {
       // Clear retry count
       this.retryCounts.delete(key);
 
       console.log(`❌ [${callSid}] Tool ${toolName} failed (no retry): ${error.message}`);
+      if (isOpenAI5xx) {
+        console.error(`🔴 [${callSid}] OpenAI 5xx error - service may be degraded`);
+      }
+      if (isTwilioDrop) {
+        console.error(`🔴 [${callSid}] Twilio stream drop - connection issue`);
+      }
 
       return {
         shouldRetry: false,
         retryCount: currentRetryCount,
         userMessage,
-        alternatives: this.suggestAlternatives(callSid, toolName)
+        alternatives: this.suggestAlternatives(callSid, toolName),
+        isOpenAI5xx,
+        isTwilioDrop,
+        circuitState: breaker.getState(),
+        shouldFallbackToVoicemail: isOpenAI5xx || isTwilioDrop // Suggest voicemail for critical errors
       };
     }
   }
@@ -198,6 +294,25 @@ class ErrorRecoveryService {
       }
       keysToDelete.forEach(key => this.retryCounts.delete(key));
     }
+  }
+
+  /**
+   * Get circuit breaker state for a service
+   * @param {string} toolName - Name of the tool
+   * @returns {Object} Circuit breaker state
+   */
+  getCircuitBreakerState(toolName) {
+    const serviceName = this.getServiceName(toolName);
+    const breaker = circuitBreakerManager.getBreaker(serviceName);
+    return breaker.getState();
+  }
+
+  /**
+   * Get all circuit breaker states
+   * @returns {Array} Array of circuit breaker states
+   */
+  getAllCircuitBreakerStates() {
+    return circuitBreakerManager.getAllStates();
   }
 }
 

@@ -18,6 +18,8 @@ import adaptiveTimingService from "../services/adaptiveTimingService.js";
 import turnTakingStateMachine, { STATES } from "../services/turnTakingStateMachine.js";
 import proactiveAssistanceService from "../services/proactiveAssistanceService.js";
 import CallRecord from "../database/models/CallRecord.js";
+import tokenLimitService from "../services/tokenLimitService.js";
+import ConversationContext from "../database/models/ConversationContext.js";
 
 // Media Stream WebSocket Handler for Realtime API
 export const mediaStream = async (req, res) => {
@@ -718,6 +720,81 @@ export const handleMediaStreamConnection = (ws, req) => {
             console.error(`❌ [${callSid}] Error injecting memory context:`, error);
         }
     }
+
+    // Manage token limits for conversation
+    async function manageTokenLimits() {
+        try {
+            if (!callSid || !openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            // Get current model from config
+            const config = configManager.getConfigForNumber(phoneNumber);
+            const modelName = config?.model?.id || 'gpt-4o-realtime-preview-2024-12-17';
+
+            // Get conversation context from database or build from transcript
+            let conversationContext = await ConversationContext.findOne({ callSid }).lean();
+            
+            // Build messages array from transcript if context doesn't exist
+            const messages = [];
+            if (conversations[callSid]?.transcript) {
+                conversations[callSid].transcript.forEach(entry => {
+                    messages.push({
+                        role: entry.role === 'agent' ? 'assistant' : 'user',
+                        content: entry.text
+                    });
+                });
+            }
+
+            // If we have stored context, use it
+            if (conversationContext && conversationContext.messages) {
+                messages.push(...conversationContext.messages.map(m => ({
+                    role: m.role,
+                    content: m.content
+                })));
+            }
+
+            // Manage token limits
+            const result = await tokenLimitService.manageTokenLimits(messages, modelName);
+
+            if (result.action !== 'none') {
+                console.log(`📊 [${callSid}] Token management: ${result.action} - ${result.currentTokens}/${result.maxTokens} tokens`);
+                
+                // Update conversation context in database
+                if (result.messages && result.messages.length > 0) {
+                    await ConversationContext.findOneAndUpdate(
+                        { callSid },
+                        {
+                            callSid,
+                            modelId: modelName,
+                            contextLimit: result.maxTokens,
+                            currentTokens: result.currentTokens,
+                            messages: result.messages.map((msg, idx) => ({
+                                role: msg.role,
+                                content: msg.content,
+                                timestamp: new Date(),
+                                priority: 5,
+                                tokenCount: tokenLimitService.countTokens(msg.content || '', modelName),
+                                isSummary: result.summarized && idx === 1 // Second message is summary
+                            })),
+                            $push: {
+                                truncationHistory: {
+                                    tokensBefore: result.currentTokens + (result.tokensRemoved || 0),
+                                    tokensAfter: result.currentTokens,
+                                    messagesRemoved: result.messagesRemoved || 0,
+                                    strategy: result.action
+                                }
+                            }
+                        },
+                        { upsert: true, new: true }
+                    );
+                }
+            }
+        } catch (error) {
+            console.error(`❌ [${callSid}] Error in token limit management:`, error);
+            // Don't throw - token management is non-critical
+        }
+    }
     
     async function setupOpenAI() {
         if (setupComplete || isClosed) return;
@@ -952,7 +1029,7 @@ ${config.instructions}`;
                 }
             });
             
-            openaiWs.on('message', (data) => {
+            openaiWs.on('message', async (data) => {
                 if (isClosed) return;
                 
                 try {
@@ -2690,6 +2767,17 @@ ${config.instructions}`;
                                     conversationQualityService.trackToolExecution(callSid, name, executionResult.success, totalTime);
                                 }
                                 
+                                // Manage token limits before sending tool result (if result is large)
+                                try {
+                                    const resultString = JSON.stringify(executionResult.result || executionResult.error || '');
+                                    if (resultString.length > 1000) {
+                                        // Large result - check token limits
+                                        await manageTokenLimits();
+                                    }
+                                } catch (tokenError) {
+                                    console.warn(`⚠️ [${callSid}] Error managing tokens before tool result:`, tokenError.message);
+                                }
+                                
                                 // Format result
                                 const output = executionResult.success 
                                     ? executionResult.result 
@@ -2945,7 +3033,7 @@ ${config.instructions}`;
                             });
                     }
                     
-                    // Capture transcripts
+                    // Capture transcripts and manage token limits
                     if (event.type === 'conversation.item.created') {
                         const item = event.item;
                         const text = item.content?.find(c => c.type === 'text')?.text;
@@ -2956,6 +3044,13 @@ ${config.instructions}`;
                                 text: text
                             });
                             console.log(`💬 ${role.toUpperCase()}: ${text}`);
+                        }
+
+                        // Token limit management - check and manage after each conversation item
+                        try {
+                            await manageTokenLimits();
+                        } catch (tokenError) {
+                            console.warn(`⚠️ [${callSid}] Error managing token limits:`, tokenError.message);
                         }
                     }
                     

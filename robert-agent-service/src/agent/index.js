@@ -16,6 +16,11 @@ import secretsManager from '../services/secretsManager.js';
 import browserAgentService from '../services/browserAgentService.js';
 import toolExecutor from '../tools/index.js';
 import sessionManagementService from '../services/sessionManagementService.js';
+import scheduler from '../jobs/scheduler.js';
+import memoryCleanupJob from '../jobs/memoryCleanupJob.js';
+import retentionCleanupJob from '../jobs/retentionCleanupJob.js';
+import kbMigrationJob from '../jobs/kbMigrationJob.js';
+import kbDriftDetectionJob from '../jobs/kbDriftDetectionJob.js';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -304,18 +309,33 @@ app.get('/call', async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`\n🤖 ROBERT VOICE AGENT SERVICE READY`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌐 Tunnel URL: https://${TUNNEL_DOMAIN}`);
   const toolConfigsCount = configManager.getAllToolConfigs().length;
   console.log(`📋 Configs: AI=${configManager.getAIConfig() ? '✅' : '❌'}, Audio=${configManager.getAudioConfig() ? '✅' : '❌'}, Telephony=${configManager.getTelephonyConfig() ? '✅' : '❌'}, Tools=${toolConfigsCount > 0 ? `✅ (${toolConfigsCount})` : '❌'}`);
+  
+  // Initialize scheduled jobs
+  try {
+    scheduler.registerJob(memoryCleanupJob.name, memoryCleanupJob.schedule, memoryCleanupJob.run);
+    scheduler.registerJob(retentionCleanupJob.name, retentionCleanupJob.schedule, retentionCleanupJob.run);
+    scheduler.registerJob(kbMigrationJob.name, kbMigrationJob.schedule, kbMigrationJob.run);
+    scheduler.registerJob(kbDriftDetectionJob.name, kbDriftDetectionJob.schedule, kbDriftDetectionJob.run);
+    scheduler.start();
+    console.log(`⏰ Scheduled jobs initialized: ${scheduler.getJobs().length} jobs registered`);
+  } catch (error) {
+    console.error('❌ Error initializing scheduled jobs:', error);
+    // Don't fail startup if jobs fail to initialize
+  }
+  
   console.log(`CALL NOW → http://localhost:${PORT}/call?to=+918120523400\n`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  scheduler.stop();
   await browserAgentService.cleanup();
   configManager.destroy();
   server.close(() => {
@@ -325,6 +345,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  scheduler.stop();
   await browserAgentService.cleanup();
   configManager.destroy();
   server.close(() => {
