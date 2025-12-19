@@ -1,4 +1,4 @@
-import browserAgentService from '../services/browserAgentService.js';
+import browserAgentService from '../services/browser/index.js';
 import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
 import { conversations } from '../shared/state.js';
 

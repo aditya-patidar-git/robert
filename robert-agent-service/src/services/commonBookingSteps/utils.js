@@ -153,3 +153,70 @@ export function cleanEmail(emailText) {
   return cleaned;
 }
 
+/**
+ * Extract price from booking object
+ * @param {Object} booking - Booking object with price field
+ * @returns {number|null} Extracted price or null if not found
+ */
+export function extractPriceFromBooking(booking) {
+  // Try to extract price from booking object or use default
+  if (booking.price) {
+    const match = String(booking.price).match(/[\d,]+\.?\d*/);
+    if (match) {
+      return parseFloat(match[0].replace(/,/g, ''));
+    }
+  }
+  return null;
+}
+
+/**
+ * Save audit log to file
+ * @param {string} auditId - Audit ID
+ * @param {string} action - Action performed
+ * @param {Object} result - Result object
+ * @param {string} auditDir - Directory to save audit logs
+ * @param {string} screenshotsDir - Directory containing screenshots
+ * @returns {Promise<void>}
+ */
+export async function saveAuditLog(auditId, action, result, auditDir, screenshotsDir) {
+  try {
+    // Ensure audit directory exists
+    if (!fs.existsSync(auditDir)) {
+      fs.mkdirSync(auditDir, { recursive: true });
+    }
+
+    const auditLog = {
+      auditId,
+      timestamp: new Date().toISOString(),
+      action,
+      result,
+      screenshots: fs.existsSync(screenshotsDir)
+        ? fs.readdirSync(screenshotsDir)
+            .filter(file => file.startsWith(auditId))
+        : []
+    };
+    
+    const logPath = path.join(auditDir, `${auditId}.json`);
+    fs.writeFileSync(logPath, JSON.stringify(auditLog, null, 2));
+    
+    console.log(`📝 Audit log saved: ${auditId}`);
+  } catch (error) {
+    console.error('Audit log error:', error);
+  }
+}
+
+/**
+ * Ensure directories exist
+ * @param {string|string[]} directories - Single directory path or array of directory paths
+ * @returns {void}
+ */
+export function ensureDirectories(directories) {
+  const dirs = Array.isArray(directories) ? directories : [directories];
+  
+  for (const dir of dirs) {
+    if (dir && !fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  }
+}
+

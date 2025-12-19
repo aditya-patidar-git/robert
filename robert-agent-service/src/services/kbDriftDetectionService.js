@@ -1,0 +1,290 @@
+/**
+ * KB Drift Detection Service
+ * Compares KB files vs live website content to detect stale documents
+ */
+
+import { chromium } from 'playwright';
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+class KBDriftDetectionService {
+  constructor() {
+    this.sourceDirectory = process.env.KB_SOURCE_DIRECTORY || './kb-files';
+    this.driftThreshold = parseFloat(process.env.KB_DRIFT_THRESHOLD || '0.2'); // 20% difference
+    this.browser = null;
+  }
+
+  /**
+   * Initialize browser instance
+   * @returns {Promise<void>}
+   */
+  async initializeBrowser() {
+    if (!this.browser) {
+      this.browser = await chromium.launch({
+        headless: true
+      });
+    }
+  }
+
+  /**
+   * Cleanup browser instance
+   */
+  async cleanupBrowser() {
+    if (this.browser) {
+      await this.browser.close();
+      this.browser = null;
+    }
+  }
+
+  /**
+   * Fetch content from live website
+   * @param {string} url - URL to fetch
+   * @returns {Promise<string>} Website content
+   */
+  async fetchWebsiteContent(url) {
+    try {
+      // Try using axios first (faster for simple pages)
+      try {
+        const response = await axios.get(url, {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          }
+        });
+        
+        // Extract text content from HTML (simple extraction)
+        const html = response.data;
+        const textContent = this.extractTextFromHTML(html);
+        return textContent;
+      } catch (axiosError) {
+        // Fallback to Playwright for JavaScript-rendered content
+        console.log(`⚠️ [KB DRIFT] Axios failed for ${url}, using Playwright...`);
+        await this.initializeBrowser();
+        const page = await this.browser.newPage();
+        
+        try {
+          await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+          const textContent = await page.evaluate(() => {
+            // Remove script and style elements
+            const scripts = document.querySelectorAll('script, style, noscript');
+            scripts.forEach(el => el.remove());
+            
+            // Get text content
+            return document.body.innerText || document.body.textContent || '';
+          });
+          
+          await page.close();
+          return textContent;
+        } catch (playwrightError) {
+          console.error(`❌ [KB DRIFT] Error fetching ${url} with Playwright:`, playwrightError);
+          throw playwrightError;
+        }
+      }
+    } catch (error) {
+      console.error(`❌ [KB DRIFT] Error fetching website content from ${url}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Extract text content from HTML (simple implementation)
+   * @param {string} html - HTML content
+   * @returns {string} Extracted text
+   */
+  extractTextFromHTML(html) {
+    // Remove script and style tags
+    let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+    text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+    text = text.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '');
+    
+    // Remove HTML tags
+    text = text.replace(/<[^>]+>/g, ' ');
+    
+    // Decode HTML entities (basic)
+    text = text.replace(/&nbsp;/g, ' ');
+    text = text.replace(/&amp;/g, '&');
+    text = text.replace(/&lt;/g, '<');
+    text = text.replace(/&gt;/g, '>');
+    text = text.replace(/&quot;/g, '"');
+    text = text.replace(/&#39;/g, "'");
+    
+    // Normalize whitespace
+    text = text.replace(/\s+/g, ' ').trim();
+    
+    return text;
+  }
+
+  /**
+   * Read KB file content
+   * @param {string} filePath - Path to KB file
+   * @returns {Promise<string>} File content
+   */
+  async readKBFile(filePath) {
+    try {
+      const content = await fs.promises.readFile(filePath, 'utf-8');
+      
+      // If it's HTML, extract text
+      if (path.extname(filePath).toLowerCase() === '.html') {
+        return this.extractTextFromHTML(content);
+      }
+      
+      return content;
+    } catch (error) {
+      console.error(`❌ [KB DRIFT] Error reading KB file ${filePath}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate similarity between two texts
+   * Uses simple word-based comparison
+   * @param {string} text1 - First text
+   * @param {string} text2 - Second text
+   * @returns {number} Similarity score (0-1)
+   */
+  calculateSimilarity(text1, text2) {
+    // Normalize texts
+    const normalize = (text) => {
+      return text.toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const normalized1 = normalize(text1);
+    const normalized2 = normalize(text2);
+
+    // Split into words
+    const words1 = new Set(normalized1.split(' ').filter(w => w.length > 0));
+    const words2 = new Set(normalized2.split(' ').filter(w => w.length > 0));
+
+    // Calculate Jaccard similarity
+    const intersection = new Set([...words1].filter(w => words2.has(w)));
+    const union = new Set([...words1, ...words2]);
+
+    if (union.size === 0) {
+      return 1.0; // Both empty, consider identical
+    }
+
+    return intersection.size / union.size;
+  }
+
+  /**
+   * Detect drift for a single KB file
+   * @param {string} filePath - Path to KB file
+   * @param {string} websiteUrl - URL to compare against
+   * @returns {Promise<Object>} Drift detection result
+   */
+  async detectDriftForFile(filePath, websiteUrl) {
+    try {
+      // Read KB file content
+      const kbContent = await this.readKBFile(filePath);
+      
+      // Fetch website content
+      const websiteContent = await this.fetchWebsiteContent(websiteUrl);
+      
+      // Calculate similarity
+      const similarity = this.calculateSimilarity(kbContent, websiteContent);
+      const difference = 1 - similarity;
+      
+      const isStale = difference > this.driftThreshold;
+      
+      return {
+        filePath,
+        fileName: path.basename(filePath),
+        websiteUrl,
+        similarity,
+        difference,
+        isStale,
+        kbContentLength: kbContent.length,
+        websiteContentLength: websiteContent.length
+      };
+    } catch (error) {
+      console.error(`❌ [KB DRIFT] Error detecting drift for ${filePath}:`, error);
+      return {
+        filePath,
+        fileName: path.basename(filePath),
+        websiteUrl,
+        error: error.message,
+        isStale: false // Mark as not stale if we can't check
+      };
+    }
+  }
+
+  /**
+   * Generate drift detection report
+   * @param {Array<Object>} fileUrlMappings - Array of { filePath, url } mappings
+   * @returns {Promise<Object>} Drift report
+   */
+  async generateDriftReport(fileUrlMappings = []) {
+    try {
+      console.log('🔍 [KB DRIFT] Starting drift detection...');
+      
+      await this.initializeBrowser();
+      
+      const results = [];
+      const staleFiles = [];
+      
+      for (const mapping of fileUrlMappings) {
+        const result = await this.detectDriftForFile(mapping.filePath, mapping.url);
+        results.push(result);
+        
+        if (result.isStale) {
+          staleFiles.push(result);
+        }
+      }
+      
+      await this.cleanupBrowser();
+      
+      const report = {
+        generatedAt: new Date().toISOString(),
+        totalFiles: results.length,
+        staleFiles: staleFiles.length,
+        driftThreshold: this.driftThreshold,
+        results: results.sort((a, b) => (b.difference || 0) - (a.difference || 0)), // Sort by difference descending
+        staleFilesList: staleFiles.map(f => ({
+          fileName: f.fileName,
+          filePath: f.filePath,
+          websiteUrl: f.websiteUrl,
+          difference: f.difference,
+          similarity: f.similarity
+        }))
+      };
+      
+      console.log(`✅ [KB DRIFT] Drift detection completed:`);
+      console.log(`   - Total files: ${report.totalFiles}`);
+      console.log(`   - Stale files: ${report.staleFiles}`);
+      
+      if (report.staleFiles > 0) {
+        console.warn(`⚠️ [KB DRIFT] Found ${report.staleFiles} stale files that need updating`);
+      }
+      
+      return report;
+    } catch (error) {
+      await this.cleanupBrowser();
+      console.error('❌ [KB DRIFT] Error generating drift report:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Auto-detect file-URL mappings from KB directory
+   * Looks for metadata files or infers from file names
+   * @returns {Promise<Array>} Array of { filePath, url } mappings
+   */
+  async autoDetectMappings() {
+    // This is a placeholder - in production, you'd have a mapping file
+    // or metadata in the KB files themselves
+    console.warn('⚠️ [KB DRIFT] Auto-detection of file-URL mappings not implemented. Please provide mappings manually.');
+    return [];
+  }
+}
+
+export default new KBDriftDetectionService();
+

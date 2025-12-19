@@ -13,7 +13,7 @@ export { sendBookingConfirmationEmail } from './sendBookingConfirmationEmail.js'
 export { sendTermsAndConditionsEmail } from './sendTermsAndConditionsEmail.js';
 export { sendSMSConfirmation } from './sendSMSConfirmation.js';
 export { validateAge } from './validateAge.js';
-export { takeScreenshot, extractLocationIdentifier } from './utils.js';
+export { takeScreenshot, extractLocationIdentifier, extractPriceFromBooking, saveAuditLog, ensureDirectories } from './utils.js';
 export { findBooking } from './findBooking.js';
 export { checkAvailabilityAndNoteDetails, getAvailabilityUrl, selectBestMatchingSlot } from './checkAvailability.js';
 export { rescheduleBooking } from './rescheduleBooking.js';
