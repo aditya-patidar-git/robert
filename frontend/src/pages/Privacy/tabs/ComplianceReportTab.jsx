@@ -17,36 +17,36 @@ const ComplianceReportTab = ({ state }) => {
           <CircularProgress />
         </Box>
       ) : (
-        complianceReport?.report && (
+        complianceReport ? (
           <Grid container spacing={3}>
-            <Grid size={{ xs: 12, md: 6 }}>
+            <Grid item xs={12} md={6}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                   Metrics
                 </Typography>
-                <Typography variant="body2">Total Calls: {complianceReport.report.metrics?.totalCalls || 0}</Typography>
-                <Typography variant="body2">Consent Rate: {((complianceReport.report.metrics?.consentRate || 0) * 100).toFixed(1)}%</Typography>
-                <Typography variant="body2">DSAR Requests: {complianceReport.report.metrics?.dsarRequests || 0}</Typography>
-                <Typography variant="body2">Data Exports: {complianceReport.report.metrics?.dataExports || 0}</Typography>
-                <Typography variant="body2">Data Deletions: {complianceReport.report.metrics?.dataDeletions || 0}</Typography>
+                <Typography variant="body2">Total Calls: {complianceReport.metrics?.totalCalls || 0}</Typography>
+                <Typography variant="body2">Consent Rate: {((complianceReport.metrics?.consentRate || 0) * 100).toFixed(1)}%</Typography>
+                <Typography variant="body2">DSAR Requests: {complianceReport.metrics?.dsarRequests || 0}</Typography>
+                <Typography variant="body2">Data Exports: {complianceReport.metrics?.dataExports || 0}</Typography>
+                <Typography variant="body2">Data Deletions: {complianceReport.metrics?.dataDeletions || 0}</Typography>
               </Paper>
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
+            <Grid item xs={12} md={6}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                   Compliance Status
                 </Typography>
                 <Chip
-                  label={complianceReport.report.complianceStatus || 'unknown'}
-                  color={complianceReport.report.complianceStatus === 'compliant' ? 'success' : 'warning'}
+                  label={complianceReport.complianceStatus || 'unknown'}
+                  color={complianceReport.complianceStatus === 'compliant' ? 'success' : 'warning'}
                   sx={{ mb: 2 }}
                 />
                 <Typography variant="subtitle2" gutterBottom>
                   Recommendations
                 </Typography>
-                {complianceReport.report.recommendations && complianceReport.report.recommendations.length > 0 ? (
+                {complianceReport.recommendations && complianceReport.recommendations.length > 0 ? (
                   <ul>
-                    {complianceReport.report.recommendations.map((rec, idx) => (
+                    {complianceReport.recommendations.map((rec, idx) => (
                       <li key={idx}>
                         <Typography variant="body2">{rec}</Typography>
                       </li>
@@ -60,6 +60,12 @@ const ComplianceReportTab = ({ state }) => {
               </Paper>
             </Grid>
           </Grid>
+        ) : (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              No compliance report data available
+            </Typography>
+          </Box>
         )
       )}
     </Box>

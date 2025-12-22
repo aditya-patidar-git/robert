@@ -394,7 +394,7 @@ const DriftDetectionMapping = () => {
               }}
               required
             >
-              <option value="">Select a file</option>
+              <option value=""></option>
               {kbFiles.map((file) => (
                 <option key={file._id || file.id} value={file._id || file.id}>
                   {file.filename || file.title}

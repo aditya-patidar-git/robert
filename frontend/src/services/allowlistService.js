@@ -19,8 +19,11 @@ class AllowlistService extends BaseService {
    * @returns {Promise<Object>} Allowlist entries with pagination
    */
   async getAllowlist(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
-    return this.get(queryString ? `?${queryString}` : '');
+    // Filter out undefined/null/empty values to avoid "undefined" in query string
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(([_, value]) => value !== undefined && value !== null && value !== '')
+    );
+    return this.get('', cleanParams);
   }
 
   /**

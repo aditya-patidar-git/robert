@@ -125,10 +125,14 @@ class CallQualityService {
       const startDate = this.getTimeRangeFilter(timeRange);
       
       // Find all calls with audio quality data in the time range
+      // Use createdAt for time filtering (more reliable) and check for any audioQuality data
       const calls = await CallRecord.find({
-        'audioQuality.latency': { $exists: true, $ne: null },
-        'audioQuality.measuredAt': { $gte: startDate }
-      }).select('audioQuality').lean();
+        'audioQuality': { $exists: true },
+        $or: [
+          { 'audioQuality.measuredAt': { $gte: startDate } },
+          { 'audioQuality.measuredAt': { $exists: false }, createdAt: { $gte: startDate } }
+        ]
+      }).select('audioQuality createdAt').lean();
 
       if (calls.length === 0) {
         return {
@@ -161,12 +165,12 @@ class CallQualityService {
         };
       }
 
-      // Extract metrics arrays
-      const latencies = calls.map(c => c.audioQuality.latency).filter(v => v != null);
-      const jitters = calls.map(c => c.audioQuality.jitter).filter(v => v != null);
-      const packetLosses = calls.map(c => c.audioQuality.packetLoss).filter(v => v != null);
-      const mosScores = calls.map(c => c.audioQuality.mosScore).filter(v => v != null);
-      const qualityCategories = calls.map(c => c.audioQuality.callQuality).filter(v => v != null);
+      // Extract metrics arrays - use optional chaining for missing values
+      const latencies = calls.map(c => c.audioQuality?.latency).filter(v => v != null && v !== undefined);
+      const jitters = calls.map(c => c.audioQuality?.jitter).filter(v => v != null && v !== undefined);
+      const packetLosses = calls.map(c => c.audioQuality?.packetLoss).filter(v => v != null && v !== undefined);
+      const mosScores = calls.map(c => c.audioQuality?.mosScore).filter(v => v != null && v !== undefined);
+      const qualityCategories = calls.map(c => c.audioQuality?.callQuality).filter(v => v != null && v !== undefined);
 
       // Calculate averages
       const averageLatency = latencies.length > 0 

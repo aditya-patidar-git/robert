@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -32,7 +32,7 @@ import {
 import { useToast } from '../../../components/common/ToastProvider';
 import allowlistService from '../../../services/allowlistService';
 
-const AllowlistManager = () => {
+const AllowlistManager = forwardRef((props, ref) => {
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
   
@@ -57,8 +57,9 @@ const AllowlistManager = () => {
     })
   });
 
-  const allowlist = allowlistData?.allowlist || [];
-  const pagination = allowlistData?.pagination || {};
+  // Access data from normalized response structure
+  const allowlist = allowlistData?.data?.allowlist || allowlistData?.allowlist || [];
+  const pagination = allowlistData?.data?.pagination || allowlistData?.pagination || {};
 
   const addMutation = useMutation({
     mutationFn: (data) => allowlistService.addToAllowlist(data),
@@ -123,6 +124,12 @@ const AllowlistManager = () => {
     }
   };
 
+  useImperativeHandle(ref, () => ({
+    openAddDialog: () => {
+      setAddDialog({ open: true });
+    }
+  }));
+
   if (isLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
@@ -133,21 +140,6 @@ const AllowlistManager = () => {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-          Allowlist Management
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setAddDialog({ open: true })}
-          size="small"
-        >
-          Add Entry
-        </Button>
-      </Box>
-
       {/* Filters */}
       <Paper elevation={0} sx={{ p: 2, mb: 3, borderRadius: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -341,7 +333,9 @@ const AllowlistManager = () => {
       </Dialog>
     </Box>
   );
-};
+});
+
+AllowlistManager.displayName = 'AllowlistManager';
 
 export default AllowlistManager;
 

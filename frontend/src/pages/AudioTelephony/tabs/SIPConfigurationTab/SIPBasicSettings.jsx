@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Grid, TextField, FormControl, InputLabel, Select, MenuItem, FormControlLabel, Switch, Typography, Paper } from '@mui/material';
+import { Box, FormControl, InputLabel, Select, MenuItem, FormControlLabel, Switch, Typography, Paper } from '@mui/material';
 import { Controller } from 'react-hook-form';
 
 /**
@@ -18,8 +18,8 @@ const SIPBasicSettings = ({ control, watch }) => {
         Configure basic SIP connection settings
       </Typography>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box>
           <Controller
             name="sipSettings.openaiSipEnabled"
             control={control}
@@ -30,77 +30,78 @@ const SIPBasicSettings = ({ control, watch }) => {
               />
             )}
           />
-        </Grid>
+        </Box>
 
         {sipEnabled && (
-          <>
-            <Grid item xs={12} md={6}>
-              <Controller
-                name="sipSettings.primaryPath"
-                control={control}
-                render={({ field }) => (
-                  <FormControl fullWidth>
-                    <InputLabel>Primary Path</InputLabel>
-                    <Select {...field} label="Primary Path">
-                      <MenuItem value="sip">SIP</MenuItem>
-                      <MenuItem value="media_streams">Media Streams</MenuItem>
-                    </Select>
-                  </FormControl>
-                )}
-              />
-            </Grid>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'row',
+              gap: 2,
+              flexWrap: { xs: 'wrap', md: 'nowrap' }
+            }}
+          >
+            <Controller
+              name="sipSettings.primaryPath"
+              control={control}
+              render={({ field }) => (
+                <FormControl sx={{ flex: 1, minWidth: 150 }}>
+                  <InputLabel>Primary Path</InputLabel>
+                  <Select {...field} label="Primary Path">
+                    <MenuItem value="sip">SIP</MenuItem>
+                    <MenuItem value="media_streams">Media Streams</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
+            />
 
-            <Grid item xs={12} md={6}>
-              <Controller
-                name="sipSettings.fallbackPath"
-                control={control}
-                render={({ field }) => (
-                  <FormControl fullWidth>
-                    <InputLabel>Fallback Path</InputLabel>
-                    <Select {...field} label="Fallback Path">
-                      <MenuItem value="sip">SIP</MenuItem>
-                      <MenuItem value="media_streams">Media Streams</MenuItem>
-                    </Select>
-                  </FormControl>
-                )}
-              />
-            </Grid>
+            <Controller
+              name="sipSettings.fallbackPath"
+              control={control}
+              render={({ field }) => (
+                <FormControl sx={{ flex: 1, minWidth: 150 }}>
+                  <InputLabel>Fallback Path</InputLabel>
+                  <Select {...field} label="Fallback Path">
+                    <MenuItem value="sip">SIP</MenuItem>
+                    <MenuItem value="media_streams">Media Streams</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
+            />
 
-            <Grid item xs={12} md={6}>
-              <Controller
-                name="sipSettings.codec"
-                control={control}
-                render={({ field }) => (
-                  <FormControl fullWidth>
-                    <InputLabel>Codec</InputLabel>
-                    <Select {...field} label="Codec">
-                      <MenuItem value="opus">Opus</MenuItem>
-                      <MenuItem value="pcm">PCM</MenuItem>
-                      <MenuItem value="g722">G.722</MenuItem>
-                    </Select>
-                  </FormControl>
-                )}
-              />
-            </Grid>
+            <Controller
+              name="sipSettings.codec"
+              control={control}
+              render={({ field }) => (
+                <FormControl sx={{ flex: 1, minWidth: 150 }}>
+                  <InputLabel>Codec</InputLabel>
+                  <Select {...field} label="Codec">
+                    <MenuItem value="opus">Opus</MenuItem>
+                    <MenuItem value="pcm">PCM</MenuItem>
+                    <MenuItem value="g722">G.722</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
+            />
 
-            <Grid item xs={12} md={6}>
-              <Controller
-                name="sipSettings.region"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="Region"
-                    fullWidth
-                    placeholder="europe"
-                    helperText="SIP region (e.g., europe, us-east)"
-                  />
-                )}
-              />
-            </Grid>
-          </>
+            <Controller
+              name="sipSettings.region"
+              control={control}
+              render={({ field }) => (
+                <FormControl sx={{ flex: 1, minWidth: 150 }}>
+                  <InputLabel>Region</InputLabel>
+                  <Select {...field} label="Region">
+                    <MenuItem value="europe">Europe</MenuItem>
+                    <MenuItem value="us-east">US East</MenuItem>
+                    <MenuItem value="us-west">US West</MenuItem>
+                    <MenuItem value="asia-pacific">Asia Pacific</MenuItem>
+                  </Select>
+                </FormControl>
+              )}
+            />
+          </Box>
         )}
-      </Grid>
+      </Box>
     </Paper>
   );
 };

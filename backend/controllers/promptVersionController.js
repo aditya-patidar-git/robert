@@ -103,10 +103,46 @@ export const getCurrentVersion = async (req, res) => {
       });
     }
     
-    res.json({
-      status: "success",
-      version
-    });
+    // Populate author name if User model is available
+    try {
+      const User = (await import("../models/User.js")).default;
+      const versionObj = version.toObject();
+      if (version.createdBy) {
+        try {
+          // Try to find user by ID first, then by username/email
+          let user = await User.findById(version.createdBy);
+          if (!user) {
+            user = await User.findOne({ 
+              $or: [
+                { username: version.createdBy },
+                { email: version.createdBy }
+              ]
+            });
+          }
+          if (user) {
+            versionObj.createdByName = user.username || user.email || user.name || version.createdBy;
+          } else {
+            versionObj.createdByName = version.createdBy;
+          }
+        } catch (userError) {
+          // If user lookup fails, use createdBy as fallback
+          versionObj.createdByName = version.createdBy;
+        }
+      } else {
+        versionObj.createdByName = 'admin';
+      }
+      
+      res.json({
+        status: "success",
+        version: versionObj
+      });
+    } catch (populateError) {
+      // If User model is not available or populate fails, return version as-is
+      res.json({
+        status: "success",
+        version
+      });
+    }
   } catch (error) {
     console.error("Error fetching current version:", error);
     res.status(500).json({

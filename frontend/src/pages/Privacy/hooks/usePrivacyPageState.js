@@ -28,13 +28,41 @@ export function usePrivacyPageState() {
   // Fetch DSAR requests
   const { data: dsarRequests, isLoading: dsarLoading, refetch: refetchDSAR } = useQuery({
     queryKey: ['dsarRequests'],
-    queryFn: () => dsarService.getRequests()
+    queryFn: async () => {
+      const response = await dsarService.getDSARRequests();
+      // Handle normalized response structure
+      return response?.data?.dsarRequests || response?.dsarRequests || response?.data || response || [];
+    }
   });
 
   // Fetch audit logs
   const { data: auditLogs, isLoading: auditLogsLoading, refetch: refetchAuditLogs } = useQuery({
     queryKey: ['auditLogs'],
-    queryFn: () => auditLogService.getLogs({ limit: 100 })
+    queryFn: async () => {
+      const response = await auditLogService.getAuditLogs({ limit: 100 });
+      // Handle normalized response structure
+      return response?.data?.auditLogs || response?.auditLogs || response?.data || response || [];
+    }
+  });
+
+  // Fetch retention policies
+  const { data: retentionPolicies, isLoading: retentionLoading, refetch: refetchRetention } = useQuery({
+    queryKey: ['retentionPolicies'],
+    queryFn: async () => {
+      const response = await privacyService.checkRetentionPolicies();
+      // Handle normalized response structure
+      return response?.data?.retentionChecks || response?.retentionChecks || response?.data || response || {};
+    }
+  });
+
+  // Fetch compliance report
+  const { data: complianceReport, isLoading: complianceLoading, refetch: refetchCompliance } = useQuery({
+    queryKey: ['complianceReport'],
+    queryFn: async () => {
+      const response = await privacyService.generateComplianceReport('monthly');
+      // Handle normalized response structure
+      return response?.data?.report || response?.report || response?.data || response || null;
+    }
   });
 
   // Update privacy configuration mutation
@@ -72,8 +100,17 @@ export function usePrivacyPageState() {
 
   // Report data breach mutation
   const reportBreachMutation = useMutation({
-    mutationFn: (data) => privacyService.reportBreach(data),
+    mutationFn: (data) => privacyService.reportDataBreach(data),
     onSuccess: () => {
+      queryClient.invalidateQueries(['auditLogs']);
+    }
+  });
+
+  // Cleanup expired data mutation
+  const cleanupMutation = useMutation({
+    mutationFn: () => privacyService.cleanupExpiredData(),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['retentionPolicies']);
       queryClient.invalidateQueries(['auditLogs']);
     }
   });
@@ -181,6 +218,10 @@ export function usePrivacyPageState() {
     dsarLoading,
     auditLogs,
     auditLogsLoading,
+    retentionPolicies,
+    retentionLoading,
+    complianceReport,
+    complianceLoading,
 
     // Mutations
     updateConfigMutation,
@@ -188,6 +229,7 @@ export function usePrivacyPageState() {
     updateDSARMutation,
     exportDSARMutation,
     reportBreachMutation,
+    cleanupMutation,
 
     // Handlers
     handleUpdateConsentScript,
@@ -201,7 +243,9 @@ export function usePrivacyPageState() {
     // Refetch functions
     refetchConfig,
     refetchDSAR,
-    refetchAuditLogs
+    refetchAuditLogs,
+    refetchRetention,
+    refetchCompliance
   };
 }
 

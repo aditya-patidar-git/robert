@@ -30,8 +30,9 @@ const RetentionStatusTab = ({ state, handlers }) => {
         </Box>
       ) : (
         <Grid container spacing={3}>
-          {retentionPolicies?.retentionChecks && Object.entries(retentionPolicies.retentionChecks).map(([dataType, check]) => (
-            <Grid size={{ xs: 12, md: 4 }} key={dataType}>
+          {retentionPolicies && Object.keys(retentionPolicies).length > 0 ? (
+            Object.entries(retentionPolicies).map(([dataType, check]) => (
+            <Grid item xs={12} md={4} key={dataType}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                   {dataType.charAt(0).toUpperCase() + dataType.slice(1)}
@@ -44,7 +45,16 @@ const RetentionStatusTab = ({ state, handlers }) => {
                 </Typography>
               </Paper>
             </Grid>
-          ))}
+            ))
+          ) : (
+            <Grid item xs={12}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="body2" color="text.secondary" align="center">
+                  No retention policy data available
+                </Typography>
+              </Paper>
+            </Grid>
+          )}
         </Grid>
       )}
     </Box>

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { Box } from '@mui/material';
+import { Box, Button } from '@mui/material';
+import { Save } from '@mui/icons-material';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../../../components/common/ToastProvider';
@@ -101,24 +102,39 @@ const SIPConfigurationTab = () => {
     await testConnection(formValues.sipSettings);
   };
 
+  const sipEnabled = watch('sipSettings.openaiSipEnabled');
+
   if (isLoading) {
     return <Box>Loading...</Box>;
   }
 
   return (
     <Box>
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <SIPBasicSettings control={control} watch={watch} />
-        <SIPCredentialsForm control={control} watch={watch} />
-        
-        <SIPConnectionStatus
-          status={status}
-          lastAttempt={lastAttempt}
-          error={error}
-          onTest={handleTestConnection}
-          loading={testLoading}
-        />
-      </form>
+      <SIPBasicSettings control={control} watch={watch} />
+      <SIPCredentialsForm control={control} watch={watch} />
+      
+      <SIPConnectionStatus
+        status={status}
+        lastAttempt={lastAttempt}
+        error={error}
+        onTest={handleTestConnection}
+        loading={testLoading}
+        disabled={!sipEnabled}
+      />
+      
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 3 }}>
+        <Button
+          type="button"
+          variant="contained"
+          size="large"
+          startIcon={<Save />}
+          onClick={handleSubmit(onSubmit)}
+          disabled={updateMutation.isLoading}
+          sx={{ minWidth: 150 }}
+        >
+          {updateMutation.isLoading ? 'Saving...' : 'Save SIP Configuration'}
+        </Button>
+      </Box>
     </Box>
   );
 };

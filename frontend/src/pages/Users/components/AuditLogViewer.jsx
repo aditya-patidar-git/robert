@@ -53,8 +53,9 @@ const AuditLogViewer = () => {
     })
   });
 
-  const auditLogs = auditData?.auditLogs || [];
-  const pagination = auditData?.pagination || { page: 1, total: 0, pages: 1 };
+  // Access data from normalized response structure
+  const auditLogs = auditData?.data?.auditLogs || auditData?.auditLogs || [];
+  const pagination = auditData?.data?.pagination || auditData?.pagination || { page: 1, total: 0, pages: 1 };
 
   const toggleRow = (logId) => {
     const newExpanded = new Set(expandedRows);
@@ -106,12 +107,6 @@ const AuditLogViewer = () => {
 
   return (
     <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-          Audit Logs
-        </Typography>
-      </Box>
 
       {/* Filters */}
       <Paper elevation={0} sx={{ p: 2, mb: 3, borderRadius: 2 }}>

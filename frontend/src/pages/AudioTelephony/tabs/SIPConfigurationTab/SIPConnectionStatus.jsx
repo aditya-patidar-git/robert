@@ -12,7 +12,8 @@ const SIPConnectionStatus = ({
   lastAttempt,
   error,
   onTest,
-  loading
+  loading,
+  disabled = false
 }) => {
   return (
     <Paper sx={{ p: 3 }}>
@@ -26,6 +27,7 @@ const SIPConnectionStatus = ({
           loading={loading}
           lastAttempt={lastAttempt}
           error={error}
+          disabled={disabled}
         />
       </Box>
       <Box sx={{ mt: 2 }}>

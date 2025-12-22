@@ -12,9 +12,11 @@ import { usePrivacyPageState } from './hooks/usePrivacyPageState';
 import { ConsentScriptSection } from './components/sections/ConsentScriptSection';
 import { DataRetentionSection } from './components/sections/DataRetentionSection';
 import { LawfulBasisSection } from './components/sections/LawfulBasisSection';
-import { DSARRequestsTab } from './components/tabs/DSARRequestsTab';
-import { AuditLogsTab } from './components/tabs/AuditLogsTab';
-import { RetentionStatusTab } from './components/tabs/RetentionStatusTab';
+import DSARRequestsTab from './tabs/DSARRequestsTab';
+import AuditLogsTab from './tabs/AuditLogsTab';
+import RetentionStatusTab from './tabs/RetentionStatusTab';
+import ComplianceReportTab from './tabs/ComplianceReportTab';
+import ConsentManagementTab from './tabs/ConsentManagementTab';
 import { DSARRequestDialog } from './components/dialogs/DSARRequestDialog';
 import { DSARExportPreviewDialog } from './components/dialogs/DSARExportPreviewDialog';
 import { DataBreachDialog } from './components/dialogs/DataBreachDialog';
@@ -49,6 +51,13 @@ const PrivacyPage = () => {
     dsarLoading,
     auditLogs,
     auditLogsLoading,
+    retentionPolicies,
+    retentionLoading,
+    complianceReport,
+    complianceLoading,
+
+    // Mutations
+    cleanupMutation,
 
     // Handlers
     handleUpdateConsentScript,
@@ -132,51 +141,64 @@ const PrivacyPage = () => {
         <Box sx={{ p: 3 }}>
           {activeTab === 0 && (
             <DSARRequestsTab
-              requests={dsarRequests}
-              loading={dsarLoading}
-              onView={handleViewDSAR}
-              onExport={handleExportDSAR}
-              onStatusChange={handleUpdateDSAR}
+              state={{
+                dsarRequests: dsarRequests || [],
+                dsarLoading,
+                setDsarFormDialog: (dialog) => {
+                  if (dialog.open) {
+                    setSelectedDSAR(null);
+                    setConsentScriptDialogOpen(true);
+                  }
+                }
+              }}
+              handlers={{
+                getStatusColor: (status) => {
+                  const colors = {
+                    pending: 'warning',
+                    processing: 'info',
+                    completed: 'success',
+                    rejected: 'error'
+                  };
+                  return colors[status] || 'default';
+                }
+              }}
             />
           )}
 
           {activeTab === 1 && (
             <AuditLogsTab
-              logs={auditLogs}
-              loading={auditLogsLoading}
+              state={{
+                auditLogs: auditLogs || [],
+                auditLogsLoading,
+                auditLogFilters: {},
+                setAuditLogFilters: () => {}
+              }}
             />
           )}
 
           {activeTab === 2 && (
             <RetentionStatusTab
-              retention={privacyConfig?.dataRetention}
-              loading={configLoading}
+              state={{
+                retentionPolicies: retentionPolicies || {},
+                retentionLoading
+              }}
+              handlers={{
+                cleanupMutation
+              }}
             />
           )}
 
           {activeTab === 3 && (
-            <Box>
-              <LawfulBasisSection
-                config={privacyConfig}
-                onUpdate={handleUpdatePrivacyNotice}
-                loading={configLoading}
-              />
-              <Box sx={{ mt: 3 }}>
-                <DataRetentionSection
-                  retention={privacyConfig?.dataRetention}
-                  onUpdate={handleUpdateRetention}
-                  loading={configLoading}
-                />
-              </Box>
-            </Box>
+            <ComplianceReportTab
+              state={{
+                complianceReport: complianceReport || null,
+                complianceLoading
+              }}
+            />
           )}
 
           {activeTab === 4 && (
-            <ConsentScriptSection
-              script={privacyConfig?.consentScript}
-              onUpdate={handleUpdateConsentScript}
-              loading={configLoading}
-            />
+            <ConsentManagementTab />
           )}
         </Box>
       </Paper>
