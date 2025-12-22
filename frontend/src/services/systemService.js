@@ -71,19 +71,56 @@ class SystemService extends BaseService {
 
   /**
    * Create system backup
+   * @param {Object} options - Backup options
    * @returns {Promise<Object>} Backup result
    */
-  async createBackup() {
-    return this.post('/backup');
+  async createBackup(options = {}) {
+    return this.post('/backup', options);
+  }
+
+  /**
+   * List all backups
+   * @returns {Promise<Object>} List of backups
+   */
+  async listBackups() {
+    return this.get('/backups');
+  }
+
+  /**
+   * Get backup details
+   * @param {string} backupId - Backup ID
+   * @returns {Promise<Object>} Backup details
+   */
+  async getBackupDetails(backupId) {
+    return this.get(`/backups/${backupId}`);
+  }
+
+  /**
+   * Delete backup
+   * @param {string} backupId - Backup ID
+   * @returns {Promise<Object>} Delete result
+   */
+  async deleteBackup(backupId) {
+    return this.delete(`/backups/${backupId}`);
   }
 
   /**
    * Restore system backup
    * @param {string} backupId - Backup ID
+   * @param {Object} options - Restore options
    * @returns {Promise<Object>} Restore result
    */
-  async restoreBackup(backupId) {
-    return this.post(`/restore/${backupId}`);
+  async restoreBackup(backupId, options = {}) {
+    return this.post(`/restore/${backupId}`, options);
+  }
+
+  /**
+   * Get restore preview
+   * @param {string} backupId - Backup ID
+   * @returns {Promise<Object>} Preview result
+   */
+  async getRestorePreview(backupId) {
+    return this.get(`/restore/${backupId}/preview`);
   }
 }
 

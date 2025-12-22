@@ -9,7 +9,11 @@ import {
   getAvailableModels,
   updateModelConfig,
   createBackup,
-  restoreBackup
+  listBackups,
+  getBackupDetails,
+  deleteBackup,
+  restoreBackup,
+  getRestorePreview
 } from "../controllers/systemController.js";
 import {
   getPaymentGatewayConfig,
@@ -41,9 +45,13 @@ router.post("/mcp-tools/execute", executeMCPTool);
 router.get("/models", getAvailableModels);
 router.put("/models/:modelId", updateModelConfig);
 
-// Backup Routes (placeholders)
+// Backup Routes
 router.post("/backup", createBackup);
+router.get("/backups", listBackups);
+router.get("/backups/:backupId", getBackupDetails);
+router.delete("/backups/:backupId", deleteBackup);
 router.post("/restore/:backupId", restoreBackup);
+router.get("/restore/:backupId/preview", getRestorePreview);
 
 // Payment Gateway Routes
 router.get("/payment-gateway/config", getPaymentGatewayConfig);

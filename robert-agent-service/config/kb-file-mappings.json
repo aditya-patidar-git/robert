@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2025-01-15T00:00:00Z",
+  "mappings": [
+    {
+      "filePath": "knowledge-base/course-info.pdf",
+      "url": "https://example.com/courses",
+      "selector": "#course-content",
+      "lastChecked": "2025-01-15T10:00:00Z",
+      "notes": "Example mapping - replace with actual mappings"
+    }
+  ]
+}
+

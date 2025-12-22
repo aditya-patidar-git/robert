@@ -362,16 +362,35 @@ class ModelDiscoveryService {
   // Start periodic discovery
   startPeriodicDiscovery() {
     console.log('🔄 Starting periodic model discovery...');
+    console.log(`⏰ Discovery interval: ${this.discoveryInterval / 1000 / 60} minutes (${this.discoveryInterval / 1000 / 60 / 60} hours)`);
     
     // Run immediately
-    this.discoverModels().catch(console.error);
+    console.log('🔄 Running initial model discovery...');
+    this.discoverModels().catch(error => {
+      console.error('❌ Initial model discovery failed:', error);
+    });
     
     // Then run every hour
-    setInterval(() => {
+    const intervalId = setInterval(() => {
+      const now = new Date();
+      console.log(`⏰ [${now.toISOString()}] Scheduled model discovery check...`);
+      
       if (this.isDiscoveryNeeded()) {
-        this.discoverModels().catch(console.error);
+        console.log('🔄 Discovery needed - running scheduled model discovery...');
+        this.discoverModels().catch(error => {
+          console.error('❌ Scheduled model discovery failed:', error);
+        });
+      } else {
+        const nextDiscovery = this.lastDiscovery ? 
+          new Date(this.lastDiscovery.getTime() + this.discoveryInterval) : 
+          new Date();
+        console.log(`⏭️ Discovery not needed yet. Last discovery: ${this.lastDiscovery?.toISOString() || 'never'}, Next scheduled: ${nextDiscovery.toISOString()}`);
       }
     }, this.discoveryInterval);
+    
+    // Store interval ID for potential cleanup
+    this.intervalId = intervalId;
+    console.log('✅ Periodic model discovery started successfully');
   }
 
   // Get discovery status

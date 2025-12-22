@@ -168,7 +168,7 @@ class AbusePreventionService {
    * @param {string} callerId - Caller phone number
    * @param {string} reason - Block reason
    */
-  blockCaller(callerId, reason) {
+  async blockCaller(callerId, reason) {
     try {
       if (!callerId || callerId === 'unknown') {
         return;
@@ -188,8 +188,10 @@ class AbusePreventionService {
 
       console.log(`🚫 Blocked caller ${callerId}: ${reason}`);
       
-      // TODO: Send admin alert
-      this.sendAdminAlert(callerId, reason);
+      // Send admin alert (fire and forget - don't block on alert sending)
+      this.sendAdminAlert(callerId, reason).catch(error => {
+        console.error('Error sending admin alert:', error);
+      });
     } catch (error) {
       console.error('Error blocking caller:', error);
     }
@@ -199,10 +201,50 @@ class AbusePreventionService {
    * Send admin alert for abuse
    * @param {string} callerId - Caller phone number
    * @param {string} reason - Block reason
+   * @param {Object} metadata - Additional metadata
    */
-  sendAdminAlert(callerId, reason) {
-    // TODO: Implement admin alerting (email, webhook, etc.)
-    console.log(`🚨 ADMIN ALERT: Caller ${callerId} blocked - ${reason}`);
+  async sendAdminAlert(callerId, reason, metadata = {}) {
+    try {
+      // Get caller statistics for additional context
+      const callerStats = this.getCallerStats(callerId);
+      
+      // Prepare alert metadata
+      const alertMetadata = {
+        ...metadata,
+        callerStats: {
+          callCount: callerStats?.callCount || 0,
+          suspiciousCalls: callerStats?.suspiciousCalls || 0,
+          shortCalls: callerStats?.shortCalls || 0,
+          failedCalls: callerStats?.failedCalls || 0
+        },
+        blockedAt: new Date().toISOString()
+      };
+
+      // Call backend alert service via HTTP
+      // Note: In production, this could be done via internal service call or message queue
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+      
+      try {
+        const axios = (await import('axios')).default;
+        await axios.post(`${backendUrl}/api/alerts/abuse`, {
+          callerId,
+          reason,
+          metadata: alertMetadata
+        }, {
+          timeout: 5000
+        });
+        
+        console.log(`✅ [ABUSE PREVENTION] Alert sent for caller ${callerId}`);
+      } catch (httpError) {
+        // Fallback to console log if backend is unavailable
+        console.log(`🚨 ADMIN ALERT: Caller ${callerId} blocked - ${reason}`);
+        console.warn(`⚠️ [ABUSE PREVENTION] Failed to send alert via backend: ${httpError.message}`);
+      }
+    } catch (error) {
+      // Fallback to console log on any error
+      console.log(`🚨 ADMIN ALERT: Caller ${callerId} blocked - ${reason}`);
+      console.error(`❌ [ABUSE PREVENTION] Error sending alert: ${error.message}`);
+    }
   }
 
   /**

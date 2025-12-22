@@ -1,15 +1,17 @@
 import React from 'react';
-import { Box } from '@mui/material';
+import { Box, Tabs, Tab, Paper } from '@mui/material';
 import VectorStoreStatus from '../components/VectorStoreStatus';
 import FileUploadSection from '../components/FileUploadSection';
 import FileSearchInterface from '../components/FileSearchInterface';
 import QAPairInput from '../components/QAPairInput';
 import FilesTable from '../components/FilesTable';
+import DriftDetectionMapping from '../components/DriftDetectionMapping';
 import kbService from '../../../services/kbService';
 import { useToast } from '../../../components/common/ToastProvider';
 
 const KnowledgeBaseManagementTab = ({ state, handlers }) => {
   const { showError } = useToast();
+  const [subTab, setSubTab] = React.useState(0);
   
   const {
     vectorStoreStatus,
@@ -81,39 +83,60 @@ const KnowledgeBaseManagementTab = ({ state, handlers }) => {
         vectorStoreLoading={vectorStoreLoading}
         vectorStoreError={vectorStoreError}
       />
-      
-      <FileUploadSection
-        tagOptions={tagOptions}
-        selectedTags={selectedTags}
-        setSelectedTags={setSelectedTags}
-        uploadFileMutation={uploadFileMutation}
-        handleFileUpload={handleFileUploadLocal}
-      />
-      
-      <FileSearchInterface
-        fileSearchQuery={fileSearchQuery}
-        setFileSearchQuery={setFileSearchQuery}
-        fileSearchResults={fileSearchResults}
-        fileSearchMutation={fileSearchMutation}
-        isSearching={isSearching}
-        handleFileSearch={handleFileSearch}
-      />
-      
-      <QAPairInput
-        addQAPairMutation={addQAPairMutation}
-      />
-      
-      <FilesTable
-        kbFiles={kbFiles}
-        reingestingFiles={reingestingFiles}
-        detectingDrift={detectingDrift}
-        reingestFileMutation={reingestFileMutation}
-        detectDriftMutation={detectDriftMutation}
-        handleViewFile={handleViewFile}
-        handleOpenEditTags={handleOpenEditTags}
-        handleReingestFile={handleReingestFile}
-        handleDetectDrift={handleDetectDrift}
-      />
+
+      {/* Sub-tabs for Files and Mappings */}
+      <Paper sx={{ mb: 3 }}>
+        <Tabs
+          value={subTab}
+          onChange={(e, newValue) => setSubTab(newValue)}
+          indicatorColor="primary"
+          textColor="primary"
+        >
+          <Tab label="Files" />
+          <Tab label="Drift Detection Mappings" />
+        </Tabs>
+      </Paper>
+
+      {subTab === 0 && (
+        <>
+          <FileUploadSection
+            tagOptions={tagOptions}
+            selectedTags={selectedTags}
+            setSelectedTags={setSelectedTags}
+            uploadFileMutation={uploadFileMutation}
+            handleFileUpload={handleFileUploadLocal}
+          />
+          
+          <FileSearchInterface
+            fileSearchQuery={fileSearchQuery}
+            setFileSearchQuery={setFileSearchQuery}
+            fileSearchResults={fileSearchResults}
+            fileSearchMutation={fileSearchMutation}
+            isSearching={isSearching}
+            handleFileSearch={handleFileSearch}
+          />
+          
+          <QAPairInput
+            addQAPairMutation={addQAPairMutation}
+          />
+          
+          <FilesTable
+            kbFiles={kbFiles}
+            reingestingFiles={reingestingFiles}
+            detectingDrift={detectingDrift}
+            reingestFileMutation={reingestFileMutation}
+            detectDriftMutation={detectDriftMutation}
+            handleViewFile={handleViewFile}
+            handleOpenEditTags={handleOpenEditTags}
+            handleReingestFile={handleReingestFile}
+            handleDetectDrift={handleDetectDrift}
+          />
+        </>
+      )}
+
+      {subTab === 1 && (
+        <DriftDetectionMapping />
+      )}
     </Box>
   );
 };
