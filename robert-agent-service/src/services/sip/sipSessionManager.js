@@ -51,6 +51,9 @@ class SipSessionManager {
       timeout: sessionData.timeout || this.defaultTimeout,
       status: 'active',
       metadata: sessionData.metadata || {},
+      // Track pending tool calls for concurrency management
+      pendingToolCalls: new Set(), // Set<toolCallId>
+      activeToolExecutions: new Map(), // Map<toolName, {call_id, startTime, callSid}>
       ...sessionData
     };
 
@@ -101,9 +104,77 @@ class SipSessionManager {
    * @param {string} callId - Call ID
    */
   deleteSession(callId) {
+    const session = this.sessions.get(callId);
+    if (session) {
+      // Clean up tool execution tracking
+      if (session.pendingToolCalls) {
+        session.pendingToolCalls.clear();
+      }
+      if (session.activeToolExecutions) {
+        session.activeToolExecutions.clear();
+      }
+    }
+    
     const deleted = this.sessions.delete(callId);
     if (deleted) {
       console.log(`✅ [SIP] Session deleted: ${callId}`);
+    }
+  }
+
+  /**
+   * Add pending tool call to session
+   * @param {string} callId - Call ID
+   * @param {string} toolCallId - Tool call ID
+   */
+  addPendingToolCall(callId, toolCallId) {
+    const session = this.sessions.get(callId);
+    if (session && session.pendingToolCalls) {
+      session.pendingToolCalls.add(toolCallId);
+      session.lastActivity = Date.now();
+    }
+  }
+
+  /**
+   * Remove pending tool call from session
+   * @param {string} callId - Call ID
+   * @param {string} toolCallId - Tool call ID
+   */
+  removePendingToolCall(callId, toolCallId) {
+    const session = this.sessions.get(callId);
+    if (session && session.pendingToolCalls) {
+      session.pendingToolCalls.delete(toolCallId);
+      session.lastActivity = Date.now();
+    }
+  }
+
+  /**
+   * Mark tool as active execution
+   * @param {string} callId - Call ID
+   * @param {string} toolName - Tool name
+   * @param {string} toolCallId - Tool call ID
+   */
+  setActiveToolExecution(callId, toolName, toolCallId) {
+    const session = this.sessions.get(callId);
+    if (session && session.activeToolExecutions) {
+      session.activeToolExecutions.set(toolName, {
+        call_id: toolCallId,
+        startTime: Date.now(),
+        callSid: callId
+      });
+      session.lastActivity = Date.now();
+    }
+  }
+
+  /**
+   * Remove active tool execution
+   * @param {string} callId - Call ID
+   * @param {string} toolName - Tool name
+   */
+  removeActiveToolExecution(callId, toolName) {
+    const session = this.sessions.get(callId);
+    if (session && session.activeToolExecutions) {
+      session.activeToolExecutions.delete(toolName);
+      session.lastActivity = Date.now();
     }
   }
 

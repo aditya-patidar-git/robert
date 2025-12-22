@@ -56,6 +56,24 @@ class SipService {
   }
 
   /**
+   * Get tool execution webhook URL
+   * @returns {string|null} - Webhook URL or null if not configured
+   */
+  getToolExecutionWebhookUrl() {
+    const baseUrl = process.env.TUNNEL_DOMAIN 
+      ? `https://${process.env.TUNNEL_DOMAIN}` 
+      : process.env.BASE_URL || null;
+    
+    if (!baseUrl) {
+      return null;
+    }
+
+    // Remove trailing slash if present
+    const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+    return `${cleanBaseUrl}/api/sip/tool-execution`;
+  }
+
+  /**
    * Configure SIP session for OpenAI Realtime
    * @param {Object} config - Configuration object
    * @param {string} config.voice - Voice ID
@@ -75,23 +93,39 @@ class SipService {
       throw new Error(`SIP endpoint validation failed: ${endpointValidation.error}`);
     }
 
+    // Get tool execution webhook URL
+    const toolExecutionWebhookUrl = this.getToolExecutionWebhookUrl();
+
+    const sessionConfig = {
+      modalities: ['audio', 'text'],
+      input_audio_format: 'g711_ulaw',
+      output_audio_format: 'g711_ulaw',
+      turn_detection: {
+        type: 'server_vad',
+        threshold: config.vadThreshold || 0.5,
+        prefix_padding_ms: config.startPadding || 300,
+        silence_duration_ms: config.endPadding || 500
+      },
+      temperature: config.temperature || 0.4,
+      ...config.sessionParams
+    };
+
+    // Add tool execution webhook if configured
+    // OpenAI Realtime SIP connector may support this in session config
+    // If not supported directly, tools will use the webhook URL configured in OpenAI dashboard
+    if (toolExecutionWebhookUrl) {
+      // Note: OpenAI may require webhook URL to be configured in their dashboard
+      // This is included here for reference and potential future API support
+      sessionConfig.tool_execution_webhook_url = toolExecutionWebhookUrl;
+    }
+
     return {
       voice: config.voice || 'ash',
       instructions: config.instructions || 'You are a friendly AI assistant.',
       tools: config.tools || [],
-      session: {
-        modalities: ['audio', 'text'],
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        turn_detection: {
-          type: 'server_vad',
-          threshold: config.vadThreshold || 0.5,
-          prefix_padding_ms: config.startPadding || 300,
-          silence_duration_ms: config.endPadding || 500
-        },
-        temperature: config.temperature || 0.4,
-        ...config.sessionParams
-      }
+      session: sessionConfig,
+      // Include webhook URL in response for reference (OpenAI may use this)
+      tool_execution_webhook_url: toolExecutionWebhookUrl
     };
   }
 

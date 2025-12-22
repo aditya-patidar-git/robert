@@ -69,6 +69,12 @@ export const normalizeResponse = (response, options = {}) => {
       data = responseData.models;
     } else if (responseData.capabilities !== undefined) {
       data = responseData.capabilities;
+    } else if (responseData.allowlist !== undefined || responseData.auditLogs !== undefined || 
+               responseData.dsarRequests !== undefined || responseData.retentionChecks !== undefined || 
+               responseData.report !== undefined) {
+      // For allowlist, auditLogs, dsarRequests, retentionChecks, and report, preserve the entire response structure
+      // (including pagination) so components can access both data and pagination
+      data = responseData;
     } else if (Array.isArray(responseData)) {
       data = responseData;
     } else {

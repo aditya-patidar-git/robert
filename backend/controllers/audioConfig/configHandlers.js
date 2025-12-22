@@ -70,6 +70,7 @@ export const getAudioConfig = async (req, res) => {
           language: "en-GB"
         },
         selectedModelId: null,
+        transcriptionModel: 'whisper-1',
         temperature: 0.4,
         topP: 1.0,
         maxTokens: 150,
@@ -115,7 +116,8 @@ export const updateAudioConfig = async (req, res) => {
       maxTokens,
       speechRate,
       usePerNumberProfiles,
-      perNumberProfiles
+      perNumberProfiles,
+      transcriptionModel
     } = req.body;
 
     let config = await AudioConfig.findOne({ isActive: true });
@@ -161,6 +163,7 @@ export const updateAudioConfig = async (req, res) => {
     if (speechRate !== undefined) config.speechRate = speechRate;
     if (usePerNumberProfiles !== undefined) config.usePerNumberProfiles = usePerNumberProfiles;
     if (perNumberProfiles !== undefined) config.perNumberProfiles = perNumberProfiles;
+    if (transcriptionModel !== undefined) config.transcriptionModel = transcriptionModel;
 
     config.createdBy = req.user?.id || "admin";
     await config.save();

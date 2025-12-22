@@ -569,42 +569,43 @@ const AudioTelephonyPage = () => {
         </Tabs>
       </Paper>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
-        {/* Tab Content */}
-        {activeTab === 0 && (
-          <AudioSettingsTab state={tabState} handlers={tabHandlers} />
-        )}
+      {/* Tab Content */}
+      {activeTab === 3 ? (
+        // SIPConfigurationTab has its own form management
+        <SIPConfigurationTab />
+      ) : (
+        <form onSubmit={handleSubmit(onSubmit)}>
+          {activeTab === 0 && (
+            <AudioSettingsTab state={tabState} handlers={tabHandlers} />
+          )}
 
-        {activeTab === 1 && (
-          <VoiceManagementTab state={tabState} handlers={tabHandlers} />
-        )}
+          {activeTab === 1 && (
+            <VoiceManagementTab state={tabState} handlers={tabHandlers} />
+          )}
 
-        {activeTab === 2 && (
-          <TelephonyRoutingTab state={tabState} handlers={tabHandlers} />
-        )}
+          {activeTab === 2 && (
+            <TelephonyRoutingTab state={tabState} handlers={tabHandlers} />
+          )}
 
-        {activeTab === 3 && (
-          <SIPConfigurationTab />
-        )}
+          {activeTab === 4 && (
+            <CallQualityTab state={tabState} handlers={tabHandlers} />
+          )}
 
-        {activeTab === 4 && (
-          <CallQualityTab state={tabState} handlers={tabHandlers} />
-        )}
-
-        {/* Save Button */}
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 3 }}>
-          <Button
-            type="submit"
-            variant="contained"
-            size="large"
-            startIcon={<Save />}
-            disabled={saveConfigMutation.isLoading}
-            sx={{ minWidth: 150 }}
-          >
-            {saveConfigMutation.isLoading ? 'Saving...' : 'Save Configuration'}
-          </Button>
-        </Box>
-      </form>
+          {/* Save Button */}
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 3 }}>
+            <Button
+              type="submit"
+              variant="contained"
+              size="large"
+              startIcon={<Save />}
+              disabled={saveConfigMutation.isLoading}
+              sx={{ minWidth: 150 }}
+            >
+              {saveConfigMutation.isLoading ? 'Saving...' : 'Save Configuration'}
+            </Button>
+          </Box>
+        </form>
+      )}
 
       {/* Dialogs */}
       {/* Voice Preview Dialog */}

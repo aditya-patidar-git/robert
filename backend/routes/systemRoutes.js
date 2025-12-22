@@ -7,20 +7,8 @@ import {
   getMCPTools,
   executeMCPTool,
   getAvailableModels,
-  updateModelConfig,
-  createBackup,
-  listBackups,
-  getBackupDetails,
-  deleteBackup,
-  restoreBackup,
-  getRestorePreview
+  updateModelConfig
 } from "../controllers/systemController.js";
-import {
-  getPaymentGatewayConfig,
-  updatePaymentGatewayConfig,
-  testGatewayConnection,
-  getSupportedGateways
-} from "../controllers/paymentGatewayController.js";
 import {
   getSyncStatus,
   getConfigSyncStatus,
@@ -44,20 +32,6 @@ router.post("/mcp-tools/execute", executeMCPTool);
 // Models Routes (proxied)
 router.get("/models", getAvailableModels);
 router.put("/models/:modelId", updateModelConfig);
-
-// Backup Routes
-router.post("/backup", createBackup);
-router.get("/backups", listBackups);
-router.get("/backups/:backupId", getBackupDetails);
-router.delete("/backups/:backupId", deleteBackup);
-router.post("/restore/:backupId", restoreBackup);
-router.get("/restore/:backupId/preview", getRestorePreview);
-
-// Payment Gateway Routes
-router.get("/payment-gateway/config", getPaymentGatewayConfig);
-router.put("/payment-gateway/config", updatePaymentGatewayConfig);
-router.post("/payment-gateway/test-connection", testGatewayConnection);
-router.get("/payment-gateway/supported-gateways", getSupportedGateways);
 
 // Config Sync Routes
 router.get("/config-sync/status", getSyncStatus);

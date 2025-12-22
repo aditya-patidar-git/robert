@@ -4,7 +4,7 @@
  */
 
 import express from "express";
-import { handleCallAccept, handleCallStatus } from "../handlers/sipHandlers.js";
+import { handleCallAccept, handleCallStatus, handleToolExecution } from "../handlers/sipHandlers.js";
 
 const router = express.Router();
 
@@ -13,6 +13,9 @@ router.post("/call-accept", handleCallAccept);
 
 // OpenAI Realtime SIP webhook: call status updates
 router.post("/call-status", handleCallStatus);
+
+// OpenAI Realtime SIP webhook: tool execution
+router.post("/tool-execution", handleToolExecution);
 
 export default router;
 

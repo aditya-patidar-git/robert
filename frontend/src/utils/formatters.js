@@ -22,7 +22,14 @@ export const formatDate = (date, options = {}) => {
 export const formatDateTime = (date) => {
   if (!date) return 'N/A';
   
-  return new Date(date).toLocaleString('en-US', {
+  const dateObj = new Date(date);
+  
+  // Check if date is valid
+  if (isNaN(dateObj.getTime())) {
+    return 'Invalid Date';
+  }
+  
+  return dateObj.toLocaleString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

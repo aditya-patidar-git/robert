@@ -11,21 +11,13 @@ import {
   Build,
   Settings,
   Business,
-  Email,
-  Chat,
-  Payment,
-  Description,
-  Backup
+  Chat
 } from '@mui/icons-material';
 import { useSystemPageState } from './hooks/useSystemPageState';
 import MCPToolsTab from './tabs/MCPToolsTab';
 import CRMTasksTab from './tabs/CRMTasksTab';
 import GeneralSettingsTab from './tabs/GeneralSettingsTab';
-import EmailTestTab from './tabs/EmailTestTab';
 import ConversationBehaviorTab from './tabs/ConversationBehaviorTab';
-import PaymentGatewayTab from './tabs/PaymentGatewayTab';
-import EmailSMSTemplatesTab from './tabs/EmailSMSTemplatesTab';
-import BackupRestoreTab from './tabs/BackupRestoreTab';
 import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
 
 const SystemConfigPage = () => {
@@ -95,10 +87,6 @@ const SystemConfigPage = () => {
           <Tab label="CRM Tasks" icon={<Business />} iconPosition="start" />
           <Tab label="General Settings" icon={<Settings />} iconPosition="start" />
           <Tab label="Conversation Behavior" icon={<Chat />} iconPosition="start" />
-          <Tab label="Email Test" icon={<Email />} iconPosition="start" />
-          <Tab label="Payment Gateway" icon={<Payment />} iconPosition="start" />
-          <Tab label="Email/SMS Templates" icon={<Description />} iconPosition="start" />
-          <Tab label="Backup & Restore" icon={<Backup />} iconPosition="start" />
         </Tabs>
       </Paper>
 
@@ -135,26 +123,6 @@ const SystemConfigPage = () => {
       {/* Tab D: Conversation Behavior (outside form since it has its own save handler) */}
       {currentTab === 3 && (
         <ConversationBehaviorTab />
-      )}
-
-      {/* Tab E: Email Test (outside form since it's not part of form submission) */}
-      {currentTab === 4 && (
-        <EmailTestTab />
-      )}
-
-      {/* Tab F: Payment Gateway (outside form since it has its own save handler) */}
-      {currentTab === 5 && (
-        <PaymentGatewayTab />
-      )}
-
-      {/* Tab G: Email/SMS Templates (outside form since it has its own save handler) */}
-      {currentTab === 6 && (
-        <EmailSMSTemplatesTab />
-      )}
-
-      {/* Tab H: Backup & Restore (outside form since it has its own save handler) */}
-      {currentTab === 7 && (
-        <BackupRestoreTab />
       )}
     </Box>
   );

@@ -214,6 +214,9 @@ export const handleMediaStreamConnection = (ws, req) => {
             
             // Cleanup services
             if (stateManager.callSid) {
+                const toolExecutionService = (await import('../../services/toolExecutionService.js')).default;
+                toolExecutionService.cleanup(stateManager.callSid);
+                
                 progressIndicatorService.endToolExecution(stateManager.callSid);
                 silenceDetectionService.reset(stateManager.callSid);
                 errorRecoveryService.clearRetryCount(stateManager.callSid);

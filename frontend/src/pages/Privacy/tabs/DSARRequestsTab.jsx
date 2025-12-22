@@ -28,7 +28,8 @@ const DSARRequestsTab = ({ state, handlers }) => {
     queryKey: ['dsar-requests', filters],
     queryFn: async () => {
       const response = await privacyService.getAllDSARRequests(filters);
-      return response.dsarRequests || response || [];
+      // Handle normalized response structure
+      return response?.data?.dsarRequests || response?.dsarRequests || response?.data || response || [];
     },
     initialData: initialRequests || []
   });

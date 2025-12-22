@@ -62,26 +62,32 @@ const AuditLogsTab = ({ state }) => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {auditLogs.length === 0 ? (
+              {!auditLogs || auditLogs.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} align="center">
                     <Typography color="text.secondary">No audit logs found</Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-                auditLogs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell>{formatDateTime(log.timestamp)}</TableCell>
-                    <TableCell>
-                      <Chip label={log.eventType} size="small" />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {JSON.stringify(log.eventData, null, 2)}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ))
+                auditLogs.map((log) => {
+                  // Handle different timestamp field names and formats
+                  const timestamp = log.timestamp || log.createdAt || log.date || log.time;
+                  return (
+                    <TableRow key={log.id || log._id || Math.random()}>
+                      <TableCell>{formatDateTime(timestamp)}</TableCell>
+                      <TableCell>
+                        <Chip label={log.eventType || log.action || 'Unknown'} size="small" />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ maxWidth: 400, overflow: 'auto' }}>
+                          {log.eventData ? JSON.stringify(log.eventData, null, 2) : 
+                           log.details ? JSON.stringify(log.details, null, 2) :
+                           log.metadata ? JSON.stringify(log.metadata, null, 2) : '-'}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>

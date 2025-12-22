@@ -1,7 +1,9 @@
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import Provenance from '../database/models/Provenance.js';
 
 // Load .env from project root
 const __filename = fileURLToPath(import.meta.url);
@@ -67,6 +69,11 @@ class FileSearchTool {
 
       console.log(`✅ [${callContext.callSid || 'unknown'}] Found ${results.length} results for query: "${query}"`);
 
+      // Track provenance (async, don't wait for it)
+      this.trackProvenance(query, results, callContext).catch(err => {
+        console.warn(`⚠️ [${callContext.callSid || 'unknown'}] Failed to track provenance:`, err.message);
+      });
+
       return {
         query: query,
         results: results,
@@ -80,6 +87,55 @@ class FileSearchTool {
     } catch (error) {
       console.error(`❌ [${callContext.callSid || 'unknown'}] File search error:`, error);
       throw new Error(`File search failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Track file usage for provenance analytics
+   * @private
+   */
+  async trackProvenance(query, results, callContext = {}) {
+    try {
+      // Only track if we have results and a call context
+      if (!results || results.length === 0 || !callContext.callSid) {
+        return;
+      }
+
+      // Check if mongoose is connected
+      if (mongoose.connection.readyState !== 1) {
+        console.warn(`⚠️ [${callContext.callSid}] MongoDB not connected, skipping provenance tracking`);
+        return;
+      }
+
+      const provenance = new Provenance({
+        callId: callContext.callSid,
+        sessionId: callContext.sessionId || callContext.callSid,
+        userId: callContext.userId || callContext.callerId || null,
+        query: query,
+        fileIds: results.map(r => r.fileId).filter(Boolean),
+        titles: results.map(r => r.fileName).filter(Boolean),
+        similarityScores: results.map(r => r.similarityScore || 0),
+        results: results.map(r => ({
+          fileId: r.fileId,
+          fileName: r.fileName,
+          similarityScore: r.similarityScore,
+          content: r.content?.substring(0, 500) || '', // Limit content size
+          metadata: r.metadata || {}
+        })),
+        model: 'gpt-realtime',
+        confidence: results.length > 0 ? results[0].similarityScore : 0,
+        metadata: {
+          vectorStoreId: this.vectorStoreId,
+          vectorStoreName: this.vectorStoreName,
+          totalResults: results.length
+        }
+      });
+
+      await provenance.save();
+      console.log(`📊 [${callContext.callSid}] Tracked provenance for ${results.length} files`);
+    } catch (error) {
+      // Don't throw - tracking failure shouldn't break the search
+      console.warn(`⚠️ [${callContext.callSid || 'unknown'}] Provenance tracking error:`, error.message);
     }
   }
 }

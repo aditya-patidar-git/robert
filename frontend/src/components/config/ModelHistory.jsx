@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box, Paper, Typography, Timeline, TimelineItem, TimelineSeparator, TimelineConnector, TimelineContent, TimelineDot, Chip, Alert } from '@mui/material';
+import { Box, Paper, Typography, Chip, Alert } from '@mui/material';
+import { Timeline, TimelineItem, TimelineSeparator, TimelineConnector, TimelineContent, TimelineDot } from '@mui/lab';
 import { CheckCircle, Error as ErrorIcon, Info, Warning } from '@mui/icons-material';
 import { formatDateTime } from '../../utils/formatters';
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Typography,
@@ -34,7 +34,8 @@ import {
   VisibilityOff,
   People as PeopleIcon,
   List as ListIcon,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Add as AddIcon
 } from '@mui/icons-material';
 import { useToast } from '../../components/common/ToastProvider';
 import { useAuth } from '../../context/AuthContext';
@@ -46,6 +47,7 @@ const UsersPage = () => {
   const { showSuccess, showError } = useToast();
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
+  const allowlistManagerRef = useRef(null);
   
   const [activeTab, setActiveTab] = useState(0);
   const [roleFilter, setRoleFilter] = useState('');
@@ -275,20 +277,36 @@ const UsersPage = () => {
           Manage system users, roles, permissions, allowlist, and audit logs
         </Typography>
           </Box>
-          {currentUser?.role === 'owner' && activeTab === 0 && (
-            <Button
-              variant="contained"
-              startIcon={<PersonAddIcon />}
-              onClick={() => setAddUserDialog({ open: true })}
-              sx={{
-                borderRadius: 2,
-                textTransform: 'none',
-                fontWeight: 600
-              }}
-            >
-              Add User
-            </Button>
-          )}
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            {currentUser?.role === 'owner' && activeTab === 0 && (
+              <Button
+                variant="contained"
+                startIcon={<PersonAddIcon />}
+                onClick={() => setAddUserDialog({ open: true })}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 600
+                }}
+              >
+                Add User
+              </Button>
+            )}
+            {activeTab === 1 && (
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => allowlistManagerRef.current?.openAddDialog()}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 600
+                }}
+              >
+                Add Entry
+              </Button>
+            )}
+          </Box>
         </Box>
       </Box>
 
@@ -639,7 +657,7 @@ const UsersPage = () => {
       )}
 
       {activeTab === 1 && (
-        <AllowlistManager />
+        <AllowlistManager ref={allowlistManagerRef} />
       )}
 
       {activeTab === 2 && (
