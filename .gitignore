@@ -43,6 +43,7 @@ pids
 # Coverage
 coverage/
 *.lcov
+backups/
 
 # OS files
 .DS_Store

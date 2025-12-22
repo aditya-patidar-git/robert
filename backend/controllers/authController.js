@@ -38,7 +38,11 @@ export const login = async (req, res) => {
         return res.status(403).json({ message: `User is not active. Current status: ${user.status}` });
     }
 
-    const token = generateToken(user);
+    const { token } = generateToken(user);
+
+    // Update last login
+    user.lastLoginAt = new Date();
+    await user.save();
 
     res.json({
         token,

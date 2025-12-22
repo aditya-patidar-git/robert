@@ -3,6 +3,8 @@ import { protect } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/rbacMiddleware.js";
 import { getUsers, createUser, updateUser, approveUser, blockUser, excludeUser, deleteUser } from "../controllers/userController.js";
 import { addPrompt, getPrompts, updatePrompt } from "../controllers/promptController.js";
+import { getAllowlist, addToAllowlist, removeFromAllowlist, checkAllowlist } from "../controllers/allowlistController.js";
+import { getAuditLogs, getAuditLog } from "../controllers/auditLogController.js";
 
 const router = express.Router();
 
@@ -18,6 +20,16 @@ router.patch("/users/:id/approve", approveUser);
 router.patch("/users/:id/block", blockUser);
 router.patch("/users/:id/exclude", excludeUser);
 router.delete("/users/:id", deleteUser);
+
+// Allowlist
+router.get("/allowlist", getAllowlist);
+router.post("/allowlist", addToAllowlist);
+router.delete("/allowlist/:id", removeFromAllowlist);
+router.get("/allowlist/check", checkAllowlist);
+
+// Audit Logs
+router.get("/audit", getAuditLogs);
+router.get("/audit/:id", getAuditLog);
 
 // Global Prompt
 router.post("/prompt", addPrompt);

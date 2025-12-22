@@ -172,6 +172,56 @@ class ObservabilityService extends BaseService {
     // Direct response structure
     return response.data;
   }
+
+  /**
+   * Get trace statistics
+   * @param {Object} filters - Filter criteria
+   * @returns {Promise<Object>} Trace statistics
+   */
+  async getTraceStatistics(filters = {}) {
+    const response = await this.get('/traces/statistics', filters);
+    return response.data?.data || response.data;
+  }
+
+  /**
+   * Get groundedness metrics
+   * @param {Object} filters - Filter criteria (dateRange, status)
+   * @returns {Promise<Object>} Groundedness metrics
+   */
+  async getGroundednessMetrics(filters = {}) {
+    const response = await this.get('/groundedness', filters);
+    return response.data?.data || response.data;
+  }
+
+  /**
+   * Get RAG analytics
+   * @param {Object} filters - Filter criteria (dateRange)
+   * @returns {Promise<Object>} RAG analytics
+   */
+  async getRAGAnalytics(filters = {}) {
+    const response = await this.get('/rag-analytics', filters);
+    return response.data?.data || response.data;
+  }
+
+  /**
+   * Get tool performance metrics
+   * @param {string} timeRange - Time range (default: '24h')
+   * @returns {Promise<Object>} Tool metrics
+   */
+  async getToolMetrics(timeRange = '24h') {
+    const response = await this.get('/tools/metrics', { timeRange });
+    return response.data?.data || response.data;
+  }
+
+  /**
+   * Get SIP metrics
+   * @param {string} timeRange - Time range (default: '24h')
+   * @returns {Promise<Object>} SIP metrics
+   */
+  async getSIPMetrics(timeRange = '24h') {
+    const response = await this.get('/sip/metrics', { timeRange });
+    return response.data?.data || response.data;
+  }
 }
 
 // Export singleton instance

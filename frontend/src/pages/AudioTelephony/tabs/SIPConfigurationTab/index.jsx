@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react';
-import { Box, Button, Paper, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save } from '@mui/icons-material';
 import { useToast } from '../../../../components/common/ToastProvider';
 import telephonyService from '../../../../services/telephonyService';
 import useConnectionTest from '../../../../hooks/useConnectionTest';
@@ -119,17 +118,6 @@ const SIPConfigurationTab = () => {
           onTest={handleTestConnection}
           loading={testLoading}
         />
-
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 3 }}>
-          <Button
-            type="submit"
-            variant="contained"
-            startIcon={<Save />}
-            disabled={updateMutation.isLoading}
-          >
-            {updateMutation.isLoading ? 'Saving...' : 'Save Configuration'}
-          </Button>
-        </Box>
       </form>
     </Box>
   );

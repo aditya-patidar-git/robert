@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import DSARRequest from '../models/DSARRequest.js';
+import CallRecord from '../models/callRecord.js';
+import { createAuditLog } from '../controllers/auditLogController.js';
+import nodemailer from 'nodemailer';
 
 class GDPRService {
   constructor() {
@@ -115,22 +119,171 @@ class GDPRService {
   }
 
   // DSAR (Data Subject Access Request) Management
-  async createDSARRequest(requestData) {
-    const dsarId = `dsar_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  async createDSARRequest(requestorEmail, requestType, userIdentifier, requestorPhone = null) {
+    const requestId = `DSAR-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     
-    const dsarRequest = {
-      id: dsarId,
-      requestorEmail: requestData.email,
-      requestorName: requestData.name,
-      requestType: requestData.type, // 'access', 'portability', 'deletion'
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      requestedData: requestData.dataTypes || ['transcripts', 'recordings', 'metadata'],
-      verificationRequired: true
+    // Generate verification code
+    const verificationCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+    
+    const dsarRequest = await DSARRequest.create({
+      requestId,
+      requestorEmail,
+      requestorPhone,
+      requestType,
+      userIdentifier,
+      verificationMethod: 'email',
+      verificationCode,
+      status: 'pending'
+    });
+
+    // Send verification email
+    await this.sendVerificationEmail(requestorEmail, verificationCode, requestId);
+
+    return dsarRequest;
+  }
+
+  async verifyDSARRequest(requestId, verificationCode) {
+    const request = await DSARRequest.findOne({ requestId });
+    
+    if (!request) {
+      throw new Error('DSAR request not found');
+    }
+
+    if (request.verificationCode !== verificationCode) {
+      throw new Error('Invalid verification code');
+    }
+
+    if (request.verifiedAt) {
+      throw new Error('Request already verified');
+    }
+
+    request.verifiedAt = new Date();
+    request.status = 'processing';
+    await request.save();
+
+    return request;
+  }
+
+  async generateDSARExport(requestId, maskPII = false) {
+    const request = await DSARRequest.findOne({ requestId });
+    
+    if (!request) {
+      throw new Error('DSAR request not found');
+    }
+
+    if (request.status !== 'processing' && request.status !== 'pending') {
+      throw new Error(`Request cannot be processed. Current status: ${request.status}`);
+    }
+
+    if (!request.verifiedAt) {
+      throw new Error('Request must be verified before export');
+    }
+
+    // Collect all user data
+    const userData = {
+      userIdentifier: request.userIdentifier,
+      callRecords: [],
+      transcripts: [],
+      recordings: [],
+      metadata: {}
     };
 
-    await this.logAuditEvent('dsar_created', dsarRequest);
-    return dsarRequest;
+    // Find all call records for this user
+    const callRecords = await CallRecord.find({
+      $or: [
+        { from: request.userIdentifier },
+        { to: request.userIdentifier },
+        { 'transcript': { $regex: request.userIdentifier, $options: 'i' } }
+      ]
+    }).sort({ createdAt: -1 });
+
+    for (const record of callRecords) {
+      userData.callRecords.push({
+        callSid: record.callSid,
+        from: maskPII ? this.maskPII(record.from) : record.from,
+        to: maskPII ? this.maskPII(record.to) : record.to,
+        duration: record.duration,
+        createdAt: record.createdAt,
+        transcript: maskPII ? this.maskPII(record.transcript) : record.transcript,
+        summary: maskPII ? this.maskPII(record.summary) : record.summary,
+        recordingUrl: record.recordingUrl,
+        language: record.language,
+        entryPath: record.entryPath
+      });
+    }
+
+    // Generate export file (JSON format)
+    const exportData = JSON.stringify(userData, null, 2);
+    const exportFileName = `dsar-export-${requestId}-${Date.now()}.json`;
+    const exportPath = path.join(this.auditLogPath, 'exports', exportFileName);
+    
+    // Ensure exports directory exists
+    const exportsDir = path.dirname(exportPath);
+    if (!fs.existsSync(exportsDir)) {
+      fs.mkdirSync(exportsDir, { recursive: true });
+    }
+
+    fs.writeFileSync(exportPath, exportData);
+
+    // Generate secure download URL (in production, use S3 or similar)
+    const exportUrl = `/api/gdpr/dsar/${requestId}/export/${exportFileName}`;
+    const exportExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    request.exportUrl = exportUrl;
+    request.exportExpiresAt = exportExpiresAt;
+    request.status = 'completed';
+    request.completedAt = new Date();
+    await request.save();
+
+    // Send notification email
+    await this.sendExportReadyEmail(request.requestorEmail, requestId, exportUrl, exportExpiresAt);
+
+    return {
+      requestId,
+      exportUrl,
+      exportExpiresAt,
+      recordCount: callRecords.length,
+      fileSize: Buffer.byteLength(exportData)
+    };
+  }
+
+  async deleteUserData(userIdentifier) {
+    // Delete all call records for this user
+    const deleteResult = await CallRecord.deleteMany({
+      $or: [
+        { from: userIdentifier },
+        { to: userIdentifier }
+      ]
+    });
+
+    return {
+      userIdentifier,
+      deletedRecords: deleteResult.deletedCount,
+      deletedAt: new Date()
+    };
+  }
+
+  async getDSARRequestStatus(requestId) {
+    const request = await DSARRequest.findOne({ requestId })
+      .populate('processedBy', 'email username');
+    
+    if (!request) {
+      throw new Error('DSAR request not found');
+    }
+
+    return request;
+  }
+
+  async sendVerificationEmail(email, code, requestId) {
+    // In production, use proper email service
+    console.log(`📧 Verification email would be sent to ${email} with code ${code} for request ${requestId}`);
+    // TODO: Implement actual email sending
+  }
+
+  async sendExportReadyEmail(email, requestId, exportUrl, expiresAt) {
+    // In production, use proper email service
+    console.log(`📧 Export ready email would be sent to ${email} for request ${requestId}`);
+    // TODO: Implement actual email sending
   }
 
   async processDSARRequest(dsarId, action, adminUser) {
@@ -272,55 +425,38 @@ class GDPRService {
   }
 
   async getDSARRequests(filters = {}) {
-    // In a real implementation, this would query a DSAR database
-    // For now, return mock data that would come from audit logs or a DSAR collection
-    const mockDSARRequests = [
-      {
-        id: 'dsar_001',
-        requestorEmail: 'user@example.com',
-        requestorName: 'John Doe',
-        requestType: 'export',
-        status: 'completed',
-        createdAt: new Date().toISOString(),
-        requestedData: ['transcripts', 'recordings', 'metadata']
-      },
-      {
-        id: 'dsar_002',
-        requestorEmail: 'customer@company.com',
-        requestorName: 'Jane Smith',
-        requestType: 'delete',
-        status: 'pending',
-        createdAt: new Date(Date.now() - 86400000).toISOString(),
-        requestedData: ['all']
-      }
-    ];
-
-    // Filter by email if provided
-    if (filters.email) {
-      return mockDSARRequests.filter(req => req.requestorEmail === filters.email);
+    const query = {};
+    
+    if (filters.status) {
+      query.status = filters.status;
+    }
+    
+    if (filters.requestType) {
+      query.requestType = filters.requestType;
+    }
+    
+    if (filters.requestorEmail) {
+      query.requestorEmail = filters.requestorEmail;
     }
 
-    return mockDSARRequests;
+    const requests = await DSARRequest.find(query)
+      .populate('processedBy', 'email username')
+      .sort({ requestedAt: -1 })
+      .limit(filters.limit || 100);
+
+    return requests;
   }
 
   // Get full DSAR request details
-  async getDSARRequestDetails(dsarId) {
-    const requests = await this.getDSARRequests({});
-    const request = requests.find(req => req.id === dsarId);
+  async getDSARRequestDetails(requestId) {
+    const request = await DSARRequest.findOne({ requestId })
+      .populate('processedBy', 'email username');
     
     if (!request) {
       throw new Error('DSAR request not found');
     }
 
-    // Add additional details
-    return {
-      ...request,
-      timeline: await this.getDSARRequestTimeline(dsarId),
-      dataPreview: await this.previewDSARData(
-        request.requestorEmail || request.requestor,
-        request.requestedData || ['all']
-      )
-    };
+    return request;
   }
 
   // Preview DSAR data before export
@@ -388,32 +524,6 @@ class GDPRService {
     return timeline;
   }
 
-  // Generate DSAR export (enhanced)
-  async generateDSARExport(dsarId, dataTypes = ['all']) {
-    const request = await this.getDSARRequestDetails(dsarId);
-    
-    // In a real implementation, this would:
-    // 1. Collect all data for the user
-    // 2. Format it according to GDPR requirements
-    // 3. Create a ZIP file
-    // 4. Store it securely
-    // 5. Return download URL
-
-    const exportData = {
-      exportId: `export_${dsarId}_${Date.now()}`,
-      dsarId,
-      userIdentifier: request.requestorEmail || request.requestor,
-      dataTypes,
-      generatedAt: new Date().toISOString(),
-      downloadUrl: `/api/gdpr/exports/${dsarId}/download`, // Would be actual secure URL
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
-      fileSize: 0, // Would be actual size
-      recordCount: 0 // Would be actual count
-    };
-
-    await this.logAuditEvent('dsar_export_generated', exportData);
-    return exportData;
-  }
 
   // Privacy Impact Assessment
   async generatePrivacyImpactAssessment(processingActivity) {

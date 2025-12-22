@@ -5,6 +5,13 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { initializeTelemetry, shutdownTelemetry } from "./utils/telemetry.js";
+import { initializeMetrics } from "./services/metricsService.js";
+
+// Initialize OpenTelemetry before other imports
+initializeTelemetry();
+// Initialize metrics after telemetry
+initializeMetrics();
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";

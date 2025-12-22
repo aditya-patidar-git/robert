@@ -1,5 +1,7 @@
 import User from "../models/User.js";
 import { hashPassword } from "../utils/hash.js";
+import jwtBlacklistService from "../services/jwtBlacklistService.js";
+import { createAuditLog } from "./auditLogController.js";
 
 // GET /admin/users
 export const getUsers = async (req, res) => {
@@ -24,40 +26,114 @@ export const getUsers = async (req, res) => {
 
 // POST /admin/users
 export const createUser = async (req, res) => {
-    const { email, username, role, password } = req.body;
-    const passwordHash = await hashPassword(password);
-    const newUser = await User.create({ email, username, role, passwordHash });
-    res.status(201).json(newUser);
+    try {
+        const { email, username, role, password } = req.body;
+        const actorId = req.user._id;
+        const passwordHash = await hashPassword(password);
+        const newUser = await User.create({ email, username, role, passwordHash });
+        
+        // Create audit log
+        await createAuditLog({
+            actorId,
+            action: 'user.create',
+            targetType: 'user',
+            targetId: newUser._id.toString(),
+            diff: { email, username, role, status: newUser.status },
+            req
+        });
+        
+        res.status(201).json(newUser);
+    } catch (error) {
+        console.error("Error creating user:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
 };
 
 // PATCH /admin/users/:id/approve
 export const approveUser = async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-    user.status = "active";
-    await user.save();
-    res.json(user);
+        const oldStatus = user.status;
+        user.status = "active";
+        await user.save();
+        
+        // Create audit log
+        await createAuditLog({
+            actorId: req.user._id,
+            action: 'user.approve',
+            targetType: 'user',
+            targetId: user._id.toString(),
+            diff: { status: { from: oldStatus, to: 'active' } },
+            req
+        });
+        
+        res.json(user);
+    } catch (error) {
+        console.error("Error approving user:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
 };
 
 // PATCH /admin/users/:id/block
 export const blockUser = async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-    user.status = "blocked";
-    await user.save();
-    res.json(user);
+        const oldStatus = user.status;
+        user.status = "blocked";
+        await user.save();
+        
+        // Revoke all user tokens
+        jwtBlacklistService.revokeAllUserTokens(user._id.toString());
+        
+        // Create audit log
+        await createAuditLog({
+            actorId: req.user._id,
+            action: 'user.block',
+            targetType: 'user',
+            targetId: user._id.toString(),
+            diff: { status: { from: oldStatus, to: 'blocked' } },
+            req
+        });
+        
+        res.json(user);
+    } catch (error) {
+        console.error("Error blocking user:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
 };
 
 // PATCH /admin/users/:id/exclude
 export const excludeUser = async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
 
-    user.status = "excluded";
-    await user.save();
-    res.json(user);
+        const oldStatus = user.status;
+        user.status = "excluded";
+        await user.save();
+        
+        // Revoke all user tokens
+        jwtBlacklistService.revokeAllUserTokens(user._id.toString());
+        
+        // Create audit log
+        await createAuditLog({
+            actorId: req.user._id,
+            action: 'user.exclude',
+            targetType: 'user',
+            targetId: user._id.toString(),
+            diff: { status: { from: oldStatus, to: 'excluded' } },
+            req
+        });
+        
+        res.json(user);
+    } catch (error) {
+        console.error("Error excluding user:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
 };
 
 // PUT /admin/users/:id
@@ -74,17 +150,56 @@ export const updateUser = async (req, res) => {
         }
 
         const { email, username, role, status, password } = req.body;
+        
+        // Track changes for audit log
+        const diff = {};
+        const oldValues = {};
 
         // Update fields if provided
-        if (email !== undefined) user.email = email;
-        if (username !== undefined) user.username = username;
-        if (role !== undefined) user.role = role;
-        if (status !== undefined) user.status = status;
+        if (email !== undefined && email !== user.email) {
+            oldValues.email = user.email;
+            user.email = email;
+            diff.email = { from: oldValues.email, to: email };
+        }
+        if (username !== undefined && username !== user.username) {
+            oldValues.username = user.username;
+            user.username = username;
+            diff.username = { from: oldValues.username, to: username };
+        }
+        if (role !== undefined && role !== user.role) {
+            oldValues.role = user.role;
+            user.role = role;
+            diff.role = { from: oldValues.role, to: role };
+        }
+        if (status !== undefined && status !== user.status) {
+            oldValues.status = user.status;
+            user.status = status;
+            diff.status = { from: oldValues.status, to: status };
+            
+            // If status changed to blocked/excluded/deleted, revoke tokens
+            if (['blocked', 'excluded', 'deleted'].includes(status)) {
+                jwtBlacklistService.revokeAllUserTokens(user._id.toString());
+            }
+        }
         if (password !== undefined) {
             user.passwordHash = await hashPassword(password);
+            diff.password = 'changed'; // Don't log actual password
         }
 
         await user.save();
+        
+        // Create audit log if there were changes
+        if (Object.keys(diff).length > 0) {
+            await createAuditLog({
+                actorId: req.user._id,
+                action: 'user.update',
+                targetType: 'user',
+                targetId: user._id.toString(),
+                diff,
+                req
+            });
+        }
+        
         res.json(user);
     } catch (error) {
         console.error("Error updating user:", error);
@@ -105,10 +220,43 @@ export const deleteUser = async (req, res) => {
             return res.status(403).json({ message: "You cannot delete yourself" });
         }
 
-        // Perform hard delete - actually remove from database
-        await User.findByIdAndDelete(req.params.id);
+        // Check for hard delete flag
+        const hardDelete = req.query.hard === 'true';
+        const actorRole = req.user.role;
+        
+        // Only owners can perform hard delete
+        if (hardDelete && actorRole !== 'owner') {
+            return res.status(403).json({ message: "Only owners can perform hard delete" });
+        }
 
-        res.json({ message: "User deleted successfully" });
+        // Revoke all user tokens before deletion
+        jwtBlacklistService.revokeAllUserTokens(user._id.toString());
+        
+        // Create audit log before deletion
+        await createAuditLog({
+            actorId: req.user._id,
+            action: hardDelete ? 'user.delete.hard' : 'user.delete',
+            targetType: 'user',
+            targetId: user._id.toString(),
+            diff: { 
+                email: user.email, 
+                username: user.username, 
+                role: user.role,
+                status: user.status 
+            },
+            req
+        });
+
+        if (hardDelete) {
+            // Perform hard delete - actually remove from database
+            await User.findByIdAndDelete(req.params.id);
+        } else {
+            // Soft delete - mark as deleted
+            user.status = 'deleted';
+            await user.save();
+        }
+
+        res.json({ message: `User ${hardDelete ? 'permanently deleted' : 'deleted'} successfully` });
     } catch (error) {
         console.error("Error deleting user:", error);
         res.status(500).json({ message: "Internal server error" });

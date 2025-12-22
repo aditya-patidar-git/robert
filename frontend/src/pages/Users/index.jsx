@@ -21,7 +21,9 @@ import {
   MenuItem,
   CircularProgress,
   Alert,
-  InputAdornment
+  InputAdornment,
+  Tabs,
+  Tab
 } from '@mui/material';
 import {
   Delete as DeleteIcon,
@@ -29,17 +31,23 @@ import {
   CheckCircle as CheckCircleIcon,
   PersonAdd as PersonAddIcon,
   Visibility,
-  VisibilityOff
+  VisibilityOff,
+  People as PeopleIcon,
+  List as ListIcon,
+  History as HistoryIcon
 } from '@mui/icons-material';
 import { useToast } from '../../components/common/ToastProvider';
 import { useAuth } from '../../context/AuthContext';
 import userService from '../../services/userService';
+import AllowlistManager from './components/AllowlistManager';
+import AuditLogViewer from './components/AuditLogViewer';
 
 const UsersPage = () => {
   const { showSuccess, showError } = useToast();
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
   
+  const [activeTab, setActiveTab] = useState(0);
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [confirmDialog, setConfirmDialog] = useState({ open: false, user: null, action: '' });
@@ -264,10 +272,10 @@ const UsersPage = () => {
             fontSize: '0.9375rem'
           }}
         >
-          Manage system users, roles, and permissions
+          Manage system users, roles, permissions, allowlist, and audit logs
         </Typography>
           </Box>
-          {currentUser?.role === 'owner' && (
+          {currentUser?.role === 'owner' && activeTab === 0 && (
             <Button
               variant="contained"
               startIcon={<PersonAddIcon />}
@@ -284,6 +292,22 @@ const UsersPage = () => {
         </Box>
       </Box>
 
+      {/* Tabs */}
+      <Paper elevation={0} sx={{ mb: 3, borderRadius: 2 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(e, newValue) => setActiveTab(newValue)}
+          sx={{ borderBottom: 1, borderColor: 'divider' }}
+        >
+          <Tab icon={<PeopleIcon />} iconPosition="start" label="Users" />
+          <Tab icon={<ListIcon />} iconPosition="start" label="Allowlist" />
+          <Tab icon={<HistoryIcon />} iconPosition="start" label="Audit Logs" />
+        </Tabs>
+      </Paper>
+
+      {/* Tab Content */}
+      {activeTab === 0 && (
+        <>
       {/* Filters */}
       <Paper 
         elevation={0}
@@ -611,6 +635,16 @@ const UsersPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+        </>
+      )}
+
+      {activeTab === 1 && (
+        <AllowlistManager />
+      )}
+
+      {activeTab === 2 && (
+        <AuditLogViewer />
+      )}
     </Box>
   );
 };
