@@ -1,4 +1,4 @@
-import jwt from "jsonwebtoken";
+import { verifyToken } from "../utils/jwt.js";
 import User from "../models/User.js";
 
 export const protect = async (req, res, next) => {
@@ -12,7 +12,8 @@ export const protect = async (req, res, next) => {
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Verify token (includes blacklist check)
+        const decoded = verifyToken(token);
         console.log('🔐 Token decoded successfully for user:', decoded.id);
         
         const user = await User.findById(decoded.id);
@@ -26,6 +27,9 @@ export const protect = async (req, res, next) => {
         next();
     } catch (err) {
         console.log('❌ Token verification failed:', err.message);
-        return res.status(401).json({ message: "Invalid token" });
+        const message = err.message === "Token has been revoked" 
+            ? "Token has been revoked. Please log in again." 
+            : "Invalid token";
+        return res.status(401).json({ message });
     }
 };

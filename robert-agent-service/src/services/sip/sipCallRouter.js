@@ -33,22 +33,57 @@ class SipCallRouter {
       try {
         console.log(`📞 [SIP] Attempt ${attempt + 1}/${maxRetries} to route call via SIP: ${to}`);
 
-        // Note: Actual SIP routing is configured in Twilio Elastic SIP Trunk
-        // The trunk routes to OpenAI Realtime SIP endpoint
-        // This function validates SIP is available but doesn't create the call
-        // The call creation happens via Twilio trunk configuration
+        // Get SIP configuration
+        const sipEndpoint = sipService.getSipEndpoint();
+        if (!sipEndpoint) {
+          console.warn(`⚠️ [SIP] SIP endpoint not configured, falling back to Media Streams`);
+          return null;
+        }
+
+        // For outbound calls via SIP:
+        // 1. Create Twilio call that routes through Elastic SIP Trunk
+        // 2. The trunk configuration in Twilio routes to OpenAI SIP endpoint
+        // 3. OpenAI sends call.accept webhook to our service
         
-        // For now, SIP calls come through the SIP webhook handler (handleCallAccept)
-        // Outbound SIP calls would need Twilio trunk configured to route to OpenAI SIP endpoint
-        // This is a placeholder that returns null to trigger Media Streams fallback
+        // Get SIP trunk SID from options or environment
+        const sipTrunkSid = options.sipTrunkSid || process.env.TWILIO_SIP_TRUNK_SID;
         
-        // TODO: When Twilio SIP trunk is configured, this should:
-        // 1. Create call via Twilio with SIP routing
-        // 2. Or return indication that SIP routing should be used
-        // For now, we fallback to Media Streams
+        if (!sipTrunkSid) {
+          console.warn(`⚠️ [SIP] SIP trunk SID not configured. For SIP routing, configure TWILIO_SIP_TRUNK_SID or pass sipTrunkSid in options. Falling back to Media Streams.`);
+          return null;
+        }
+
+        // Create call via Twilio with SIP routing
+        // The 'to' parameter should be the SIP URI that routes through the trunk
+        // Format: sip:destination@sip-domain.sip.twilio.com
+        const sipUri = options.sipUri || `sip:${to}@${sipTrunkSid}.sip.twilio.com`;
         
-        console.log(`⚠️ [SIP] SIP trunk routing not yet implemented, will use Media Streams`);
-        return null;
+        console.log(`📞 [SIP] Creating Twilio call via SIP trunk: ${sipUri}`);
+        
+        const callOptions = {
+          to: sipUri,
+          from: from,
+          // Status callback for tracking
+          statusCallback: options.statusCallback || `${process.env.BASE_URL || 'http://localhost:3000'}/api/call/status`,
+          statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+          // SIP-specific options
+          sipAuthUsername: options.sipAuthUsername || process.env.SIP_AUTH_USERNAME,
+          sipAuthPassword: options.sipAuthPassword || process.env.SIP_AUTH_PASSWORD,
+          ...options.twilioCallOptions
+        };
+
+        // Create the call via Twilio
+        // Twilio will route this through the Elastic SIP Trunk
+        // The trunk configuration routes to OpenAI SIP endpoint
+        const call = await twilioClient.calls.create(callOptions);
+        
+        console.log(`✅ [SIP] Call created via SIP: ${call.sid}`);
+        console.log(`📞 [SIP] Call status: ${call.status}`);
+        
+        // Track SIP call
+        sipService.trackStatus(call.sid, 'initiated', { from, to, method: 'SIP' });
+        
+        return call;
 
       } catch (error) {
         lastError = error;

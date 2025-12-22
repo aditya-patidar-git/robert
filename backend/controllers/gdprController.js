@@ -19,48 +19,95 @@ export const getDSARRequests = async (req, res) => {
 // Create DSAR request
 export const createDSARRequest = async (req, res) => {
     try {
-        const { email, name, type, dataTypes } = req.body;
+        const { requestorEmail, requestType, userIdentifier, requestorPhone } = req.body;
         
-        if (!email || !name || !type) {
-            return res.status(400).json({ success: false, error: 'Missing required fields' });
+        if (!requestorEmail || !requestType || !userIdentifier) {
+            return res.status(400).json({ success: false, error: 'Missing required fields: requestorEmail, requestType, userIdentifier' });
+        }
+
+        if (!['export', 'delete', 'rectification'].includes(requestType)) {
+            return res.status(400).json({ success: false, error: 'Invalid requestType. Must be: export, delete, or rectification' });
         }
         
-        const dsarRequest = await gdprService.createDSARRequest({
-            email,
-            name,
-            type,
-            dataTypes
-        });
+        const dsarRequest = await gdprService.createDSARRequest(requestorEmail, requestType, userIdentifier, requestorPhone);
         
-        observabilityService.info('DSAR request created', { dsarId: dsarRequest.id, type });
-        res.json({ success: true, dsarRequest });
+        observabilityService.info('DSAR request created', { requestId: dsarRequest.requestId, requestType });
+        res.status(201).json({ success: true, dsarRequest });
     } catch (error) {
         observabilityService.error('Create DSAR request error', { error: error.message });
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
+// Verify DSAR request
+export const verifyDSARRequest = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        const { verificationCode } = req.body;
+        
+        if (!verificationCode) {
+            return res.status(400).json({ success: false, error: 'Verification code is required' });
+        }
+        
+        const request = await gdprService.verifyDSARRequest(requestId, verificationCode);
+        
+        observabilityService.info('DSAR request verified', { requestId });
+        res.json({ success: true, request });
+    } catch (error) {
+        observabilityService.error('Verify DSAR request error', { requestId: req.params.requestId, error: error.message });
+        res.status(400).json({ success: false, error: error.message });
+    }
+};
+
+// Get DSAR request status
+export const getDSARRequestStatus = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        
+        const request = await gdprService.getDSARRequestStatus(requestId);
+        
+        res.json({ success: true, request });
+    } catch (error) {
+        observabilityService.error('Get DSAR request status error', { requestId: req.params.requestId, error: error.message });
+        res.status(404).json({ success: false, error: error.message });
+    }
+};
+
 // Get DSAR request details
 export const getDSARRequestDetails = async (req, res) => {
     try {
-        const { dsarId } = req.params;
+        const { requestId } = req.params;
         
-        const details = await gdprService.getDSARRequestDetails(dsarId);
+        const details = await gdprService.getDSARRequestDetails(requestId);
         
         res.json({ success: true, request: details });
     } catch (error) {
-        observabilityService.error('Get DSAR request details error', { dsarId: req.params.dsarId, error: error.message });
-        res.status(500).json({ success: false, error: error.message });
+        observabilityService.error('Get DSAR request details error', { requestId: req.params.requestId, error: error.message });
+        res.status(404).json({ success: false, error: error.message });
+    }
+};
+
+// Get DSAR request timeline
+export const getDSARRequestTimeline = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        
+        const timeline = await gdprService.getDSARRequestTimeline(requestId);
+        
+        res.json({ success: true, timeline });
+    } catch (error) {
+        observabilityService.error('Get DSAR request timeline error', { requestId: req.params.requestId, error: error.message });
+        res.status(404).json({ success: false, error: error.message });
     }
 };
 
 // Preview DSAR data
 export const previewDSARData = async (req, res) => {
     try {
-        const { dsarId } = req.params;
+        const { requestId } = req.params;
         const { dataTypes } = req.body;
         
-        const request = await gdprService.getDSARRequestDetails(dsarId);
+        const request = await gdprService.getDSARRequestDetails(requestId);
         const userIdentifier = request.requestorEmail || request.requestor;
         
         const preview = await gdprService.previewDSARData(
@@ -70,7 +117,7 @@ export const previewDSARData = async (req, res) => {
         
         res.json({ success: true, preview });
     } catch (error) {
-        observabilityService.error('Preview DSAR data error', { dsarId: req.params.dsarId, error: error.message });
+        observabilityService.error('Preview DSAR data error', { requestId: req.params.requestId, error: error.message });
         res.status(500).json({ success: false, error: error.message });
     }
 };
@@ -78,55 +125,99 @@ export const previewDSARData = async (req, res) => {
 // Generate DSAR export
 export const generateDSARExport = async (req, res) => {
     try {
-        const { dsarId } = req.params;
-        const { dataTypes } = req.body;
+        const { requestId } = req.params;
+        const { maskPII = false } = req.body;
         
-        const exportData = await gdprService.generateDSARExport(dsarId, dataTypes);
+        const exportData = await gdprService.generateDSARExport(requestId, maskPII);
         
-        observabilityService.info('DSAR export generated', { dsarId, exportId: exportData.exportId });
+        observabilityService.info('DSAR export generated', { requestId, recordCount: exportData.recordCount });
         res.json({ success: true, export: exportData });
     } catch (error) {
-        observabilityService.error('Generate DSAR export error', { dsarId: req.params.dsarId, error: error.message });
-        res.status(500).json({ success: false, error: error.message });
+        observabilityService.error('Generate DSAR export error', { requestId: req.params.requestId, error: error.message });
+        res.status(400).json({ success: false, error: error.message });
     }
 };
 
-// Get DSAR request timeline
-export const getDSARRequestTimeline = async (req, res) => {
+// Download DSAR export
+export const downloadDSARExport = async (req, res) => {
     try {
-        const { dsarId } = req.params;
+        const { requestId, fileName } = req.params;
         
-        const timeline = await gdprService.getDSARRequestTimeline(dsarId);
+        const request = await gdprService.getDSARRequestStatus(requestId);
         
-        res.json({ success: true, timeline });
+        if (!request.exportUrl) {
+            return res.status(404).json({ success: false, error: 'Export not found' });
+        }
+
+        if (request.exportExpiresAt && new Date(request.exportExpiresAt) < new Date()) {
+            return res.status(410).json({ success: false, error: 'Export has expired' });
+        }
+
+        // In production, serve from S3 or secure storage
+        const fs = await import('fs');
+        const path = await import('path');
+        const exportPath = path.join('./audit-logs/exports', fileName);
+        
+        if (!fs.existsSync(exportPath)) {
+            return res.status(404).json({ success: false, error: 'Export file not found' });
+        }
+
+        res.download(exportPath, fileName);
     } catch (error) {
-        observabilityService.error('Get DSAR timeline error', { dsarId: req.params.dsarId, error: error.message });
+        observabilityService.error('Download DSAR export error', { requestId: req.params.requestId, error: error.message });
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
-// Process DSAR request
+// Process DSAR request (admin only)
 export const processDSARRequest = async (req, res) => {
     try {
-        const { dsarId } = req.params;
-        const { action, adminUser, notes } = req.body;
+        const { requestId } = req.params;
+        const { action, notes } = req.body;
+        const adminUser = req.user._id;
         
-        if (!action || !adminUser) {
-            return res.status(400).json({ success: false, error: 'Missing required fields' });
+        if (!action || !['approve', 'reject', 'complete'].includes(action)) {
+            return res.status(400).json({ success: false, error: 'Invalid action. Must be: approve, reject, or complete' });
         }
         
-        const result = await gdprService.processDSARRequest(dsarId, action, adminUser);
+        const request = await gdprService.getDSARRequestStatus(requestId);
         
-        // Add notes if provided
-        if (notes) {
-            result.notes = notes;
+        if (action === 'complete' && request.requestType === 'export') {
+            // Generate export if completing an export request
+            const exportData = await gdprService.generateDSARExport(requestId, false);
+            request.status = 'completed';
+            request.completedAt = new Date();
+            request.processedBy = adminUser;
+            if (notes) request.notes = notes;
+            await request.save();
+            
+            observabilityService.info('DSAR request completed with export', { requestId, adminUser });
+            return res.json({ success: true, request, export: exportData });
+        } else if (action === 'complete' && request.requestType === 'delete') {
+            // Delete user data if completing a delete request
+            const deletionResult = await gdprService.deleteUserData(request.userIdentifier);
+            request.status = 'completed';
+            request.completedAt = new Date();
+            request.processedBy = adminUser;
+            if (notes) request.notes = notes;
+            await request.save();
+            
+            observabilityService.info('DSAR request completed with deletion', { requestId, adminUser });
+            return res.json({ success: true, request, deletion: deletionResult });
+        } else if (action === 'reject') {
+            request.status = 'rejected';
+            request.processedBy = adminUser;
+            if (notes) request.notes = notes;
+            await request.save();
+            
+            observabilityService.info('DSAR request rejected', { requestId, adminUser });
+            return res.json({ success: true, request });
         }
         
-        observabilityService.info('DSAR request processed', { dsarId, action, adminUser });
-        res.json({ success: true, result });
+        res.json({ success: true, request });
     } catch (error) {
-        observabilityService.error('Process DSAR request error', { dsarId: req.params.dsarId, error: error.message });
-        res.status(500).json({ success: false, error: error.message });
+        observabilityService.error('Process DSAR request error', { requestId: req.params.requestId, error: error.message });
+        res.status(400).json({ success: false, error: error.message });
     }
 };
 
@@ -146,15 +237,14 @@ export const exportUserData = async (req, res) => {
     }
 };
 
-// Delete user data
+// Delete user data (admin only, or via DSAR)
 export const deleteUserData = async (req, res) => {
     try {
         const { userIdentifier } = req.params;
-        const { dataTypes } = req.body;
         
-        const deletionRecord = await gdprService.deleteUserData(userIdentifier, dataTypes);
+        const deletionRecord = await gdprService.deleteUserData(userIdentifier);
         
-        observabilityService.info('User data deleted', { userIdentifier, dataTypes });
+        observabilityService.info('User data deleted', { userIdentifier, deletedRecords: deletionRecord.deletedRecords });
         res.json({ success: true, deletionRecord });
     } catch (error) {
         observabilityService.error('Delete user data error', { userIdentifier: req.params.userIdentifier, error: error.message });

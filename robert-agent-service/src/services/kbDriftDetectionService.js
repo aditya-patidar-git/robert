@@ -275,14 +275,105 @@ class KBDriftDetectionService {
 
   /**
    * Auto-detect file-URL mappings from KB directory
-   * Looks for metadata files or infers from file names
-   * @returns {Promise<Array>} Array of { filePath, url } mappings
+   * Looks for metadata files, KB database, or infers from file names
+   * @returns {Promise<Array>} Array of { filePath, url, selector } mappings
    */
   async autoDetectMappings() {
-    // This is a placeholder - in production, you'd have a mapping file
-    // or metadata in the KB files themselves
-    console.warn('⚠️ [KB DRIFT] Auto-detection of file-URL mappings not implemented. Please provide mappings manually.');
-    return [];
+    try {
+      console.log('🔍 [KB DRIFT] Auto-detecting file-URL mappings...');
+      const mappings = [];
+
+      // Strategy 1: Load from mapping file
+      const mappingFilePath = path.join(__dirname, '../../config/kb-file-mappings.json');
+      if (fs.existsSync(mappingFilePath)) {
+        try {
+          const mappingFileContent = fs.readFileSync(mappingFilePath, 'utf8');
+          const mappingData = JSON.parse(mappingFileContent);
+          if (mappingData.mappings && Array.isArray(mappingData.mappings)) {
+            console.log(`✅ [KB DRIFT] Loaded ${mappingData.mappings.length} mappings from file`);
+            return mappingData.mappings;
+          }
+        } catch (fileError) {
+          console.warn('⚠️ [KB DRIFT] Error reading mapping file:', fileError.message);
+        }
+      }
+
+      // Strategy 2: Query KB database for source URLs
+      try {
+        const mongoose = (await import('mongoose')).default;
+        const KnowledgeBase = (await import('../../database/models/KnowledgeBase.js')).default;
+        
+        // Check if mongoose is connected
+        if (mongoose.connection.readyState === 1) {
+          const kbFiles = await KnowledgeBase.find({ 
+            status: 'Active',
+            sourceUrl: { $exists: true, $ne: null }
+          }).select('filename uploadPath sourceUrl').lean();
+
+          for (const kbFile of kbFiles) {
+            mappings.push({
+              filePath: kbFile.uploadPath || kbFile.filename,
+              url: kbFile.sourceUrl,
+              selector: null, // Can be added later if stored in DB
+              lastChecked: kbFile.lastDriftCheck ? kbFile.lastDriftCheck.toISOString() : null
+            });
+          }
+
+          if (mappings.length > 0) {
+            console.log(`✅ [KB DRIFT] Auto-detected ${mappings.length} mappings from KB database`);
+            return mappings;
+          }
+        } else {
+          console.warn('⚠️ [KB DRIFT] MongoDB not connected, skipping database auto-detection');
+        }
+      } catch (dbError) {
+        console.warn('⚠️ [KB DRIFT] Error querying KB database:', dbError.message);
+      }
+
+      // Strategy 3: Check environment variable
+      const mappingsEnv = process.env.KB_FILE_URL_MAPPINGS;
+      if (mappingsEnv) {
+        try {
+          const envMappings = JSON.parse(mappingsEnv);
+          if (Array.isArray(envMappings) && envMappings.length > 0) {
+            console.log(`✅ [KB DRIFT] Loaded ${envMappings.length} mappings from environment variable`);
+            return envMappings;
+          }
+        } catch (parseError) {
+          console.warn('⚠️ [KB DRIFT] Error parsing KB_FILE_URL_MAPPINGS:', parseError.message);
+        }
+      }
+
+      // Strategy 4: Infer from file naming convention (basic pattern matching)
+      // This is a fallback - looks for common patterns in filenames
+      if (fs.existsSync(this.sourceDirectory)) {
+        const files = fs.readdirSync(this.sourceDirectory, { recursive: true });
+        const inferredMappings = [];
+        
+        for (const file of files) {
+          if (file.endsWith('.pdf') || file.endsWith('.html') || file.endsWith('.md')) {
+            // Try to infer URL from filename (very basic - can be improved)
+            const fileName = path.basename(file, path.extname(file));
+            // This is a placeholder - actual inference would need domain knowledge
+            // For now, just log that we found files but couldn't infer URLs
+          }
+        }
+
+        if (inferredMappings.length > 0) {
+          console.log(`✅ [KB DRIFT] Inferred ${inferredMappings.length} mappings from file names`);
+          return inferredMappings;
+        }
+      }
+
+      if (mappings.length === 0) {
+        console.warn('⚠️ [KB DRIFT] No mappings found via auto-detection. Please configure mappings manually.');
+      }
+
+      return mappings;
+    } catch (error) {
+      console.error('❌ [KB DRIFT] Error in auto-detection:', error);
+      return [];
+    }
   }
 }
 

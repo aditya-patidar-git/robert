@@ -229,36 +229,133 @@ export const updateModelConfig = async (req, res) => {
   }
 };
 
-// POST /api/system/backup - Create system backup (placeholder)
+// POST /api/system/backup - Create system backup
 export const createBackup = async (req, res) => {
   try {
-    // TODO: Implement backup functionality
-    res.status(501).json({ 
-      success: false, 
-      error: "Backup functionality not yet implemented" 
+    const backupService = (await import('../services/backupService.js')).default;
+    const { includeScreenshots, includeAuditLogs, collections } = req.body;
+    
+    const result = await backupService.createBackup({
+      includeScreenshots: includeScreenshots || false,
+      includeAuditLogs: includeAuditLogs !== false, // default true
+      collections: collections || null
+    });
+
+    res.json({
+      success: true,
+      ...result
     });
   } catch (err) {
     console.error("Error creating backup:", err);
     res.status(500).json({ 
       success: false, 
-      error: "Internal server error" 
+      error: err.message || "Internal server error" 
     });
   }
 };
 
-// POST /api/system/restore/:backupId - Restore system backup (placeholder)
+// GET /api/system/backups - List all backups
+export const listBackups = async (req, res) => {
+  try {
+    const backupService = (await import('../services/backupService.js')).default;
+    const backups = await backupService.listBackups();
+    
+    res.json({
+      success: true,
+      backups
+    });
+  } catch (err) {
+    console.error("Error listing backups:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Internal server error" 
+    });
+  }
+};
+
+// GET /api/system/backups/:backupId - Get backup details
+export const getBackupDetails = async (req, res) => {
+  try {
+    const { backupId } = req.params;
+    const backupService = (await import('../services/backupService.js')).default;
+    const details = await backupService.getBackupDetails(backupId);
+    
+    res.json({
+      success: true,
+      ...details
+    });
+  } catch (err) {
+    console.error("Error getting backup details:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Internal server error" 
+    });
+  }
+};
+
+// DELETE /api/system/backups/:backupId - Delete backup
+export const deleteBackup = async (req, res) => {
+  try {
+    const { backupId } = req.params;
+    const backupService = (await import('../services/backupService.js')).default;
+    await backupService.deleteBackup(backupId);
+    
+    res.json({
+      success: true,
+      message: 'Backup deleted successfully'
+    });
+  } catch (err) {
+    console.error("Error deleting backup:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Internal server error" 
+    });
+  }
+};
+
+// POST /api/system/restore/:backupId - Restore system backup
 export const restoreBackup = async (req, res) => {
   try {
-    // TODO: Implement restore functionality
-    res.status(501).json({ 
-      success: false, 
-      error: "Restore functionality not yet implemented" 
+    const { backupId } = req.params;
+    const { createSafetyBackup, collections, dryRun } = req.body;
+    
+    const restoreService = (await import('../services/restoreService.js')).default;
+    
+    const result = await restoreService.restoreBackup(backupId, {
+      createSafetyBackup: createSafetyBackup !== false, // default true
+      collections: collections || null,
+      dryRun: dryRun || false
+    });
+
+    res.json({
+      success: true,
+      ...result
     });
   } catch (err) {
     console.error("Error restoring backup:", err);
     res.status(500).json({ 
       success: false, 
-      error: "Internal server error" 
+      error: err.message || "Internal server error" 
+    });
+  }
+};
+
+// GET /api/system/restore/:backupId/preview - Get restore preview
+export const getRestorePreview = async (req, res) => {
+  try {
+    const { backupId } = req.params;
+    const restoreService = (await import('../services/restoreService.js')).default;
+    const preview = await restoreService.getRestorePreview(backupId);
+    
+    res.json({
+      success: true,
+      ...preview
+    });
+  } catch (err) {
+    console.error("Error getting restore preview:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Internal server error" 
     });
   }
 };

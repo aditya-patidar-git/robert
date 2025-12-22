@@ -21,6 +21,13 @@ import memoryCleanupJob from '../jobs/memoryCleanupJob.js';
 import retentionCleanupJob from '../jobs/retentionCleanupJob.js';
 import kbMigrationJob from '../jobs/kbMigrationJob.js';
 import kbDriftDetectionJob from '../jobs/kbDriftDetectionJob.js';
+import { initializeTelemetry, shutdownTelemetry } from '../utils/telemetry.js';
+import { initializeMetrics } from '../services/metricsService.js';
+
+// Initialize OpenTelemetry before other imports
+initializeTelemetry();
+// Initialize metrics after telemetry
+initializeMetrics();
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -39,6 +46,28 @@ dotenv.config({ path: join(__dirname, '../../.env') });
     console.log('✅ Session Management Service initialized');
     const metrics = sessionManagementService.getSessionMetrics();
     console.log(`📊 Session Management: TTL=${metrics.sessionTTLMinutes}min, Max=${metrics.maxSessions}, Cleanup=${metrics.cleanupIntervalSeconds}s`);
+    
+    // Validate SIP configuration on startup
+    const sipService = (await import('../services/sipService.js')).default;
+    const sipValidation = sipService.validateOnStartup();
+    if (sipValidation.enabled) {
+      if (sipValidation.valid) {
+        console.log('✅ SIP configuration validated successfully');
+        if (sipValidation.warnings.length > 0) {
+          console.log('⚠️ SIP warnings:', sipValidation.warnings.join('; '));
+        }
+      } else {
+        console.error('❌ SIP configuration validation failed:');
+        sipValidation.errors.forEach(error => console.error(`   - ${error}`));
+        if (sipValidation.warnings.length > 0) {
+          console.log('⚠️ SIP warnings:', sipValidation.warnings.join('; '));
+        }
+        // Don't fail startup if SIP validation fails - Media Streams will be used as fallback
+        console.log('⚠️ SIP will not be used - Media Streams will be the primary path');
+      }
+    } else {
+      console.log('ℹ️ SIP is not enabled - Media Streams will be the primary path');
+    }
   } catch (error) {
     console.error('❌ Secrets Manager initialization failed:', error.message);
     console.error('❌ Application cannot start without required secrets');
@@ -74,20 +103,34 @@ app.use(express.urlencoded({ extended: true })); // Required for Twilio form-enc
 await configManager.initialize();
 
 // Health check
-app.get('/', (_, res) => res.json({ 
-  status: 'ok', 
-  service: 'robert-voice-agent',
-  configs: {
-    ai: configManager.getAIConfig() ? 'loaded' : 'not loaded',
-    audio: configManager.getAudioConfig() ? 'loaded' : 'not loaded',
-    telephony: configManager.getTelephonyConfig() ? 'loaded' : 'not loaded',
-    tools: configManager.getAllToolConfigs().length > 0 ? 'loaded' : 'not loaded'
-  },
-  websocket: {
-    url: TUNNEL_DOMAIN ? `wss://${TUNNEL_DOMAIN}/media-stream` : `ws://localhost:${PORT}/media-stream`,
-    status: 'ready'
-  }
-}));
+app.get('/', async (_, res) => {
+  const sipService = (await import('../services/sipService.js')).default;
+  const sipStats = sipService.getStats();
+  const sipValidation = sipService.validateOnStartup();
+  
+  res.json({ 
+    status: 'ok', 
+    service: 'robert-voice-agent',
+    configs: {
+      ai: configManager.getAIConfig() ? 'loaded' : 'not loaded',
+      audio: configManager.getAudioConfig() ? 'loaded' : 'not loaded',
+      telephony: configManager.getTelephonyConfig() ? 'loaded' : 'not loaded',
+      tools: configManager.getAllToolConfigs().length > 0 ? 'loaded' : 'not loaded'
+    },
+    websocket: {
+      url: TUNNEL_DOMAIN ? `wss://${TUNNEL_DOMAIN}/media-stream` : `ws://localhost:${PORT}/media-stream`,
+      status: 'ready'
+    },
+    sip: {
+      enabled: sipStats.isEnabled,
+      valid: sipValidation.valid,
+      activeSessions: sipStats.activeSessions,
+      endpoint: sipStats.endpoint,
+      errors: sipValidation.errors,
+      warnings: sipValidation.warnings
+    }
+  });
+});
 
 // WebSocket test endpoint
 app.get('/test-websocket', (_, res) => {
@@ -338,6 +381,7 @@ process.on('SIGTERM', async () => {
   scheduler.stop();
   await browserAgentService.cleanup();
   configManager.destroy();
+  await shutdownTelemetry();
   server.close(() => {
     process.exit(0);
   });
@@ -348,6 +392,7 @@ process.on('SIGINT', async () => {
   scheduler.stop();
   await browserAgentService.cleanup();
   configManager.destroy();
+  await shutdownTelemetry();
   server.close(() => {
     process.exit(0);
   });

@@ -5,6 +5,13 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { initializeTelemetry, shutdownTelemetry } from "./utils/telemetry.js";
+import { initializeMetrics } from "./services/metricsService.js";
+
+// Initialize OpenTelemetry before other imports
+initializeTelemetry();
+// Initialize metrics after telemetry
+initializeMetrics();
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
@@ -37,6 +44,9 @@ import memoryRoutes from "./routes/memoryRoutes.js";
 import toolConfigRoutes from "./routes/toolConfigRoutes.js";
 import conversationBehaviorRoutes from "./routes/conversationBehaviorRoutes.js";
 import templateRoutes from "./routes/templateRoutes.js";
+import kbMappingRoutes from "./routes/kbMappingRoutes.js";
+import alertRoutes from "./routes/alertRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
 import callCleanupService from "./services/callCleanupService.js";
 import websocketService from "./services/websocketService.js";
 import configSyncService, { setIO as setConfigSyncIO } from "./services/configSyncService.js";
@@ -124,6 +134,15 @@ app.use("/api/itm-booking", itmBookingRoutes);
 
 // Knowledge Base Routes (OpenAI-based)
 app.use("/api/kb", openaiKbRoutes);
+
+// KB Mapping Routes (for drift detection)
+app.use("/api/kb/mappings", kbMappingRoutes);
+
+// Alert Routes
+app.use("/api/alerts", alertRoutes);
+
+// Payment Routes
+app.use("/api/payments", paymentRoutes);
 
 // AI Configuration Routes
 app.use("/api/admin/ai", aiRoutes);

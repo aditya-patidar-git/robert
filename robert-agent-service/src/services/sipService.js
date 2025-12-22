@@ -203,6 +203,83 @@ class SipService {
       endpoint: this.openaiSipEndpoint ? 'configured' : 'not configured'
     };
   }
+
+  /**
+   * Validate SIP configuration on startup
+   * Performs comprehensive validation of SIP endpoint, credentials, and configuration
+   * @returns {Object} - Validation result with details
+   */
+  validateOnStartup() {
+    const result = {
+      valid: false,
+      enabled: this.sipEnabled,
+      errors: [],
+      warnings: [],
+      details: {}
+    };
+
+    // Check if SIP is enabled
+    if (!this.sipEnabled) {
+      result.warnings.push('SIP is not enabled (SIP_ENABLED != true)');
+      return result;
+    }
+
+    // Validate endpoint format
+    const endpointValidation = this.validateEndpoint();
+    if (!endpointValidation.valid) {
+      result.errors.push(`SIP endpoint validation failed: ${endpointValidation.error}`);
+      result.details.endpoint = {
+        configured: !!this.openaiSipEndpoint,
+        value: this.openaiSipEndpoint ? 'configured' : 'not configured',
+        error: endpointValidation.error
+      };
+      return result;
+    }
+
+    result.details.endpoint = {
+      configured: true,
+      value: this.openaiSipEndpoint,
+      format: 'valid'
+    };
+
+    // Validate authentication credentials format (if provided)
+    const sipUsername = process.env.SIP_AUTH_USERNAME;
+    const sipPassword = process.env.SIP_AUTH_PASSWORD;
+    
+    if (sipUsername || sipPassword) {
+      if (!sipUsername || !sipPassword) {
+        result.warnings.push('SIP authentication partially configured - both username and password are required');
+      } else {
+        result.details.auth = {
+          configured: true,
+          username: sipUsername ? 'configured' : 'not configured'
+        };
+      }
+    } else {
+      result.details.auth = {
+        configured: false,
+        note: 'No SIP authentication configured (may use IP-based auth)'
+      };
+    }
+
+    // Check webhook URL configuration
+    const webhookUrl = process.env.BASE_URL || process.env.TUNNEL_DOMAIN;
+    if (!webhookUrl) {
+      result.warnings.push('Webhook URL not configured (BASE_URL or TUNNEL_DOMAIN) - OpenAI call.accept webhooks may fail');
+    } else {
+      result.details.webhook = {
+        configured: true,
+        url: webhookUrl
+      };
+    }
+
+    // If we have endpoint and no critical errors, mark as valid
+    if (result.errors.length === 0) {
+      result.valid = true;
+    }
+
+    return result;
+  }
 }
 
 export default new SipService();

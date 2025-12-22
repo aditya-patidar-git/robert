@@ -97,8 +97,17 @@ const TOOLS = [
             properties: {
               courseType: {
                 type: "string",
-                enum: ["ITM", "CBT", "CBT Executive", "Private Lesson", "Gear Conversion"],
-                description: "Required for create_booking: Type of course to book (ITM, CBT, CBT Executive, Private Lesson, or Gear Conversion)"
+                enum: [
+                  "ITM", "Introduction to Motorcycling",
+                  "CBT", "Compulsory Basic Training",
+                  "CBT Executive", "CBT Executive 1-2-1",
+                  "Private Lesson",
+                  "Gear Conversion",
+                  "TfL 1-2-1", "TfL 1-2-1 Motorcycle Skills",
+                  "TfL Beyond CBT", "TfL - Beyond CBT - Skills for Delivery Riders",
+                  "Full Licence Assessment", "Full Motorcycle Licence Assessment"
+                ],
+                description: "Required for create_booking: Type of course to book. Valid options: ITM/Introduction to Motorcycling, CBT/Compulsory Basic Training, CBT Executive/CBT Executive 1-2-1, Private Lesson, Gear Conversion, TfL 1-2-1/TfL 1-2-1 Motorcycle Skills, TfL Beyond CBT/TfL - Beyond CBT - Skills for Delivery Riders, Full Licence Assessment/Full Motorcycle Licence Assessment"
               },
               customerEmail: {
                 type: "string",

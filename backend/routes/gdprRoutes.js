@@ -2,10 +2,13 @@ import express from 'express';
 import {
     getDSARRequests,
     createDSARRequest,
+    verifyDSARRequest,
+    getDSARRequestStatus,
     processDSARRequest,
     getDSARRequestDetails,
     previewDSARData,
     generateDSARExport,
+    downloadDSARExport,
     getDSARRequestTimeline,
     exportUserData,
     deleteUserData,
@@ -19,21 +22,26 @@ import {
     recordConsent,
     checkConsent
 } from '../controllers/gdprController.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { authorizeRoles } from '../middleware/rbacMiddleware.js';
 
 const router = express.Router();
 
-// DSAR Management
-router.get('/dsar', getDSARRequests);
-router.post('/dsar', createDSARRequest);
-router.get('/dsar/:dsarId', getDSARRequestDetails);
-router.get('/dsar/:dsarId/timeline', getDSARRequestTimeline);
-router.post('/dsar/:dsarId/preview', previewDSARData);
-router.post('/dsar/:dsarId/export', generateDSARExport);
-router.put('/dsar/:dsarId/process', processDSARRequest);
+// DSAR Management (public endpoints for request creation and verification)
+router.get('/dsar', protect, authorizeRoles('owner', 'admin'), getDSARRequests);
+router.post('/dsar', createDSARRequest); // Public - users can create requests
+router.post('/dsar/:requestId/verify', verifyDSARRequest); // Public - users can verify
+router.get('/dsar/:requestId/status', getDSARRequestStatus); // Public - users can check status
+router.get('/dsar/:requestId', protect, authorizeRoles('owner', 'admin'), getDSARRequestDetails);
+router.get('/dsar/:requestId/timeline', protect, authorizeRoles('owner', 'admin'), getDSARRequestTimeline);
+router.post('/dsar/:requestId/preview', protect, authorizeRoles('owner', 'admin'), previewDSARData);
+router.post('/dsar/:requestId/export', protect, authorizeRoles('owner', 'admin'), generateDSARExport);
+router.get('/dsar/:requestId/export/:fileName', downloadDSARExport); // Public download link
+router.put('/dsar/:requestId/process', protect, authorizeRoles('owner', 'admin'), processDSARRequest);
 
-// Data Management
-router.post('/export/:userIdentifier', exportUserData);
-router.delete('/delete/:userIdentifier', deleteUserData);
+// Data Management (admin only)
+router.post('/export/:userIdentifier', protect, authorizeRoles('owner', 'admin'), exportUserData);
+router.delete('/delete/:userIdentifier', protect, authorizeRoles('owner', 'admin'), deleteUserData);
 
 // Audit & Compliance
 router.get('/audit-logs', getAuditLogs);

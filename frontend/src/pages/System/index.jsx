@@ -14,7 +14,8 @@ import {
   Email,
   Chat,
   Payment,
-  Description
+  Description,
+  Backup
 } from '@mui/icons-material';
 import { useSystemPageState } from './hooks/useSystemPageState';
 import MCPToolsTab from './tabs/MCPToolsTab';
@@ -24,6 +25,7 @@ import EmailTestTab from './tabs/EmailTestTab';
 import ConversationBehaviorTab from './tabs/ConversationBehaviorTab';
 import PaymentGatewayTab from './tabs/PaymentGatewayTab';
 import EmailSMSTemplatesTab from './tabs/EmailSMSTemplatesTab';
+import BackupRestoreTab from './tabs/BackupRestoreTab';
 import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
 
 const SystemConfigPage = () => {
@@ -96,6 +98,7 @@ const SystemConfigPage = () => {
           <Tab label="Email Test" icon={<Email />} iconPosition="start" />
           <Tab label="Payment Gateway" icon={<Payment />} iconPosition="start" />
           <Tab label="Email/SMS Templates" icon={<Description />} iconPosition="start" />
+          <Tab label="Backup & Restore" icon={<Backup />} iconPosition="start" />
         </Tabs>
       </Paper>
 
@@ -147,6 +150,11 @@ const SystemConfigPage = () => {
       {/* Tab G: Email/SMS Templates (outside form since it has its own save handler) */}
       {currentTab === 6 && (
         <EmailSMSTemplatesTab />
+      )}
+
+      {/* Tab H: Backup & Restore (outside form since it has its own save handler) */}
+      {currentTab === 7 && (
+        <BackupRestoreTab />
       )}
     </Box>
   );

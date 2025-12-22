@@ -2,6 +2,8 @@ import React from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { CssBaseline } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { LocalizationProvider } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './components/common/ToastProvider';
 import AppRoutes from './routes/AppRoutes';
@@ -23,12 +25,14 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <CssBaseline />
-        <ToastProvider>
-          <RouterProvider router={AppRoutes} />
-        </ToastProvider>
-      </AuthProvider>
+      <LocalizationProvider dateAdapter={AdapterDateFns}>
+        <AuthProvider>
+          <CssBaseline />
+          <ToastProvider>
+            <RouterProvider router={AppRoutes} />
+          </ToastProvider>
+        </AuthProvider>
+      </LocalizationProvider>
     </QueryClientProvider>
   );
 }

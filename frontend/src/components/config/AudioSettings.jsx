@@ -507,6 +507,50 @@ const AudioSettings = ({
           </Card>
         </Box>
       </Box>
+
+      {/* Transcription Model Selection */}
+      <Paper sx={{ p: 3, mt: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Transcription Model Selection
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Select the transcription model to use for converting speech to text. Choose between Whisper (standard) or GPT-4o Transcribe (enhanced accuracy).
+        </Typography>
+        <Box sx={{ maxWidth: 400 }}>
+          <Controller
+            name="transcriptionModel"
+            control={control}
+            render={({ field }) => (
+              <FormControl fullWidth>
+                <InputLabel>Transcription Model</InputLabel>
+                <Select
+                  {...field}
+                  label="Transcription Model"
+                  disabled={readOnly}
+                  value={field.value || 'whisper-1'}
+                >
+                  <MenuItem value="whisper-1">
+                    <Box>
+                      <Typography variant="body1">Whisper-1</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Standard transcription model (default)
+                      </Typography>
+                    </Box>
+                  </MenuItem>
+                  <MenuItem value="gpt-4o-transcribe">
+                    <Box>
+                      <Typography variant="body1">GPT-4o Transcribe</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Enhanced accuracy and context understanding
+                      </Typography>
+                    </Box>
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            )}
+          />
+        </Box>
+      </Paper>
     </Paper>
   );
 };

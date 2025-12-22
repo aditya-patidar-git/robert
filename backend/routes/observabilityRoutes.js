@@ -5,6 +5,7 @@ import {
   getSystemMetrics,
   getSystemLogs,
   getTraces,
+  getTraceStatistics,
   getPerformanceMetrics,
   getLiveCalls,
   getCallTimeline,
@@ -16,7 +17,11 @@ import {
   resolveAlert,
   getHealth,
   generateReport,
-  exportData
+  exportData,
+  getGroundednessMetrics,
+  getRAGAnalytics,
+  getToolMetrics,
+  getSIPMetrics
 } from '../controllers/observabilityController.js';
 
 const router = express.Router();
@@ -33,6 +38,7 @@ router.get('/logs', getSystemLogs);
 
 // Performance Traces
 router.get('/traces', getTraces);
+router.get('/traces/statistics', getTraceStatistics);
 
 // Performance Metrics (with operation parameter)
 router.get('/performance/:operation', getPerformanceMetrics);
@@ -65,6 +71,14 @@ router.get('/reports', generateReport);
 
 // Export Data
 router.get('/export', exportData);
+
+// Groundedness & RAG Metrics
+router.get('/groundedness', getGroundednessMetrics);
+router.get('/rag-analytics', getRAGAnalytics);
+
+// Tool & SIP Metrics
+router.get('/tools/metrics', getToolMetrics);
+router.get('/sip/metrics', getSIPMetrics);
 
 export default router;
 

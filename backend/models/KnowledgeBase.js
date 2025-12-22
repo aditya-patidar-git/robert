@@ -66,6 +66,15 @@ const KnowledgeBaseSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  sourceUrl: {
+    type: String,
+    sparse: true,
+    trim: true
+  },
+  lastDriftCheck: {
+    type: Date,
+    sparse: true
+  },
   createdBy: { 
     type: String, 
     default: "admin"

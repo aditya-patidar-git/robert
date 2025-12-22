@@ -20,6 +20,12 @@ import ErrorBudgetsTab from './tabs/ErrorBudgetsTab';
 import AlertsTab from './tabs/AlertsTab';
 import TimelineDialog from './components/TimelineDialog';
 import ToolTracesDialog from './components/ToolTracesDialog';
+import GroundednessDashboard from './components/dashboards/GroundednessDashboard';
+import RAGAnalytics from './components/dashboards/RAGAnalytics';
+import ToolPerformanceDashboard from './components/dashboards/ToolPerformanceDashboard';
+import SIPAnalyticsDashboard from './components/dashboards/SIPAnalyticsDashboard';
+import TraceViewer from './components/dashboards/TraceViewer';
+import ErrorBudgetDashboard from './components/dashboards/ErrorBudgetDashboard';
 
 const ObservabilityPage = () => {
   const {
@@ -178,9 +184,19 @@ const ObservabilityPage = () => {
           borderRadius: 2
         }}
       >
-        <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
+        <Tabs 
+          value={activeTab} 
+          onChange={(e, newValue) => setActiveTab(newValue)}
+          variant="scrollable"
+          scrollButtons="auto"
+        >
           <Tab label="Metrics & Logs" />
           <Tab label="Live Calls" />
+          <Tab label="Groundedness" />
+          <Tab label="RAG Analytics" />
+          <Tab label="Tool Performance" />
+          <Tab label="SIP Analytics" />
+          <Tab label="Traces" />
           <Tab label="Error Budgets" />
           <Tab label="Alerts" />
         </Tabs>
@@ -210,16 +226,53 @@ const ObservabilityPage = () => {
         />
       )}
 
-      {/* Error Budgets Tab */}
+      {/* Groundedness Tab */}
       {activeTab === 2 && (
-        <ErrorBudgetsTab
-          errorBudgets={errorBudgets}
-          errorBudgetsLoading={errorBudgetsLoading}
-        />
+        <Box sx={{ p: 3 }}>
+          <GroundednessDashboard timeRange={timeRange} />
+        </Box>
+      )}
+
+      {/* RAG Analytics Tab */}
+      {activeTab === 3 && (
+        <Box sx={{ p: 3 }}>
+          <RAGAnalytics timeRange={timeRange} />
+        </Box>
+      )}
+
+      {/* Tool Performance Tab */}
+      {activeTab === 4 && (
+        <Box sx={{ p: 3 }}>
+          <ToolPerformanceDashboard timeRange={timeRange} />
+        </Box>
+      )}
+
+      {/* SIP Analytics Tab */}
+      {activeTab === 5 && (
+        <Box sx={{ p: 3 }}>
+          <SIPAnalyticsDashboard timeRange={timeRange} />
+        </Box>
+      )}
+
+      {/* Traces Tab */}
+      {activeTab === 6 && (
+        <Box sx={{ p: 3 }}>
+          <TraceViewer 
+            timeRange={timeRange} 
+            onCallSelect={handleViewTimeline}
+          />
+        </Box>
+      )}
+
+      {/* Error Budgets Tab */}
+      {activeTab === 7 && (
+        <Box sx={{ p: 3 }}>
+          <ErrorBudgetDashboard timeRange={timeRange} />
+        </Box>
       )}
 
       {/* Alerts Tab */}
-      {activeTab === 3 && (
+      {activeTab === 8 && (
         <AlertsTab
           alertsData={alertsData}
           alertsLoading={alertsLoading}

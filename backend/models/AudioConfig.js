@@ -87,6 +87,12 @@ const AudioConfigSchema = new mongoose.Schema({
     type: String,
     default: null // null = use default from AIConfig
   },
+  // Transcription Model Selection
+  transcriptionModel: {
+    type: String,
+    enum: ['whisper-1', 'gpt-4o-transcribe'],
+    default: 'whisper-1'
+  },
   temperature: { 
     type: Number, 
     default: 0.4,

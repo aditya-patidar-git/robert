@@ -243,6 +243,52 @@ npm run dev:agent
 4. Check browser agent logs for specific errors
 5. Verify Playwright is installed: `npx playwright install`
 
+### Issue: Secrets not loading from vault
+
+**Symptoms:**
+- Service fails to start
+- "Secret not found" errors
+- Vault connection errors
+
+**Solutions:**
+1. Verify vault type is set correctly (`VAULT_TYPE=aws` or `VAULT_TYPE=vault`)
+2. Check vault credentials (AWS keys or Vault token)
+3. Verify vault endpoint is accessible
+4. Check secret names match expected format
+5. Verify service has permissions to access secrets
+6. Check vault logs for access issues
+7. Fallback to environment variables if vault unavailable
+
+### Issue: Abuse prevention blocking legitimate calls
+
+**Symptoms:**
+- Legitimate callers being blocked
+- False positive rate limit violations
+
+**Solutions:**
+1. Review blocked caller list in Observability
+2. Check caller statistics for false positives
+3. Adjust rate limit thresholds if needed
+4. Manually unblock legitimate callers
+5. Review abuse prevention configuration
+6. Check alert logs for patterns
+
+### Issue: KB drift detection not working
+
+**Symptoms:**
+- Drift detection returns no mappings
+- Auto-detection fails
+- Drift scores not updating
+
+**Solutions:**
+1. Verify file-URL mappings are configured
+2. Check mapping file format is correct
+3. Verify source URLs are accessible
+4. Check KB database for source URL fields
+5. Review drift detection service logs
+6. Test manual drift detection on individual files
+7. Verify KB_FILE_URL_MAPPINGS environment variable (if used)
+
 ## Configuration Management
 
 ### Environment Variables
@@ -268,22 +314,45 @@ The system uses MongoDB for dynamic configuration:
 - Agent service polls for updates every 30 seconds
 - No service restart required for config changes
 
-### Secret Rotation
+### Secrets Management
 
 **Current Implementation:**
-- Secrets stored in environment variables
-- No automatic rotation (manual process)
+- Secrets stored in environment variables (default)
+- AWS Secrets Manager integration (optional)
+- HashiCorp Vault integration (optional)
+
+**Environment Variables (Default):**
+- All secrets loaded from `.env` files
+- Validated on service startup
+- Masked in logs for security
+
+**AWS Secrets Manager:**
+- Set `VAULT_TYPE=aws` in environment
+- Configure `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+- Optional: `AWS_SECRETS_PREFIX` for secret naming
+- Secrets cached with TTL for performance
+- Automatic fallback to environment variables if vault unavailable
+
+**HashiCorp Vault:**
+- Set `VAULT_TYPE=vault` in environment
+- Configure `VAULT_ENDPOINT`, `VAULT_TOKEN` (or use AppRole)
+- Optional: `VAULT_SECRET_PATH` for KV path prefix
+- Supports KV v2 secret engine
+- Automatic fallback to environment variables if vault unavailable
+
+**Secret Rotation:**
+- Manual rotation: Update secret in vault/environment, restart service
+- Automatic rotation: Configure rotation webhooks (v1.1)
+- Secret versioning: Track secret versions in vault
+- Rotation notifications: Service receives rotation events
 
 **Rotation Procedure:**
-1. Update secret in environment variable
-2. Restart affected service(s)
-3. Verify service starts successfully
-4. Test functionality with new secret
-
-**Future Enhancement:**
-- AWS Secrets Manager integration (placeholder in secretsManager.js)
-- Automatic secret rotation
-- Secret versioning
+1. Update secret in vault or environment variable
+2. If using vault, new version is automatically used
+3. If using environment, restart affected service(s)
+4. Verify service starts successfully
+5. Test functionality with new secret
+6. Monitor for any issues
 
 ## Performance Tuning
 
@@ -325,9 +394,69 @@ The system uses MongoDB for dynamic configuration:
 
 ## Backup and Recovery
 
-### Database Backups
+### System Backup (Admin Portal)
 
-**MongoDB Backup:**
+**Location:** System Configuration → Backup/Restore (when implemented)
+
+**Creating Backups:**
+1. Navigate to Backup/Restore tab in admin portal
+2. Click "Create Backup" button
+3. Monitor backup progress
+4. Backup includes:
+   - All MongoDB collections (configs, call records, KB metadata)
+   - Configuration files
+   - Optional: Screenshots directory
+   - Optional: Audit logs
+5. Backup stored as compressed archive (tar.gz or zip)
+6. Metadata JSON includes backup information (date, size, collections)
+
+**Backup Storage:**
+- Local filesystem (default): `backend/backups/` directory
+- Optional: S3, Azure Blob, or other cloud storage (configure in settings)
+- Backup naming: `backup-YYYYMMDD-HHMMSS.tar.gz`
+
+**Listing Backups:**
+- View all available backups in admin portal
+- See backup details: size, date, collections included
+- Download backup files
+- Delete old backups
+
+**Backup Schedule:**
+- Manual backups via admin portal
+- Recommended: Daily backups
+- Retain backups for 30 days minimum
+- Test restore procedures regularly
+
+### System Restore (Admin Portal)
+
+**Restore Process:**
+1. Navigate to Backup/Restore tab
+2. Select backup to restore
+3. Review backup details
+4. Click "Restore Backup" button
+5. Confirm restore operation
+6. System will:
+   - Validate backup file integrity
+   - Create safety backup of current state
+   - Stop services (or mark as maintenance mode)
+   - Restore MongoDB collections
+   - Verify data integrity
+   - Restart services
+
+**Safety Measures:**
+- Pre-restore validation of backup file
+- Automatic safety backup before restore
+- Rollback capability if restore fails
+- Dry-run mode for testing (optional)
+
+**Restore from File:**
+- Upload backup file for restore
+- Validate file before restore
+- Same safety measures apply
+
+### Manual Database Backups
+
+**MongoDB Backup (Command Line):**
 ```bash
 # Create backup
 mongodump --uri="mongodb://localhost:27017/robert-ai" --out=/backup/robert-ai-$(date +%Y%m%d)
@@ -356,12 +485,91 @@ mongorestore --uri="mongodb://localhost:27017/robert-ai" /backup/robert-ai-YYYYM
 3. Verify health checks pass
 4. Test with a sample call
 
-**Database Recovery:**
+**Database Recovery (Manual):**
 1. Stop all services
 2. Restore MongoDB from backup
 3. Verify data integrity
 4. Restart services
 5. Test functionality
+
+**Database Recovery (Admin Portal):**
+1. Use Backup/Restore tab in admin portal
+2. Select backup and restore
+3. Monitor restore progress
+4. Verify services restart successfully
+5. Test functionality
+
+## Abuse Prevention Monitoring
+
+### Monitoring Abuse Prevention
+
+**Location:** Observability → Alerts tab
+
+**Key Metrics to Monitor:**
+- Number of blocked calls
+- Rate limit violations
+- Suspicious call patterns
+- Short call patterns
+- Failed call attempts
+
+**Alert Types:**
+- **Caller Blocked**: Rate limit exceeded
+- **Suspicious Pattern**: Unusual calling behavior detected
+- **Multiple Failed Calls**: Repeated failed call attempts
+- **Short Call Pattern**: Potential abuse via short calls
+
+**Alert Channels:**
+- **Email Alerts**: Configured via `ALERT_EMAIL_ENABLED` and `ALERT_EMAIL_RECIPIENTS`
+- **Webhook Alerts**: Configured via `ALERT_WEBHOOK_ENABLED` and `ALERT_WEBHOOK_URL`
+- **Admin Portal**: Alerts displayed in Observability → Alerts tab
+
+**Monitoring Procedures:**
+1. Review alerts in admin portal daily
+2. Check email/webhook alerts for critical issues
+3. Review caller statistics for blocked numbers
+4. Investigate suspicious patterns
+5. Update block lists if needed
+6. Adjust rate limits if necessary
+
+**Configuration:**
+- Rate limits: Configurable per caller
+- Block duration: Default 24 hours (configurable)
+- Alert thresholds: Configurable in abuse prevention service
+
+## KB Drift Detection Monitoring
+
+### Monitoring KB Drift
+
+**Location:** AI & Knowledge Base → Knowledge Base Management
+
+**Drift Detection:**
+- Manual detection: Click "Detect Drift" on individual files
+- Automatic detection: Scheduled weekly (Sunday 2 AM)
+- File-URL mappings: Required for automatic detection
+
+**Monitoring Procedures:**
+1. Review drift detection reports weekly
+2. Check files with high drift scores (>20% difference)
+3. Update stale files by reingesting
+4. Verify file-URL mappings are current
+5. Monitor drift trends over time
+
+**File-URL Mappings:**
+- Configure mappings in admin portal (when implemented)
+- Format: JSON file with filePath, url, selector
+- Auto-detection: From KB database source URLs
+- Manual configuration: Add/edit mappings as needed
+
+**Drift Threshold:**
+- Default: 20% difference (configurable via `KB_DRIFT_THRESHOLD`)
+- Files exceeding threshold marked as stale
+- Alerts generated for stale files
+
+**Action Items:**
+- Reingest files with drift detected
+- Update source URLs if content moved
+- Remove files if no longer relevant
+- Update mappings if URLs changed
 
 ## Maintenance Windows
 
@@ -371,18 +579,24 @@ mongorestore --uri="mongodb://localhost:27017/robert-ai" /backup/robert-ai-YYYYM
 - Review error logs
 - Check system health metrics
 - Monitor call success rates
+- Review abuse prevention alerts
+- Check for critical KB drift alerts
 
 **Weekly:**
 - Review audit logs
 - Check database size and growth
 - Review performance metrics
 - Clean up old screenshots/recordings
+- Review KB drift detection reports
+- Update stale KB files
 
 **Monthly:**
 - Database backup verification
 - Security audit review
 - Configuration review
 - Dependency updates
+- Review and update file-URL mappings
+- Test backup/restore procedures
 
 ### Zero-Downtime Updates
 
@@ -431,8 +645,10 @@ ps aux | grep node
 
 ## Additional Resources
 
-- **Deployment Guide:** See `docs/DEPLOYMENT_RUNBOOK.md`
-- **Security Audit:** See `docs/SECURITY_AUDIT.md`
-- **SIP Setup:** See `docs/SIP_SETUP.md`
+- **Admin Guide:** See `documentation/ADMIN_GUIDE.md` for admin portal usage
+- **Changelog:** See `documentation/CHANGELOG.md` for version history
+- **Deployment Guide:** See `documentation/DEPLOYMENT_RUNBOOK.md`
+- **Security Audit:** See `documentation/SECURITY_AUDIT.md`
+- **SIP Setup:** See `documentation/SIP_SETUP.md`
 - **Testing Guide:** See `robert-agent-service/TESTING_GUIDE.md`
 

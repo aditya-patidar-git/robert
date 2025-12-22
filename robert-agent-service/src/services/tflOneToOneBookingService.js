@@ -1,422 +1,264 @@
-import fs from 'fs';
-import path from 'path';
 import * as commonSteps from './commonBookingSteps/index.js';
-import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
+import { BaseBookingService } from './commonBookingSteps/BaseBookingService.js';
 
-class TfLOneToOneBookingService {
+class TfLOneToOneBookingService extends BaseBookingService {
   constructor() {
-    this.crmCredentials = {
-      loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
-      loginName: process.env.CRM_LOGIN || 'universalmct',
-      username: process.env.CRM_USERNAME || 'auagent',
-      password: process.env.CRM_PASSWORD || 'Robert2025!',
-      availabilityUrl: 'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=DDAE018B4D15B60A'
-    };
-    this.screenshotsDir = './screenshots/tfl-one-to-one-booking';
-    this.ensureDirectories();
+    super(
+      'TfL 1-2-1', // courseType
+      'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=DDAE018B4D15B60A', // availabilityUrl
+      './screenshots/tfl-one-to-one-booking' // screenshotsDir
+    );
   }
 
-  ensureDirectories() {
-    if (!fs.existsSync(this.screenshotsDir)) {
-      fs.mkdirSync(this.screenshotsDir, { recursive: true });
+  // Override executeExistingClientWorkflow to use TfL Diary and no payment
+  async executeExistingClientWorkflow(page, bookingArgs, callContext, sessionDetails, screenshots, checkCancellation, updatePhase) {
+    // STEP 4-5: Search for existing client with email fallback
+    updatePhase('step4_5_find_client');
+    checkCancellation();
+    
+    if (!bookingArgs.customerMobile && !bookingArgs.customerPhone && !bookingArgs.customerEmail) {
+      return {
+        success: false,
+        requiresCustomerInfo: true,
+        message: 'To search for your existing profile, I need either your mobile number or email address. Could you please provide one of these?',
+        workflowType: 'existing'
+      };
+    }
+    
+    let searchType = 'email';
+    let searchValue = bookingArgs.customerEmail;
+    
+    if (bookingArgs.customerMobile || bookingArgs.customerPhone) {
+      searchType = 'mobile';
+      searchValue = bookingArgs.customerMobile || bookingArgs.customerPhone;
+      console.log('🔍 Service: Searching by mobile number first:', searchValue);
+    } else if (bookingArgs.customerEmail) {
+      searchType = 'email';
+      searchValue = bookingArgs.customerEmail;
+      console.log('🔍 Service: Searching by email:', searchValue);
+    }
+    
+    const callSid = callContext.callSid || 'unknown';
+    const searchResult = await commonSteps.findAndVerifyClient(
+      page, searchType, searchValue, this.screenshotsDir,
+      bookingArgs.customerEmail, null, callSid
+    );
+    screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
+    
+    if (!searchResult.found) {
+      if (searchType === 'mobile' && bookingArgs.customerEmail) {
+        console.log('⚠️ Mobile search failed, trying email search...');
+        const emailSearchResult = await commonSteps.findAndVerifyClient(
+          page, 'email', bookingArgs.customerEmail, this.screenshotsDir,
+          bookingArgs.customerEmail, null, callSid
+        );
+        if (emailSearchResult.found) {
+          if (emailSearchResult.clientDetails) {
+            callContext.clientDetails = emailSearchResult.clientDetails;
+            bookingArgs.clientDetails = emailSearchResult.clientDetails;
+          }
+        } else {
+          throw new Error('Could not find client with mobile number or email address');
+        }
+      } else {
+        throw new Error(searchResult.error || 'Could not find client in CRM');
+      }
+    } else {
+      if (searchResult.clientDetails) {
+        callContext.clientDetails = searchResult.clientDetails;
+        bookingArgs.clientDetails = searchResult.clientDetails;
+      }
+    }
+    
+    if (searchResult.requiresVerification || (searchResult.found && !callContext.clientVerified)) {
+      return {
+        success: false,
+        requiresVerification: true,
+        clientDetails: searchResult.clientDetails || callContext.clientDetails,
+        message: 'Client found but requires verbal verification before proceeding with booking'
+      };
+    }
+
+    // STEP 6: Navigate to TfL Diaries and select session
+    updatePhase('step6_select_session');
+    checkCancellation();
+    await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir, 'TfL Diary');
+    screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
+
+    // STEP 7: Select booking options (course-specific)
+    updatePhase('step7_booking_options');
+    checkCancellation();
+    const step7Result = await this.step7SelectBookingOptions(page, bookingArgs, sessionDetails, screenshots, 'existing');
+    
+    if (!step7Result.success) {
+      return step7Result;
+    }
+
+    // STEP 8: Contact details - fill MISSING fields only
+    updatePhase('step8_contact_details');
+    checkCancellation();
+    await this.step8FillContactDetails(page, bookingArgs, callContext, screenshots, 'existing');
+
+    // STEP 9: Payment (No payment required for TfL courses)
+    updatePhase('step9_payment');
+    checkCancellation();
+    const paymentResult = await this.step9ProcessPayment(page, bookingArgs, screenshots);
+    const paymentCompleted = paymentResult.paymentCompleted || false;
+
+    console.log('🎉 Service: All steps completed successfully!');
+    return {
+      success: true,
+      sessionDetails,
+      screenshots,
+      clientEmail: bookingArgs.customerEmail,
+      paymentCompleted: paymentCompleted
+    };
+  }
+
+  // Override executeNewClientWorkflow to use TfL Diary and no payment
+  async executeNewClientWorkflow(page, bookingArgs, callContext, sessionDetails, screenshots, checkCancellation, updatePhase) {
+    // STEP 4: Navigate to TfL Diaries and select session
+    updatePhase('step4_select_session');
+    checkCancellation();
+    await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir, 'TfL Diary');
+    screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-session-selected.png', this.screenshotsDir));
+
+    // STEP 5: Select booking options (course-specific)
+    updatePhase('step5_booking_options');
+    checkCancellation();
+    const step5Result = await this.step5SelectBookingOptions(page, bookingArgs, sessionDetails, screenshots);
+    
+    if (!step5Result.success) {
+      return step5Result;
+    }
+
+    // STEP 6: Click "New contact" button
+    updatePhase('step6_new_contact');
+    checkCancellation();
+    await commonSteps.createNewContact(page, this.screenshotsDir);
+    screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-new-contact-clicked.png', this.screenshotsDir));
+
+    // STEP 7: Fill ALL contact details from scratch
+    updatePhase('step7_fill_contact_details');
+    checkCancellation();
+    await this.step7FillContactDetails(page, bookingArgs, callContext, screenshots, 'new');
+
+    // Validate age (16+ for TfL courses)
+    if (bookingArgs.dateOfBirth) {
+      console.log('🔍 Step 7: Validating age (16+ required for TfL 1-2-1)...');
+      await commonSteps.validateAge(page, this.screenshotsDir, 'tfl', 16);
+      console.log('✅ Step 7: Age validation passed');
+    }
+
+    // STEP 8: Payment (No payment required for TfL courses)
+    updatePhase('step8_payment');
+    checkCancellation();
+    const paymentResult = await this.step9ProcessPayment(page, bookingArgs, screenshots);
+    const paymentCompleted = paymentResult.paymentCompleted || false;
+
+    console.log('🎉 Service: All steps completed successfully!');
+    return {
+      success: true,
+      sessionDetails,
+      screenshots,
+      clientEmail: bookingArgs.customerEmail,
+      paymentCompleted: paymentCompleted
+    };
+  }
+
+  // Override step8FillContactDetails to use lookupContactAndWait for existing clients
+  async step8FillContactDetails(page, bookingArgs, callContext, screenshots, workflowType) {
+    if (workflowType === 'existing') {
+      const clientEmail = bookingArgs.customerEmail || callContext.clientDetails?.email || bookingArgs.clientDetails?.email;
+      if (!clientEmail) {
+        throw new Error('Client email is required for contact lookup');
+      }
+      await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
+      screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
+      console.log('✅ Step 8 completed: Contact details updated');
+    } else {
+      await super.step8FillContactDetails(page, bookingArgs, callContext, screenshots, workflowType);
     }
   }
 
-  async executeBookingWorkflow(page, bookingArgs, callContext = {}) {
-    const screenshots = [];
-    let sessionDetails = null;
-    const workflowType = bookingArgs.workflowType || 'existing';
-
-    try {
-      console.log(`🚀 Starting TfL 1-2-1 booking workflow (${workflowType} client)...`);
-
-      // Session details should be provided from the availability tool call
-      sessionDetails = bookingArgs.sessionDetails;
-      if (!sessionDetails) {
-        console.warn('⚠️ No availability data found - creating default sessionDetails to continue workflow');
-        sessionDetails = {
-          date: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) : 'TBD',
-          course: 'TfL 1-2-1 Motorcycle Skills',
-          location: bookingArgs.location || 'TBD',
-          time: bookingArgs.preferredTime || 'TBD',
-          price: 'FREE',
-          instructor: 'TBD',
-          startDate: bookingArgs.preferredDate || new Date().toISOString().split('T')[0],
-          monthYear: bookingArgs.preferredDate ? new Date(bookingArgs.preferredDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  // Override step9ProcessPayment to handle no payment for TfL courses
+  async step9ProcessPayment(page, bookingArgs, screenshots) {
+    console.log('💳 Step 9: Selecting payment option (No payment required for TfL courses)...');
+    await commonSteps.selectPaymentOption(page, this.screenshotsDir, 'none');
+    screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-option-selected.png', this.screenshotsDir));
+    await page.waitForTimeout(2000);
+    
+    const termsAccepted = bookingArgs.termsAccepted || false;
+    const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, false);
+    if (!bookingResult.success) {
+      if (!bookingResult.termsAccepted) {
+        return {
+          success: false,
+          paymentCompleted: false,
+          error: 'Client did not accept terms - booking cancelled'
         };
-        console.warn('⚠️ Using default sessionDetails - workflow will continue but may need manual session selection');
       } else {
-        console.log('✅ Using availability data from previous check');
-      }
-
-      // STEP 2: Login to CRM
-      const loginIndicators = [
-        'text=/Dashboard|Contacts|Diaries/i',
-        'h3.list-menu-item-heading:has-text("Contacts")',
-        'h3.list-menu-item-heading:has-text("Dashboard")'
-      ];
-      
-      let isAlreadyLoggedIn = false;
-      for (const selector of loginIndicators) {
-        try {
-          isAlreadyLoggedIn = await page.locator(selector).first().isVisible({ timeout: 3000 }).catch(() => false);
-          if (isAlreadyLoggedIn) break;
-        } catch (e) {
-          // Continue to next indicator
-        }
-      }
-      
-      if (!isAlreadyLoggedIn) {
-        console.log('🔐 Step 2: Logging into CRM...');
-        const loginSuccess = await commonSteps.loginToCRM(page, this.crmCredentials, this.screenshotsDir);
-        
-        if (!loginSuccess) {
-          throw new Error('Step 2: Login verification failed');
-        }
-        
-        const currentUrl = page.url();
-        if (currentUrl.includes('bookcbtnow.com') || currentUrl.includes('gateway.aspx')) {
-          console.log('🔐 Step 2: Navigating to CRM dashboard (page was on availability URL)...');
-          await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
-          await page.waitForTimeout(2000);
-          await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
-          console.log('✅ Step 2: Confirmed on CRM dashboard');
-        }
-        
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-login-success.png', this.screenshotsDir));
-        console.log('✅ Step 2 completed: Login successful');
-      } else {
-        const currentUrl = page.url();
-        if (currentUrl.includes('bookcbtnow.com') || currentUrl.includes('gateway.aspx')) {
-          console.log('🔐 Step 2: Navigating to CRM dashboard (page was on availability URL)...');
-          await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
-          await page.waitForTimeout(2000);
-        } else if (currentUrl.includes('/Account/Login')) {
-          await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
-          await page.waitForTimeout(2000);
-        }
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-2-already-logged-in.png', this.screenshotsDir));
-        console.log('✅ Step 2: Already authenticated');
-      }
-
-      // STEP 3: Ask "Have you done training with us before?" (handled by voice agent)
-      // workflowType is already determined and passed in bookingArgs
-
-      if (workflowType === 'existing') {
-        // EXISTING CLIENT WORKFLOW
-        // STEP 4-5: Search for existing client
-        console.log('👤 Step 4-5: Finding existing client...');
-        
-        if (!bookingArgs.customerMobile && !bookingArgs.customerPhone && !bookingArgs.customerEmail) {
-          console.log('⚠️ Step 4-5: Customer info missing - asking agent to collect');
-          return {
-            success: false,
-            requiresCustomerInfo: true,
-            message: 'To search for your existing profile, I need either your mobile number or email address. Could you please provide one of these?',
-            workflowType: 'existing'
-          };
-        }
-        
-        let searchType = 'email';
-        let searchValue = bookingArgs.customerEmail;
-        
-        if (bookingArgs.customerMobile || bookingArgs.customerPhone) {
-          searchType = 'mobile';
-          searchValue = bookingArgs.customerMobile || bookingArgs.customerPhone;
-          console.log('🔍 Service: Searching by mobile number first:', searchValue);
-        } else if (bookingArgs.customerEmail) {
-          searchType = 'email';
-          searchValue = bookingArgs.customerEmail;
-          console.log('🔍 Service: Searching by email:', searchValue);
-        }
-        
-        const searchResult = await commonSteps.findAndVerifyClient(page, searchType, searchValue, this.screenshotsDir, bookingArgs.customerEmail);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
-        
-        if (!searchResult.found) {
-          if (searchType === 'mobile' && bookingArgs.customerEmail) {
-            console.log('⚠️ Mobile search failed, trying email search...');
-            const emailSearchResult = await commonSteps.findAndVerifyClient(page, 'email', bookingArgs.customerEmail, this.screenshotsDir, bookingArgs.customerEmail);
-            if (emailSearchResult.found) {
-              if (emailSearchResult.clientDetails) {
-                callContext.clientDetails = emailSearchResult.clientDetails;
-                bookingArgs.clientDetails = emailSearchResult.clientDetails;
-              }
-              console.log('✅ Step 4-5 completed: Client found via email - requires verbal verification');
-            } else {
-              throw new Error('Could not find client with mobile number or email address');
-            }
-          } else {
-            throw new Error('Could not find client in CRM');
-          }
-        } else {
-          if (searchResult.clientDetails) {
-            callContext.clientDetails = searchResult.clientDetails;
-            bookingArgs.clientDetails = searchResult.clientDetails;
-          }
-          console.log('✅ Step 4-5 completed: Client found - requires verbal verification');
-        }
-        
-        if (searchResult.requiresVerification || (searchResult.found && !callContext.clientVerified)) {
-          return {
-            success: false,
-            requiresVerification: true,
-            clientDetails: searchResult.clientDetails || callContext.clientDetails,
-            message: 'Client found but requires verbal verification before proceeding with booking'
-          };
-        }
-
-        // STEP 6: Navigate to Diaries and select session (TfL Diary)
-        console.log('📅 Step 6: Navigating to TfL Diaries and selecting session...');
-        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir, 'TfL Diary');
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
-        console.log('✅ Step 6 completed: Session selected');
-
-        // STEP 7: Select booking options
-        console.log('⚙️ Step 7: Selecting TfL 1-2-1 booking options...');
-        const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
-        
-        if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
-          return {
-            success: false,
-            requiresPreferences: true,
-            missingPreferences: bookingOptionsResult.missingPreferences,
-            message: bookingOptionsResult.message,
-            validOptions: bookingOptionsResult.validOptions,
-            sessionDetails,
-            screenshots,
-            clientEmail: bookingArgs.customerEmail
-          };
-        }
-        
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-options-selected.png', this.screenshotsDir));
-        console.log('✅ Step 7 completed: Booking options selected');
-
-        // STEP 8: Contact details - fill MISSING fields only
-        console.log('🔍 Step 8: Looking up contact and filling missing details...');
-        const clientEmail = bookingArgs.customerEmail || callContext.clientDetails?.email || bookingArgs.clientDetails?.email;
-        if (!clientEmail) {
-          throw new Error('Client email is required for contact lookup');
-        }
-        await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
-        console.log('✅ Step 8 completed: Contact details updated');
-
-        // STEP 9: Payment (No payment required for TfL courses)
-        console.log('💳 Step 9: Selecting payment option (No payment required)...');
-        await commonSteps.selectPaymentOption(page, this.screenshotsDir, 'none');
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-payment-option-selected.png', this.screenshotsDir));
-        await page.waitForTimeout(2000);
-        
-        const termsAccepted = bookingArgs.termsAccepted || false;
-        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, false);
-        if (!bookingResult.success) {
-          if (!bookingResult.termsAccepted) {
-            throw new Error('Client did not accept terms - booking cancelled');
-          } else {
-            throw new Error(`Failed to complete booking: ${bookingResult.error}`);
-          }
-        }
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-booking-completed.png', this.screenshotsDir));
-        console.log('✅ Step 9 completed: Booking made (no payment required)');
-
-        // STEP 10: Send booking confirmation email
-        console.log('📧 Step 10: Sending booking confirmation email...');
-        await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'tfl');
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-confirmation-email-sent.png', this.screenshotsDir));
-        console.log('✅ Step 10 completed: Booking confirmation email sent');
-
-        // STEP 11: Send Terms & Conditions email
-        console.log('📧 Step 11: Sending Terms & Conditions email...');
-        await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-terms-email-sent.png', this.screenshotsDir));
-        console.log('✅ Step 11 completed: Terms & Conditions email sent');
-
-        // STEP 12: Send SMS confirmation
-        console.log('📱 Step 12: Sending SMS confirmation...');
-        await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'tfl-one-to-one');
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-12-sms-sent.png', this.screenshotsDir));
-        console.log('✅ Step 12 completed: SMS confirmation sent');
-
-      } else {
-        // NEW CLIENT WORKFLOW
-        // STEP 4: Navigate to Diaries and select session (TfL Diary)
-        console.log('📅 Step 4: Navigating to TfL Diaries and selecting session...');
-        await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir, 'TfL Diary');
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-session-selected.png', this.screenshotsDir));
-        console.log('✅ Step 4 completed: Session selected');
-
-        // STEP 5: Select booking options
-        console.log('⚙️ Step 5: Selecting TfL 1-2-1 booking options...');
-        const bookingOptionsResult = await this.selectBookingOptions(page, bookingArgs);
-        
-        if (bookingOptionsResult && bookingOptionsResult.requiresPreferences) {
-          return {
-            success: false,
-            requiresPreferences: true,
-            missingPreferences: bookingOptionsResult.missingPreferences,
-            message: bookingOptionsResult.message,
-            validOptions: bookingOptionsResult.validOptions,
-            sessionDetails,
-            screenshots
-          };
-        }
-        
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-5-options-selected.png', this.screenshotsDir));
-        console.log('✅ Step 5 completed: Booking options selected');
-
-        // STEP 6: Click "New contact" button
-        console.log('👤 Step 6: Creating new contact...');
-        await commonSteps.createNewContact(page, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-new-contact-created.png', this.screenshotsDir));
-        console.log('✅ Step 6 completed: New contact created');
-
-        // STEP 7: Fill ALL contact details from scratch
-        console.log('📝 Step 7: Filling all contact details...');
-        const contactDetails = {
-          title: bookingArgs.title,
-          firstNames: bookingArgs.firstNames,
-          surname: bookingArgs.surname,
-          mobileNumber: bookingArgs.customerPhone,
-          email: bookingArgs.customerEmail,
-          dateOfBirth: bookingArgs.dateOfBirth,
-          postcode: bookingArgs.postcode,
-          houseNumberOrName: bookingArgs.houseNumberOrName,
-          licenceHeld: bookingArgs.licenceHeld,
-          nationalInsuranceNumber: bookingArgs.nationalInsuranceNumber,
-          drivingLicenceNumber: bookingArgs.drivingLicenceNumber,
-          licenceFormat: bookingArgs.licenceFormat,
-          hearAboutUs: bookingArgs.hearAboutUs,
-          ridingExperience: bookingArgs.ridingExperience,
-          marketingConsent: bookingArgs.marketingConsent,
-          dataSharing: bookingArgs.dataSharing
+        return {
+          success: false,
+          paymentCompleted: false,
+          error: `Failed to complete booking: ${bookingResult.error}`
         };
-        await commonSteps.fillContactDetails(page, contactDetails, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-contact-details-filled.png', this.screenshotsDir));
-        console.log('✅ Step 7 completed: All contact details filled');
-
-        // Validate age (16+ for TfL courses)
-        if (contactDetails.dateOfBirth) {
-          console.log('🔍 Step 7: Validating age (16+ required for TfL 1-2-1)...');
-          await commonSteps.validateAge(page, this.screenshotsDir, 'tfl', 16);
-          console.log('✅ Step 7: Age validation passed');
-        }
-
-        // STEP 8: Payment (No payment required for TfL courses)
-        console.log('💳 Step 8: Selecting payment option (No payment required)...');
-        await commonSteps.selectPaymentOption(page, this.screenshotsDir, 'none');
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-payment-option-selected.png', this.screenshotsDir));
-        await page.waitForTimeout(2000);
-        
-        const termsAccepted = bookingArgs.termsAccepted || false;
-        const bookingResult = await commonSteps.acceptTermsAndMakeBooking(page, this.screenshotsDir, termsAccepted, false);
-        if (!bookingResult.success) {
-          if (!bookingResult.termsAccepted) {
-            throw new Error('Client did not accept terms - booking cancelled');
-          } else {
-            throw new Error(`Failed to complete booking: ${bookingResult.error}`);
-          }
-        }
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-booking-completed.png', this.screenshotsDir));
-        console.log('✅ Step 8 completed: Booking made (no payment required)');
-
-        // STEP 9: Send booking confirmation email
-        console.log('📧 Step 9: Sending booking confirmation email...');
-        await commonSteps.sendBookingConfirmationEmail(page, this.screenshotsDir, 'tfl');
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-confirmation-email-sent.png', this.screenshotsDir));
-        console.log('✅ Step 9 completed: Booking confirmation email sent');
-
-        // STEP 10: Send Terms & Conditions email
-        console.log('📧 Step 10: Sending Terms & Conditions email...');
-        await commonSteps.sendTermsAndConditionsEmail(page, this.screenshotsDir);
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-10-terms-email-sent.png', this.screenshotsDir));
-        console.log('✅ Step 10 completed: Terms & Conditions email sent');
-
-        // STEP 11: Send SMS confirmation
-        console.log('📱 Step 11: Sending SMS confirmation...');
-        await commonSteps.sendSMSConfirmation(page, this.screenshotsDir, 'tfl-one-to-one');
-        screenshots.push(await commonSteps.takeScreenshot(page, 'step-11-sms-sent.png', this.screenshotsDir));
-        console.log('✅ Step 11 completed: SMS confirmation sent');
       }
+    }
+    screenshots.push(await commonSteps.takeScreenshot(page, 'step-9-booking-completed.png', this.screenshotsDir));
+    console.log('✅ Step 9 completed: Booking made (no payment required)');
+    
+    return {
+      success: true,
+      paymentCompleted: true,
+      paymentMethod: 'none'
+    };
+  }
 
-      console.log('🎉 Service: All steps completed successfully!');
+  // STEP 7: Select booking options for existing client (TfL 1-2-1-specific)
+  async step7SelectBookingOptions(page, bookingArgs, sessionDetails, screenshots, workflowType) {
+    const result = await this.selectBookingOptions(page, bookingArgs);
+    
+    if (result && result.requiresPreferences) {
       return {
-        success: true,
+        success: false,
+        requiresPreferences: true,
+        missingPreferences: result.missingPreferences,
+        message: result.message,
+        validOptions: result.validOptions,
         sessionDetails,
         screenshots,
         clientEmail: bookingArgs.customerEmail
       };
+    }
+    
+    screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-options-selected.png', this.screenshotsDir));
+    console.log('✅ Step 7 completed: Booking options selected');
+    return { success: true };
+  }
 
-    } catch (error) {
-      console.error('❌ TfL 1-2-1 booking failed at step:', error.message);
-      console.error('❌ Service: Error stack:', error.stack);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'error-state.png', this.screenshotsDir));
-      
-      const errorContext = getErrorContext(error, 'create_booking');
-      const userFriendlyError = formatUserFriendlyError(error, errorContext);
-      
+  // STEP 5: Select booking options for new client (TfL 1-2-1-specific)
+  async step5SelectBookingOptions(page, bookingArgs, sessionDetails, screenshots) {
+    const result = await this.selectBookingOptions(page, bookingArgs);
+    
+    if (result && result.requiresPreferences) {
       return {
         success: false,
-        error: userFriendlyError,
-        technicalError: error.message,
-        sessionDetails: sessionDetails,
-        screenshots: screenshots,
-        clientEmail: bookingArgs.customerEmail
+        requiresPreferences: true,
+        missingPreferences: result.missingPreferences,
+        message: result.message,
+        validOptions: result.validOptions,
+        sessionDetails,
+        screenshots
       };
     }
+    
+    screenshots.push(await commonSteps.takeScreenshot(page, 'step-5-options-selected.png', this.screenshotsDir));
+    console.log('✅ Step 5 completed: Booking options selected');
+    return { success: true };
   }
 
-  // STEP 1: Check availability and note details (TfL 1-2-1-specific)
-  async checkAvailabilityAndNoteDetails(page) {
-    try {
-      console.log('📅 Navigating to TfL 1-2-1 availability page...');
-      
-      await page.goto(this.crmCredentials.availabilityUrl);
-      await page.waitForLoadState('networkidle');
-      
-      await commonSteps.takeScreenshot(page, 'availability-page-loaded.png', this.screenshotsDir);
-      
-      await page.waitForSelector('#availabilityTable', { timeout: 10000 });
-      
-      const availabilityTable = page.locator('#availabilityTable');
-      await availabilityTable.waitFor({ state: 'visible' });
-      
-      await page.waitForSelector('#availabilityTable tbody tr.availabilityDataRow', { timeout: 10000 });
-      
-      const lastMonthCell = availabilityTable.locator('td.availabilityMonthCell').last();
-      const latestMonthYear = (await lastMonthCell.textContent()).trim();
-      
-      console.log(`📅 Latest month found: ${latestMonthYear}`);
-      
-      const allDataRows = availabilityTable.locator('tbody tr.availabilityDataRow');
-      const rowCount = await allDataRows.count();
-      
-      console.log(`📊 Total data rows found: ${rowCount}`);
-      
-      const lastDataRow = allDataRows.last();
-      await lastDataRow.waitFor({ state: 'visible' });
-      
-      const sessionDetails = {
-        date: (await lastDataRow.locator('td').nth(0).textContent()).trim(),
-        course: (await lastDataRow.locator('td').nth(1).textContent()).trim(),
-        location: (await lastDataRow.locator('td').nth(2).textContent()).trim(),
-        time: (await lastDataRow.locator('td').nth(3).textContent()).trim(),
-        price: (await lastDataRow.locator('td').nth(4).textContent()).trim(),
-        instructor: (await lastDataRow.locator('td').nth(6).textContent()).trim().replace(/^Instructor:\s*/i, ''),
-        startDate: await lastDataRow.getAttribute('data-start_date'),
-        monthYear: latestMonthYear
-      };
-      
-      console.log('📋 Extracted TfL 1-2-1 session details:', sessionDetails);
-      return sessionDetails;
-      
-    } catch (error) {
-      console.error('Error in checkAvailabilityAndNoteDetails:', error);
-      throw new Error(`Failed to check TfL 1-2-1 availability: ${error.message}`);
-    }
-  }
-
-  // STEP 7/5: Select booking options (TfL 1-2-1-specific)
+  // Internal method: Select booking options (TfL 1-2-1-specific - bike type selection)
   async selectBookingOptions(page, bookingArgs) {
     try {
       console.log('⚙️ [STEP 7/5] Selecting TfL 1-2-1 booking options...');

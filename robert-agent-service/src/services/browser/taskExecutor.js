@@ -1,5 +1,8 @@
 import { loginToCRM } from '../commonBookingSteps/index.js';
 import * as taskHandlers from './tasks/index.js';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 
 /**
  * Task executor
@@ -21,6 +24,15 @@ export class TaskExecutor {
     const callSid = callContext.callSid || 'unknown';
     const executionKey = `${callSid}_${task}`;
     
+    // Create span for browser task execution
+    const span = tracer.startSpan('browser.executeTask', {
+      attributes: {
+        'browser.task': task,
+        'call.sid': callSid,
+        'browser.course_type': args.courseType || 'unknown'
+      }
+    });
+
     // Helper function to call progress callback if provided
     const reportProgress = (milestone, message, progress = null) => {
       if (progressCallback && typeof progressCallback === 'function') {
@@ -30,8 +42,10 @@ export class TaskExecutor {
           console.warn(`⚠️ [${callSid}] Error in progress callback:`, err.message);
         }
       }
+      // Add event to span
+      span.addEvent(milestone, { message, progress });
     };
-    
+
     // Check if there's already an active execution for this call and task
     if (this.activeExecutions.has(executionKey)) {
       const activeExecution = this.activeExecutions.get(executionKey);
@@ -232,6 +246,9 @@ export class TaskExecutor {
         const dryRunResult = await this.executeDryRun(page, task, args, auditId);
         
         if (!dryRunResult.success) {
+          span.setAttribute('browser.dry_run_failed', true);
+          span.setStatus({ code: SpanStatusCode.ERROR, message: dryRunResult.error });
+          span.end();
           return {
             success: false,
             error: dryRunResult.error,
@@ -241,6 +258,10 @@ export class TaskExecutor {
 
         // If dry-run successful and task requires confirmation, return for user confirmation
         if (dryRunResult.requiresConfirmation) {
+          span.setAttribute('browser.requires_confirmation', true);
+          span.setAttribute('browser.dry_run', true);
+          span.setStatus({ code: SpanStatusCode.OK });
+          span.end();
           return {
             success: true,
             result: dryRunResult.result,
@@ -251,8 +272,14 @@ export class TaskExecutor {
         }
 
         // Execute actual task
+        span.addEvent('browser.execute_actual_task');
         const result = await this.executeActualTask(page, task, args, auditId);
         
+        span.setAttribute('browser.task_success', result.success);
+        span.setAttribute('browser.dry_run', false);
+        span.setStatus({ code: result.success ? SpanStatusCode.OK : SpanStatusCode.ERROR });
+        
+        span.end();
         return {
           success: result.success,
           result: result.result,
@@ -265,8 +292,10 @@ export class TaskExecutor {
         // Always clear heartbeat interval
         clearInterval(heartbeatInterval);
       }
-
     } catch (error) {
+      span.recordException(error);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+      span.end();
       console.error(`❌ [${callSid}] Browser agent error:`, error);
       return {
         success: false,
