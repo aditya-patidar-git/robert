@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Typography, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, CircularProgress, Paper, IconButton, Tooltip, TextField, InputAdornment } from '@mui/material';
+import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, CircularProgress, Paper, IconButton, Tooltip, TextField, InputAdornment } from '@mui/material';
 import { GetApp, Visibility, Search } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDateTime } from '../../../utils/formatters';
@@ -24,12 +24,21 @@ const DSARRequestsTab = ({ state, handlers }) => {
   const { getStatusColor } = handlers;
 
   // Fetch requests with filters
-  const { data: requestsData, isLoading } = useQuery({
+  const { data: requestsData, isLoading, error } = useQuery({
     queryKey: ['dsar-requests', filters],
     queryFn: async () => {
-      const response = await privacyService.getAllDSARRequests(filters);
-      // Handle normalized response structure
-      return response?.data?.dsarRequests || response?.dsarRequests || response?.data || response || [];
+      try {
+        const response = await privacyService.getAllDSARRequests(filters);
+        console.log('DSAR Requests API Response:', response);
+        // Handle normalized response structure
+        const requests = response?.data?.dsarRequests || response?.dsarRequests || response?.data || response || [];
+        console.log('Parsed DSAR Requests:', requests);
+        return requests;
+      } catch (error) {
+        console.error('Error fetching DSAR requests:', error);
+        showError(error.response?.data?.error || 'Failed to fetch DSAR requests');
+        return [];
+      }
     },
     initialData: initialRequests || []
   });
@@ -57,18 +66,6 @@ const DSARRequestsTab = ({ state, handlers }) => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h6">
-          DSAR Request Logs ({dsarRequests.length})
-        </Typography>
-        <Button
-          variant="contained"
-          onClick={() => setDsarFormDialog({ open: true })}
-        >
-          Create DSAR Request
-        </Button>
-      </Box>
-
       {/* Filters */}
       <Paper sx={{ p: 2, mb: 2 }}>
         <DSARRequestFilters
@@ -79,6 +76,15 @@ const DSARRequestsTab = ({ state, handlers }) => {
       {dsarLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
           <CircularProgress />
+        </Box>
+      ) : error ? (
+        <Box sx={{ p: 3, textAlign: 'center' }}>
+          <Typography color="error">
+            Error loading DSAR requests: {error.message || 'Unknown error'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Check the browser console for more details.
+          </Typography>
         </Box>
       ) : (
         <TableContainer>
@@ -96,7 +102,14 @@ const DSARRequestsTab = ({ state, handlers }) => {
               {dsarRequests.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} align="center">
-                    <Typography color="text.secondary">No DSAR requests found</Typography>
+                    <Typography color="text.secondary">
+                      No DSAR requests found
+                      {filters && Object.keys(filters).length > 0 && (
+                        <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+                          Try adjusting your filters or create a new request.
+                        </Typography>
+                      )}
+                    </Typography>
                   </TableCell>
                 </TableRow>
               ) : (

@@ -12,14 +12,11 @@ const AuditLogsTab = ({ state }) => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h6" gutterBottom>
-        Privacy Audit Logs
-      </Typography>
       <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>Event Type</InputLabel>
           <Select
-            value={auditLogFilters.eventType}
+            value={auditLogFilters.eventType || ''}
             label="Event Type"
             onChange={(e) => setAuditLogFilters({ ...auditLogFilters, eventType: e.target.value })}
           >

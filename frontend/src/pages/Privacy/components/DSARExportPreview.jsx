@@ -12,7 +12,6 @@ import {
   Alert,
   Chip,
   Divider,
-  Grid,
   Paper
 } from '@mui/material';
 import {
@@ -108,16 +107,16 @@ const DSARExportPreview = ({ open, onClose, requestId }) => {
               <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 600 }}>
                 Request Information
               </Typography>
-              <Grid container spacing={2} sx={{ mt: 1 }}>
-                <Grid item xs={12} sm={6}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 1 }}>
+                <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, minWidth: { sm: '200px' } }}>
                   <Typography variant="body2" color="text.secondary">
                     Request ID
                   </Typography>
                   <Typography variant="body1" sx={{ fontFamily: 'monospace' }}>
                     {request.requestId || request.id}
                   </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
+                </Box>
+                <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, minWidth: { sm: '200px' } }}>
                   <Typography variant="body2" color="text.secondary">
                     Status
                   </Typography>
@@ -130,8 +129,8 @@ const DSARExportPreview = ({ open, onClose, requestId }) => {
                       request.status === 'pending' ? 'warning' : 'error'
                     }
                   />
-                </Grid>
-                <Grid item xs={12} sm={6}>
+                </Box>
+                <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, minWidth: { sm: '200px' } }}>
                   <Typography variant="body2" color="text.secondary">
                     Request Type
                   </Typography>
@@ -140,44 +139,44 @@ const DSARExportPreview = ({ open, onClose, requestId }) => {
                     size="small"
                     color={request.requestType === 'export' ? 'primary' : 'error'}
                   />
-                </Grid>
-                <Grid item xs={12} sm={6}>
+                </Box>
+                <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, minWidth: { sm: '200px' } }}>
                   <Typography variant="body2" color="text.secondary">
                     Requestor Email
                   </Typography>
                   <Typography variant="body1">
                     {request.requestorEmail}
                   </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
+                </Box>
+                <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, minWidth: { sm: '200px' } }}>
                   <Typography variant="body2" color="text.secondary">
                     Requested At
                   </Typography>
                   <Typography variant="body1">
                     {formatDateTime(request.requestedAt || request.createdAt)}
                   </Typography>
-                </Grid>
+                </Box>
                 {request.verifiedAt && (
-                  <Grid item xs={12} sm={6}>
+                  <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, minWidth: { sm: '200px' } }}>
                     <Typography variant="body2" color="text.secondary">
                       Verified At
                     </Typography>
                     <Typography variant="body1">
                       {formatDateTime(request.verifiedAt)}
                     </Typography>
-                  </Grid>
+                  </Box>
                 )}
                 {request.completedAt && (
-                  <Grid item xs={12} sm={6}>
+                  <Box sx={{ width: { xs: '100%', sm: 'calc(50% - 8px)' }, minWidth: { sm: '200px' } }}>
                     <Typography variant="body2" color="text.secondary">
                       Completed At
                     </Typography>
                     <Typography variant="body1">
                       {formatDateTime(request.completedAt)}
                     </Typography>
-                  </Grid>
+                  </Box>
                 )}
-              </Grid>
+              </Box>
             </Paper>
 
             {/* Export Information */}
@@ -193,17 +192,17 @@ const DSARExportPreview = ({ open, onClose, requestId }) => {
                       <Alert severity="success" sx={{ mb: 2 }}>
                         Export is ready for download
                       </Alert>
-                      <Grid container spacing={2}>
-                        <Grid item xs={12}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Box sx={{ width: '100%' }}>
                           <Typography variant="body2" color="text.secondary">
                             Export URL
                           </Typography>
                           <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
                             {request.exportUrl}
                           </Typography>
-                        </Grid>
+                        </Box>
                         {request.exportExpiresAt && (
-                          <Grid item xs={12}>
+                          <Box sx={{ width: '100%' }}>
                             <Typography variant="body2" color="text.secondary">
                               Expires At
                             </Typography>
@@ -213,9 +212,9 @@ const DSARExportPreview = ({ open, onClose, requestId }) => {
                                 <Chip label="Expired" size="small" color="error" sx={{ ml: 1 }} />
                               )}
                             </Typography>
-                          </Grid>
+                          </Box>
                         )}
-                      </Grid>
+                      </Box>
                     </Box>
                   ) : request.status === 'processing' ? (
                     <Box sx={{ mt: 2 }}>
