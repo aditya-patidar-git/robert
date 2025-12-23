@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Dialog, DialogTitle, DialogContent, DialogActions, Button, Grid, Typography, CircularProgress } from '@mui/material';
+import { Box, Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography, CircularProgress } from '@mui/material';
 import { Close } from '@mui/icons-material';
 import useDSARRequest from '../../../../hooks/useDSARRequest';
 import DSARRequestInfo from './DSARRequestInfo';
@@ -90,52 +90,54 @@ const DSARRequestDetails = ({ requestId, open, onClose, onUpdate }) => {
             <CircularProgress />
           </Box>
         ) : (
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Box sx={{ width: '100%' }}>
               <DSARRequestInfo request={request} />
-            </Grid>
+            </Box>
 
-            <Grid item xs={12} md={6}>
-              <DSARDataPreview
-                data={preview}
-                dataTypes={selectedDataTypes}
-                onDataTypeToggle={handleDataTypeToggle}
-                onPreview={handlePreview}
-              />
-            </Grid>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+              <Box sx={{ width: { xs: '100%', md: 'calc(50% - 8px)' }, minWidth: { md: '300px' } }}>
+                <DSARDataPreview
+                  data={preview}
+                  dataTypes={selectedDataTypes}
+                  onDataTypeToggle={handleDataTypeToggle}
+                  onPreview={handlePreview}
+                />
+              </Box>
 
-            <Grid item xs={12} md={6}>
-              <DSARExportProgress
-                progress={exportStatus === 'processing' ? 50 : 100}
-                status={exportStatus}
-                onDownload={handleDownload}
-                exportData={exportData}
-              />
-              {request?.status === 'approved' && (
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={handleGenerateExport}
-                  disabled={exportStatus === 'processing'}
-                  sx={{ mt: 2 }}
-                >
-                  {exportStatus === 'processing' ? 'Generating...' : 'Generate Export'}
-                </Button>
-              )}
-            </Grid>
+              <Box sx={{ width: { xs: '100%', md: 'calc(50% - 8px)' }, minWidth: { md: '300px' } }}>
+                <DSARExportProgress
+                  progress={exportStatus === 'processing' ? 50 : 100}
+                  status={exportStatus}
+                  onDownload={handleDownload}
+                  exportData={exportData}
+                />
+                {request?.status === 'approved' && (
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={handleGenerateExport}
+                    disabled={exportStatus === 'processing'}
+                    sx={{ mt: 2 }}
+                  >
+                    {exportStatus === 'processing' ? 'Generating...' : 'Generate Export'}
+                  </Button>
+                )}
+              </Box>
+            </Box>
 
-            <Grid item xs={12}>
+            <Box sx={{ width: '100%' }}>
               <DSARTimeline events={timeline} />
-            </Grid>
+            </Box>
 
-            <Grid item xs={12}>
+            <Box sx={{ width: '100%' }}>
               <DSARProcessActions
                 request={request}
                 onProcess={handleProcess}
                 adminUser={user?.username || user?.email || 'admin'}
               />
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         )}
       </DialogContent>
       <DialogActions>

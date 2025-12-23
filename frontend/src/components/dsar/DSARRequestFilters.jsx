@@ -1,6 +1,7 @@
 import React from 'react';
-import { Box, Grid, TextField, FormControl, InputLabel, Select, MenuItem, Chip } from '@mui/material';
+import { Box, TextField, FormControl, InputLabel, Select, MenuItem, Chip } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers';
+import { GlobalStyles } from '@mui/material';
 
 /**
  * DSARRequestFilters Component
@@ -9,8 +10,49 @@ import { DatePicker } from '@mui/x-date-pickers';
 const DSARRequestFilters = ({ filters, onFilterChange }) => {
   return (
     <Box sx={{ mb: 2 }}>
-      <Grid container spacing={2}>
-        <Grid item xs={12} md={3}>
+      <GlobalStyles
+        styles={{
+          'input[type="date"]::-webkit-inner-spin-button': {
+            WebkitAppearance: 'none',
+            margin: 0,
+            display: 'none !important'
+          },
+          'input[type="date"]::-webkit-outer-spin-button': {
+            WebkitAppearance: 'none',
+            margin: 0,
+            display: 'none !important'
+          },
+          'input[type="date"]::-webkit-calendar-picker-indicator': {
+            opacity: 1,
+            cursor: 'pointer'
+          },
+          'input[type="number"]::-webkit-inner-spin-button': {
+            WebkitAppearance: 'none',
+            margin: 0,
+            display: 'none !important'
+          },
+          'input[type="number"]::-webkit-outer-spin-button': {
+            WebkitAppearance: 'none',
+            margin: 0,
+            display: 'none !important'
+          },
+          'input[type="number"]': {
+            MozAppearance: 'textfield'
+          },
+          '.MuiTextField-root input[type="date"]::-webkit-inner-spin-button, .MuiTextField-root input[type="date"]::-webkit-outer-spin-button': {
+            WebkitAppearance: 'none',
+            margin: 0,
+            display: 'none !important'
+          },
+          '.MuiTextField-root input[type="number"]::-webkit-inner-spin-button, .MuiTextField-root input[type="number"]::-webkit-outer-spin-button': {
+            WebkitAppearance: 'none',
+            margin: 0,
+            display: 'none !important'
+          }
+        }}
+      />
+      <Box sx={{ display: 'flex', gap: 1.5, mb: 2, overflowX: 'auto' }}>
+        <Box sx={{ flex: '1 1 0', minWidth: '160px' }}>
           <TextField
             fullWidth
             size="small"
@@ -18,9 +60,9 @@ const DSARRequestFilters = ({ filters, onFilterChange }) => {
             value={filters.search || ''}
             onChange={(e) => onFilterChange({ ...filters, search: e.target.value })}
           />
-        </Grid>
+        </Box>
 
-        <Grid item xs={12} md={2}>
+        <Box sx={{ flex: '1 1 0', minWidth: '140px' }}>
           <FormControl fullWidth size="small">
             <InputLabel>Status</InputLabel>
             <Select
@@ -35,9 +77,9 @@ const DSARRequestFilters = ({ filters, onFilterChange }) => {
               <MenuItem value="completed">Completed</MenuItem>
             </Select>
           </FormControl>
-        </Grid>
+        </Box>
 
-        <Grid item xs={12} md={2}>
+        <Box sx={{ flex: '1 1 0', minWidth: '140px' }}>
           <FormControl fullWidth size="small">
             <InputLabel>Type</InputLabel>
             <Select
@@ -51,45 +93,55 @@ const DSARRequestFilters = ({ filters, onFilterChange }) => {
               <MenuItem value="portability">Portability</MenuItem>
             </Select>
           </FormControl>
-        </Grid>
+        </Box>
 
-        <Grid item xs={12} md={2}>
+        <Box sx={{ flex: '1 1 0', minWidth: '160px' }}>
           <DatePicker
             label="Start Date"
             value={filters.startDate || null}
             onChange={(date) => onFilterChange({ ...filters, startDate: date })}
-            slotProps={{ textField: { size: 'small', fullWidth: true } }}
+            slotProps={{ 
+              textField: { 
+                size: 'small', 
+                fullWidth: true
+              } 
+            }}
           />
-        </Grid>
+        </Box>
 
-        <Grid item xs={12} md={2}>
+        <Box sx={{ flex: '1 1 0', minWidth: '160px' }}>
           <DatePicker
             label="End Date"
             value={filters.endDate || null}
             onChange={(date) => onFilterChange({ ...filters, endDate: date })}
-            slotProps={{ textField: { size: 'small', fullWidth: true } }}
+            slotProps={{ 
+              textField: { 
+                size: 'small', 
+                fullWidth: true
+              } 
+            }}
           />
-        </Grid>
+        </Box>
+      </Box>
 
-        <Grid item xs={12}>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {filters.status && (
-              <Chip
-                label={`Status: ${filters.status}`}
-                onDelete={() => onFilterChange({ ...filters, status: '' })}
-                size="small"
-              />
-            )}
-            {filters.type && (
-              <Chip
-                label={`Type: ${filters.type}`}
-                onDelete={() => onFilterChange({ ...filters, type: '' })}
-                size="small"
-              />
-            )}
-          </Box>
-        </Grid>
-      </Grid>
+      <Box sx={{ width: '100%' }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {filters.status && (
+            <Chip
+              label={`Status: ${filters.status}`}
+              onDelete={() => onFilterChange({ ...filters, status: '' })}
+              size="small"
+            />
+          )}
+          {filters.type && (
+            <Chip
+              label={`Type: ${filters.type}`}
+              onDelete={() => onFilterChange({ ...filters, type: '' })}
+              size="small"
+            />
+          )}
+        </Box>
+      </Box>
     </Box>
   );
 };

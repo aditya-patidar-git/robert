@@ -20,7 +20,8 @@ import {
     generateComplianceReport,
     maskPII,
     recordConsent,
-    checkConsent
+    checkConsent,
+    getConsentRecords
 } from '../controllers/gdprController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { authorizeRoles } from '../middleware/rbacMiddleware.js';
@@ -55,6 +56,7 @@ router.get('/compliance-report', generateComplianceReport);
 router.post('/mask-pii', maskPII);
 
 // Consent Management
+router.get('/consent-records', protect, authorizeRoles('owner', 'admin'), getConsentRecords);
 router.post('/consent', recordConsent);
 router.get('/consent/:callSid/:consentType', checkConsent);
 

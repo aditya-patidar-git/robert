@@ -65,6 +65,16 @@ export function usePrivacyPageState() {
     }
   });
 
+  // Fetch consent records from CallRecord collection
+  const { data: consentRecords, isLoading: consentLoading, refetch: refetchConsent } = useQuery({
+    queryKey: ['consentRecords'],
+    queryFn: async () => {
+      const response = await privacyService.getConsentRecords({ limit: 500 });
+      // Handle normalized response structure
+      return response?.data?.consentRecords || response?.consentRecords || response?.data || [];
+    }
+  });
+
   // Update privacy configuration mutation
   const updateConfigMutation = useMutation({
     mutationFn: (data) => privacyService.updateConfig(data),
@@ -222,6 +232,8 @@ export function usePrivacyPageState() {
     retentionLoading,
     complianceReport,
     complianceLoading,
+    consentRecords,
+    consentLoading,
 
     // Mutations
     updateConfigMutation,
@@ -245,7 +257,8 @@ export function usePrivacyPageState() {
     refetchDSAR,
     refetchAuditLogs,
     refetchRetention,
-    refetchCompliance
+    refetchCompliance,
+    refetchConsent
   };
 }
 

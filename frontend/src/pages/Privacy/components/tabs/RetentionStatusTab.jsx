@@ -4,7 +4,6 @@ import {
   Typography,
   Paper,
   LinearProgress,
-  Grid,
   Card,
   CardContent,
   CircularProgress
@@ -52,11 +51,11 @@ export function RetentionStatusTab({ retention, loading }) {
     <Box>
       <Typography variant="h6" sx={{ mb: 3 }}>Data Retention Status</Typography>
 
-      <Grid container spacing={3}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
         {stats.map((stat) => {
           const percentage = stat.count > 0 ? (stat.retained / stat.count) * 100 : 0;
           return (
-            <Grid item xs={12} md={4} key={stat.title}>
+            <Box key={stat.title} sx={{ width: { xs: '100%', md: 'calc(33.333% - 16px)' }, minWidth: { md: '250px' } }}>
               <Card>
                 <CardContent>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -78,10 +77,10 @@ export function RetentionStatusTab({ retention, loading }) {
                   </Typography>
                 </CardContent>
               </Card>
-            </Grid>
+            </Box>
           );
         })}
-      </Grid>
+      </Box>
     </Box>
   );
 }

@@ -438,6 +438,16 @@ class GDPRService {
     if (filters.requestorEmail) {
       query.requestorEmail = filters.requestorEmail;
     }
+    
+    // Handle search filter (search in requestorEmail or userIdentifier)
+    if (filters.$or) {
+      query.$or = filters.$or;
+    }
+    
+    // Handle date range filter
+    if (filters.requestedAt) {
+      query.requestedAt = filters.requestedAt;
+    }
 
     const requests = await DSARRequest.find(query)
       .populate('processedBy', 'email username')

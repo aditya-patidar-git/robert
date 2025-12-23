@@ -214,6 +214,15 @@ class PrivacyService extends BaseService {
   async checkConsent(callSid, consentType) {
     return this.get(`/consent/${callSid}/${consentType}`);
   }
+
+  /**
+   * Get consent records from CallRecord collection
+   * @param {Object} filters - Filter parameters (startDate, endDate, consentType, granted, callSid, page, limit)
+   * @returns {Promise<Object>} Consent records with pagination
+   */
+  async getConsentRecords(filters = {}) {
+    return this.get('/consent-records', filters);
+  }
 }
 
 // Export singleton instance

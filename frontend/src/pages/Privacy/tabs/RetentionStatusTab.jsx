@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, Button, Grid, Paper, CircularProgress } from '@mui/material';
+import { Box, Typography, Paper, CircularProgress } from '@mui/material';
 import { formatDateTime } from '../../../utils/formatters';
 
 const RetentionStatusTab = ({ state, handlers }) => {
@@ -12,27 +12,15 @@ const RetentionStatusTab = ({ state, handlers }) => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h6">
-          Retention Policy Status
-        </Typography>
-        <Button
-          variant="contained"
-          onClick={() => cleanupMutation.mutate()}
-          disabled={cleanupMutation.isLoading}
-        >
-          {cleanupMutation.isLoading ? 'Cleaning...' : 'Run Cleanup Now'}
-        </Button>
-      </Box>
       {retentionLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
           <CircularProgress />
         </Box>
       ) : (
-        <Grid container spacing={3}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
           {retentionPolicies && Object.keys(retentionPolicies).length > 0 ? (
             Object.entries(retentionPolicies).map(([dataType, check]) => (
-            <Grid item xs={12} md={4} key={dataType}>
+            <Box key={dataType} sx={{ width: { xs: '100%', md: 'calc(33.333% - 16px)' }, minWidth: { md: '250px' } }}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                   {dataType.charAt(0).toUpperCase() + dataType.slice(1)}
@@ -44,18 +32,18 @@ const RetentionStatusTab = ({ state, handlers }) => {
                   Records to Delete: {check?.recordsToDelete || 0}
                 </Typography>
               </Paper>
-            </Grid>
+            </Box>
             ))
           ) : (
-            <Grid item xs={12}>
+            <Box sx={{ width: '100%' }}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="body2" color="text.secondary" align="center">
                   No retention policy data available
                 </Typography>
               </Paper>
-            </Grid>
+            </Box>
           )}
-        </Grid>
+        </Box>
       )}
     </Box>
   );

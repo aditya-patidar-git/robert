@@ -1,16 +1,71 @@
 import gdprService from '../services/gdprService.js';
 import observabilityService from '../services/observabilityService.js';
+import CallRecord from '../models/callRecord.js';
 
 // Get all DSAR requests
 export const getDSARRequests = async (req, res) => {
     try {
-        const { email } = req.query;
+        const { 
+            status, 
+            requestType, 
+            requestorEmail, 
+            email,
+            type,
+            search,
+            startDate,
+            endDate,
+            limit 
+        } = req.query;
         
-        const filters = { email };
+        // Build filters object
+        const filters = {};
+        
+        if (status) {
+            filters.status = status;
+        }
+        
+        if (requestType || type) {
+            filters.requestType = requestType || type;
+        }
+        
+        if (requestorEmail || email) {
+            filters.requestorEmail = requestorEmail || email;
+        }
+        
+        // Search filter - search in requestorEmail or userIdentifier
+        if (search) {
+            filters.$or = [
+                { requestorEmail: { $regex: search, $options: 'i' } },
+                { userIdentifier: { $regex: search, $options: 'i' } }
+            ];
+        }
+        
+        if (startDate || endDate) {
+            filters.requestedAt = {};
+            if (startDate) {
+                const start = new Date(startDate);
+                if (!isNaN(start.getTime())) {
+                    filters.requestedAt.$gte = start;
+                }
+            }
+            if (endDate) {
+                const end = new Date(endDate);
+                if (!isNaN(end.getTime())) {
+                    end.setHours(23, 59, 59, 999);
+                    filters.requestedAt.$lte = end;
+                }
+            }
+        }
+        
+        if (limit) {
+            filters.limit = parseInt(limit);
+        }
+        
         const dsarRequests = await gdprService.getDSARRequests(filters);
         
         res.json({ success: true, dsarRequests });
     } catch (error) {
+        console.error('Get DSAR requests error:', error);
         observabilityService.error('Get DSAR requests error', { error: error.message });
         res.status(500).json({ success: false, error: error.message });
     }
@@ -406,5 +461,148 @@ export const checkConsent = async (req, res) => {
     } catch (error) {
         observabilityService.error('Check consent error', { callSid: req.params.callSid, error: error.message });
         res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Get consent records from CallRecord collection
+export const getConsentRecords = async (req, res) => {
+    try {
+        const { 
+            startDate, 
+            endDate, 
+            consentType, 
+            granted,
+            callSid,
+            page = 1,
+            limit = 500 
+        } = req.query;
+        
+        // Filter for records where consent data exists (even if false or not requested)
+        // This includes all records with consentRecorded or recordingConsent fields
+        const filter = {
+            $or: [
+                { 'recordingConsent.requested': { $exists: true } },
+                { 'recordingConsent.given': { $exists: true } },
+                { 'consentRecorded.recording': { $exists: true } },
+                { 'consentRecorded.processing': { $exists: true } }
+            ]
+        };
+        
+        if (callSid) {
+            filter.callSid = { $regex: callSid, $options: 'i' };
+        }
+        
+        if (startDate || endDate) {
+            filter.createdAt = {};
+            if (startDate) {
+                const start = new Date(startDate);
+                if (!isNaN(start.getTime())) {
+                    filter.createdAt.$gte = start;
+                }
+            }
+            if (endDate) {
+                const end = new Date(endDate);
+                if (!isNaN(end.getTime())) {
+                    end.setHours(23, 59, 59, 999);
+                    filter.createdAt.$lte = end;
+                }
+            }
+        }
+        
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const callRecords = await CallRecord.find(filter)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+        
+        // Transform to consent records format
+        const consentRecords = callRecords.flatMap(record => {
+            const records = [];
+            
+            // Recording consent (from recordingConsent field)
+            if (record.recordingConsent && (
+                record.recordingConsent.requested !== undefined ||
+                record.recordingConsent.given !== undefined
+            )) {
+                records.push({
+                    id: `${record._id}_recording`,
+                    callSid: record.callSid,
+                    timestamp: record.recordingConsent?.respondedAt || 
+                              record.recordingConsent?.requestedAt || 
+                              record.createdAt,
+                    consentType: 'recording',
+                    granted: record.recordingConsent?.given === true,
+                    requested: record.recordingConsent?.requested || false,
+                    requestedAt: record.recordingConsent?.requestedAt,
+                    respondedAt: record.recordingConsent?.respondedAt,
+                    optOutReason: record.recordingConsent?.optOutReason,
+                    callerPhone: record.from,
+                    callDuration: record.duration,
+                    rawData: record
+                });
+            }
+            
+            // Processing consent (from consentRecorded.processing)
+            if (record.consentRecorded?.processing !== undefined) {
+                records.push({
+                    id: `${record._id}_processing`,
+                    callSid: record.callSid,
+                    timestamp: record.consentRecorded?.timestamp || record.createdAt,
+                    consentType: 'processing',
+                    granted: record.consentRecorded?.processing === true,
+                    requested: true,
+                    requestedAt: record.consentRecorded?.timestamp || record.createdAt,
+                    respondedAt: record.consentRecorded?.timestamp || record.createdAt,
+                    optOutReason: record.consentRecorded?.processing === false ? 'Processing consent not given' : null,
+                    callerPhone: record.from,
+                    callDuration: record.duration,
+                    rawData: record
+                });
+            }
+            
+            // Recording consent (from consentRecorded.recording)
+            if (record.consentRecorded?.recording !== undefined) {
+                records.push({
+                    id: `${record._id}_recording_recorded`,
+                    callSid: record.callSid,
+                    timestamp: record.consentRecorded?.timestamp || record.createdAt,
+                    consentType: 'recording',
+                    granted: record.consentRecorded?.recording === true,
+                    requested: true,
+                    requestedAt: record.consentRecorded?.timestamp || record.createdAt,
+                    respondedAt: record.consentRecorded?.timestamp || record.createdAt,
+                    optOutReason: record.consentRecorded?.recording === false ? 'Recording consent not given' : null,
+                    callerPhone: record.from,
+                    callDuration: record.duration,
+                    rawData: record
+                });
+            }
+            
+            return records;
+        });
+        
+        // Apply additional filters
+        let filtered = consentRecords;
+        if (consentType) {
+            filtered = filtered.filter(r => r.consentType === consentType);
+        }
+        if (granted !== undefined && granted !== '') {
+            filtered = filtered.filter(r => r.granted === (granted === 'true'));
+        }
+        
+        res.json({
+            success: true,
+            consentRecords: filtered,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total: filtered.length
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching consent records:', error);
+        observabilityService.error('Get consent records error', { error: error.message });
+        res.status(500).json({ success: false, error: 'Failed to fetch consent records' });
     }
 };

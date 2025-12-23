@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, Grid, Paper, Chip, CircularProgress } from '@mui/material';
+import { Box, Typography, Paper, Chip, CircularProgress } from '@mui/material';
 
 const ComplianceReportTab = ({ state }) => {
   const {
@@ -9,17 +9,14 @@ const ComplianceReportTab = ({ state }) => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h6" gutterBottom>
-        Compliance Report
-      </Typography>
       {complianceLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
           <CircularProgress />
         </Box>
       ) : (
         complianceReport ? (
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            <Box sx={{ width: { xs: '100%', md: 'calc(50% - 12px)' }, minWidth: { md: '300px' } }}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                   Metrics
@@ -30,8 +27,8 @@ const ComplianceReportTab = ({ state }) => {
                 <Typography variant="body2">Data Exports: {complianceReport.metrics?.dataExports || 0}</Typography>
                 <Typography variant="body2">Data Deletions: {complianceReport.metrics?.dataDeletions || 0}</Typography>
               </Paper>
-            </Grid>
-            <Grid item xs={12} md={6}>
+            </Box>
+            <Box sx={{ width: { xs: '100%', md: 'calc(50% - 12px)' }, minWidth: { md: '300px' } }}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" gutterBottom fontWeight="bold">
                   Compliance Status
@@ -58,8 +55,8 @@ const ComplianceReportTab = ({ state }) => {
                   </Typography>
                 )}
               </Paper>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
         ) : (
           <Box sx={{ p: 3, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">

@@ -55,6 +55,8 @@ const PrivacyPage = () => {
     retentionLoading,
     complianceReport,
     complianceLoading,
+    consentRecords,
+    consentLoading,
 
     // Mutations
     cleanupMutation,
@@ -88,27 +90,63 @@ const PrivacyPage = () => {
     <Box sx={{ maxWidth: '1400px', margin: '0 auto', p: 3 }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography
-          variant="h4"
-          component="h1"
-          sx={{
-            fontWeight: 700,
-            fontSize: { xs: '1.75rem', md: '2rem' },
-            color: 'text.primary',
-            mb: 1
-          }}
-        >
-          Privacy & Compliance
-        </Typography>
-        <Typography
-          variant="body1"
-          sx={{
-            color: 'text.secondary',
-            fontSize: '0.9375rem'
-          }}
-        >
-          Manage GDPR compliance, data retention, and privacy settings
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+          <Box>
+            <Typography
+              variant="h4"
+              component="h1"
+              sx={{
+                fontWeight: 700,
+                fontSize: { xs: '1.75rem', md: '2rem' },
+                color: 'text.primary',
+                mb: 1
+              }}
+            >
+              Privacy & Compliance
+            </Typography>
+            <Typography
+              variant="body1"
+              sx={{
+                color: 'text.secondary',
+                fontSize: '0.9375rem'
+              }}
+            >
+              Manage GDPR compliance, data retention, and privacy settings
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            {activeTab === 0 && (
+              <Button
+                variant="contained"
+                onClick={() => {
+                  setSelectedDSAR(null);
+                  setConsentScriptDialogOpen(true);
+                }}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 600
+                }}
+              >
+                Create DSAR Request
+              </Button>
+            )}
+            {activeTab === 2 && (
+              <Button
+                variant="contained"
+                onClick={() => cleanupMutation.mutate()}
+                disabled={cleanupMutation.isLoading}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 600
+                }}
+              >
+                {cleanupMutation.isLoading ? 'Cleaning...' : 'Run Cleanup Now'}
+              </Button>
+            )}
+          </Box>
+        </Box>
       </Box>
 
       {/* Quick Actions */}
@@ -170,8 +208,12 @@ const PrivacyPage = () => {
               state={{
                 auditLogs: auditLogs || [],
                 auditLogsLoading,
-                auditLogFilters: {},
-                setAuditLogFilters: () => {}
+                auditLogFilters: { eventType: '', startDate: '', endDate: '' },
+                setAuditLogFilters: (filters) => {
+                  // Note: This is a no-op since filters aren't currently used in the query
+                  // To make filters work, you'd need to update the useQuery in usePrivacyPageState
+                  console.log('Filter update (not yet implemented):', filters);
+                }
               }}
             />
           )}
@@ -198,7 +240,12 @@ const PrivacyPage = () => {
           )}
 
           {activeTab === 4 && (
-            <ConsentManagementTab />
+            <ConsentManagementTab
+              state={{
+                consentRecords: consentRecords || [],
+                consentLoading
+              }}
+            />
           )}
         </Box>
       </Paper>
