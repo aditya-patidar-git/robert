@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Typography, CircularProgress, Alert } from '@mui/material';
-import { CheckCircle, Cancel, TrendingUp } from '@mui/icons-material';
+import { Box, Typography, CircularProgress, Alert, Button } from '@mui/material';
+import { CheckCircle, Cancel, TrendingUp, Refresh } from '@mui/icons-material';
 import StatGrid from '../shared/StatGrid';
 import ChartContainer from '../shared/ChartContainer';
 import DataTable from '../shared/DataTable';
@@ -13,11 +13,14 @@ import { getDateRange } from '../../utils/dateRange';
  * Displays metrics about how well AI responses are grounded in knowledge base
  */
 const GroundednessDashboard = ({ timeRange = '24h' }) => {
-  const { data: metrics, isLoading, error } = useQuery({
+  const { data: metrics, isLoading, error, refetch } = useQuery({
     queryKey: ['groundedness-metrics', timeRange],
-    queryFn: () => observabilityService.getGroundednessMetrics({ 
-      dateRange: getDateRange(timeRange) 
-    }),
+    queryFn: () => {
+      const dateRange = getDateRange(timeRange);
+      return observabilityService.getGroundednessMetrics({ 
+        dateRange: `${dateRange.start},${dateRange.end}`
+      });
+    },
     refetchInterval: 60000 // Refresh every minute
   });
 
@@ -31,8 +34,25 @@ const GroundednessDashboard = ({ timeRange = '24h' }) => {
 
   if (error) {
     return (
-      <Alert severity="error">
-        Failed to load groundedness metrics: {error.message}
+      <Alert 
+        severity="error"
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => refetch()}
+            startIcon={<Refresh />}
+          >
+            Retry
+          </Button>
+        }
+      >
+        <Typography variant="body2" fontWeight={600} gutterBottom>
+          Failed to load groundedness metrics
+        </Typography>
+        <Typography variant="body2">
+          {error.message || 'An unexpected error occurred'}
+        </Typography>
       </Alert>
     );
   }

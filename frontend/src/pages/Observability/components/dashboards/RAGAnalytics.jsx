@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Typography, CircularProgress, Alert, Chip } from '@mui/material';
-import { Search, TrendingUp } from '@mui/icons-material';
+import { Box, Typography, CircularProgress, Alert, Chip, Button } from '@mui/material';
+import { Search, TrendingUp, Refresh } from '@mui/icons-material';
 import StatGrid from '../shared/StatGrid';
 import ChartContainer from '../shared/ChartContainer';
 import DataTable from '../shared/DataTable';
@@ -13,11 +13,14 @@ import { getDateRange } from '../../utils/dateRange';
  * Displays Retrieval-Augmented Generation analytics
  */
 const RAGAnalytics = ({ timeRange = '24h' }) => {
-  const { data: analytics, isLoading, error } = useQuery({
+  const { data: analytics, isLoading, error, refetch } = useQuery({
     queryKey: ['rag-analytics', timeRange],
-    queryFn: () => observabilityService.getRAGAnalytics({ 
-      dateRange: getDateRange(timeRange) 
-    }),
+    queryFn: () => {
+      const dateRange = getDateRange(timeRange);
+      return observabilityService.getRAGAnalytics({ 
+        dateRange: `${dateRange.start},${dateRange.end}`
+      });
+    },
     refetchInterval: 60000
   });
 
@@ -31,8 +34,25 @@ const RAGAnalytics = ({ timeRange = '24h' }) => {
 
   if (error) {
     return (
-      <Alert severity="error">
-        Failed to load RAG analytics: {error.message}
+      <Alert 
+        severity="error"
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => refetch()}
+            startIcon={<Refresh />}
+          >
+            Retry
+          </Button>
+        }
+      >
+        <Typography variant="body2" fontWeight={600} gutterBottom>
+          Failed to load RAG analytics
+        </Typography>
+        <Typography variant="body2">
+          {error.message || 'An unexpected error occurred'}
+        </Typography>
       </Alert>
     );
   }

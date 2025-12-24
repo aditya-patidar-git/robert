@@ -1,9 +1,8 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Typography, CircularProgress, Alert, LinearProgress } from '@mui/material';
-import { Error, Warning, CheckCircle } from '@mui/icons-material';
+import { Box, CircularProgress, Alert, Button } from '@mui/material';
+import { Error, Warning, CheckCircle, Refresh } from '@mui/icons-material';
 import StatGrid from '../shared/StatGrid';
-import ChartContainer from '../shared/ChartContainer';
 import observabilityService from '../../../../services/observabilityService';
 
 /**
@@ -11,7 +10,7 @@ import observabilityService from '../../../../services/observabilityService';
  * Displays error budgets and SLO compliance
  */
 const ErrorBudgetDashboard = ({ timeRange = '24h' }) => {
-  const { data: budgets, isLoading, error } = useQuery({
+  const { data: budgets, isLoading, error, refetch } = useQuery({
     queryKey: ['error-budgets', timeRange],
     queryFn: () => observabilityService.getErrorBudgets(timeRange),
     refetchInterval: 60000
@@ -27,8 +26,25 @@ const ErrorBudgetDashboard = ({ timeRange = '24h' }) => {
 
   if (error) {
     return (
-      <Alert severity="error">
-        Failed to load error budgets: {error.message}
+      <Alert 
+        severity="error"
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => refetch()}
+            startIcon={<Refresh />}
+          >
+            Retry
+          </Button>
+        }
+      >
+        <Typography variant="body2" fontWeight={600} gutterBottom>
+          Failed to load error budgets
+        </Typography>
+        <Typography variant="body2">
+          {error.message || 'An unexpected error occurred'}
+        </Typography>
       </Alert>
     );
   }
@@ -66,49 +82,6 @@ const ErrorBudgetDashboard = ({ timeRange = '24h' }) => {
   return (
     <Box>
       <StatGrid metrics={statMetrics} />
-      
-      <Box sx={{ mt: 4 }}>
-        {budgets && Object.entries(budgets).map(([key, budget]) => {
-          const remaining = calculateBudgetRemaining(budget);
-          const status = getBudgetStatus(budget);
-          
-          return (
-            <ChartContainer 
-              key={key}
-              title={key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-              subtitle={`Error budget: ${budget.total || 0} errors allowed`}
-            >
-              <Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Budget Remaining
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <status.icon color={status.color} fontSize="small" />
-                    <Typography variant="body2" sx={{ fontWeight: 600, color: `${status.color}.main` }}>
-                      {status.label}
-                    </Typography>
-                  </Box>
-                </Box>
-                <LinearProgress 
-                  variant="determinate" 
-                  value={remaining} 
-                  color={status.color}
-                  sx={{ height: 8, borderRadius: 1 }}
-                />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Used: {budget.errors || 0} errors
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Remaining: {budget.total - (budget.errors || 0)} errors ({remaining.toFixed(1)}%)
-                  </Typography>
-                </Box>
-              </Box>
-            </ChartContainer>
-          );
-        })}
-      </Box>
     </Box>
   );
 };

@@ -258,5 +258,31 @@
     },
     "timestamp": "2025-12-23T06:51:02.294Z",
     "system": "robert-ai"
+  },
+  {
+    "id": "audit_1766483023789_ffac69f7",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1766483023788",
+      "period": "monthly",
+      "generatedAt": "2025-12-23T09:43:43.788Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2025-12-23T09:43:43.789Z",
+    "system": "robert-ai"
   }
 ]
