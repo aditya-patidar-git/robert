@@ -30,7 +30,8 @@ const TraceViewer = ({ timeRange = '24h', onCallSelect = null }) => {
   const { data: traces, isLoading, error, refetch } = useQuery({
     queryKey: ['traces', timeRange, searchTerm],
     queryFn: () => {
-      const filters = { dateRange: getDateRange(timeRange) };
+      const dateRange = getDateRange(timeRange);
+      const filters = { dateRange: `${dateRange.start},${dateRange.end}` };
       if (searchTerm) {
         return observabilityService.getTraces({ search: searchTerm, ...filters });
       }
@@ -57,8 +58,25 @@ const TraceViewer = ({ timeRange = '24h', onCallSelect = null }) => {
 
   if (error) {
     return (
-      <Alert severity="error">
-        Failed to load traces: {error.message}
+      <Alert 
+        severity="error"
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => refetch()}
+            startIcon={<Refresh />}
+          >
+            Retry
+          </Button>
+        }
+      >
+        <Typography variant="body2" fontWeight={600} gutterBottom>
+          Failed to load traces
+        </Typography>
+        <Typography variant="body2">
+          {error.message || 'An unexpected error occurred'}
+        </Typography>
       </Alert>
     );
   }

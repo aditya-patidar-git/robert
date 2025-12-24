@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Typography, CircularProgress, Alert, Chip } from '@mui/material';
-import { Phone, CheckCircle, Error as ErrorIcon, Timer } from '@mui/icons-material';
+import { Box, Typography, CircularProgress, Alert, Chip, Button } from '@mui/material';
+import { Phone, CheckCircle, Error as ErrorIcon, Timer, Refresh } from '@mui/icons-material';
 import StatGrid from '../shared/StatGrid';
 import ChartContainer from '../shared/ChartContainer';
 import DataTable from '../shared/DataTable';
@@ -12,7 +12,7 @@ import observabilityService from '../../../../services/observabilityService';
  * Displays SIP call metrics and performance
  */
 const SIPAnalyticsDashboard = ({ timeRange = '24h' }) => {
-  const { data: metrics, isLoading, error } = useQuery({
+  const { data: metrics, isLoading, error, refetch } = useQuery({
     queryKey: ['sip-metrics', timeRange],
     queryFn: () => observabilityService.getSIPMetrics(timeRange),
     refetchInterval: 60000
@@ -28,8 +28,25 @@ const SIPAnalyticsDashboard = ({ timeRange = '24h' }) => {
 
   if (error) {
     return (
-      <Alert severity="error">
-        Failed to load SIP metrics: {error.message}
+      <Alert 
+        severity="error"
+        action={
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => refetch()}
+            startIcon={<Refresh />}
+          >
+            Retry
+          </Button>
+        }
+      >
+        <Typography variant="body2" fontWeight={600} gutterBottom>
+          Failed to load SIP metrics
+        </Typography>
+        <Typography variant="body2">
+          {error.message || 'An unexpected error occurred'}
+        </Typography>
       </Alert>
     );
   }

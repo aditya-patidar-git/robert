@@ -20,7 +20,7 @@ class ObservabilityService extends BaseService {
    */
   async getSystemLogs(filters = {}) {
     const response = await this.get('/logs', filters);
-    return response.data?.data || response.data || [];
+    return response.data || [];
   }
 
   /**
@@ -30,7 +30,7 @@ class ObservabilityService extends BaseService {
    */
   async getSystemMetrics(timeRange = '1h') {
     const response = await this.get('/metrics', { timeRange });
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -43,7 +43,7 @@ class ObservabilityService extends BaseService {
     const params = { timeRange };
     if (operation) params.operation = operation;
     const response = await this.get('/performance', params);
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -53,7 +53,7 @@ class ObservabilityService extends BaseService {
    */
   async getTraces(filters = {}) {
     const response = await this.get('/traces', filters);
-    return response.data?.data || response.data || [];
+    return response.data || [];
   }
 
   /**
@@ -62,7 +62,7 @@ class ObservabilityService extends BaseService {
    */
   async getLiveCalls() {
     const response = await this.get('/calls/live');
-    return response.data?.data || response.data || [];
+    return response.data || [];
   }
 
   /**
@@ -72,7 +72,7 @@ class ObservabilityService extends BaseService {
    */
   async getCallTimeline(callSid) {
     const response = await this.get(`/calls/${callSid}/timeline`);
-    return response.data?.data || response.data;
+    return response.data || null;
   }
 
   /**
@@ -82,7 +82,7 @@ class ObservabilityService extends BaseService {
    */
   async getCallToolTraces(callSid) {
     const response = await this.get(`/calls/${callSid}/tool-traces`);
-    return response.data?.data || response.data || [];
+    return response.data || [];
   }
 
   /**
@@ -92,7 +92,7 @@ class ObservabilityService extends BaseService {
    */
   async getErrorBudgets(timeRange = '24h') {
     const response = await this.get('/error-budgets', { timeRange });
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -102,7 +102,7 @@ class ObservabilityService extends BaseService {
    */
   async getAlerts(filters = {}) {
     const response = await this.get('/alerts', filters);
-    return response.data?.data || response.data || [];
+    return response.data || [];
   }
 
   /**
@@ -112,7 +112,7 @@ class ObservabilityService extends BaseService {
    */
   async createAlert(alertData) {
     const response = await this.post('/alerts', alertData);
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -122,7 +122,7 @@ class ObservabilityService extends BaseService {
    */
   async acknowledgeAlert(alertId) {
     const response = await this.post(`/alerts/${alertId}/acknowledge`);
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -132,7 +132,7 @@ class ObservabilityService extends BaseService {
    */
   async resolveAlert(alertId) {
     const response = await this.post(`/alerts/${alertId}/resolve`);
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -141,7 +141,7 @@ class ObservabilityService extends BaseService {
    */
   async getHealth() {
     const response = await this.get('/health');
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -180,7 +180,7 @@ class ObservabilityService extends BaseService {
    */
   async getTraceStatistics(filters = {}) {
     const response = await this.get('/traces/statistics', filters);
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -190,7 +190,7 @@ class ObservabilityService extends BaseService {
    */
   async getGroundednessMetrics(filters = {}) {
     const response = await this.get('/groundedness', filters);
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -200,7 +200,7 @@ class ObservabilityService extends BaseService {
    */
   async getRAGAnalytics(filters = {}) {
     const response = await this.get('/rag-analytics', filters);
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -210,7 +210,7 @@ class ObservabilityService extends BaseService {
    */
   async getToolMetrics(timeRange = '24h') {
     const response = await this.get('/tools/metrics', { timeRange });
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 
   /**
@@ -220,7 +220,7 @@ class ObservabilityService extends BaseService {
    */
   async getSIPMetrics(timeRange = '24h') {
     const response = await this.get('/sip/metrics', { timeRange });
-    return response.data?.data || response.data;
+    return response.data || {};
   }
 }
 

@@ -3,13 +3,11 @@ import {
   Box,
   Paper,
   Typography,
-  Grid,
   CircularProgress,
   LinearProgress,
-  Chip,
-  Divider,
-  Stack
+  Chip
 } from '@mui/material';
+import { formatDateTime } from '../../../utils/formatters';
 
 const ErrorBudgetsTab = ({
   errorBudgets,
@@ -35,19 +33,15 @@ const ErrorBudgetsTab = ({
   const progressValue = calculateProgressValue();
   const isExceeded = errorBudgets?.errorBudget?.status === 'exceeded';
 
+  // Get current timestamp for Last Updated card
+  const currentTimestamp = new Date();
+
   return (
     <Paper sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6">
           Error Budgets
         </Typography>
-        {errorBudgets?.timeRange && (
-          <Chip 
-            label={`Time Range: ${errorBudgets.timeRange.toUpperCase()}`} 
-            size="small" 
-            variant="outlined"
-          />
-        )}
       </Box>
       
       {errorBudgetsLoading ? (
@@ -55,147 +49,117 @@ const ErrorBudgetsTab = ({
           <CircularProgress />
         </Box>
       ) : errorBudgets ? (
-        <Grid container spacing={3}>
-          {/* Call Statistics */}
-          <Grid item xs={12} md={6} lg={4}>
-            <Paper sx={{ p: 2, height: '100%' }}>
-              <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                Call Statistics
+        <Box sx={{ 
+          display: 'flex', 
+          flexWrap: 'wrap', 
+          gap: 2 
+        }}>
+          {/* TimeRange Card */}
+          <Box sx={{ 
+            flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 8px)', md: '1 1 calc(33.333% - 11px)', lg: '1 1 calc(20% - 13px)' },
+            minWidth: 0
+          }}>
+            <Paper sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                Time Range
               </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Stack spacing={1.5}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography color="text.secondary">Total Calls:</Typography>
-                  <Typography fontWeight={600}>{errorBudgets.calls?.total?.toLocaleString() || 0}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography color="text.secondary">Successful:</Typography>
-                  <Typography color="success.main" fontWeight={600}>
-                    {errorBudgets.calls?.successful?.toLocaleString() || 0}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography color="text.secondary">Failed:</Typography>
-                  <Typography color="error.main" fontWeight={600}>
-                    {errorBudgets.calls?.failed?.toLocaleString() || 0}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, borderTop: 1, borderColor: 'divider' }}>
-                  <Typography color="text.secondary" fontWeight={600}>Error Rate:</Typography>
-                  <Typography 
-                    fontWeight={700} 
-                    color={isExceeded ? 'error.main' : 'success.main'}
-                  >
-                    {errorBudgets.calls?.errorRate || '0%'}
-                  </Typography>
-                </Box>
-              </Stack>
+              <Typography variant="h6" fontWeight={600}>
+                {errorBudgets.timeRange?.toUpperCase() || 'N/A'}
+              </Typography>
             </Paper>
-          </Grid>
+          </Box>
 
-          {/* Error Budget */}
-          <Grid item xs={12} md={6} lg={4}>
-            <Paper sx={{ p: 2, height: '100%' }}>
-              <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+          {/* Calls Card */}
+          <Box sx={{ 
+            flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 8px)', md: '1 1 calc(33.333% - 11px)', lg: '1 1 calc(20% - 13px)' },
+            minWidth: 0
+          }}>
+            <Paper sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                Total Calls
+              </Typography>
+              <Typography variant="h6" fontWeight={600}>
+                {errorBudgets.calls?.total?.toLocaleString() || 0}
+              </Typography>
+              {errorBudgets.calls?.errorRate && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  Error Rate: {errorBudgets.calls.errorRate}
+                </Typography>
+              )}
+            </Paper>
+          </Box>
+
+          {/* ErrorBudget Card */}
+          <Box sx={{ 
+            flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 8px)', md: '1 1 calc(33.333% - 11px)', lg: '1 1 calc(20% - 13px)' },
+            minWidth: 0
+          }}>
+            <Paper sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                 Error Budget
               </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Stack spacing={1.5}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography color="text.secondary">Target:</Typography>
-                  <Typography fontWeight={600}>{errorBudgets.errorBudget?.target || '1%'}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography color="text.secondary">Current:</Typography>
-                  <Typography 
-                    fontWeight={600}
-                    color={isExceeded ? 'error.main' : 'text.primary'}
-                  >
-                    {errorBudgets.errorBudget?.current || '0%'}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography color="text.secondary">Remaining:</Typography>
-                  <Typography fontWeight={600}>
-                    {errorBudgets.errorBudget?.remaining || '1%'}
-                  </Typography>
-                </Box>
-                <Box sx={{ mt: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      Budget Consumed
-                    </Typography>
-                    <Typography variant="caption" fontWeight={600}>
-                      {progressValue.toFixed(1)}%
-                    </Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={progressValue}
-                    color={isExceeded ? 'error' : progressValue > 80 ? 'warning' : 'success'}
-                    sx={{ 
-                      height: 8, 
-                      borderRadius: 1,
-                      backgroundColor: 'grey.200'
-                    }}
-                  />
-                </Box>
-                <Box sx={{ mt: 1 }}>
-                  <Chip
-                    label={isExceeded ? 'Budget Exceeded' : 'Within Budget'}
-                    color={isExceeded ? 'error' : 'success'}
-                    size="small"
-                    variant="filled"
-                  />
-                </Box>
-              </Stack>
-            </Paper>
-          </Grid>
-
-          {/* Error Logs Statistics */}
-          <Grid item xs={12} md={12} lg={4}>
-            <Paper sx={{ p: 2, height: '100%' }}>
-              <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                Error Logs
+              <Typography 
+                variant="h6" 
+                fontWeight={600}
+                color={isExceeded ? 'error.main' : 'text.primary'}
+              >
+                {errorBudgets.errorBudget?.current || '0%'}
               </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Stack spacing={1.5}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography color="text.secondary">Total Errors:</Typography>
-                  <Typography 
-                    fontWeight={600}
-                    color={errorBudgets.errors?.total > 0 ? 'error.main' : 'text.primary'}
-                  >
-                    {errorBudgets.errors?.total?.toLocaleString() || 0}
-                  </Typography>
-                </Box>
-                {errorBudgets.errors?.byComponent && 
-                 Object.keys(errorBudgets.errors.byComponent).length > 0 && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="caption" color="text.secondary" gutterBottom>
-                      By Component:
-                    </Typography>
-                    <Stack spacing={1} sx={{ mt: 1 }}>
-                      {Object.entries(errorBudgets.errors.byComponent)
-                        .sort(([, a], [, b]) => b - a)
-                        .slice(0, 5)
-                        .map(([component, count]) => (
-                          <Box key={component} sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <Typography variant="body2" fontFamily="monospace" fontSize="0.75rem">
-                              {component}
-                            </Typography>
-                            <Typography variant="body2" fontWeight={600}>
-                              {count}
-                            </Typography>
-                          </Box>
-                        ))}
-                    </Stack>
-                  </Box>
-                )}
-              </Stack>
+              <Box sx={{ mt: 1, mb: 0.5 }}>
+                <LinearProgress
+                  variant="determinate"
+                  value={progressValue}
+                  color={isExceeded ? 'error' : progressValue > 80 ? 'warning' : 'success'}
+                  sx={{ 
+                    height: 6, 
+                    borderRadius: 1,
+                    backgroundColor: 'grey.200'
+                  }}
+                />
+              </Box>
+              <Chip
+                label={isExceeded ? 'Exceeded' : 'Within Budget'}
+                color={isExceeded ? 'error' : 'success'}
+                size="small"
+                sx={{ mt: 0.5 }}
+              />
             </Paper>
-          </Grid>
-        </Grid>
+          </Box>
+
+          {/* Errors Card */}
+          <Box sx={{ 
+            flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 8px)', md: '1 1 calc(33.333% - 11px)', lg: '1 1 calc(20% - 13px)' },
+            minWidth: 0
+          }}>
+            <Paper sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                Total Errors
+              </Typography>
+              <Typography 
+                variant="h6" 
+                fontWeight={600}
+                color={errorBudgets.errors?.total > 0 ? 'error.main' : 'text.primary'}
+              >
+                {errorBudgets.errors?.total?.toLocaleString() || 0}
+              </Typography>
+            </Paper>
+          </Box>
+
+          {/* Timestamp Card */}
+          <Box sx={{ 
+            flex: { xs: '1 1 100%', sm: '1 1 calc(50% - 8px)', md: '1 1 calc(33.333% - 11px)', lg: '1 1 calc(20% - 13px)' },
+            minWidth: 0
+          }}>
+            <Paper sx={{ p: 1.5 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                Last Updated
+              </Typography>
+              <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                {formatDateTime(currentTimestamp)}
+              </Typography>
+            </Paper>
+          </Box>
+        </Box>
       ) : (
         <Box sx={{ p: 3, textAlign: 'center' }}>
           <Typography color="text.secondary">No error budget data available</Typography>
