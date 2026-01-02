@@ -342,13 +342,24 @@ const ModelVoiceSelection = ({
               const selectedModel = watch('selectedModel');
               const compatibleVoices = getCompatibleVoices(selectedModel);
               
+              // Ensure value is valid or empty string (normalize null to empty string)
+              const validValue = field.value && 
+                                compatibleVoices.length > 0 && 
+                                compatibleVoices.some(voice => voice.id === field.value)
+                ? field.value 
+                : '';
+              
               return (
                 <FormControl sx={{ minWidth: 200 }}>
                   <InputLabel>Voice</InputLabel>
                   <Select 
                     {...field} 
+                    value={validValue}
                     label="Voice"
                     disabled={!selectedModel}
+                    onChange={(e) => {
+                      field.onChange(e.target.value);
+                    }}
                   >
                     {compatibleVoices.length > 0 ? (
                       compatibleVoices.map((voice) => (
