@@ -7,6 +7,368 @@
  * Get tool definitions for OpenAI Realtime API session.update
  * @returns {Array} Array of tool definition objects
  */
+/**
+ * Get step-based booking tool definitions
+ * These tools execute individual steps of the booking workflow
+ */
+function getStepBookingToolDefinitions() {
+  return [
+    {
+      type: 'function',
+      name: 'booking_step_check_availability',
+      description: `Step 1: Check availability for a course type. Returns all available slots with date, time, location, and instructor information. Use this FIRST before starting any booking flow.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type (e.g., "ITM", "Introduction to Motorcycling", "CBT", "Compulsory Basic Training", etc.)',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          preferredDate: {
+            type: 'string',
+            description: 'Preferred date (optional, for slot matching)'
+          },
+          preferredTime: {
+            type: 'string',
+            description: 'Preferred time (optional, for slot matching)'
+          },
+          location: {
+            type: 'string',
+            description: 'Preferred location (optional, for slot matching)'
+          },
+          instructor: {
+            type: 'string',
+            description: 'Preferred instructor (optional, for slot matching)'
+          }
+        },
+        required: ['courseType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_authenticate',
+      description: `Step 2: Authenticate/login to CRM system. Reuses existing session if available. This step is typically automatic and doesn't require user input.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type (required for session initialization)',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          }
+        },
+        required: ['courseType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_navigate_contacts',
+      description: `Step 4 (Existing workflow only): Navigate to Contacts tab in CRM. Use this ONLY for existing client workflow after authentication.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing'],
+            description: 'Must be "existing" for this step'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_search_client',
+      description: `Step 5 (Existing workflow only): Search for existing client by mobile number or email. Verifies client identity. Use this ONLY for existing client workflow.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing'],
+            description: 'Must be "existing" for this step'
+          },
+          customerMobile: {
+            type: 'string',
+            description: 'Customer mobile number (11 digits, UK format)'
+          },
+          customerEmail: {
+            type: 'string',
+            description: 'Customer email address (if mobile not found)'
+          },
+          customerName: {
+            type: 'string',
+            description: 'Customer name (first 3 letters of first name + space + first 3 letters of surname, if mobile/email not found)'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_select_session',
+      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot. Requires sessionDetails from availability check.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          sessionDetails: {
+            type: 'object',
+            description: 'Session details from availability check (date, time, location, instructor)'
+          }
+        },
+        required: ['courseType', 'workflowType', 'sessionDetails']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_select_booking_options',
+      description: `Step 7 (Existing) / Step 5 (New): Select booking options (bike type, CBT type, duration, etc.). This step REQUIRES preferences to be collected BEFORE calling. For ITM/CBT: requires bikeType. For CBT: also requires cbtType. For Gear Conversion: requires duration and bikeType.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          bikeType: {
+            type: 'string',
+            enum: ['125cc automatic', '50cc automatic', '125cc manual'],
+            description: 'Bike type preference (REQUIRED for most courses)'
+          },
+          cbtType: {
+            type: 'string',
+            enum: ['standard', 'renewal'],
+            description: 'CBT type: "standard" or "renewal" (REQUIRED for CBT courses only)'
+          },
+          duration: {
+            type: 'string',
+            enum: ['2', '3', '4'],
+            description: 'Duration in hours: "2", "3", or "4" (REQUIRED for Gear Conversion only)'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_create_new_contact',
+      description: `Step 6 (New workflow only): Click "New contact" button to create a new client profile. Use this ONLY for new client workflow.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['new'],
+            description: 'Must be "new" for this step'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_fill_contact_details',
+      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. For existing clients: fills only missing fields. For new clients: fills all fields from scratch.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          customerEmail: {
+            type: 'string',
+            description: 'Customer email address'
+          },
+          customerMobile: {
+            type: 'string',
+            description: 'Customer mobile number (11 digits, UK format)'
+          },
+          customerName: {
+            type: 'string',
+            description: 'Customer full name'
+          },
+          postcode: {
+            type: 'string',
+            description: 'Customer postcode'
+          },
+          houseNumber: {
+            type: 'string',
+            description: 'House number or name'
+          },
+          nationalInsurance: {
+            type: 'string',
+            description: 'National Insurance number (optional)'
+          },
+          drivingLicenceNumber: {
+            type: 'string',
+            description: 'Driving licence number (optional)'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_process_payment',
+      description: `Step 9 (Existing) / Step 8 (New): Process payment and complete booking. Requires card details and terms acceptance. CRITICAL: Only ask for terms acceptance AFTER card details are filled.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          paymentMethod: {
+            type: 'string',
+            description: 'Payment method (e.g., "Visa Debit", "Mastercard", etc.)'
+          },
+          cardNumber: {
+            type: 'string',
+            description: 'Card number'
+          },
+          expiryDate: {
+            type: 'string',
+            description: 'Card expiry date (MM/YY format)'
+          },
+          cvv: {
+            type: 'string',
+            description: 'Card CVV/security code'
+          },
+          cardholderName: {
+            type: 'string',
+            description: 'Cardholder name as it appears on card'
+          },
+          termsAccepted: {
+            type: 'boolean',
+            description: 'Whether client accepted terms and conditions (REQUIRED - ask AFTER card details are filled)'
+          }
+        },
+        required: ['courseType', 'workflowType', 'termsAccepted']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_send_confirmation',
+      description: `Step 10 (Existing) / Step 9 (New): Send booking confirmation email to customer.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          customerEmail: {
+            type: 'string',
+            description: 'Customer email address'
+          }
+        },
+        required: ['courseType', 'workflowType', 'customerEmail']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_send_terms',
+      description: `Step 11 (Existing) / Step 10 (New): Send Terms & Conditions email to customer.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          customerEmail: {
+            type: 'string',
+            description: 'Customer email address'
+          }
+        },
+        required: ['courseType', 'workflowType', 'customerEmail']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_send_sms',
+      description: `Step 12 (Existing) / Step 11 (New): Send SMS confirmation to customer.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          customerMobile: {
+            type: 'string',
+            description: 'Customer mobile number (11 digits, UK format)'
+          }
+        },
+        required: ['courseType', 'workflowType', 'customerMobile']
+      }
+    }
+  ];
+}
+
 export function getToolDefinitions() {
   return [
     {
@@ -438,7 +800,9 @@ This tool opens a browser and performs the actual CRM operations.`,
         },
         required: ['complaintText']
       }
-    }
+    },
+    // Step-based booking tools (preferred over crm_browser.create_booking)
+    ...getStepBookingToolDefinitions()
   ];
 }
 
