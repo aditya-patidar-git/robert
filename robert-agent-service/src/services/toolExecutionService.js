@@ -12,6 +12,7 @@ import kbaService from '../services/kbaService.js';
 import progressIndicatorService from '../services/progressIndicatorService.js';
 import turnTakingStateMachine, { STATES } from '../services/turnTakingStateMachine.js';
 import { conversations } from '../shared/state.js';
+import uncertaintyGateService from './uncertaintyGateService.js';
 
 /**
  * Unified Tool Execution Service
@@ -253,6 +254,46 @@ class ToolExecutionService {
         callContext,
         progressCallback
       );
+
+      // Check uncertainty gate for file_search results
+      if (toolName === 'file_search' && executionResult && executionResult.validationFailed === true) {
+        console.log(`⚠️ [${callSid || callId}] File search failed uncertainty gate validation`);
+        
+        // Generate uncertainty response
+        const uncertaintyResponse = uncertaintyGateService.generateUncertaintyResponse({
+          confidence: executionResult.confidence || 0,
+          recommendations: executionResult.validationDetails?.recommendations || [],
+          fallbackAction: executionResult.validationDetails?.fallbackAction || 'transfer'
+        });
+
+        // Store uncertainty event in conversation state
+        if (!conversations[callSid || callId]) {
+          conversations[callSid || callId] = {};
+        }
+        if (!conversations[callSid || callId].uncertaintyEvents) {
+          conversations[callSid || callId].uncertaintyEvents = [];
+        }
+        conversations[callSid || callId].uncertaintyEvents.push({
+          query: executionResult.query,
+          confidence: executionResult.confidence,
+          fallbackAction: executionResult.validationDetails?.fallbackAction,
+          timestamp: new Date()
+        });
+
+        // Return result with uncertainty response
+        return {
+          success: false,
+          validationFailed: true,
+          error: 'UNCERTAINTY_GATE_FAILED',
+          message: uncertaintyResponse.message,
+          confidence: executionResult.confidence,
+          fallbackAction: uncertaintyResponse.action,
+          validationDetails: executionResult.validationDetails,
+          query: executionResult.query,
+          results: [],
+          totalResults: 0
+        };
+      }
 
       // Store conversation state
       this.storeConversationState(callSid || callId, toolName, executionResult);

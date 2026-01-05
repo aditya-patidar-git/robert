@@ -1,6 +1,8 @@
 import observabilityService from '../services/observabilityService.js';
 import traceAggregationService from '../services/traceAggregationService.js';
 import groundednessKPIService from '../services/groundednessKPIService.js';
+import voiceInsightsService from '../services/voiceInsightsService.js';
+import Alert from '../models/Alert.js';
 import { getMeterProvider } from '../utils/telemetry.js';
 import { metrics } from '@opentelemetry/api';
 
@@ -138,40 +140,94 @@ export const getErrorBudgets = async (req, res) => {
   }
 };
 
-// Get alerts
+// Get alerts (from database)
 export const getAlerts = async (req, res) => {
   try {
     const filters = {
       status: req.query.status,
       severity: req.query.severity,
+      component: req.query.component,
+      source: req.query.source,
       since: req.query.since,
-      limit: req.query.limit ? parseInt(req.query.limit) : undefined
+      limit: req.query.limit ? parseInt(req.query.limit) : 100
     };
     
-    // Remove undefined filters
-    Object.keys(filters).forEach(key => {
-      if (filters[key] === undefined) delete filters[key];
+    // Build MongoDB query
+    const query = {};
+    if (filters.status) query.status = filters.status;
+    if (filters.severity) query.severity = filters.severity;
+    if (filters.component) query.component = filters.component;
+    if (filters.source) query.source = filters.source;
+    if (filters.since) {
+      query.createdAt = { $gte: new Date(filters.since) };
+    }
+    
+    // Fetch from database
+    let alerts = await Alert.find(query)
+      .sort({ createdAt: -1 })
+      .limit(filters.limit || 100)
+      .lean();
+    
+    // Also get in-memory alerts for immediate UI access (merge with database alerts)
+    const inMemoryAlerts = observabilityService.getAlerts({ limit: 50 });
+    
+    // Combine and deduplicate (prefer database alerts)
+    const alertMap = new Map();
+    
+    // Add database alerts first
+    alerts.forEach(alert => {
+      alertMap.set(alert._id.toString(), {
+        ...alert,
+        id: alert._id.toString(),
+        source: 'database'
+      });
     });
     
-    const alerts = observabilityService.getAlerts(filters);
-    res.json({ success: true, data: alerts });
+    // Add in-memory alerts that aren't in database
+    inMemoryAlerts.forEach(alert => {
+      if (!alertMap.has(alert.id)) {
+        alertMap.set(alert.id, {
+          ...alert,
+          source: 'in-memory'
+        });
+      }
+    });
+    
+    const combinedAlerts = Array.from(alertMap.values())
+      .sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
+    
+    res.json({ success: true, data: combinedAlerts });
   } catch (error) {
     observabilityService.error('Get alerts error', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Create alert
+// Create alert (writes to database)
 export const createAlert = async (req, res) => {
   try {
-    const { title, message, severity, component, metadata } = req.body;
-    const alert = observabilityService.createAlert({
-      title,
-      message,
-      severity,
-      component,
-      metadata
+    const alertData = req.body;
+    
+    // Create in database
+    const alert = new Alert({
+      title: alertData.title,
+      message: alertData.message,
+      severity: alertData.severity || 'warning',
+      component: alertData.component || 'system',
+      callerId: alertData.callerId,
+      reason: alertData.reason,
+      source: alertData.source || 'backend-service',
+      metadata: alertData.metadata || {}
     });
+    
+    await alert.save();
+    
+    // Also create in-memory for immediate UI access
+    observabilityService.createAlert({
+      ...alertData,
+      id: alert._id.toString()
+    });
+    
     res.status(201).json({ success: true, data: alert });
   } catch (error) {
     observabilityService.error('Create alert error', { error: error.message });
@@ -202,13 +258,27 @@ export const resolveAlert = async (req, res) => {
   try {
     const { alertId } = req.params;
     const userId = req.user?.id || 'system';
-    const alert = observabilityService.resolveAlert(alertId, userId);
     
-    if (!alert) {
+    // Try database first
+    let alert = await Alert.findById(alertId);
+    
+    if (alert) {
+      alert.status = 'resolved';
+      alert.resolvedAt = new Date();
+      alert.resolvedBy = userId;
+      await alert.save();
+      
+      return res.json({ success: true, data: alert });
+    }
+    
+    // Fallback to in-memory alert
+    const inMemoryAlert = observabilityService.resolveAlert(alertId, userId);
+    
+    if (!inMemoryAlert) {
       return res.status(404).json({ success: false, error: 'Alert not found' });
     }
     
-    res.json({ success: true, data: alert });
+    res.json({ success: true, data: inMemoryAlert });
   } catch (error) {
     observabilityService.error('Resolve alert error', { alertId: req.params.alertId, error: error.message });
     res.status(500).json({ success: false, error: error.message });
@@ -463,6 +533,77 @@ export const getSIPMetrics = async (req, res) => {
     res.json({ success: true, data: sipMetrics });
   } catch (error) {
     observabilityService.error('Get SIP metrics error', { error: error.message });
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get Voice Insights aggregated metrics
+export const getVoiceInsights = async (req, res) => {
+  try {
+    const { startDate, endDate, groupBy = 'hour', phoneNumber, entryPath } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'startDate and endDate query parameters are required' 
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid date format. Use ISO 8601 format (e.g., 2024-01-01T00:00:00Z)' 
+      });
+    }
+
+    const filters = {};
+    if (phoneNumber) filters.phoneNumber = phoneNumber;
+    if (entryPath) filters.entryPath = entryPath;
+
+    const result = await voiceInsightsService.getAggregatedMetrics(
+      start, 
+      end, 
+      groupBy, 
+      filters
+    );
+
+    res.json(result);
+  } catch (error) {
+    observabilityService.error('Get voice insights error', { error: error.message });
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get Voice Insights SLO compliance
+export const getVoiceInsightsSLO = async (req, res) => {
+  try {
+    const { period = '24h' } = req.query;
+    const result = await voiceInsightsService.getSLOCompliance(period);
+    res.json(result);
+  } catch (error) {
+    observabilityService.error('Get voice insights SLO error', { error: error.message });
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get Voice Insights for specific call
+export const getCallVoiceInsights = async (req, res) => {
+  try {
+    const { callSid } = req.params;
+    if (!callSid) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'callSid parameter is required' 
+      });
+    }
+
+    const result = await voiceInsightsService.getCallMetrics(callSid);
+    res.json(result);
+  } catch (error) {
+    observabilityService.error('Get call voice insights error', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
   }
 };

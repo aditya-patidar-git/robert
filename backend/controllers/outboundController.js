@@ -1,5 +1,6 @@
 import CallRecord from "../models/CallRecord.js";
 import axios from "axios";
+import twilio from "twilio";
 
 /**
  * Proxy recording from Twilio
@@ -14,10 +15,59 @@ export const proxyRecording = async (req, res) => {
     }
 
     // Find the call record
-    const callRecord = await CallRecord.findOne({ callSid });
+    let callRecord = await CallRecord.findOne({ callSid });
     
     if (!callRecord) {
       return res.status(404).json({ error: 'Call record not found' });
+    }
+
+    // Check consent first
+    if (callRecord.recordingConsent?.given === false) {
+      return res.status(403).json({ 
+        error: 'Recording not available - consent not given',
+        message: 'Recording consent was not provided for this call.'
+      });
+    }
+
+    // If recordingUrl is not set but consent was given, try fetching from Twilio API
+    if (!callRecord.recordingUrl && callRecord.recordingConsent?.given === true) {
+      try {
+        const twilioClient = twilio(
+          process.env.TWILIO_SID || process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN
+        );
+        
+        console.log(`🔍 [${callSid}] Recording URL missing but consent given - fetching from Twilio...`);
+        
+        const recordings = await twilioClient.recordings.list({
+          callSid: callSid,
+          limit: 1
+        });
+
+        if (recordings && recordings.length > 0) {
+          const recording = recordings[0];
+          callRecord.recordingUrl = recording.uri.replace('.json', '');
+          
+          // Save to database for future requests
+          await CallRecord.findOneAndUpdate(
+            { callSid: callSid },
+            { $set: { recordingUrl: callRecord.recordingUrl } }
+          );
+          
+          console.log(`✅ [${callSid}] Recording URL fetched from Twilio and saved`);
+        } else {
+          return res.status(404).json({ 
+            error: 'Recording not available - may still be processing',
+            message: 'The recording is being processed by Twilio. Please try again in a few moments.'
+          });
+        }
+      } catch (fetchError) {
+        console.error('Error fetching recording from Twilio:', fetchError.message);
+        return res.status(404).json({ 
+          error: 'Recording not available',
+          message: 'Unable to fetch recording from Twilio. The recording may still be processing.'
+        });
+      }
     }
 
     if (!callRecord.recordingUrl) {

@@ -373,6 +373,58 @@ export const getSipStatus = async (req, res) => {
   }
 };
 
+// Get SIP health status
+export const getSipHealth = async (req, res) => {
+  try {
+    // Dynamically import SIP service from agent service
+    // Note: This requires the agent service to expose a health endpoint or we need to call it via HTTP
+    // For now, we'll use the SIP config service validation
+    
+    const config = await TelephonyConfig.findOne({ isActive: true });
+    
+    if (!config || !config.sipSettings) {
+      return res.json({
+        status: "success",
+        health: {
+          enabled: false,
+          status: "not_configured",
+          message: "SIP is not configured"
+        }
+      });
+    }
+
+    // Get validation result from startup validation
+    // We'll use the SIP config service to validate
+    const validation = sipConfigService.validateSipConfig(config.sipSettings.toObject());
+    
+    // Get health monitor stats (if available via agent service)
+    // For now, return basic health status
+    const health = {
+      enabled: config.sipSettings.openaiSipEnabled || false,
+      status: validation.valid ? "healthy" : "unhealthy",
+      validation: {
+        valid: validation.valid,
+        errors: validation.errors || [],
+        warnings: validation.warnings || []
+      },
+      lastTest: config.sipSettings.testConnectionLastAttempt || null,
+      testStatus: config.sipSettings.testConnectionStatus || "not_tested"
+    };
+
+    res.json({
+      status: "success",
+      health
+    });
+  } catch (err) {
+    console.error("Error fetching SIP health:", err);
+    res.status(500).json({
+      status: "error",
+      message: "Internal server error",
+      error: err.message
+    });
+  }
+};
+
 // Update SIP settings only
 export const updateSipSettings = async (req, res) => {
   try {

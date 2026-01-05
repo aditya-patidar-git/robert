@@ -235,26 +235,47 @@ export const handleMediaStreamConnection = (ws, req) => {
                         ...(duration && { duration })
                     };
                     
+                    // Check recording consent before saving transcript (GDPR compliance)
+                    const consent = conversation?.recordingConsent;
+                    const consentGiven = consent?.given === true;
+                    
                     if (conversation?.transcript && conversation.transcript.length > 0) {
-                        updateData.transcript = conversation.transcript;
-                        if (conversation.from) updateData.from = conversation.from;
-                        if (conversation.to) updateData.to = conversation.to;
-                        
-                        // Generate summary if not already present
-                        if (!updateData.summary && conversation.transcript.length > 0) {
-                            try {
-                                const summaryService = (await import('../../services/summaryService.js')).default;
-                                updateData.summary = await summaryService.generateCallSummary(
-                                    conversation.transcript,
-                                    { callSid: stateManager.callSid, from: conversation.from, to: conversation.to }
-                                );
-                            } catch (summaryError) {
-                                console.warn(`⚠️ [${stateManager.callSid}] Could not generate summary:`, summaryError.message);
-                                updateData.summary = `Call transcript with ${conversation.transcript.length} exchanges.`;
+                        if (consentGiven) {
+                            // Consent given - store transcript
+                            updateData.transcript = conversation.transcript;
+                            if (conversation.from) updateData.from = conversation.from;
+                            if (conversation.to) updateData.to = conversation.to;
+                            
+                            // Generate summary if not already present
+                            if (!updateData.summary && conversation.transcript.length > 0) {
+                                try {
+                                    const summaryService = (await import('../../services/summaryService.js')).default;
+                                    updateData.summary = await summaryService.generateCallSummary(
+                                        conversation.transcript,
+                                        { callSid: stateManager.callSid, from: conversation.from, to: conversation.to }
+                                    );
+                                } catch (summaryError) {
+                                    console.warn(`⚠️ [${stateManager.callSid}] Could not generate summary:`, summaryError.message);
+                                    updateData.summary = `Call transcript with ${conversation.transcript.length} exchanges.`;
+                                }
                             }
+                            
+                            console.log(`✅ [${stateManager.callSid}] Saving transcript with ${conversation.transcript.length} entries - consent given`);
+                        } else {
+                            // Consent not given - do not store transcript (GDPR compliance)
+                            updateData.transcript = []; // Explicitly set to empty array
+                            updateData.summary = "Recording and transcript not stored - consent not given";
+                            if (conversation.from) updateData.from = conversation.from;
+                            if (conversation.to) updateData.to = conversation.to;
+                            updateData.recordingConsent = {
+                                requested: consent?.requested || false,
+                                given: false,
+                                requestedAt: consent?.requestedAt || null,
+                                respondedAt: consent?.respondedAt || null,
+                                optOutReason: consent?.optOutReason || "Consent not given"
+                            };
+                            console.log(`🚫 [${stateManager.callSid}] Transcript not saved - recording consent not given`);
                         }
-                        
-                        console.log(`✅ [${stateManager.callSid}] Saving transcript with ${conversation.transcript.length} entries`);
                     }
                     
                     await CallRecord.findOneAndUpdate(

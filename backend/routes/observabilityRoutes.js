@@ -21,7 +21,10 @@ import {
   getGroundednessMetrics,
   getRAGAnalytics,
   getToolMetrics,
-  getSIPMetrics
+  getSIPMetrics,
+  getVoiceInsights,
+  getVoiceInsightsSLO,
+  getCallVoiceInsights
 } from '../controllers/observabilityController.js';
 
 const router = express.Router();
@@ -79,6 +82,11 @@ router.get('/rag-analytics', getRAGAnalytics);
 // Tool & SIP Metrics
 router.get('/tools/metrics', getToolMetrics);
 router.get('/sip/metrics', getSIPMetrics);
+
+// Voice Insights
+router.get('/voice-insights', getVoiceInsights);
+router.get('/voice-insights/slo', getVoiceInsightsSLO);
+router.get('/voice-insights/calls/:callSid', getCallVoiceInsights);
 
 export default router;
 

@@ -222,6 +222,40 @@ class ObservabilityService extends BaseService {
     const response = await this.get('/sip/metrics', { timeRange });
     return response.data || {};
   }
+
+  /**
+   * Get Voice Insights aggregated metrics
+   * @param {string} startDate - Start date (ISO 8601)
+   * @param {string} endDate - End date (ISO 8601)
+   * @param {string} groupBy - Group by 'hour' or 'day' (default: 'hour')
+   * @param {Object} filters - Optional filters (phoneNumber, entryPath)
+   * @returns {Promise<Object>} Voice insights data
+   */
+  async getVoiceInsights(startDate, endDate, groupBy = 'hour', filters = {}) {
+    const params = { startDate, endDate, groupBy, ...filters };
+    const response = await this.get('/voice-insights', params);
+    return response;
+  }
+
+  /**
+   * Get Voice Insights SLO compliance
+   * @param {string} period - Period ('1h', '24h', '7d', '30d')
+   * @returns {Promise<Object>} SLO compliance data
+   */
+  async getVoiceInsightsSLO(period = '24h') {
+    const response = await this.get('/voice-insights/slo', { period });
+    return response;
+  }
+
+  /**
+   * Get Voice Insights for specific call
+   * @param {string} callSid - Call SID
+   * @returns {Promise<Object>} Call metrics
+   */
+  async getCallVoiceInsights(callSid) {
+    const response = await this.get(`/voice-insights/calls/${callSid}`);
+    return response;
+  }
 }
 
 // Export singleton instance

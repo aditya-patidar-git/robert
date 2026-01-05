@@ -5,6 +5,7 @@
 
 import twilio from 'twilio';
 import CallRecord from '../database/models/CallRecord.js';
+import Alert from '../database/models/Alert.js';
 
 class TwilioMetricsService {
   constructor() {
@@ -86,6 +87,17 @@ class TwilioMetricsService {
         );
 
         console.log(`✅ [${callSid}] Call quality metrics saved: MOS=${mosScore.toFixed(2)}, Latency=${latency}ms, Jitter=${jitter}ms, PacketLoss=${packetLoss.toFixed(2)}%`);
+        
+        // Check for alerts (async, don't wait)
+        this.checkAndTriggerAlerts(callSid, {
+          latency,
+          jitter,
+          packetLoss,
+          mosScore,
+          callQuality
+        }).catch(err => {
+          console.warn(`⚠️ [${callSid}] Failed to check alerts:`, err.message);
+        });
         
         return {
           latency,

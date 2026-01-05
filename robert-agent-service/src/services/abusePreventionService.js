@@ -199,6 +199,7 @@ class AbusePreventionService {
 
   /**
    * Send admin alert for abuse
+   * Writes alert directly to database (no HTTP calls)
    * @param {string} callerId - Caller phone number
    * @param {string} reason - Block reason
    * @param {Object} metadata - Additional metadata
@@ -220,30 +221,26 @@ class AbusePreventionService {
         blockedAt: new Date().toISOString()
       };
 
-      // Call backend alert service via HTTP
-      // Note: In production, this could be done via internal service call or message queue
-      const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+      // Write alert directly to database
+      const Alert = (await import('../database/models/Alert.js')).default;
       
-      try {
-        const axios = (await import('axios')).default;
-        await axios.post(`${backendUrl}/api/alerts/abuse`, {
-          callerId,
-          reason,
-          metadata: alertMetadata
-        }, {
-          timeout: 5000
-        });
-        
-        console.log(`✅ [ABUSE PREVENTION] Alert sent for caller ${callerId}`);
-      } catch (httpError) {
-        // Fallback to console log if backend is unavailable
-        console.log(`🚨 ADMIN ALERT: Caller ${callerId} blocked - ${reason}`);
-        console.warn(`⚠️ [ABUSE PREVENTION] Failed to send alert via backend: ${httpError.message}`);
-      }
+      const alert = new Alert({
+        title: 'Abuse Prevention Alert',
+        message: `Caller ${callerId} has been blocked due to: ${reason}`,
+        severity: 'warning',
+        callerId: callerId,
+        reason: reason,
+        component: 'abuse-prevention',
+        source: 'agent-service',
+        metadata: alertMetadata
+      });
+
+      await alert.save();
+      console.log(`✅ [ABUSE PREVENTION] Alert created in database for caller ${callerId}`);
     } catch (error) {
       // Fallback to console log on any error
       console.log(`🚨 ADMIN ALERT: Caller ${callerId} blocked - ${reason}`);
-      console.error(`❌ [ABUSE PREVENTION] Error sending alert: ${error.message}`);
+      console.error(`❌ [ABUSE PREVENTION] Error creating alert: ${error.message}`);
     }
   }
 

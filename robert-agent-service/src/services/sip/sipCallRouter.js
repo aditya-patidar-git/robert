@@ -4,6 +4,7 @@
  */
 
 import sipService from '../sipService.js';
+import sipHealthMonitor from './sipHealthMonitor.js';
 
 class SipCallRouter {
   /**
@@ -87,7 +88,9 @@ class SipCallRouter {
 
       } catch (error) {
         lastError = error;
+        const failureReason = this.getFailureReason(error);
         console.error(`❌ [SIP] Attempt ${attempt + 1} failed:`, error.message);
+        console.log(`📊 [SIP] Fallback reason: ${failureReason}`);
 
         // Don't retry on last attempt
         if (attempt < maxRetries - 1) {
@@ -98,8 +101,70 @@ class SipCallRouter {
       }
     }
 
+    const finalFailureReason = this.getFailureReason(lastError);
     console.error(`❌ [SIP] All ${maxRetries} attempts failed. Last error:`, lastError?.message);
+    console.log(`📊 [SIP] Final fallback reason: ${finalFailureReason}`);
+    
+    // Track fallback metrics (async, don't wait)
+    this.trackFallbackMetrics(finalFailureReason).catch(err => {
+      console.warn(`⚠️ [SIP] Failed to track fallback metrics:`, err.message);
+    });
+    
     return null;
+  }
+
+  /**
+   * Get failure reason from error
+   * @private
+   * @param {Error} error - Error object
+   * @returns {string} Failure reason
+   */
+  getFailureReason(error) {
+    if (!error) return 'unknown_error';
+    
+    const errorMessage = error.message?.toLowerCase() || '';
+    const errorCode = error.code || error.status;
+    
+    // Check for specific error patterns
+    if (errorCode === 404 || errorMessage.includes('not found')) {
+      return 'endpoint_not_found';
+    }
+    if (errorCode === 401 || errorCode === 403 || errorMessage.includes('unauthorized') || errorMessage.includes('forbidden')) {
+      return 'authentication_failed';
+    }
+    if (errorCode === 408 || errorMessage.includes('timeout')) {
+      return 'timeout';
+    }
+    if (errorMessage.includes('network') || errorMessage.includes('connection')) {
+      return 'network_error';
+    }
+    if (errorMessage.includes('validation') || errorMessage.includes('invalid')) {
+      return 'validation_failed';
+    }
+    if (errorMessage.includes('trunk') || errorMessage.includes('sip trunk')) {
+      return 'sip_trunk_error';
+    }
+    
+    return 'unknown_error';
+  }
+
+  /**
+   * Track fallback metrics
+   * @private
+   * @param {string} reason - Fallback reason
+   * @returns {Promise<void>}
+   */
+  async trackFallbackMetrics(reason) {
+    try {
+      // Track in health monitor
+      sipHealthMonitor.trackCall('fallback', 'SIP', false, reason);
+      
+      // Log fallback event (could be stored in database for analytics)
+      console.log(`📊 [SIP] Fallback to Media Streams - Reason: ${reason}`);
+    } catch (error) {
+      // Don't throw - metrics tracking shouldn't block fallback
+      console.warn(`⚠️ [SIP] Failed to track fallback metrics:`, error.message);
+    }
   }
 
   /**
