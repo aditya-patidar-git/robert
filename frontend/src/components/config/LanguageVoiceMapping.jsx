@@ -63,7 +63,7 @@ const findLanguageCodeFromName = (languageName) => {
   
   // Priority mapping for ambiguous cases
   const priorityMap = {
-    'english': 'en-US',
+    'english': 'en-GB',  // Default to British English for voice previews
     'chinese': 'zh-CN',
     'portuguese': 'pt-BR'
   };
@@ -86,7 +86,8 @@ const findLanguageCodeFromName = (languageName) => {
 
 const LanguageVoiceMapping = ({ 
   onSave = null, // Optional callback when save is clicked
-  showPreview = true // Show voice preview button
+  showPreview = true, // Show voice preview button
+  selectedModelId = null // Optional: Selected primary model ID for voice previews
 }) => {
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
@@ -170,10 +171,18 @@ const LanguageVoiceMapping = ({
       // Use standard English text - it will be translated automatically
       const sampleText = 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
       
-      // Call preview API with translation to target language
-      const previewResult = await voiceService.previewVoice(voiceId, sampleText, { 
-        translateTo: languageCode 
-      });
+      // Prepare preview options with selected primary model and language
+      const previewOptions = { 
+        translateTo: languageCode || 'en-GB'  // Default to British English if not specified
+      };
+      
+      // Add modelId if provided (selected primary model)
+      if (selectedModelId) {
+        previewOptions.modelId = selectedModelId;
+      }
+      
+      // Call preview API with translation to target language and selected model
+      const previewResult = await voiceService.previewVoice(voiceId, sampleText, previewOptions);
       
       // Extract audio URL from response (handle multiple possible structures)
       const audioUrl = previewResult?.audioUrl || previewResult?.url || 

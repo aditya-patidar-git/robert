@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import Provenance from '../database/models/Provenance.js';
+import uncertaintyGateService from '../services/uncertaintyGateService.js';
+import configManager from '../agent/configManager.js';
 
 // Load .env from project root
 const __filename = fileURLToPath(import.meta.url);
@@ -68,6 +70,87 @@ class FileSearchTool {
       }));
 
       console.log(`✅ [${callContext.callSid || 'unknown'}] Found ${results.length} results for query: "${query}"`);
+
+      // Get uncertainty gate configuration from AIConfig
+      const aiConfig = configManager.getAIConfig();
+      const uncertaintyConfig = aiConfig?.uncertaintyGate || {};
+      const uncertaintyEnabled = uncertaintyConfig.enabled !== false; // Default to true if not set
+
+      // Apply uncertainty gate validation if enabled
+      if (uncertaintyEnabled && results.length > 0) {
+        try {
+          const validation = await uncertaintyGateService.validateResults(
+            { results: results },
+            {
+              threshold: uncertaintyConfig.confidenceThreshold || 0.8,
+              minPassages: uncertaintyConfig.minSources || 1,
+              requireProvenance: true
+            }
+          );
+
+          if (!validation.passed) {
+            console.log(`⚠️ [${callContext.callSid || 'unknown'}] Uncertainty gate validation failed:`, validation.recommendations.join(', '));
+            
+            // Track provenance even for failed validation (async)
+            this.trackProvenance(query, results, callContext).catch(err => {
+              console.warn(`⚠️ [${callContext.callSid || 'unknown'}] Failed to track provenance:`, err.message);
+            });
+
+            // Return structured error response indicating low confidence
+            return {
+              query: query,
+              results: [],
+              totalResults: 0,
+              confidence: validation.confidence,
+              validationFailed: true,
+              validationDetails: {
+                confidence: validation.confidence,
+                recommendations: validation.recommendations,
+                fallbackAction: validation.fallbackAction,
+                passagesFound: validation.passages.length,
+                validPassages: validation.passages.filter(p => {
+                  const score = p.similarityScore || p.similarity_score || 0;
+                  return score >= (uncertaintyConfig.confidenceThreshold || 0.8);
+                }).length,
+                threshold: uncertaintyConfig.confidenceThreshold || 0.8,
+                minPassages: uncertaintyConfig.minSources || 1
+              },
+              error: `Uncertainty gate validation failed: ${validation.recommendations.join(', ')}`,
+              vectorStore: {
+                id: this.vectorStoreId,
+                name: this.vectorStoreName
+              },
+              citations: []
+            };
+          }
+
+          // Use validated passages only (filtered by threshold)
+          const validatedResults = validation.passages;
+          console.log(`✅ [${callContext.callSid || 'unknown'}] Uncertainty gate passed. Using ${validatedResults.length} validated passages (confidence: ${validation.confidence.toFixed(2)})`);
+
+          // Track provenance (async, don't wait for it)
+          this.trackProvenance(query, validatedResults, callContext).catch(err => {
+            console.warn(`⚠️ [${callContext.callSid || 'unknown'}] Failed to track provenance:`, err.message);
+          });
+
+          return {
+            query: query,
+            results: validatedResults,
+            totalResults: validatedResults.length,
+            confidence: validation.confidence,
+            provenance: validation.provenance,
+            vectorStore: {
+              id: this.vectorStoreId,
+              name: this.vectorStoreName
+            },
+            citations: validatedResults.map(r => r.fileName || r.filename || 'Unknown')
+          };
+        } catch (validationError) {
+          console.error(`❌ [${callContext.callSid || 'unknown'}] Uncertainty gate validation error:`, validationError);
+          // If validation fails due to error, proceed with original results but log warning
+          console.warn(`⚠️ [${callContext.callSid || 'unknown'}] Proceeding with results despite validation error`);
+        }
+      }
 
       // Track provenance (async, don't wait for it)
       this.trackProvenance(query, results, callContext).catch(err => {

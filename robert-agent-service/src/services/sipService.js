@@ -305,7 +305,61 @@ class SipService {
         configured: true,
         url: webhookUrl
       };
+      
+      // Test webhook accessibility (async, don't block)
+      this.testWebhookAccessibility(webhookUrl).then(accessible => {
+        if (!accessible) {
+          console.warn(`⚠️ [SIP] Webhook URL may not be publicly accessible: ${webhookUrl}`);
+        }
+      }).catch(() => {
+        // Ignore errors in async check
+      });
     }
+
+    // Validate Twilio SIP trunk SID format (if provided)
+    const sipTrunkSid = process.env.TWILIO_SIP_TRUNK_SID;
+    if (sipTrunkSid) {
+      // Twilio SIP trunk SID format: TK followed by 32 hex characters
+      const trunkSidPattern = /^TK[a-f0-9]{32}$/i;
+      if (trunkSidPattern.test(sipTrunkSid)) {
+        result.details.sipTrunk = {
+          configured: true,
+          sid: sipTrunkSid.substring(0, 8) + '...' // Show partial SID for security
+        };
+      } else {
+        result.warnings.push(`Twilio SIP trunk SID format appears invalid: ${sipTrunkSid.substring(0, 10)}...`);
+        result.details.sipTrunk = {
+          configured: true,
+          sid: sipTrunkSid.substring(0, 8) + '...',
+          format: 'invalid'
+        };
+      }
+    } else {
+      result.details.sipTrunk = {
+        configured: false,
+        note: 'TWILIO_SIP_TRUNK_SID not configured'
+      };
+    }
+
+    // Check environment variable completeness
+    const requiredVars = ['OPENAI_SIP_ENDPOINT'];
+    const optionalVars = ['TWILIO_SIP_TRUNK_SID', 'BASE_URL', 'TUNNEL_DOMAIN', 'SIP_AUTH_USERNAME', 'SIP_AUTH_PASSWORD'];
+    
+    const missingRequired = requiredVars.filter(v => !process.env[v]);
+    if (missingRequired.length > 0) {
+      result.errors.push(`Missing required environment variables: ${missingRequired.join(', ')}`);
+    }
+
+    result.details.environment = {
+      required: requiredVars.map(v => ({
+        name: v,
+        configured: !!process.env[v]
+      })),
+      optional: optionalVars.map(v => ({
+        name: v,
+        configured: !!process.env[v]
+      }))
+    };
 
     // If we have endpoint and no critical errors, mark as valid
     if (result.errors.length === 0) {
@@ -313,6 +367,25 @@ class SipService {
     }
 
     return result;
+  }
+
+  /**
+   * Test webhook URL accessibility
+   * @private
+   * @param {string} baseUrl - Base URL to test
+   * @returns {Promise<boolean>} True if accessible
+   */
+  async testWebhookAccessibility(baseUrl) {
+    try {
+      const testUrl = `${baseUrl}/api/sip/health`;
+      const response = await fetch(testUrl, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(5000)
+      });
+      return response.ok;
+    } catch (error) {
+      return false;
+    }
   }
 }
 

@@ -141,9 +141,14 @@ const TranscriptsComplaintsPage = () => {
 
   // Handlers
   const handleViewTranscript = useCallback((transcript) => {
+    // Check consent before opening dialog
+    if (transcript?.recordingConsent?.given === false) {
+      showError('Transcript not available: The customer did not provide consent for call recording. In compliance with GDPR, transcripts are not stored when consent is not given.');
+      return;
+    }
     setSelectedTranscript(transcript);
     setTranscriptDialog(true);
-  }, [setSelectedTranscript, setTranscriptDialog]);
+  }, [setSelectedTranscript, setTranscriptDialog, showError]);
 
   const handlePlayRecording = useCallback(async (callSid) => {
     try {
@@ -156,7 +161,7 @@ const TranscriptsComplaintsPage = () => {
       // Check for opt-out - look up transcript by callSid
       const transcript = transcripts.find(t => t.callSid === callSid);
       if (transcript?.recordingConsent?.given === false) {
-        showError('Recording not available - customer opted out of recording consent');
+        showError('Recording not available: The customer did not provide consent for call recording. In compliance with GDPR, we do not store recordings when consent is not given.');
         return;
       }
 
@@ -204,7 +209,7 @@ const TranscriptsComplaintsPage = () => {
             // Check if 404 is due to opt-out
             const transcript = transcripts.find(t => t.callSid === callSid);
             if (transcript?.recordingConsent?.given === false) {
-              showError('Recording not available - customer opted out of recording consent');
+              showError('Recording not available: The customer did not provide consent for call recording. In compliance with GDPR, we do not store recordings when consent is not given.');
             } else {
               showError('Recording not found. The recording may not be available for this call.');
             }
@@ -297,7 +302,7 @@ const TranscriptsComplaintsPage = () => {
       // Check if error is due to opt-out
       const transcript = transcripts.find(t => t.callSid === callSid);
       if (transcript?.recordingConsent?.given === false) {
-        showError('Recording not available - customer opted out of recording consent');
+        showError('Recording not available: The customer did not provide consent for call recording. In compliance with GDPR, we do not store recordings when consent is not given.');
       } else {
         showError('Failed to play recording. Please check if the recording is available.');
       }
@@ -311,7 +316,7 @@ const TranscriptsComplaintsPage = () => {
     if (params.id) {
       const transcript = transcripts.find(t => (t.id === params.id || t._id === params.id));
       if (transcript?.recordingConsent?.given === false) {
-        showError('Transcript not available - customer opted out of recording consent');
+        showError('Transcript not available for export: The customer did not provide consent for call recording. In compliance with GDPR, transcripts are not stored when consent is not given.');
         return;
       }
     }
@@ -450,7 +455,19 @@ const TranscriptsComplaintsPage = () => {
     if (!transcriptArray || transcriptArray.length === 0) {
       // Check if empty due to opt-out
       if (recordingConsent?.given === false) {
-        return <Typography color="error">Recording consent not given - transcript unavailable</Typography>;
+        return (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <Typography variant="h6" color="error" gutterBottom>
+              Transcript Not Available
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              The customer did not provide consent for call recording and transcript storage.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              In compliance with GDPR regulations, we do not store transcripts when recording consent is not given.
+            </Typography>
+          </Box>
+        );
       }
       return <Typography color="text.secondary">No transcript available</Typography>;
     }
@@ -615,9 +632,21 @@ const TranscriptsComplaintsPage = () => {
                 const recordingConsent = fullTranscriptData?.transcript?.recordingConsent || 
                                         fullTranscriptData?.recordingConsent || 
                                         selectedTranscript?.recordingConsent;
-                
+
                 if (recordingConsent?.given === false) {
-                  return <Typography color="error">Recording consent not given - transcript unavailable</Typography>;
+                  return (
+                    <Box sx={{ p: 3, textAlign: 'center' }}>
+                      <Typography variant="h6" color="error" gutterBottom>
+                        Transcript Not Available
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        The customer did not provide consent for call recording and transcript storage.
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        In compliance with GDPR regulations, we do not store transcripts when recording consent is not given.
+                      </Typography>
+                    </Box>
+                  );
                 }
                 return <Typography color="text.secondary">No transcript available</Typography>;
               })()}

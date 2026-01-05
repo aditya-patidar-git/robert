@@ -6,6 +6,7 @@
 
 import responsesApiService from './responsesApiService.js';
 import toolExecutor from '../tools/index.js';
+import uncertaintyGateService from './uncertaintyGateService.js';
 
 class ToolOrchestrator {
   constructor() {
@@ -156,6 +157,50 @@ class ToolOrchestrator {
     } catch (error) {
       console.error(`❌ [${callSid}] Error injecting Responses API results:`, error);
     }
+  }
+
+  /**
+   * Check tool result for uncertainty gate failure and handle accordingly
+   * @param {Object} toolResult - Tool execution result
+   * @param {string} toolName - Tool name
+   * @param {WebSocket} openaiWs - OpenAI Realtime WebSocket (optional)
+   * @param {string} callSid - Call SID
+   * @returns {Promise<Object>} Modified result or original result
+   */
+  async checkUncertaintyGate(toolResult, toolName, openaiWs, callSid) {
+    // Only check file_search results
+    if (toolName !== 'file_search') {
+      return toolResult;
+    }
+
+    // Check if validation failed
+    if (toolResult && toolResult.validationFailed === true) {
+      console.log(`⚠️ [${callSid}] Uncertainty gate failed for file_search. Fallback action: ${toolResult.validationDetails?.fallbackAction || 'transfer'}`);
+      
+      // Generate uncertainty response
+      const uncertaintyResponse = uncertaintyGateService.generateUncertaintyResponse({
+        confidence: toolResult.confidence || 0,
+        recommendations: toolResult.validationDetails?.recommendations || [],
+        fallbackAction: toolResult.validationDetails?.fallbackAction || 'transfer'
+      });
+
+      // If automatic transfer is enabled and fallback action is transfer, trigger transfer
+      // Otherwise, return result with message for model to handle
+      if (uncertaintyResponse.action === 'transfer') {
+        // The model should see the error message and decide to transfer
+        // We'll let the model handle it via the error message
+        console.log(`🔄 [${callSid}] Uncertainty gate suggests transfer. Model will handle based on error message.`);
+      }
+
+      // Return result with uncertainty message
+      return {
+        ...toolResult,
+        uncertaintyMessage: uncertaintyResponse.message,
+        uncertaintyAction: uncertaintyResponse.action
+      };
+    }
+
+    return toolResult;
   }
 
   /**

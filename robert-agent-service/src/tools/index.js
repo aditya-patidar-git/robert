@@ -13,6 +13,7 @@ import configManager from '../agent/configManager.js';
 import ToolRegistry from './toolRegistry.js';
 import ToolExecutor from './toolExecutor.js';
 import { getToolDefinitions } from './toolDefinitions.js';
+import { bookingStepTools } from './bookingSteps/index.js';
 
 /**
  * Tool Executor for OpenAI Realtime API
@@ -53,6 +54,11 @@ class UnifiedToolExecutor {
       ['complaint_submission', complaintSubmissionTool],
       ['client_verification', clientVerificationTool]
     ]);
+    
+    // Register step-based booking tools
+    for (const [toolName, toolImpl] of Object.entries(bookingStepTools)) {
+      tools.set(toolName, toolImpl);
+    }
     
     this.toolRegistry.registerTools(tools);
     

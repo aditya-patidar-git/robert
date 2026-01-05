@@ -24,6 +24,7 @@ import GroundednessDashboard from './components/dashboards/GroundednessDashboard
 import RAGAnalytics from './components/dashboards/RAGAnalytics';
 import ToolPerformanceDashboard from './components/dashboards/ToolPerformanceDashboard';
 import SIPAnalyticsDashboard from './components/dashboards/SIPAnalyticsDashboard';
+import VoiceInsightsDashboard from './components/dashboards/VoiceInsightsDashboard';
 import TraceViewer from './components/dashboards/TraceViewer';
 import ErrorBudgetDashboard from './components/dashboards/ErrorBudgetDashboard';
 
@@ -196,6 +197,7 @@ const ObservabilityPage = () => {
           <Tab label="RAG Analytics" />
           <Tab label="Tool Performance" />
           <Tab label="SIP Analytics" />
+          <Tab label="Voice Quality" />
           <Tab label="Traces" />
           <Tab label="Error Budgets" />
           <Tab label="Alerts" />
@@ -254,8 +256,15 @@ const ObservabilityPage = () => {
         </Box>
       )}
 
-      {/* Traces Tab */}
+      {/* Voice Quality Tab */}
       {activeTab === 6 && (
+        <Box sx={{ p: 3 }}>
+          <VoiceInsightsDashboard timeRange={timeRange} />
+        </Box>
+      )}
+
+      {/* Traces Tab */}
+      {activeTab === 7 && (
         <Box sx={{ p: 3 }}>
           <TraceViewer 
             timeRange={timeRange} 
@@ -265,14 +274,14 @@ const ObservabilityPage = () => {
       )}
 
       {/* Error Budgets Tab */}
-      {activeTab === 7 && (
+      {activeTab === 8 && (
         <Box sx={{ p: 3 }}>
           <ErrorBudgetDashboard timeRange={timeRange} />
         </Box>
       )}
 
       {/* Alerts Tab */}
-      {activeTab === 8 && (
+      {activeTab === 9 && (
         <AlertsTab
           alertsData={alertsData}
           alertsLoading={alertsLoading}

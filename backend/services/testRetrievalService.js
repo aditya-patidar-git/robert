@@ -1,4 +1,5 @@
 import fileSearchService from './fileSearchService.js';
+import uncertaintyGateService from './uncertaintyGateService.js';
 import KnowledgeBase from '../models/KnowledgeBase.js';
 
 class TestRetrievalService {
@@ -38,6 +39,16 @@ class TestRetrievalService {
             similarityThreshold
           });
 
+          // Test uncertainty gate validation
+          const uncertaintyValidation = await uncertaintyGateService.validateResults(
+            { results: searchResults.results || [] },
+            {
+              threshold: similarityThreshold,
+              minPassages: 1,
+              requireProvenance: true
+            }
+          );
+
           // Test database search
           const dbResults = await this.testDatabaseSearch(query);
 
@@ -51,6 +62,17 @@ class TestRetrievalService {
                 similarityScore: r.similarityScore,
                 hasContent: !!r.content
               }))
+            },
+            uncertaintyGate: {
+              passed: uncertaintyValidation.passed,
+              confidence: uncertaintyValidation.confidence,
+              passagesFound: uncertaintyValidation.passages.length,
+              validPassages: uncertaintyValidation.passages.filter(p => {
+                const score = p.similarityScore || p.similarity_score || 0;
+                return score >= similarityThreshold;
+              }).length,
+              recommendations: uncertaintyValidation.recommendations,
+              fallbackAction: uncertaintyValidation.fallbackAction
             },
             databaseResults: {
               totalResults: dbResults.length,

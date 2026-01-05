@@ -42,26 +42,29 @@ const MCPToolsConfig = forwardRef(({
     queryFn: () => mcpToolsService.getAllTools()
   });
 
+  // Filter out booking step tools (not relevant for MCP Tools section)
+  const filteredMcpTools = React.useMemo(() => {
+    const toolsArray = Array.isArray(fetchedMcpTools) 
+      ? fetchedMcpTools 
+      : (fetchedMcpTools.tools || fetchedMcpTools.data || []);
+    
+    // Filter out booking_step_* tools
+    return toolsArray.filter(tool => !tool.name?.startsWith('booking_step_'));
+  }, [fetchedMcpTools]);
+
   // Update local state when MCP tools are fetched
   useEffect(() => {
-    if (fetchedMcpTools) {
-      // Ensure fetchedMcpTools is an array
-      const toolsArray = Array.isArray(fetchedMcpTools) 
-        ? fetchedMcpTools 
-        : (fetchedMcpTools.tools || fetchedMcpTools.data || []);
-      
-      if (toolsArray.length > 0) {
-        const domainsState = {};
-        const rateLimitState = {};
-        toolsArray.forEach(tool => {
-          domainsState[tool.name] = [...(tool.domains || [])];
-          rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
-        });
-        setEditingDomains(domainsState);
-        setRateLimitValues(rateLimitState);
-      }
+    if (filteredMcpTools && filteredMcpTools.length > 0) {
+      const domainsState = {};
+      const rateLimitState = {};
+      filteredMcpTools.forEach(tool => {
+        domainsState[tool.name] = [...(tool.domains || [])];
+        rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
+      });
+      setEditingDomains(domainsState);
+      setRateLimitValues(rateLimitState);
     }
-  }, [fetchedMcpTools]);
+  }, [filteredMcpTools]);
 
   // MCP Tools Handlers
   const handleToggleTool = async (toolName, enabled) => {
@@ -146,9 +149,8 @@ const MCPToolsConfig = forwardRef(({
     saveAll: async () => {
       if (readOnly) return { success: false, error: 'Read-only mode' };
       
-      const toolsArray = Array.isArray(fetchedMcpTools) 
-        ? fetchedMcpTools 
-        : (fetchedMcpTools?.tools || fetchedMcpTools?.data || []);
+      // Use filtered tools (excludes booking_step_* tools)
+      const toolsArray = filteredMcpTools;
       
       const savePromises = [];
       const errors = [];
@@ -208,7 +210,7 @@ const MCPToolsConfig = forwardRef(({
       <Paper>
         <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6" gutterBottom>
-            Available MCP Tools ({Array.isArray(fetchedMcpTools) ? fetchedMcpTools.length : (fetchedMcpTools?.tools?.length || fetchedMcpTools?.data?.length || 0)})
+            Available MCP Tools ({filteredMcpTools.length})
           </Typography>
           <Button
             variant="outlined"
@@ -223,9 +225,8 @@ const MCPToolsConfig = forwardRef(({
         {mcpLoading ? (
           <LinearProgress sx={{ mb: 2 }} />
         ) : (() => {
-          const toolsArray = Array.isArray(fetchedMcpTools) 
-            ? fetchedMcpTools 
-            : (fetchedMcpTools?.tools || fetchedMcpTools?.data || []);
+          // Use filtered tools (excludes booking_step_* tools)
+          const toolsArray = filteredMcpTools;
           
           return toolsArray.length === 0 ? (
             <Alert severity="info" sx={{ m: 2 }}>

@@ -35,7 +35,7 @@ export const useAudioTelephonyState = () => {
       defaultVoice: { id: 'ash', name: 'Ash', language: 'en-GB' },
       selectedModelId: null,
       selectedModel: null,
-      selectedVoice: null,
+      selectedVoice: '',  // Use empty string instead of null for MUI Select compatibility
       temperature: 0.4,
       topP: 1.0,
       maxTokens: 150,
@@ -200,12 +200,15 @@ export const useAudioTelephonyState = () => {
           }
         }
         if (config?.voice?.id) {
-          setValue('selectedVoice', config.voice.id);
+          setValue('selectedVoice', config.voice.id || '');  // Normalize to empty string if null
           setValue('defaultVoice', { 
             id: config.voice.id, 
             name: config.voice.name || 'Unknown', 
             language: config.voice.language || 'en-GB' 
           });
+        } else {
+          // Ensure selectedVoice is empty string if not set (not null)
+          setValue('selectedVoice', '');
         }
       } catch (error) {
         console.error('Error fetching AI config:', error);

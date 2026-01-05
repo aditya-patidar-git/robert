@@ -285,15 +285,124 @@ ${Object.keys(metadata).length > 0 ? `\nAdditional Details:\n${JSON.stringify(me
   }
 
   /**
+   * Check Voice Insights metrics and trigger alerts if thresholds are exceeded
+   * Note: This method is kept for backward compatibility but alerts are now
+   * created directly in the database by the agent service.
+   * This method can be used by backend services to check and create alerts.
+   * @param {Object} metrics - Voice Insights metrics
+   * @returns {Promise<Array>} Array of triggered alerts
+   */
+  async checkVoiceInsightsAlerts(metrics) {
+    const alerts = [];
+
+    // Check MOS score
+    if (metrics.mosScore !== undefined && metrics.mosScore < 3.0) {
+      alerts.push({
+        title: 'Poor Call Quality Detected',
+        message: `MOS score is ${metrics.mosScore.toFixed(2)}, which is below the poor quality threshold (3.0)`,
+        severity: metrics.mosScore < 2.5 ? 'critical' : 'warning',
+        callerId: metrics.callSid || 'unknown',
+        reason: 'low_mos_score',
+        component: 'voice-insights',
+        source: 'backend-service',
+        metadata: {
+          mosScore: metrics.mosScore,
+          threshold: 3.0,
+          callSid: metrics.callSid
+        }
+      });
+    }
+
+    // Check latency
+    if (metrics.latency !== undefined && metrics.latency > 300) {
+      alerts.push({
+        title: 'High Call Latency Detected',
+        message: `Call latency is ${metrics.latency}ms, which exceeds the high latency threshold (300ms)`,
+        severity: metrics.latency > 500 ? 'critical' : 'warning',
+        callerId: metrics.callSid || 'unknown',
+        reason: 'high_latency',
+        component: 'voice-insights',
+        source: 'backend-service',
+        metadata: {
+          latency: metrics.latency,
+          threshold: 300,
+          callSid: metrics.callSid
+        }
+      });
+    }
+
+    // Check packet loss
+    if (metrics.packetLoss !== undefined && metrics.packetLoss > 5) {
+      alerts.push({
+        title: 'High Packet Loss Detected',
+        message: `Packet loss is ${metrics.packetLoss.toFixed(2)}%, which exceeds the threshold (5%)`,
+        severity: metrics.packetLoss > 10 ? 'critical' : 'warning',
+        callerId: metrics.callSid || 'unknown',
+        reason: 'high_packet_loss',
+        component: 'voice-insights',
+        source: 'backend-service',
+        metadata: {
+          packetLoss: metrics.packetLoss,
+          threshold: 5,
+          callSid: metrics.callSid
+        }
+      });
+    }
+
+    // Check SLO violation
+    if (metrics.sloCompliance !== undefined && metrics.sloCompliance < 99.9) {
+      alerts.push({
+        title: 'SLO Violation Detected',
+        message: `SLO compliance is ${metrics.sloCompliance.toFixed(2)}%, which is below the target (99.9%)`,
+        severity: metrics.sloCompliance < 95 ? 'critical' : 'warning',
+        callerId: 'system',
+        reason: 'slo_violation',
+        component: 'voice-insights',
+        source: 'backend-service',
+        metadata: {
+          sloCompliance: metrics.sloCompliance,
+          target: 99.9,
+          errorBudget: 100 - metrics.sloCompliance
+        }
+      });
+    }
+
+    // Send all triggered alerts
+    for (const alert of alerts) {
+      await this.sendAlert(alert);
+    }
+
+    return alerts;
+  }
+
+  /**
    * Send alert to admin portal (via ObservabilityService)
+   * Also writes to database for persistence
    * @param {Object} alertData - Alert data
    * @returns {Promise<void>}
    */
   async sendAdminPortalAlert(alertData) {
     try {
-      // Dynamically import to avoid circular dependencies
-      const observabilityService = (await import('./observabilityService.js')).default;
+      // Write to database for persistence
+      const Alert = (await import('../models/Alert.js')).default;
       
+      const alert = new Alert({
+        title: alertData.title,
+        message: alertData.message,
+        severity: alertData.severity || 'warning',
+        component: alertData.component || 'abuse-prevention',
+        callerId: alertData.callerId,
+        reason: alertData.reason,
+        source: 'backend-service',
+        metadata: {
+          ...(alertData.metadata || {})
+        }
+      });
+
+      await alert.save();
+
+      // Also create in-memory alert for immediate UI access
+      const observabilityService = (await import('./observabilityService.js')).default;
       observabilityService.createAlert({
         title: alertData.title,
         message: alertData.message,
@@ -302,11 +411,12 @@ ${Object.keys(metadata).length > 0 ? `\nAdditional Details:\n${JSON.stringify(me
         metadata: {
           callerId: alertData.callerId,
           reason: alertData.reason,
+          alertId: alert._id.toString(),
           ...(alertData.metadata || {})
         }
       });
 
-      console.log('✅ Alert Service: Admin portal alert created');
+      console.log('✅ Alert Service: Admin portal alert created (database + in-memory)');
     } catch (error) {
       console.error('❌ Alert Service: Error creating admin portal alert:', error);
       throw error;

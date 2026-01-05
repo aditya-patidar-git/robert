@@ -22,6 +22,7 @@ import {
   testPhoneNumber,
   testSipConnection,
   getSipStatus,
+  getSipHealth,
   updateSipSettings
 } from "../controllers/telephonyConfigController.js";
 import {
@@ -63,6 +64,7 @@ router.post("/config/telephony/numbers/:number/test", testPhoneNumber);
 // SIP Configuration Routes
 router.post("/config/telephony/sip/test-connection", testSipConnection);
 router.get("/config/telephony/sip/status", getSipStatus);
+router.get("/config/telephony/sip/health", getSipHealth);
 router.put("/config/telephony/sip/settings", updateSipSettings);
 
 // Voice Management Routes
