@@ -28,8 +28,16 @@ export class CallStateManager {
     
     // Error and timing tracking
     this.errorCount = 0;
-    this.audioChunkCount = 0;
+    this.audioChunkCount = 0;  // Keep for backward compatibility
+    this.inboundAudioChunkCount = 0;  // Track inbound audio separately
+    this.outboundAudioChunkCount = 0;  // Track outbound audio separately
     this.audioChunkWarningLogged = false;
+    this.audioDeltaLogged = false;
+    
+    // Outbound audio buffering and pacing
+    this.outboundAudioBuffer = null;  // Buffer for pacing audio chunks (Buffer object)
+    this.lastOutboundSendTime = 0;  // Last time we sent an audio frame
+    this.outboundAudioPacer = null;  // Interval timer for sending frames at correct rate
     this.callStartTime = Date.now();
     this.startTimeout = null;
     this.durationTimer = null;
@@ -151,6 +159,13 @@ export class CallStateManager {
   incrementErrorCount() {
     this.errorCount++;
     return this.errorCount;
+  }
+
+  /**
+   * Reset error count
+   */
+  resetErrorCount() {
+    this.errorCount = 0;
   }
 
   /**

@@ -54,7 +54,7 @@ const CallMemorySchema = new mongoose.Schema({
 
 // Indexes for performance
 CallMemorySchema.index({ callerId: 1, createdAt: -1 });
-CallMemorySchema.index({ expiresAt: 1 }); // For cleanup jobs
+// expiresAt already has index: true in field definition, no need to duplicate
 
 export default mongoose.models.CallMemory || mongoose.model("CallMemory", CallMemorySchema);
 

@@ -106,7 +106,14 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Setup OpenAI connection
             const setupResult = await openaiIntegration.setupOpenAI();
             if (setupResult?.error) {
-                console.error(`❌ [${callSid}] Failed to setup OpenAI: ${setupResult.error}`);
+                const errorType = setupResult.retryable ? 'retryable' : 'non-retryable';
+                console.error(`❌ [${callSid}] Failed to setup OpenAI (${errorType}): ${setupResult.error}${setupResult.details ? ` - ${setupResult.details}` : ''}`);
+                
+                // For retryable errors, log but still cleanup (call can't proceed without OpenAI)
+                if (setupResult.retryable) {
+                    console.warn(`⚠️ [${callSid}] OpenAI connection failed after retries. This may be due to temporary OpenAI service issues.`);
+                }
+                
                 cleanup(setupResult.error);
                 return;
             }
@@ -120,14 +127,17 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Audio processing will start automatically when first audio arrives
             // via processIncomingAudio() method
             
-            // Check for memory consent
+            // Check for memory consent (non-blocking - don't delay conversation start)
             const memoryManager = new MemoryManager(stateManager);
-            await memoryManager.checkAndRequestMemoryConsent();
+            memoryManager.checkAndRequestMemoryConsent().catch(err => {
+                console.error(`⚠️ [${callSid}] Memory consent check failed (non-blocking):`, err);
+            });
             
             return { success: true };
         });
         
         // Setup Twilio WebSocket message handler for media
+        let mediaEventCount = 0; // Track total media events received (for logging)
         ws.on('message', async (data) => {
             if (stateManager.isClosed || !stateManager.accepting) {
                 return;
@@ -143,8 +153,29 @@ export const handleMediaStreamConnection = (ws, req) => {
                         return;
                     }
                     
-                    // Process incoming audio
-                    audioProcessor.processIncomingAudio(json.media.payload);
+                    mediaEventCount++;
+                    const track = json.media.track;
+                    
+                    // Log track info for debugging (first few and then periodically)
+                    if (mediaEventCount <= 5 || (mediaEventCount % 500 === 0)) {
+                        console.log(`🎤 [${stateManager.callSid}] Media event #${mediaEventCount} - track: ${track || 'undefined'}`);
+                    }
+                    
+                    // CRITICAL: Only process inbound track to avoid feedback loop
+                    // Outbound track is the agent's own audio being sent back
+                    if (track === 'inbound') {
+                        // Process incoming audio from caller
+                        audioProcessor.processIncomingAudio(json.media.payload);
+                    } else if (track === 'outbound') {
+                        // Explicitly ignore outbound track - this is our own audio being echoed back
+                        // Log first few to verify we're filtering correctly
+                        if (mediaEventCount <= 10 || (mediaEventCount % 500 === 0)) {
+                            console.log(`🔇 [${stateManager.callSid}] Ignoring outbound track audio (feedback prevention) - event #${mediaEventCount}`);
+                        }
+                    } else {
+                        // Track is undefined or unexpected - log warning
+                        console.warn(`⚠️ [${stateManager.callSid}] Media event #${mediaEventCount} with unexpected track: ${track || 'undefined'}, ignoring`);
+                    }
                 }
                 
                 // Handle other Twilio events (mark, stop, etc.)
@@ -196,6 +227,11 @@ export const handleMediaStreamConnection = (ws, req) => {
                 audioProcessor.cleanup();
             }
             
+            // Cleanup tool coordinator (includes responseHandler with downsampler)
+            if (toolCoordinator) {
+                toolCoordinator.cleanup();
+            }
+            
             // Cleanup Twilio WebSocket
             if (ws) {
                 ws.removeAllListeners();
@@ -211,6 +247,14 @@ export const handleMediaStreamConnection = (ws, req) => {
             if (stateManager.speechContinuationGraceTimer) {
                 clearTimeout(stateManager.speechContinuationGraceTimer);
             }
+            
+            // Cleanup outbound audio buffer and pacer
+            if (stateManager.outboundAudioPacer) {
+                clearInterval(stateManager.outboundAudioPacer);
+                stateManager.outboundAudioPacer = null;
+            }
+            stateManager.outboundAudioBuffer = null;
+            stateManager.lastOutboundSendTime = 0;
             
             // Cleanup services
             if (stateManager.callSid) {

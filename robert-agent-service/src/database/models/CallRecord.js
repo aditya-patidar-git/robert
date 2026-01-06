@@ -133,7 +133,7 @@ const callRecordSchema = new mongoose.Schema({
 callRecordSchema.index({ createdAt: -1 });
 callRecordSchema.index({ from: 1 });
 callRecordSchema.index({ result: 1 });
-callRecordSchema.index({ callStatus: 1 });
+// callStatus already has index: true in field definition, no need to duplicate
 callRecordSchema.index({ 'escalation.escalated': 1 });
 callRecordSchema.index({ 'complaint.hasComplaint': 1 });
 callRecordSchema.index({ 'audioQuality.measuredAt': -1 });

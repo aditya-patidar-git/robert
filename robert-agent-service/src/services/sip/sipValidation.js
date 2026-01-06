@@ -42,6 +42,33 @@ class SipValidation {
       };
     }
 
+    // Handle SIP URIs with parameters (e.g., sip:user@domain;transport=tls)
+    // SIP URI format: sip(s):user@domain[:port][;param=value][?header=value]
+    const sipUriPattern = /^sips?:[^@]+@[^;?]+(?:;.+)?(?:\?.+)?$/i;
+    
+    if (sipUriPattern.test(endpoint)) {
+      // It's a SIP URI - validate the structure
+      // Extract base URI (before parameters and headers)
+      const baseMatch = endpoint.match(/^(sips?):([^;?]+)/i);
+      if (baseMatch) {
+        const protocol = baseMatch[1].toLowerCase();
+        const uriPart = baseMatch[2];
+        
+        // Validate that it has user@domain format
+        if (uriPart.includes('@')) {
+          const [user, domain] = uriPart.split('@');
+          if (user && domain && domain.length > 0) {
+            return { valid: true };
+          }
+        }
+      }
+      return {
+        valid: false,
+        error: `Invalid SIP URI format: ${endpoint}. Expected format: sip:user@domain[;transport=tls]`
+      };
+    }
+
+    // Handle HTTP/HTTPS URLs
     try {
       const url = new URL(endpoint);
       if (!['http:', 'https:', 'sip:', 'sips:'].includes(url.protocol)) {
@@ -52,6 +79,11 @@ class SipValidation {
       }
       return { valid: true };
     } catch (error) {
+      // If URL parsing fails, it might still be a valid SIP URI without @
+      // Check for sip:domain format
+      if (/^sips?:[^@]+$/i.test(endpoint)) {
+        return { valid: true };
+      }
       return {
         valid: false,
         error: `Invalid endpoint URL format: ${error.message}`

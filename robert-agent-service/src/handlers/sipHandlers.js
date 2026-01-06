@@ -281,3 +281,43 @@ export const handleToolExecution = async (req, res) => {
   }
 };
 
+/**
+ * Handle Twilio webhook for SIP connector calls
+ * Returns minimal TwiML to keep call alive while trunk routes to OpenAI
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+export const handleSipCallHandler = async (req, res) => {
+  try {
+    const { CallSid, From, To } = req.body;
+    
+    console.log(`📞 [SIP] Call handler webhook received - CallSid: ${CallSid}, From: ${From}, To: ${To}`);
+    
+    // For SIP connector, routing happens at the Twilio SIP Trunk level
+    // We return minimal TwiML to keep the call alive
+    // The trunk configuration (in Twilio console) routes to OpenAI SIP endpoint
+    // OpenAI will then send call.accept webhook to /api/sip/call-accept
+    
+    // Return minimal TwiML - just keep call alive
+    // The actual routing to OpenAI happens at the trunk level
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="3600"/>
+</Response>`;
+    
+    res.type('text/xml');
+    res.send(twiml);
+    
+    console.log(`✅ [SIP] Call handler responded with minimal TwiML for CallSid: ${CallSid}`);
+  } catch (error) {
+    console.error(`❌ [SIP] Error handling SIP call handler:`, error);
+    // Return minimal TwiML even on error to prevent call failure
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="3600"/>
+</Response>`;
+    res.type('text/xml');
+    res.send(twiml);
+  }
+};
+

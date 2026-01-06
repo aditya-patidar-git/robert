@@ -1,6 +1,8 @@
 import { WebSocket } from "ws";
+import { spawn } from "child_process";
 import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
+import { convertPcm16ToMulaw } from '../../../utils/audioConversion.js';
 
 /**
  * Response Handler
@@ -10,6 +12,67 @@ export class ResponseHandler {
   constructor(stateManager, ws) {
     this.state = stateManager;
     this.ws = ws;
+    this.downsampler = null; // FFmpeg process for downsampling 24kHz -> 8kHz
+    this.downsamplerOutputHandler = null; // Track if handler is set up
+  }
+
+  /**
+   * Analyze audio chunk to detect format
+   */
+  analyzeAudioFormat(audioChunk, chunkNumber, event) {
+    if (chunkNumber > 5) return; // Only analyze first 5 chunks
+    
+    const chunkSize = audioChunk.length;
+    const sampleCount = chunkSize; // For g711_ulaw: 1 byte per sample
+    const pcm16SampleCount = chunkSize / 2; // For PCM16: 2 bytes per sample
+    
+    // Analyze byte patterns
+    let maxValue = 0;
+    let minValue = 255;
+    let zeroCount = 0;
+    
+    for (let i = 0; i < Math.min(100, chunkSize); i++) {
+      const byte = audioChunk[i];
+      maxValue = Math.max(maxValue, byte);
+      minValue = Math.min(minValue, byte);
+      if (byte === 0) zeroCount++;
+    }
+    
+    console.log(`🔍 [${this.state.callSid}] Audio chunk #${chunkNumber} analysis:`);
+    console.log(`   - Raw chunk size: ${chunkSize} bytes`);
+    console.log(`   - Base64 payload length: ${typeof event?.delta === 'string' ? event.delta.length : 'N/A'} chars`);
+    console.log(`   - If g711_ulaw: ${sampleCount} samples (${(sampleCount / 8000 * 1000).toFixed(1)}ms at 8kHz)`);
+    console.log(`   - If PCM16 at 8kHz: ${pcm16SampleCount} samples (${(pcm16SampleCount / 8000 * 1000).toFixed(1)}ms)`);
+    console.log(`   - If PCM16 at 24kHz: ${pcm16SampleCount} samples (${(pcm16SampleCount / 24000 * 1000).toFixed(1)}ms)`);
+    console.log(`   - Byte range: ${minValue} - ${maxValue}`);
+    console.log(`   - Zero bytes: ${zeroCount}/${Math.min(100, chunkSize)} (first 100 bytes)`);
+    
+    // Check for PCM16 patterns (alternating high/low bytes)
+    if (chunkSize >= 4) {
+      const firstSample = audioChunk.readInt16LE(0);
+      const secondSample = audioChunk.readInt16LE(2);
+      console.log(`   - First 2 samples as Int16LE: ${firstSample}, ${secondSample}`);
+      console.log(`   - First 2 samples as Uint8: ${audioChunk[0]}, ${audioChunk[1]}, ${audioChunk[2]}, ${audioChunk[3]}`);
+      
+      // PCM16 samples are typically in range -32768 to 32767
+      // g711_ulaw bytes are 0-255
+      if (Math.abs(firstSample) > 255 || Math.abs(secondSample) > 255) {
+        console.warn(`   ⚠️ DETECTED: Values suggest PCM16 format (samples: ${firstSample}, ${secondSample})`);
+      } else {
+        console.log(`   ℹ️ Values suggest g711_ulaw format (bytes: ${audioChunk[0]}, ${audioChunk[1]})`);
+      }
+    }
+    
+    // Check chunk size patterns
+    // g711_ulaw at 8kHz: common chunk sizes are multiples of 160 (20ms frames)
+    // PCM16 at 8kHz: common chunk sizes are multiples of 320 (20ms frames = 160 samples * 2 bytes)
+    if (chunkSize % 160 === 0) {
+      console.log(`   ✓ Chunk size is multiple of 160 (g711_ulaw 20ms frame size)`);
+    } else if (chunkSize % 320 === 0) {
+      console.warn(`   ⚠️ Chunk size is multiple of 320 (PCM16 20ms frame size) - FORMAT MISMATCH!`);
+    } else {
+      console.log(`   ℹ️ Chunk size doesn't match standard frame sizes`);
+    }
   }
 
   /**
@@ -43,18 +106,35 @@ export class ResponseHandler {
       const isWithinUserSpeakingWindow = this.state.agentFinishedSpeakingTime > 0 && timeSinceAgentFinished >= 0 && timeSinceAgentFinished < this.state.userSpeakingWindowMs;
       const userSpokeBeforeResponse = this.state.userSpeechStartedTime > 0 && this.state.userSpeechStartedTime < this.state.responseStartTime;
       
-      const shouldBlock = this.state.isInterrupted || 
-                         (this.state.isResponding && this.state.activeResponseId !== event.response?.id) ||
-                         (this.state.waitingForUser && !isRecentTranscription && !isWithinUserSpeakingWindow && !userSpokeBeforeResponse);
+      const isInterrupted = this.state.isInterrupted;
+      const isRespondingToDifferentResponse = this.state.isResponding && this.state.activeResponseId !== event.response?.id;
+      const shouldBlockWaiting = this.state.waitingForUser && !isRecentTranscription && !isWithinUserSpeakingWindow && !userSpokeBeforeResponse;
+      
+      const shouldBlock = isInterrupted || isRespondingToDifferentResponse || shouldBlockWaiting;
       
       if (shouldBlock) {
-        console.log(`🚫 [${this.state.callSid}] Blocking automatic response (barge-in/ghost) - ID: ${this.state.activeResponseId}`);
+        // Detailed logging for why response is being blocked
+        console.log(`🚫 [${this.state.callSid}] Blocking automatic response - ID: ${this.state.activeResponseId}`);
+        console.log(`   📊 Blocking reasons:`);
+        console.log(`      - explicitResponseRequested: ${this.state.explicitResponseRequested}`);
+        console.log(`      - isInterrupted: ${isInterrupted}`);
+        console.log(`      - isResponding: ${this.state.isResponding}, activeResponseId: ${this.state.activeResponseId}, newResponseId: ${event.response?.id}`);
+        console.log(`      - isRespondingToDifferentResponse: ${isRespondingToDifferentResponse}`);
+        console.log(`      - waitingForUser: ${this.state.waitingForUser}`);
+        console.log(`      - timeSinceTranscription: ${timeSinceTranscription}ms (recent: ${isRecentTranscription})`);
+        console.log(`      - timeSinceAgentFinished: ${timeSinceAgentFinished}ms (within window: ${isWithinUserSpeakingWindow})`);
+        console.log(`      - userSpokeBeforeResponse: ${userSpokeBeforeResponse}`);
+        console.log(`      - shouldBlockWaiting: ${shouldBlockWaiting}`);
+        
         try {
           if (this.state.openaiWs && this.state.openaiWs.readyState === 1) {
             this.state.openaiWs.send(JSON.stringify({
               type: 'response.cancel',
               response_id: this.state.activeResponseId
             }));
+            console.log(`   ✅ Sent response.cancel to OpenAI for response ${this.state.activeResponseId}`);
+          } else {
+            console.warn(`   ⚠️ Cannot cancel response - OpenAI WS readyState: ${this.state.openaiWs?.readyState}`);
           }
           this.state.activeResponseId = null;
           this.state.isResponding = false;
@@ -74,12 +154,97 @@ export class ResponseHandler {
   }
 
   /**
+   * Start downsampler (24kHz -> 8kHz) for outgoing audio
+   */
+  startDownsampler() {
+    if (this.downsampler) return;
+    
+    console.log(`🔧 [${this.state.callSid}] Starting FFmpeg downsampler (24kHz → 8kHz)`);
+    
+    this.downsampler = spawn('ffmpeg', [
+      '-f', 's16le',      // Input format: signed 16-bit little-endian
+      '-ar', '24000',     // Input sample rate: 24kHz
+      '-ac', '1',         // Input channels: mono
+      '-i', 'pipe:0',      // Input from stdin
+      '-f', 's16le',      // Output format: signed 16-bit little-endian
+      '-ar', '8000',      // Output sample rate: 8kHz
+      '-ac', '1',         // Output channels: mono
+      'pipe:1'            // Output to stdout
+    ]);
+    
+    // Suppress ffmpeg stderr (normal operation messages)
+    this.downsampler.stderr.on('data', () => {});
+    
+    this.downsampler.on('close', (code) => {
+      if (code !== 0 && code !== null) {
+        console.warn(`⚠️ [${this.state.callSid}] Downsampler exited with code ${code}`);
+      }
+      this.downsampler = null;
+      this.downsamplerOutputHandler = null;
+    });
+    
+    this.downsampler.on('error', (err) => {
+      console.error(`❌ [${this.state.callSid}] FFmpeg downsampler error:`, err);
+      this.downsampler = null;
+      this.downsamplerOutputHandler = null;
+    });
+    
+    // Set up handler for downsampled output (only once)
+    if (!this.downsamplerOutputHandler) {
+      this.downsamplerOutputHandler = true;
+      
+      this.downsampler.stdout.on('data', (downsampledPcm16) => {
+        if (this.state.isClosed) return;
+        
+        try {
+          // Convert 8kHz PCM16 to μ-law
+          const pcm16Base64 = downsampledPcm16.toString('base64');
+          const mulawBase64 = convertPcm16ToMulaw(pcm16Base64);
+          const mulawChunk = Buffer.from(mulawBase64, 'base64');
+          
+          // Buffer the converted g711_ulaw audio
+          this.state.outboundAudioBuffer = Buffer.concat([this.state.outboundAudioBuffer, mulawChunk]);
+          
+          // Constants for g711_ulaw at 8kHz: 160 bytes = 20ms of audio
+          const FRAME_SIZE = 160; // 20ms of g711_ulaw at 8kHz
+          const FRAME_INTERVAL_MS = 20;
+          
+          // Try to send a frame immediately if enough time has passed
+          const now = Date.now();
+          const timeSinceLastSend = now - this.state.lastOutboundSendTime;
+          
+          if (timeSinceLastSend >= FRAME_INTERVAL_MS && this.state.outboundAudioBuffer.length >= FRAME_SIZE) {
+            this.sendAudioFrame(FRAME_SIZE, false);
+          }
+          
+          // Start pacer if not already running and we have buffered data
+          if (this.state.outboundAudioBuffer.length >= FRAME_SIZE && !this.state.outboundAudioPacer) {
+            this.startAudioPacer(FRAME_SIZE, FRAME_INTERVAL_MS, false);
+          }
+        } catch (err) {
+          console.error(`❌ [${this.state.callSid}] Error processing downsampled audio:`, err);
+        }
+      });
+    }
+  }
+
+  /**
    * Handle response.audio.delta event
    */
   handleAudioDelta(event) {
+    // Track outbound audio separately
+    this.state.outboundAudioChunkCount++;
+    
+    // Log that we received an audio delta event (log first 30 chunks, then every 50th)
+    const shouldLog = this.state.outboundAudioChunkCount <= 30 || (this.state.outboundAudioChunkCount % 50 === 0);
+    if (shouldLog) {
+      const audioPayloadSize = event.delta ? (typeof event.delta === 'string' ? event.delta.length : JSON.stringify(event.delta).length) : 0;
+      console.log(`🔊 [${this.state.callSid}] Audio delta received - outbound chunk #${this.state.outboundAudioChunkCount}, total chunks: ${this.state.audioChunkCount + 1}, response: ${event.response_id || this.state.activeResponseId}, payload size: ${audioPayloadSize} bytes`);
+    }
+    
     this.state.isResponding = true;
     this.state.lastAudioChunkTime = Date.now();
-    this.state.audioChunkCount++;
+    this.state.audioChunkCount++;  // Keep for backward compatibility
     const responseTime = Date.now();
     this.state.audioMetrics.responseTimestamps.push(responseTime);
     this.state.audioMetrics.lastResponseTime = responseTime;
@@ -94,29 +259,197 @@ export class ResponseHandler {
     const withinGracePeriod = cancellationTimestamp && timeSinceCancellation < this.state.AUDIO_CANCELLATION_GRACE_PERIOD;
     
     if (this.state.isInterrupted || isCancelledResponse || (cancellationTimestamp && withinGracePeriod)) {
-      if (this.state.audioChunkCount % 100 === 0 || this.state.audioChunkCount < 5) {
-        console.log(`🔇 [${this.state.callSid}] Blocking audio chunk #${this.state.audioChunkCount} - response interrupted/cancelled`);
+      if (shouldLog) {
+        console.log(`🔇 [${this.state.callSid}] Blocking audio chunk #${this.state.outboundAudioChunkCount} - isInterrupted: ${this.state.isInterrupted}, isCancelled: ${isCancelledResponse}, withinGracePeriod: ${withinGracePeriod}`);
       }
       return false; // Don't send audio chunks
     }
     
-    // Send audio to Twilio
-    if (this.ws.readyState === WebSocket.OPEN && this.state.streamSid && !this.state.isClosed) {
-      try {
-        this.ws.send(JSON.stringify({
-          event: 'media',
-          streamSid: this.state.streamSid,
-          media: { payload: event.delta }
-        }));
-        return true;
-      } catch (err) {
-        this.state.incrementErrorCount();
-        console.error('❌ Error sending audio to Twilio:', err);
-        return false;
+    // Verify audio payload format
+    if (!event.delta) {
+      if (shouldLog) {
+        console.warn(`⚠️ [${this.state.callSid}] Audio delta event missing payload for chunk #${this.state.outboundAudioChunkCount}`);
       }
+      return false;
     }
     
-    return false;
+    // Validate payload is a string (base64-encoded g711_ulaw)
+    const audioPayload = event.delta;
+    if (typeof audioPayload !== 'string') {
+      if (shouldLog) {
+        console.warn(`⚠️ [${this.state.callSid}] Audio payload is not a string - type: ${typeof audioPayload}`);
+      }
+      return false;
+    }
+    
+    // Validate it looks like base64 (basic check)
+    if (audioPayload.length === 0) {
+      if (shouldLog) {
+        console.warn(`⚠️ [${this.state.callSid}] Audio payload is empty`);
+      }
+      return false;
+    }
+    
+    // CRITICAL: Buffer and pace audio chunks to prevent noise
+    // OpenAI sends variable-sized chunks, but Twilio needs consistent 20ms frames
+    // Buffer the audio and send at proper rate (160 bytes per 20ms for g711_ulaw at 8kHz)
+    if (!this.state.outboundAudioBuffer) {
+      this.state.outboundAudioBuffer = Buffer.alloc(0);
+      this.state.lastOutboundSendTime = Date.now();
+    }
+    
+    try {
+      // Decode base64 - this is PCM16 at 24kHz from OpenAI
+      const audioChunk = Buffer.from(audioPayload, 'base64');
+      
+      // DEBUG: Analyze first few chunks to detect format
+      if (this.state.outboundAudioChunkCount <= 5) {
+        this.analyzeAudioFormat(audioChunk, this.state.outboundAudioChunkCount, event);
+      }
+      
+      // CRITICAL FIX: Downsample PCM16 from 24kHz to 8kHz, then convert to g711_ulaw
+      // OpenAI sends PCM16 at 24kHz, but Twilio needs 8kHz μ-law
+      
+      // Start downsampler if not already running
+      if (!this.downsampler) {
+        this.startDownsampler();
+      }
+      
+      // Feed 24kHz PCM16 to downsampler
+      if (this.downsampler && !this.downsampler.killed && this.downsampler.stdin.writable) {
+        try {
+          this.downsampler.stdin.write(audioChunk);
+        } catch (err) {
+          console.error(`❌ [${this.state.callSid}] Error writing to downsampler:`, err);
+          // Restart downsampler on error
+          if (this.downsampler) {
+            this.downsampler.kill();
+            this.downsampler = null;
+            this.downsamplerOutputHandler = null;
+          }
+        }
+      }
+      
+      return true;
+    } catch (err) {
+      this.state.incrementErrorCount();
+      console.error(`❌ [${this.state.callSid}] Error processing audio chunk:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Send a single audio frame to Twilio
+   */
+  sendAudioFrame(frameSize, shouldLog = false) {
+    if (!this.state.outboundAudioBuffer || this.state.outboundAudioBuffer.length < frameSize) {
+      return false;
+    }
+    
+    if (this.ws.readyState !== WebSocket.OPEN || !this.state.streamSid || this.state.isClosed) {
+      return false;
+    }
+    
+    try {
+      const frame = this.state.outboundAudioBuffer.slice(0, frameSize);
+      this.state.outboundAudioBuffer = this.state.outboundAudioBuffer.slice(frameSize);
+      this.state.lastOutboundSendTime = Date.now();
+      
+      // DEBUG: Log first frame details
+      if (shouldLog && this.state.outboundAudioChunkCount <= 3) {
+        console.log(`🔍 [${this.state.callSid}] Sending frame to Twilio:`);
+        console.log(`   - Frame size: ${frameSize} bytes`);
+        console.log(`   - First 10 bytes (hex): ${frame.slice(0, 10).toString('hex')}`);
+        console.log(`   - First 10 bytes (decimal): ${Array.from(frame.slice(0, 10)).join(', ')}`);
+        console.log(`   - Buffer remaining: ${this.state.outboundAudioBuffer.length} bytes`);
+      }
+      
+      const mediaMessage = {
+        event: 'media',
+        streamSid: this.state.streamSid,
+        media: { 
+          payload: frame.toString('base64')
+          // NO track field - Twilio automatically routes to outbound
+        }
+      };
+      
+      this.ws.send(JSON.stringify(mediaMessage));
+      
+      if (shouldLog) {
+        console.log(`📤 [${this.state.callSid}] Sent audio frame to Twilio - frame: ${frameSize} bytes, buffer remaining: ${this.state.outboundAudioBuffer.length} bytes`);
+      }
+      
+      return true;
+    } catch (err) {
+      this.state.incrementErrorCount();
+      console.error(`❌ [${this.state.callSid}] Error sending audio frame:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Start audio pacer to send frames at correct rate
+   */
+  startAudioPacer(frameSize, frameIntervalMs, shouldLog = false) {
+    if (this.state.outboundAudioPacer) {
+      return; // Already running
+    }
+    
+    this.state.outboundAudioPacer = setInterval(() => {
+      if (this.state.isClosed || !this.state.streamSid || this.ws.readyState !== WebSocket.OPEN) {
+        this.stopAudioPacer();
+        return;
+      }
+      
+      if (this.state.outboundAudioBuffer && this.state.outboundAudioBuffer.length >= frameSize) {
+        this.sendAudioFrame(frameSize, false);
+      } else {
+        // Buffer empty or insufficient, stop pacer
+        this.stopAudioPacer();
+      }
+    }, frameIntervalMs);
+    
+    if (shouldLog) {
+      console.log(`⏱️ [${this.state.callSid}] Started audio pacer - ${frameIntervalMs}ms intervals, ${frameSize} bytes per frame`);
+    }
+  }
+
+  /**
+   * Stop audio pacer
+   */
+  stopAudioPacer() {
+    if (this.state.outboundAudioPacer) {
+      clearInterval(this.state.outboundAudioPacer);
+      this.state.outboundAudioPacer = null;
+    }
+  }
+
+  /**
+   * Cleanup audio buffer and pacer
+   */
+  cleanupAudioBuffer() {
+    this.stopAudioPacer();
+    this.state.outboundAudioBuffer = null;
+    this.state.lastOutboundSendTime = 0;
+  }
+
+  /**
+   * Cleanup resources (downsampler)
+   */
+  cleanup() {
+    if (this.downsampler) {
+      try {
+        if (this.downsampler.stdin.writable) {
+          this.downsampler.stdin.end();
+        }
+        this.downsampler.kill();
+      } catch (err) {
+        // Ignore errors during cleanup
+      }
+      this.downsampler = null;
+      this.downsamplerOutputHandler = null;
+    }
+    this.cleanupAudioBuffer();
   }
 
   /**
@@ -133,7 +466,12 @@ export class ResponseHandler {
     
     // Only clear response tracking if this is the active response
     if (responseId === this.state.activeResponseId) {
+      // Log audio summary before clearing state
+      const outboundChunksForResponse = this.state.outboundAudioChunkCount;
+      const totalInboundChunks = this.state.inboundAudioChunkCount || 0;
+      
       console.log(`✅ [${this.state.callSid}] Response done - ID: ${responseId}, status: ${status}`);
+      console.log(`   📊 Audio summary: ${outboundChunksForResponse} outbound chunks sent, ${totalInboundChunks} inbound chunks received`);
       
       // Mark that agent finished speaking
       this.state.agentFinishedSpeakingTime = Date.now();
@@ -158,6 +496,40 @@ export class ResponseHandler {
         this.state.interruptionStartTime = 0;
         this.state.pendingTranscriptions = [];
       }
+      
+      // Flush remaining audio buffer before response ends
+      // Send any remaining buffered audio frames
+      if (this.state.outboundAudioBuffer && this.state.outboundAudioBuffer.length > 0) {
+        const FRAME_SIZE = 160;
+        while (this.state.outboundAudioBuffer.length >= FRAME_SIZE) {
+          this.sendAudioFrame(FRAME_SIZE, false);
+        }
+        // If there's a small remainder, send it as-is (better than dropping)
+        if (this.state.outboundAudioBuffer.length > 0) {
+          const remainder = this.state.outboundAudioBuffer;
+          this.state.outboundAudioBuffer = Buffer.alloc(0);
+          if (this.ws.readyState === WebSocket.OPEN && this.state.streamSid && !this.state.isClosed) {
+            try {
+              const mediaMessage = {
+                event: 'media',
+                streamSid: this.state.streamSid,
+                media: { 
+                  payload: remainder.toString('base64')
+                }
+              };
+              this.ws.send(JSON.stringify(mediaMessage));
+            } catch (err) {
+              console.warn(`⚠️ [${this.state.callSid}] Error sending final audio buffer:`, err.message);
+            }
+          }
+        }
+      }
+      
+      // Stop pacer when response is done
+      this.stopAudioPacer();
+    } else {
+      // Response completed but it's not the active one (might have been cancelled)
+      console.log(`ℹ️ [${this.state.callSid}] Response done for non-active response - ID: ${responseId}, status: ${status}, activeResponseId: ${this.state.activeResponseId}`);
     }
   }
 

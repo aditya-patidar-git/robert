@@ -90,8 +90,10 @@ export class AudioProcessor {
             this.ws.send(JSON.stringify({
               event: 'media',
               streamSid: this.state.streamSid,
-              track: 'outbound',
-              media: { payload: frame.toString('base64') }
+              media: { 
+                payload: frame.toString('base64')
+                // NO track field - Twilio automatically routes to outbound
+              }
             }));
           } catch (err) {
             console.error(`❌ Failed to send frame: ${err.message}`);
@@ -242,8 +244,9 @@ export class AudioProcessor {
     }
     
     try {
-      // Track audio metrics
-      this.state.audioChunkCount++;
+      // Track audio metrics - use separate inbound counter
+      this.state.audioChunkCount++;  // Keep for backward compatibility
+      this.state.inboundAudioChunkCount++;  // Track inbound separately
       const now = Date.now();
       this.state.audioMetrics.incomingTimestamps.push(now);
       this.state.audioMetrics.receivedChunks++;

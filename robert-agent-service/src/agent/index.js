@@ -311,7 +311,7 @@ app.post('/api/booking/itm/demo', async (req, res) => {
 
 // Manual call trigger (for testing)
 app.get('/call', async (req, res) => {
-  const to = req.query.to;
+  const to = req.query.to?.trim(); // Trim phone number to remove leading/trailing spaces
   if (!to) return res.status(400).send('Add ?to=+918120523400');
 
   try {
@@ -322,18 +322,15 @@ app.get('/call', async (req, res) => {
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const wsUrl = `${wsProtocol}://${wsHost}/media-stream`;
     
-    console.log(`📞 [DEBUG] Creating Twilio call with WebSocket URL: ${wsUrl}`);
-    
     // Build status callback URL
     const statusCallbackUrl = TUNNEL_DOMAIN 
       ? `https://${TUNNEL_DOMAIN}/api/outbound/call-status`
       : `http://localhost:${PORT}/api/outbound/call-status`;
     
-    console.log(`📞 [DEBUG] Status callback URL: ${statusCallbackUrl}`);
-    
-    const call = await client.calls.create({
+    // Prepare Media Streams options (used as fallback or primary)
+    const mediaStreamsOptions = {
+      to,
       from: TWILIO_NUMBER,
-      to: to,
       statusCallback: statusCallbackUrl,
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       twiml: `<Response>
@@ -342,13 +339,30 @@ app.get('/call', async (req, res) => {
         </Connect>
         <Pause length="3600"/>
       </Response>`
-    });
+    };
+
+    // Use routing logic to decide between SIP and Media Streams
+    const sipCallRouter = (await import('../services/sip/sipCallRouter.js')).default;
+    const telephonyConfig = configManager.getTelephonyConfig();
     
-    console.log(`✅ [DEBUG] Twilio call created - SID: ${call.sid}, Status: ${call.status}`);
-    res.send(`Calling ${to}... SID: ${call.sid}`);
+    const { call, method } = await sipCallRouter.routeCall(
+      client,
+      to,
+      TWILIO_NUMBER,
+      telephonyConfig,
+      mediaStreamsOptions
+    );
+
+    if (!call) {
+      console.error('❌ [DEBUG] Failed to create call');
+      return res.status(500).send('Failed to create call');
+    }
+
+    console.log(`✅ [DEBUG] Twilio call created - SID: ${call.sid}, Status: ${call.status}, Method: ${method}`);
+    res.send(`Call ${method} created: ${call.sid}`);
   } catch (err) {
     console.error('❌ [DEBUG] Error creating call:', err);
-    res.status(500).send(err.message);
+    res.status(500).send(`Error: ${err.message}`);
   }
 });
 
