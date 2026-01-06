@@ -223,7 +223,14 @@ class ToolExecutionService {
       if (currentState === null) {
         turnTakingStateMachine.initialize(callSid || callId);
       }
-      turnTakingStateMachine.transition(callSid || callId, STATES.TOOL_EXECUTING, { toolName });
+      
+      // Check if already in TOOL_EXECUTING state to prevent concurrent execution warnings
+      const stateBeforeTransition = turnTakingStateMachine.getCurrentState(callSid || callId);
+      if (stateBeforeTransition === STATES.TOOL_EXECUTING) {
+        console.warn(`⚠️ [${callSid || callId}] Already in TOOL_EXECUTING state, skipping transition for ${toolName}`);
+      } else {
+        turnTakingStateMachine.transition(callSid || callId, STATES.TOOL_EXECUTING, { toolName });
+      }
     }
 
     // Start progress tracking (only for Media Streams)
@@ -302,7 +309,7 @@ class ToolExecutionService {
       if (stateManager) {
         stateManager.activeToolExecutions.delete(toolName);
         progressIndicatorService.endToolExecution(callSid || callId);
-        turnTakingStateMachine.transition(callSid || callId, STATES.WAITING_FOR_USER);
+        turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
       }
 
       console.log(`✅ [${callSid || callId}] Tool ${toolName} completed successfully`);
@@ -316,7 +323,7 @@ class ToolExecutionService {
       if (stateManager) {
         stateManager.activeToolExecutions.delete(toolName);
         progressIndicatorService.endToolExecution(callSid || callId);
-        turnTakingStateMachine.transition(callSid || callId, STATES.WAITING_FOR_USER);
+        turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
       }
 
       return {

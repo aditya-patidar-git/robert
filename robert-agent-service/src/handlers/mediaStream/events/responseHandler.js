@@ -1,8 +1,7 @@
 import { WebSocket } from "ws";
-import { spawn } from "child_process";
 import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
-import { convertPcm16ToMulaw } from '../../../utils/audioConversion.js';
+import { MemoryManager } from '../utils/index.js';
 
 /**
  * Response Handler
@@ -12,8 +11,6 @@ export class ResponseHandler {
   constructor(stateManager, ws) {
     this.state = stateManager;
     this.ws = ws;
-    this.downsampler = null; // FFmpeg process for downsampling 24kHz -> 8kHz
-    this.downsamplerOutputHandler = null; // Track if handler is set up
   }
 
   /**
@@ -153,80 +150,6 @@ export class ResponseHandler {
     return true;
   }
 
-  /**
-   * Start downsampler (24kHz -> 8kHz) for outgoing audio
-   */
-  startDownsampler() {
-    if (this.downsampler) return;
-    
-    console.log(`🔧 [${this.state.callSid}] Starting FFmpeg downsampler (24kHz → 8kHz)`);
-    
-    this.downsampler = spawn('ffmpeg', [
-      '-f', 's16le',      // Input format: signed 16-bit little-endian
-      '-ar', '24000',     // Input sample rate: 24kHz
-      '-ac', '1',         // Input channels: mono
-      '-i', 'pipe:0',      // Input from stdin
-      '-f', 's16le',      // Output format: signed 16-bit little-endian
-      '-ar', '8000',      // Output sample rate: 8kHz
-      '-ac', '1',         // Output channels: mono
-      'pipe:1'            // Output to stdout
-    ]);
-    
-    // Suppress ffmpeg stderr (normal operation messages)
-    this.downsampler.stderr.on('data', () => {});
-    
-    this.downsampler.on('close', (code) => {
-      if (code !== 0 && code !== null) {
-        console.warn(`⚠️ [${this.state.callSid}] Downsampler exited with code ${code}`);
-      }
-      this.downsampler = null;
-      this.downsamplerOutputHandler = null;
-    });
-    
-    this.downsampler.on('error', (err) => {
-      console.error(`❌ [${this.state.callSid}] FFmpeg downsampler error:`, err);
-      this.downsampler = null;
-      this.downsamplerOutputHandler = null;
-    });
-    
-    // Set up handler for downsampled output (only once)
-    if (!this.downsamplerOutputHandler) {
-      this.downsamplerOutputHandler = true;
-      
-      this.downsampler.stdout.on('data', (downsampledPcm16) => {
-        if (this.state.isClosed) return;
-        
-        try {
-          // Convert 8kHz PCM16 to μ-law
-          const pcm16Base64 = downsampledPcm16.toString('base64');
-          const mulawBase64 = convertPcm16ToMulaw(pcm16Base64);
-          const mulawChunk = Buffer.from(mulawBase64, 'base64');
-          
-          // Buffer the converted g711_ulaw audio
-          this.state.outboundAudioBuffer = Buffer.concat([this.state.outboundAudioBuffer, mulawChunk]);
-          
-          // Constants for g711_ulaw at 8kHz: 160 bytes = 20ms of audio
-          const FRAME_SIZE = 160; // 20ms of g711_ulaw at 8kHz
-          const FRAME_INTERVAL_MS = 20;
-          
-          // Try to send a frame immediately if enough time has passed
-          const now = Date.now();
-          const timeSinceLastSend = now - this.state.lastOutboundSendTime;
-          
-          if (timeSinceLastSend >= FRAME_INTERVAL_MS && this.state.outboundAudioBuffer.length >= FRAME_SIZE) {
-            this.sendAudioFrame(FRAME_SIZE, false);
-          }
-          
-          // Start pacer if not already running and we have buffered data
-          if (this.state.outboundAudioBuffer.length >= FRAME_SIZE && !this.state.outboundAudioPacer) {
-            this.startAudioPacer(FRAME_SIZE, FRAME_INTERVAL_MS, false);
-          }
-        } catch (err) {
-          console.error(`❌ [${this.state.callSid}] Error processing downsampled audio:`, err);
-        }
-      });
-    }
-  }
 
   /**
    * Handle response.audio.delta event
@@ -299,7 +222,7 @@ export class ResponseHandler {
     }
     
     try {
-      // Decode base64 - this is PCM16 at 24kHz from OpenAI
+      // Decode base64 - this is g711_ulaw from OpenAI (direct format, no conversion needed)
       const audioChunk = Buffer.from(audioPayload, 'base64');
       
       // DEBUG: Analyze first few chunks to detect format
@@ -307,27 +230,25 @@ export class ResponseHandler {
         this.analyzeAudioFormat(audioChunk, this.state.outboundAudioChunkCount, event);
       }
       
-      // CRITICAL FIX: Downsample PCM16 from 24kHz to 8kHz, then convert to g711_ulaw
-      // OpenAI sends PCM16 at 24kHz, but Twilio needs 8kHz μ-law
+      // Direct format: OpenAI sends g711_ulaw, we can send it directly to Twilio
+      // Buffer the g711_ulaw audio
+      this.state.outboundAudioBuffer = Buffer.concat([this.state.outboundAudioBuffer, audioChunk]);
       
-      // Start downsampler if not already running
-      if (!this.downsampler) {
-        this.startDownsampler();
+      // Constants for g711_ulaw at 8kHz: 160 bytes = 20ms of audio
+      const FRAME_SIZE = 160; // 20ms of g711_ulaw at 8kHz
+      const FRAME_INTERVAL_MS = 20;
+      
+      // Try to send a frame immediately if enough time has passed
+      const now = Date.now();
+      const timeSinceLastSend = now - this.state.lastOutboundSendTime;
+      
+      if (timeSinceLastSend >= FRAME_INTERVAL_MS && this.state.outboundAudioBuffer.length >= FRAME_SIZE) {
+        this.sendAudioFrame(FRAME_SIZE, false);
       }
       
-      // Feed 24kHz PCM16 to downsampler
-      if (this.downsampler && !this.downsampler.killed && this.downsampler.stdin.writable) {
-        try {
-          this.downsampler.stdin.write(audioChunk);
-        } catch (err) {
-          console.error(`❌ [${this.state.callSid}] Error writing to downsampler:`, err);
-          // Restart downsampler on error
-          if (this.downsampler) {
-            this.downsampler.kill();
-            this.downsampler = null;
-            this.downsamplerOutputHandler = null;
-          }
-        }
+      // Start pacer if not already running and we have buffered data
+      if (this.state.outboundAudioBuffer.length >= FRAME_SIZE && !this.state.outboundAudioPacer) {
+        this.startAudioPacer(FRAME_SIZE, FRAME_INTERVAL_MS, false);
       }
       
       return true;
@@ -434,21 +355,9 @@ export class ResponseHandler {
   }
 
   /**
-   * Cleanup resources (downsampler)
+   * Cleanup resources
    */
   cleanup() {
-    if (this.downsampler) {
-      try {
-        if (this.downsampler.stdin.writable) {
-          this.downsampler.stdin.end();
-        }
-        this.downsampler.kill();
-      } catch (err) {
-        // Ignore errors during cleanup
-      }
-      this.downsampler = null;
-      this.downsamplerOutputHandler = null;
-    }
     this.cleanupAudioBuffer();
   }
 
@@ -487,6 +396,12 @@ export class ResponseHandler {
       if (!this.state.hasInitialGreetingCompleted && this.state.hasInitialGreetingBeenSent) {
         this.state.hasInitialGreetingCompleted = true;
         console.log(`🎯 [${this.state.callSid}] Initial greeting completed`);
+        
+        // Check for memory consent after greeting completes (non-blocking)
+        const memoryManager = new MemoryManager(this.state);
+        memoryManager.checkAndRequestMemoryConsent().catch(err => {
+          console.error(`⚠️ [${this.state.callSid}] Memory consent check failed (non-blocking):`, err);
+        });
       }
       
       // Clear interruption state if response completed successfully

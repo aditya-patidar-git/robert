@@ -20,8 +20,19 @@ export class ToolCoordinator {
     this.bargeInHandler = new BargeInHandler(stateManager, openaiWs);
     this.consentHandler = consentHandler;
     this.responseHandler = new ResponseHandler(stateManager, ws);
-    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler);
+    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs);
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs);
+  }
+
+  /**
+   * Update OpenAI WebSocket reference (called after connection is established)
+   */
+  setOpenAIWebSocket(openaiWs) {
+    this.openaiWs = openaiWs;
+    // Update transcription handler with openaiWs
+    if (this.transcriptionHandler) {
+      this.transcriptionHandler.openaiWs = openaiWs;
+    }
   }
 
   /**
@@ -89,10 +100,63 @@ export class ToolCoordinator {
           
         case 'conversation.item.input_audio_transcription.completed':
           await this.transcriptionHandler.handleTranscriptionCompleted(event);
+          // Check if agent is waiting and should respond immediately
+          if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+            // Create response immediately when user speaks and agent is waiting
+            try {
+              this.state.explicitResponseRequested = true;
+              this.openaiWs.send(JSON.stringify({
+                type: 'response.create',
+                response: {
+                  modalities: ['audio', 'text']
+                }
+              }));
+              console.log(`🎯 [${this.state.callSid}] Created response immediately after user transcription`);
+            } catch (err) {
+              console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
+            }
+          }
           break;
           
         case 'input_audio_buffer.speech_stopped':
-          await this.transcriptionHandler.handleSpeechStopped(event);
+          const speechStoppedResult = await this.transcriptionHandler.handleSpeechStopped(event);
+          // Handle process_transcriptions return value
+          if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
+            const transcriptions = speechStoppedResult.transcriptions || [];
+            if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+              // Create response immediately when transcriptions are ready and agent is waiting
+              try {
+                this.state.explicitResponseRequested = true;
+                this.openaiWs.send(JSON.stringify({
+                  type: 'response.create',
+                  response: {
+                    modalities: ['audio', 'text']
+                  }
+                }));
+                console.log(`🎯 [${this.state.callSid}] Created response immediately after processing ${transcriptions.length} transcriptions`);
+              } catch (err) {
+                console.error(`❌ [${this.state.callSid}] Error creating response after processing transcriptions:`, err);
+              }
+            }
+          }
+          // Handle acknowledge_interruption return value
+          if (speechStoppedResult && speechStoppedResult.type === 'acknowledge_interruption') {
+            // Create response to acknowledge interruption
+            if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null) {
+              try {
+                this.state.explicitResponseRequested = true;
+                this.openaiWs.send(JSON.stringify({
+                  type: 'response.create',
+                  response: {
+                    modalities: ['audio', 'text']
+                  }
+                }));
+                console.log(`🎯 [${this.state.callSid}] Created response to acknowledge interruption`);
+              } catch (err) {
+                console.error(`❌ [${this.state.callSid}] Error creating response for interruption:`, err);
+              }
+            }
+          }
           break;
           
         case 'response.output_item.done':

@@ -120,18 +120,15 @@ export const handleMediaStreamConnection = (ws, req) => {
             
             // Update tool coordinator with OpenAI WebSocket
             if (setupResult?.openaiWs) {
-                toolCoordinator.openaiWs = setupResult.openaiWs;
+                toolCoordinator.setOpenAIWebSocket(setupResult.openaiWs);
                 stateManager.setOpenAIReady(setupResult.openaiWs);
             }
             
             // Audio processing will start automatically when first audio arrives
             // via processIncomingAudio() method
             
-            // Check for memory consent (non-blocking - don't delay conversation start)
-            const memoryManager = new MemoryManager(stateManager);
-            memoryManager.checkAndRequestMemoryConsent().catch(err => {
-                console.error(`⚠️ [${callSid}] Memory consent check failed (non-blocking):`, err);
-            });
+            // Memory consent will be checked after initial greeting completes
+            // (moved to responseHandler.handleResponseDone to avoid blocking conversation start)
             
             return { success: true };
         });

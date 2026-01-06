@@ -50,12 +50,14 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
    */
   async submitResult(callId, toolCallId, result, options = {}) {
     if (!this.openaiWs || this.openaiWs.readyState !== 1) {
-      console.warn(`⚠️ [${callId}] Cannot submit result - WebSocket not open`);
+      const wsState = this.openaiWs ? this.openaiWs.readyState : 'null';
+      const callClosed = this.stateManager?.isClosed ? ' (call closed)' : '';
+      console.log(`ℹ️ [${callId}] Cannot submit result - WebSocket state: ${wsState}${callClosed}. This is expected if the call ended before tool completion.`);
       return;
     }
 
     if (this.stateManager && this.stateManager.isClosed) {
-      console.warn(`⚠️ [${callId}] Cannot submit result - call is closed`);
+      console.log(`ℹ️ [${callId}] Cannot submit result - call is closed. This is expected if the call ended before tool completion.`);
       return;
     }
 

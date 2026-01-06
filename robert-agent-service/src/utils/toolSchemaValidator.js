@@ -130,6 +130,109 @@ const complaintSubmissionSchema = z.object({
   callerDetails: z.record(z.any()).optional()
 });
 
+// Common course type enum for booking steps
+const courseTypeEnum = z.enum([
+  'ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training',
+  'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion',
+  'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT',
+  'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment',
+  'Full Motorcycle Licence Assessment'
+]);
+
+// Session details schema (used in select_session)
+const sessionDetailsSchema = z.object({
+  date: z.string().optional(),
+  time: z.string().optional(),
+  location: z.string().optional(),
+  instructor: z.string().optional(),
+  price: z.string().optional()
+}).passthrough(); // Allow additional fields
+
+// Booking Step Schemas
+const bookingStepCheckAvailabilitySchema = z.object({
+  courseType: courseTypeEnum,
+  preferredDate: z.string().optional(),
+  preferredTime: z.string().optional(),
+  location: z.string().optional(),
+  instructor: z.string().optional()
+});
+
+const bookingStepAuthenticateSchema = z.object({
+  courseType: courseTypeEnum
+});
+
+const bookingStepNavigateContactsSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing'])
+});
+
+const bookingStepSearchClientSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']),
+  customerMobile: z.string().optional(),
+  customerEmail: z.string().email().optional()
+});
+
+const bookingStepSelectSessionSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing', 'new']),
+  sessionDetails: sessionDetailsSchema
+});
+
+const bookingStepSelectBookingOptionsSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing', 'new']),
+  bikeType: z.enum(['125cc automatic', '50cc automatic', '125cc manual']).optional(),
+  cbtType: z.enum(['standard', 'renewal']).optional(),
+  duration: z.enum(['2', '3', '4']).optional()
+});
+
+const bookingStepCreateNewContactSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['new'])
+});
+
+const bookingStepFillContactDetailsSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing', 'new']),
+  customerEmail: z.string().email().optional(),
+  customerMobile: z.string().optional(),
+  customerName: z.string().optional(),
+  postcode: z.string().optional(),
+  houseNumber: z.string().optional(),
+  nationalInsurance: z.string().optional(),
+  drivingLicenceNumber: z.string().optional()
+});
+
+const bookingStepProcessPaymentSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing', 'new']),
+  termsAccepted: z.boolean(),
+  paymentMethod: z.string().optional(),
+  cardNumber: z.string().optional(),
+  expiryDate: z.string().optional(),
+  cvv: z.string().optional(),
+  cardholderName: z.string().optional()
+});
+
+const bookingStepSendConfirmationSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing', 'new']),
+  customerEmail: z.string().email()
+});
+
+const bookingStepSendTermsSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing', 'new']),
+  customerEmail: z.string().email()
+});
+
+const bookingStepSendSMSSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing', 'new']),
+  customerMobile: z.string()
+});
+
 // Schema map for all tools
 const toolSchemas = {
   web_search: webSearchSchema,
@@ -142,7 +245,20 @@ const toolSchemas = {
   transfer_call: transferCallSchema,
   kba_verification: kbaVerificationSchema,
   client_verification: clientVerificationSchema,
-  complaint_submission: complaintSubmissionSchema
+  complaint_submission: complaintSubmissionSchema,
+  // Booking step tools
+  booking_step_check_availability: bookingStepCheckAvailabilitySchema,
+  booking_step_authenticate: bookingStepAuthenticateSchema,
+  booking_step_navigate_contacts: bookingStepNavigateContactsSchema,
+  booking_step_search_client: bookingStepSearchClientSchema,
+  booking_step_select_session: bookingStepSelectSessionSchema,
+  booking_step_select_booking_options: bookingStepSelectBookingOptionsSchema,
+  booking_step_create_new_contact: bookingStepCreateNewContactSchema,
+  booking_step_fill_contact_details: bookingStepFillContactDetailsSchema,
+  booking_step_process_payment: bookingStepProcessPaymentSchema,
+  booking_step_send_confirmation: bookingStepSendConfirmationSchema,
+  booking_step_send_terms: bookingStepSendTermsSchema,
+  booking_step_send_sms: bookingStepSendSMSSchema
 };
 
 /**

@@ -427,6 +427,67 @@ ${config.instructions}`;
       // Setup event handlers
       this.setupEventHandlers(openaiWs, config, modifiedInstructions);
       
+      // CRITICAL FIX: If WebSocket is already open, send session.update immediately
+      // (The open event may have already fired before handlers were set up)
+      if (openaiWs.readyState === WebSocket.OPEN) {
+        console.log(`✅ [${this.state.callSid}] WebSocket already open, sending session.update immediately`);
+        
+        try {
+          // Get tool definitions
+          const tools = toolExecutor.getToolDefinitions();
+          
+          // Clear any existing conversation state and audio buffer
+          try {
+            openaiWs.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+            console.log(`🧹 [${this.state.callSid}] Cleared input audio buffer at session start`);
+          } catch (err) {
+            console.warn(`⚠️ [${this.state.callSid}] Could not clear audio buffer at start:`, err.message);
+          }
+          
+          // Get audio config for calibration check
+          const audioConfig = configManager.getAudioConfig();
+          
+          // Use base threshold initially (will be updated after calibration if enabled)
+          const initialThreshold = config.vadThreshold / 1000; // Convert ms to seconds
+          
+          // Apply dynamic config to OpenAI session
+          openaiWs.send(JSON.stringify({
+            type: 'session.update',
+            session: {
+              modalities: ['audio', 'text'],
+              instructions: modifiedInstructions || config.instructions,
+              voice: config.voice.id,
+              temperature: Math.max(0.6, config.temperature), // Minimum is 0.6 for Realtime API
+              input_audio_format: 'g711_ulaw',
+              output_audio_format: 'g711_ulaw',  // Direct format - no conversion needed
+              turn_detection: {
+                type: 'server_vad',
+                threshold: initialThreshold,
+                prefix_padding_ms: config.startPadding,
+                silence_duration_ms: config.endPadding
+              },
+              tools: tools,
+              tool_choice: 'auto'
+            }
+          }));
+          console.log(`📤 Sent session.update with config and ${tools.length} tools for call: ${this.state.callSid}`);
+          console.log(`🔍 [${this.state.callSid}] Session config details:`);
+          console.log(`   - input_audio_format: g711_ulaw`);
+          console.log(`   - output_audio_format: g711_ulaw (direct format - no conversion needed)`);
+          console.log(`   - voice: ${config.voice.id}`);
+          console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
+          if (audioConfig?.energyThresholdAutoCalibrate !== false) {
+            console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
+          }
+        } catch (err) {
+          this.state.incrementErrorCount();
+          console.error('❌ Error sending session.update:', err);
+          if (this.state.hasMaxErrors()) {
+            if (this.onEvent) this.onEvent({ type: 'error', error: 'send_error' });
+          }
+        }
+      }
+      
       return { success: true, openaiWs };
     } catch (err) {
       const isRetryable = this.isRetryableError(err);
@@ -547,7 +608,7 @@ ${config.instructions}`;
             voice: config.voice.id,
             temperature: Math.max(0.6, config.temperature), // Minimum is 0.6 for Realtime API
             input_audio_format: 'g711_ulaw',
-            output_audio_format: 'pcm16',  // Request PCM16, then convert to g711_ulaw for Twilio
+            output_audio_format: 'g711_ulaw',  // Direct format - no conversion needed
             turn_detection: {
               type: 'server_vad',
               threshold: initialThreshold,
@@ -561,7 +622,7 @@ ${config.instructions}`;
         console.log(`📤 Sent session.update with config and ${tools.length} tools for call: ${this.state.callSid}`);
         console.log(`🔍 [${this.state.callSid}] Session config details:`);
         console.log(`   - input_audio_format: g711_ulaw`);
-        console.log(`   - output_audio_format: pcm16 (will convert to g711_ulaw for Twilio)`);
+        console.log(`   - output_audio_format: g711_ulaw (direct format - no conversion needed)`);
         console.log(`   - voice: ${config.voice.id}`);
         console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
@@ -589,9 +650,6 @@ ${config.instructions}`;
           console.log(`   - input_audio_format: ${event.session?.input_audio_format || 'not specified'}`);
           console.log(`   - output_audio_format: ${event.session?.output_audio_format || 'not specified'}`);
           console.log(`   - voice: ${event.session?.voice || 'not specified'}`);
-          if (event.session?.output_audio_format && event.session.output_audio_format !== 'g711_ulaw') {
-            console.warn(`⚠️ [${this.state.callSid}] WARNING: OpenAI returned output_audio_format as "${event.session.output_audio_format}" but we requested "g711_ulaw"!`);
-          }
         }
         
         // Handle error events

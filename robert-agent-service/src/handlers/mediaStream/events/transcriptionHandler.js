@@ -9,10 +9,11 @@ import { LanguageDetector } from '../utils/languageDetector.js';
  * Handles user transcriptions and speech stopped events
  */
 export class TranscriptionHandler {
-  constructor(stateManager, languageDetector, consentHandler) {
+  constructor(stateManager, languageDetector, consentHandler, openaiWs) {
     this.state = stateManager;
     this.languageDetector = languageDetector;
     this.consentHandler = consentHandler;
+    this.openaiWs = openaiWs;
   }
 
   /**
@@ -199,29 +200,41 @@ export class TranscriptionHandler {
     this.state.speechStoppedTime = Date.now();
     
     // Handle interruption case
-    if (this.state.isInterrupted && this.state.pendingTranscriptions.length > 0) {
-      const latestTranscription = this.state.pendingTranscriptions[this.state.pendingTranscriptions.length - 1];
-      console.log(`✅ [${this.state.callSid}] Speech ended after interruption - acknowledging interruption first`);
-      
-      // Clear interruption flag
-      this.state.isInterrupted = false;
-      this.state.interruptionStartTime = 0;
-      this.state.pendingTranscriptions = [];
-      
-      // Check if it's a stop command
-      const transcript = latestTranscription.transcript;
-      const stopCommands = /\b(stop|wait|hold on|pause|shut up|be quiet|enough|that's enough)\b/i;
-      const isStopCommand = stopCommands.test(transcript);
-      
-      if (isStopCommand) {
-        console.log(`🛑 [${this.state.callSid}] Stop command detected: "${transcript}" - entering listening mode`);
-        this.state.waitingForUser = true;
-        this.state.lastCancellationTime = 0;
-        return;
+    if (this.state.isInterrupted) {
+      if (this.state.pendingTranscriptions.length > 0) {
+        // We have transcriptions - process them
+        const latestTranscription = this.state.pendingTranscriptions[this.state.pendingTranscriptions.length - 1];
+        console.log(`✅ [${this.state.callSid}] Speech ended after interruption - acknowledging interruption first`);
+        
+        // Clear interruption flag
+        this.state.isInterrupted = false;
+        this.state.interruptionStartTime = 0;
+        
+        // Check if it's a stop command
+        const transcript = latestTranscription.transcript;
+        const stopCommands = /\b(stop|wait|hold on|pause|shut up|be quiet|enough|that's enough)\b/i;
+        const isStopCommand = stopCommands.test(transcript);
+        
+        if (isStopCommand) {
+          console.log(`🛑 [${this.state.callSid}] Stop command detected: "${transcript}" - entering listening mode`);
+          this.state.waitingForUser = true;
+          this.state.lastCancellationTime = 0;
+          this.state.pendingTranscriptions = [];
+          return;
+        }
+        
+        this.state.pendingTranscriptions = [];
+        
+        // Acknowledge interruption (will be handled by tool coordinator)
+        return { type: 'acknowledge_interruption' };
+      } else {
+        // Barge-in detected via speech_started but no transcriptions yet
+        // Clear interruption flag and wait for transcriptions to arrive
+        console.log(`✅ [${this.state.callSid}] Speech ended after interruption (no transcriptions yet) - clearing interruption flag, will process transcriptions when they arrive`);
+        this.state.isInterrupted = false;
+        this.state.interruptionStartTime = 0;
+        // Don't return - continue to normal flow to process transcriptions when they arrive
       }
-      
-      // Acknowledge interruption (will be handled by tool coordinator)
-      return { type: 'acknowledge_interruption' };
     }
     
     // Handle normal speech continuation grace period
@@ -239,8 +252,23 @@ export class TranscriptionHandler {
           
           console.log(`✅ [${this.state.callSid}] Grace period expired - processing ${transcriptionsToProcess.length} transcriptions`);
           
-          // Process transcriptions (will be handled by tool coordinator)
-          return { type: 'process_transcriptions', transcriptions: transcriptionsToProcess };
+          // Create response immediately if agent is waiting
+          if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+            try {
+              this.state.explicitResponseRequested = true;
+              if (this.openaiWs && this.openaiWs.readyState === 1) {
+                this.openaiWs.send(JSON.stringify({
+                  type: 'response.create',
+                  response: {
+                    modalities: ['audio', 'text']
+                  }
+                }));
+                console.log(`🎯 [${this.state.callSid}] Created response immediately after grace period (${transcriptionsToProcess.length} transcriptions)`);
+              }
+            } catch (err) {
+              console.error(`❌ [${this.state.callSid}] Error creating response after grace period:`, err);
+            }
+          }
         }
       }, gracePeriodMs);
       
