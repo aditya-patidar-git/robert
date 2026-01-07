@@ -696,7 +696,18 @@ export async function navigateToDiariesAndSelectSession(page, sessionDetails, sc
     
     // Click on the matching entry (normal click)
     console.log('🖱️ [STEP 6-7] Clicking on matching entry...');
-    await matchingEntry.click();
+    
+    // CRITICAL FIX: Click on the course name (eventTitle) instead of the entire td
+    // This ensures we get the course context menu with "New Booking" instead of staff booking menu
+    const eventTitle = matchingEntry.locator('div.eventTitle.jqx_hlink').first();
+    if (await eventTitle.count() > 0) {
+      console.log('✅ [STEP 6-7] Found eventTitle, clicking on course name...');
+      await eventTitle.click();
+    } else {
+      // Fallback: click on the entry itself if eventTitle not found
+      console.log('⚠️ [STEP 6-7] eventTitle not found, clicking on entry itself...');
+      await matchingEntry.click();
+    }
     
     // Wait for popup/dialog to appear
     await page.waitForTimeout(2000);

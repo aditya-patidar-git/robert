@@ -128,7 +128,8 @@ export class BaseStepTool {
         ...knownPreferences,
         ...stepArgs,
         courseType,
-        workflowType: finalWorkflowType
+        workflowType: finalWorkflowType,
+        callSid // Include callSid for steps that need it (e.g., searchClient)
       };
 
       // Execute step
@@ -227,6 +228,26 @@ export class BaseStepTool {
       // Allow skipping step 3 if workflowType is provided
       const isITM = courseType === 'Introduction to Motorcycling' || courseType === 'ITM';
       const isStep3Skippable = isITM && currentStep === 2 && stepNumber >= 4 && workflowType;
+      
+      // CRITICAL FIX: Prevent calling selectBookingOptions (STEP 7) before selectSession (STEP 6) completes
+      // For ITM existing workflow: STEP 6 is selectSession, STEP 7 is selectBookingOptions
+      // For ITM new workflow: STEP 4 is selectSession, STEP 5 is selectBookingOptions
+      const currentStepName = this.getStepName();
+      const isSelectBookingOptions = currentStepName === STEP_NAMES.SELECT_BOOKING_OPTIONS;
+      
+      if (isSelectBookingOptions) {
+        // Check if selectSession has been completed
+        const selectSessionStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_SESSION);
+        if (selectSessionStepNumber !== null && currentStep < selectSessionStepNumber) {
+          return {
+            valid: false,
+            error: `Cannot execute step ${stepNumber} (selectBookingOptions). You must first complete step ${selectSessionStepNumber} (selectSession). Please call booking_step_select_session first.`,
+            currentStep,
+            requiresStep: selectSessionStepNumber,
+            message: `I need to select the session first before asking about bike type preferences. Let me do that now.`
+          };
+        }
+      }
       
       // Allow executing current step again (for retry) or next step
       // Also allow skipping step 3 for ITM if workflowType is provided

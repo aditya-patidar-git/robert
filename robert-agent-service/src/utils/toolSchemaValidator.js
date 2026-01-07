@@ -176,7 +176,7 @@ const bookingStepSearchClientSchema = z.object({
 const bookingStepSelectSessionSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
-  sessionDetails: sessionDetailsSchema
+  sessionDetails: sessionDetailsSchema.optional() // Optional - can be retrieved from sessionState if not provided
 });
 
 const bookingStepSelectBookingOptionsSchema = z.object({

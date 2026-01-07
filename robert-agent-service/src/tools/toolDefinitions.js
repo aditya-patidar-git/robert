@@ -118,7 +118,7 @@ function getStepBookingToolDefinitions() {
     {
       type: 'function',
       name: 'booking_step_select_session',
-      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot. Requires sessionDetails from availability check.`,
+      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot. Session details are automatically retrieved from the availability check if not provided.`,
       parameters: {
         type: 'object',
         properties: {
@@ -134,10 +134,10 @@ function getStepBookingToolDefinitions() {
           },
           sessionDetails: {
             type: 'object',
-            description: 'Session details from availability check (date, time, location, instructor)'
+            description: 'Session details from availability check (date, time, location, instructor). Optional - will be retrieved from session state if not provided.'
           }
         },
-        required: ['courseType', 'workflowType', 'sessionDetails']
+        required: ['courseType', 'workflowType']
       }
     },
     {

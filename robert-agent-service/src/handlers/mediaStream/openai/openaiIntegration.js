@@ -337,9 +337,15 @@ export class OpenAIIntegration {
 1. First, say: "${consentNotice}"
 2. Then immediately ask: "${consentQuestion}"
 3. WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
-4. Only after they respond, continue with: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+4. If the caller's response is unclear, ambiguous, or you detect background noise/barge-in that prevents you from understanding their answer, IMMEDIATELY repeat the question: "${consentQuestion}" - DO NOT proceed until you receive a clear yes or no answer
+5. Only after they respond clearly, continue with: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+6. If the language preference is unclear or you detect noise/barge-in, repeat: "What language would you like to use today?" until you get a clear answer
 
-CRITICAL: You MUST ask the consent question before proceeding with any other conversation. Do not skip this step.
+CRITICAL: 
+- You MUST ask the consent question before proceeding with any other conversation
+- If you cannot clearly understand the caller's response (due to noise, barge-in, or unclear speech), you MUST repeat the question
+- Do not assume or guess the answer - always wait for a clear response
+- The same applies to the language preference question - repeat if unclear
 
 ${config.instructions}`;
         

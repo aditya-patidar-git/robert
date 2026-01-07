@@ -474,10 +474,8 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
     console.log('⏳ [STEP 8] Waiting for booking options to be visible...');
     await page.waitForTimeout(2000);
     
-    // Scroll to booking options section
-    console.log('📜 [STEP 8] Scrolling to booking options section...');
-    await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
-    await page.waitForTimeout(2000);
+    // NOTE: Scroll to booking options is already handled at line 467 above
+    // Removed redundant scroll that was causing timeout errors
     
     // Find all booking option groups
     console.log('📋 [STEP 8] Finding all booking option groups...');

@@ -14,6 +14,16 @@ export class SelectSessionStep extends BaseStepTool {
   getRequiredPreferences() {
     return []; // Session details come from sessionState or args
   }
+
+  /**
+   * Get timeout for session selection - browser automation needs more time
+   * Session selection involves: navigating to Diaries, selecting date, location,
+   * calendar type, finding matching entry, clicking, waiting for context menu
+   * @returns {number} Timeout in milliseconds (90 seconds)
+   */
+  getTimeout() {
+    return 90000; // 90 seconds for complex browser automation (multiple navigation steps, waiting for menus)
+  }
 }
 
 export default new SelectSessionStep();
