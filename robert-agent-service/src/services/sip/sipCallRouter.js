@@ -55,17 +55,33 @@ class SipCallRouter {
         }
 
         // Create call via Twilio with SIP routing
-        // The 'to' parameter should be the SIP URI that routes through the trunk
-        // Format: sip:destination@sip-domain.sip.twilio.com
-        const sipUri = options.sipUri || `sip:${to}@${sipTrunkSid}.sip.twilio.com`;
+        // For SIP connector: Routing happens at Twilio SIP Trunk level (configured in Twilio console)
+        // The trunk should be configured to route to OpenAI SIP endpoint
+        // Trim phone number to remove leading/trailing spaces
+        const trimmedTo = (options.sipUri || to).trim();
         
-        console.log(`📞 [SIP] Creating Twilio call via SIP trunk: ${sipUri}`);
+        console.log(`📞 [SIP] Creating Twilio call via SIP trunk to: ${trimmedTo}`);
+        console.log(`📞 [SIP] Note: Ensure Twilio SIP Trunk is configured to route to OpenAI SIP endpoint`);
+        
+        // Get base URL for status callbacks
+        const baseUrl = process.env.TUNNEL_DOMAIN 
+          ? `https://${process.env.TUNNEL_DOMAIN}` 
+          : process.env.BASE_URL || 'http://localhost:3002';
+        
+        // For SIP connector, we need to provide a URL that returns TwiML with <Sip> verb
+        // Twilio requires either 'url' or 'twiml' parameter when creating calls
+        // The webhook will return TwiML with <Sip> verb that routes to OpenAI's SIP endpoint
+        const sipWebhookUrl = options.sipWebhookUrl || `${baseUrl}/api/sip/call-handler`;
         
         const callOptions = {
-          to: sipUri,
+          to: trimmedTo, // Use phone number directly
           from: from,
+          // For SIP connector, provide URL that returns TwiML with <Sip> verb
+          // The <Sip> verb routes the call to OpenAI's SIP endpoint
+          // OpenAI will then send call.accept webhook to /api/sip/call-accept
+          url: sipWebhookUrl,
           // Status callback for tracking
-          statusCallback: options.statusCallback || `${process.env.BASE_URL || 'http://localhost:3000'}/api/call/status`,
+          statusCallback: options.statusCallback || `${baseUrl}/api/outbound/call-status`,
           statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
           // SIP-specific options
           sipAuthUsername: options.sipAuthUsername || process.env.SIP_AUTH_USERNAME,
@@ -75,7 +91,8 @@ class SipCallRouter {
 
         // Create the call via Twilio
         // Twilio will route this through the Elastic SIP Trunk
-        // The trunk configuration routes to OpenAI SIP endpoint
+        // The trunk configuration (in Twilio console) routes to OpenAI SIP endpoint
+        // OpenAI will then send call.accept webhook to /api/sip/call-accept
         const call = await twilioClient.calls.create(callOptions);
         
         console.log(`✅ [SIP] Call created via SIP: ${call.sid}`);
@@ -182,15 +199,35 @@ class SipCallRouter {
    * @returns {boolean} - True if SIP should be used
    */
   shouldUseSip(telephonyConfig) {
-    // Check if SIP is enabled in config and service
-    const sipEnabled = telephonyConfig?.sipSettings?.primaryPath === 'sip' && sipService.isSipEnabled();
-    
-    if (!sipEnabled) {
-      return false;
+    // PRIORITY 1: SIP_ENABLED env var (for testing/override)
+    // If explicitly set in .env, it takes full control
+    if (process.env.SIP_ENABLED !== undefined) {
+      const envValue = process.env.SIP_ENABLED === 'true';
+      console.log(`🔀 [ROUTING] SIP_ENABLED=${process.env.SIP_ENABLED} - Using env var override`);
+      
+      if (envValue) {
+        // SIP_ENABLED=true - check if SIP service is properly configured
+        if (!sipService.isSipEnabled()) {
+          console.log(`⚠️ [ROUTING] SIP_ENABLED=true but SIP service not configured (missing OPENAI_SIP_ENDPOINT?)`);
+          return false;
+        }
+        return true;
+      } else {
+        // SIP_ENABLED=false - force Media Streams
+        console.log(`📞 [ROUTING] SIP_ENABLED=false - Forcing Media Streams`);
+        return false;
+      }
     }
-
-    // Additional checks can be added here (e.g., number whitelist, time-based routing)
-    return true;
+    
+    // PRIORITY 2: Database config (for production when env var not set)
+    const dbPrimaryPath = telephonyConfig?.sipSettings?.primaryPath;
+    const dbSipEnabled = dbPrimaryPath === 'sip';
+    const sipServiceEnabled = sipService.isSipEnabled();
+    
+    console.log(`🔀 [ROUTING] SIP_ENABLED not set - Using database config: primaryPath=${dbPrimaryPath}, sipService.enabled=${sipServiceEnabled}`);
+    
+    // Use SIP if database says 'sip' AND SIP service is configured
+    return dbSipEnabled && sipServiceEnabled;
   }
 
   /**
@@ -206,6 +243,13 @@ class SipCallRouter {
     const useSip = this.shouldUseSip(telephonyConfig);
     let call = null;
     let method = 'Media Streams';
+    
+    // Log which method is being used and why
+    const envVarSet = process.env.SIP_ENABLED !== undefined;
+    const dbPath = telephonyConfig?.sipSettings?.primaryPath || 'not_set';
+    const sipServiceEnabled = sipService.isSipEnabled();
+    
+    console.log(`🔀 [ROUTING] Decision: SIP_ENABLED=${process.env.SIP_ENABLED || 'not_set'}, DB primaryPath=${dbPath}, sipService.enabled=${sipServiceEnabled}, willUseSip=${useSip}`);
 
     if (useSip) {
       // Attempt SIP routing with retry
@@ -220,6 +264,8 @@ class SipCallRouter {
         // Fallback to Media Streams
         console.log(`📞 [SIP] SIP routing failed, falling back to Media Streams for ${to}`);
       }
+    } else {
+      console.log(`📞 [ROUTING] Using Media Streams (SIP not enabled or not configured)`);
     }
 
     // Use Media Streams if SIP not used or failed

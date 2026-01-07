@@ -82,15 +82,13 @@ class CrossCallMemoryService {
   }
 
   /**
-   * Generate consolidated memory summary for a caller
-   * @param {string} callerId - Caller phone number
-   * @returns {Promise<string>} - Consolidated summary text
+   * Generate consolidated memory summary from already-retrieved calls
+   * @param {Array} previousCalls - Array of CallMemory documents
+   * @returns {string|null} - Consolidated summary text or null if no calls
    */
-  async getMemorySummary(callerId) {
+  getMemorySummaryFromCalls(previousCalls) {
     try {
-      const previousCalls = await this.retrievePreviousCalls(callerId, 3); // Last 3 calls
-      
-      if (previousCalls.length === 0) {
+      if (!previousCalls || previousCalls.length === 0) {
         return null;
       }
 
@@ -101,6 +99,21 @@ class CrossCallMemoryService {
       }).join(' ');
 
       return `Previous interactions with this caller: ${summaries}`;
+    } catch (error) {
+      console.error(`❌ Error generating memory summary from calls:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate consolidated memory summary for a caller
+   * @param {string} callerId - Caller phone number
+   * @returns {Promise<string>} - Consolidated summary text
+   */
+  async getMemorySummary(callerId) {
+    try {
+      const previousCalls = await this.retrievePreviousCalls(callerId, 3); // Last 3 calls
+      return this.getMemorySummaryFromCalls(previousCalls);
     } catch (error) {
       console.error(`❌ Error generating memory summary for ${callerId}:`, error);
       return null;
@@ -115,7 +128,9 @@ class CrossCallMemoryService {
    */
   async requestConsentForMemory(callSid, callerId) {
     try {
-      const previousCalls = await this.retrievePreviousCalls(callerId, 1);
+      // Query for 3 calls (enough for both consent check and summary)
+      // This avoids duplicate queries when getMemorySummary is called
+      const previousCalls = await this.retrievePreviousCalls(callerId, 3);
       return previousCalls.length > 0;
     } catch (error) {
       console.error(`❌ Error checking memory consent for ${callSid}:`, error);

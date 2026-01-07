@@ -20,8 +20,19 @@ import CallRecord from "../database/models/CallRecord.js";
 export const handleCallAccept = async (req, res) => {
   try {
     const { call_id, from, to } = req.body;
+    const timestamp = new Date().toISOString();
+
+    // ENHANCED DIAGNOSTIC LOGGING
+    console.log(`📞 [SIP] ========== CALL ACCEPT WEBHOOK ==========`);
+    console.log(`📞 [SIP] Timestamp: ${timestamp}`);
+    console.log(`📞 [SIP] call_id: ${call_id}, from: ${from}, to: ${to}`);
+    console.log(`📞 [SIP] Full request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`📞 [SIP] Request headers:`, JSON.stringify(req.headers, null, 2));
+    console.log(`📞 [SIP] Request IP: ${req.ip}`);
+    console.log(`📞 [SIP] =========================================`);
 
     if (!call_id) {
+      console.error(`❌ [SIP] Missing call_id in call.accept webhook`);
       return res.status(400).json({ error: 'Missing call_id' });
     }
 
@@ -31,7 +42,7 @@ export const handleCallAccept = async (req, res) => {
     const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
     if (!conversations[call_id]) {
       sessionManagementService.initializeSession(call_id, {
-        language: 'en-US',
+        language: 'en-GB',
         from: from,
         to: to,
         callType: 'SIP',
@@ -135,8 +146,18 @@ export const handleCallAccept = async (req, res) => {
 export const handleCallStatus = async (req, res) => {
   try {
     const { call_id, status } = req.body;
+    const timestamp = new Date().toISOString();
+
+    // ENHANCED DIAGNOSTIC LOGGING
+    console.log(`📞 [SIP] ========== CALL STATUS WEBHOOK ==========`);
+    console.log(`📞 [SIP] Timestamp: ${timestamp}`);
+    console.log(`📞 [SIP] call_id: ${call_id}, status: ${status}`);
+    console.log(`📞 [SIP] Full request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`📞 [SIP] Request headers:`, JSON.stringify(req.headers, null, 2));
+    console.log(`📞 [SIP] =========================================`);
 
     if (!call_id) {
+      console.error(`❌ [SIP] Missing call_id in call status webhook`);
       return res.status(400).json({ error: 'Missing call_id' });
     }
 
@@ -220,6 +241,15 @@ export const handleToolExecution = async (req, res) => {
       });
     }
 
+    // ENHANCED DIAGNOSTIC LOGGING
+    const timestamp = new Date().toISOString();
+    console.log(`🔧 [SIP] ========== TOOL EXECUTION WEBHOOK ==========`);
+    console.log(`🔧 [SIP] Timestamp: ${timestamp}`);
+    console.log(`🔧 [SIP] call_id: ${call_id}, tool: ${name}, tool_call_id: ${tool_call_id}`);
+    console.log(`🔧 [SIP] Full request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`🔧 [SIP] Request headers:`, JSON.stringify(req.headers, null, 2));
+    console.log(`🔧 [SIP] =========================================`);
+
     console.log(`🔧 [SIP] Tool execution webhook received - call_id: ${call_id}, tool: ${name}, tool_call_id: ${tool_call_id}`);
 
     // Get SIP session to retrieve phone number and track tool call
@@ -278,6 +308,93 @@ export const handleToolExecution = async (req, res) => {
       tool_call_id: tool_call_id,
       call_id: call_id
     });
+  }
+};
+
+/**
+ * Handle Twilio webhook for SIP connector calls
+ * Returns minimal TwiML to keep call alive while trunk routes to OpenAI
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
+ */
+export const handleSipCallHandler = async (req, res) => {
+  try {
+    const { CallSid, From, To, CallStatus, Direction } = req.body;
+    const timestamp = new Date().toISOString();
+    
+    // ENHANCED DIAGNOSTIC LOGGING
+    console.log(`📞 [SIP] ========== CALL HANDLER WEBHOOK ==========`);
+    console.log(`📞 [SIP] Timestamp: ${timestamp}`);
+    console.log(`📞 [SIP] CallSid: ${CallSid}`);
+    console.log(`📞 [SIP] From: ${From}, To: ${To}`);
+    console.log(`📞 [SIP] Status: ${CallStatus}, Direction: ${Direction}`);
+    console.log(`📞 [SIP] Full request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`📞 [SIP] Request headers:`, JSON.stringify(req.headers, null, 2));
+    console.log(`📞 [SIP] Request IP: ${req.ip}`);
+    console.log(`📞 [SIP] Request method: ${req.method}`);
+    console.log(`📞 [SIP] Request path: ${req.path}`);
+    
+    // Check if this is coming from SIP Trunk
+    const sipTrunkSid = req.body.SipTrunkSid || req.headers['x-twilio-sip-trunk-sid'] || req.headers['x-sip-trunk-sid'];
+    const sipTrunkName = req.body.SipTrunkName || req.headers['x-twilio-sip-trunk-name'];
+    console.log(`📞 [SIP] SIP Trunk SID: ${sipTrunkSid || 'NOT DETECTED'}`);
+    console.log(`📞 [SIP] SIP Trunk Name: ${sipTrunkName || 'NOT DETECTED'}`);
+    
+    // Check for any SIP-related headers
+    const sipHeaders = Object.keys(req.headers).filter(key => 
+      key.toLowerCase().includes('sip') || 
+      key.toLowerCase().includes('twilio')
+    );
+    if (sipHeaders.length > 0) {
+      console.log(`📞 [SIP] SIP-related headers:`, sipHeaders.map(h => `${h}: ${req.headers[h]}`).join(', '));
+    }
+    
+    console.log(`📞 [SIP] =========================================`);
+    
+    // For SIP connector, we return TwiML with <Sip> verb to route call to OpenAI
+    // Get OpenAI SIP endpoint from service
+    const sipEndpoint = sipService.getSipEndpoint();
+    
+    if (!sipEndpoint) {
+      console.error(`❌ [SIP] OpenAI SIP endpoint not configured - falling back to minimal TwiML`);
+      // Fallback to minimal TwiML if endpoint not configured
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="3600"/>
+</Response>`;
+      res.type('text/xml');
+      res.send(twiml);
+      return;
+    }
+    
+    console.log(`📞 [SIP] Routing call to OpenAI SIP endpoint: ${sipEndpoint}`);
+    
+    // Return TwiML with <Dial><Sip> to route call to OpenAI's SIP endpoint
+    // The <Dial><Sip> verb routes the call to OpenAI, which will then send call.accept webhook
+    // Note: <Sip> must be wrapped in <Dial> for proper routing
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial>
+    <Sip>${sipEndpoint}</Sip>
+  </Dial>
+</Response>`;
+    
+    res.type('text/xml');
+    res.send(twiml);
+    
+    console.log(`✅ [SIP] Call handler responded with SIP routing TwiML for CallSid: ${CallSid}`);
+    console.log(`✅ [SIP] Call routed to OpenAI SIP endpoint: ${sipEndpoint}`);
+    console.log(`✅ [SIP] Waiting for OpenAI call.accept webhook...`);
+  } catch (error) {
+    console.error(`❌ [SIP] Error handling SIP call handler:`, error);
+    console.error(`❌ [SIP] Error stack:`, error.stack);
+    // Return minimal TwiML even on error to prevent call failure
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="3600"/>
+</Response>`;
+    res.type('text/xml');
+    res.send(twiml);
   }
 };
 

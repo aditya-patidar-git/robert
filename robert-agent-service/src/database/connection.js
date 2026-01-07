@@ -27,10 +27,9 @@ export async function connectDB() {
     console.log(`🔌 [robert-agent-service] Connecting to MongoDB database: ${dbName}`);
     console.log(`🔌 [robert-agent-service] MongoDB URI: ${mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials
     
-    await mongoose.connect(mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    await mongoose.connect(mongoUri);
+    // Note: useNewUrlParser and useUnifiedTopology are deprecated in MongoDB Driver 4.0.0+
+    // They are now the default behavior and should not be specified
     
     console.log(`✅ [robert-agent-service] Connected to MongoDB database: ${mongoose.connection.db.databaseName}`);
     console.log(`✅ [robert-agent-service] MongoDB connection state: ${mongoose.connection.readyState} (1=connected)`);

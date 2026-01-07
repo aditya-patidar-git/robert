@@ -45,6 +45,16 @@ export class BaseStepTool {
   }
 
   /**
+   * Get timeout for this tool execution in milliseconds
+   * Override this method to specify custom timeout for browser automation tools
+   * Default is 30 seconds for all booking step tools (browser automation)
+   * @returns {number|null} Timeout in ms, or null to use default/config timeout
+   */
+  getTimeout() {
+    return 30000; // 30 seconds default for browser automation tools
+  }
+
+  /**
    * Execute the step tool
    * @param {Object} parameters - Tool parameters
    * @param {Object} callContext - Call context with callSid
@@ -212,13 +222,32 @@ export class BaseStepTool {
           requiresStep: currentStep + 1
         };
       }
+      
+      // Special handling for ITM bookings: Step 3 is conversational (workflowType determination)
+      // Allow skipping step 3 if workflowType is provided
+      const isITM = courseType === 'Introduction to Motorcycling' || courseType === 'ITM';
+      const isStep3Skippable = isITM && currentStep === 2 && stepNumber >= 4 && workflowType;
+      
       // Allow executing current step again (for retry) or next step
-      if (stepNumber > currentStep + 1) {
+      // Also allow skipping step 3 for ITM if workflowType is provided
+      if (stepNumber > currentStep + 1 && !isStep3Skippable) {
         return {
           valid: false,
           error: `Cannot skip to step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,
           currentStep,
           requiresStep: currentStep + 1
+        };
+      }
+      
+      // If trying to skip step 3 for ITM but workflowType is missing, require it
+      if (isITM && currentStep === 2 && stepNumber >= 4 && !workflowType) {
+        return {
+          valid: false,
+          error: `Cannot proceed to step ${stepNumber}. Workflow type must be determined first. Please ask: "Have you done training with us before?" and set workflowType to "existing" or "new".`,
+          currentStep,
+          requiresStep: 3,
+          requiresWorkflowType: true,
+          message: 'I need to know if you have done training with us before. Have you done training with Universal Motorcycle Training before?'
         };
       }
     }

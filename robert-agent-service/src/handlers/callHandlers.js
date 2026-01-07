@@ -108,7 +108,7 @@ export const aiIntro = async (req, res) => {
     if (!conversations[CallSid]) {
         conversations[CallSid] = { 
             transcript: [], 
-            language: 'en-US',
+            language: 'en-GB',
             realtimeWs: null 
         };
     }
@@ -230,7 +230,7 @@ export const handleIncomingCall = async (req, res) => {
             sessionManagementService.initializeSession(CallSid, {
                 from: From,
                 to: To,
-                language: 'en-US',
+                language: 'en-GB',
                 callType: callType,
                 entryPath: entryPath,
                 realtimeWs: null

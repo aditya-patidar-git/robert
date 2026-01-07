@@ -1,5 +1,6 @@
 import { BargeInHandler, ConsentHandler, ResponseHandler, TranscriptionHandler, ToolCallHandler } from './events/index.js';
 import { MemoryManager, LanguageDetector } from './utils/index.js';
+import { conversations } from '../../shared/state.js';
 
 /**
  * Tool Coordinator
@@ -19,8 +20,27 @@ export class ToolCoordinator {
     this.bargeInHandler = new BargeInHandler(stateManager, openaiWs);
     this.consentHandler = consentHandler;
     this.responseHandler = new ResponseHandler(stateManager, ws);
-    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler);
+    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs);
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs);
+  }
+
+  /**
+   * Update OpenAI WebSocket reference (called after connection is established)
+   */
+  setOpenAIWebSocket(openaiWs) {
+    this.openaiWs = openaiWs;
+    // Update transcription handler with openaiWs
+    if (this.transcriptionHandler) {
+      this.transcriptionHandler.openaiWs = openaiWs;
+    }
+    // Update tool call handler with openaiWs
+    if (this.toolCallHandler) {
+      this.toolCallHandler.setOpenAIWebSocket(openaiWs);
+    }
+    // Update barge-in handler with openaiWs
+    if (this.bargeInHandler) {
+      this.bargeInHandler.openaiWs = openaiWs;
+    }
   }
 
   /**
@@ -35,6 +55,19 @@ export class ToolCoordinator {
       // Route based on event type
       switch (event.type) {
         case 'session.updated':
+          console.log(`📋 [${this.state.callSid}] Session updated event received`);
+          console.log(`   - Session ID: ${event.session?.id}`);
+          console.log(`   - Model: ${event.session?.model}`);
+          console.log(`   - Input audio format: ${event.session?.input_audio_format}`);
+          console.log(`   - Output audio format: ${event.session?.output_audio_format}`);
+          console.log(`   - Voice: ${event.session?.voice}`);
+          console.log(`   - Temperature: ${event.session?.temperature}`);
+          console.log(`   - Turn detection: ${event.session?.turn_detection?.type}`);
+          if (event.session?.turn_detection) {
+            console.log(`   - VAD threshold: ${event.session.turn_detection.threshold}`);
+            console.log(`   - Silence duration: ${event.session.turn_detection.silence_duration_ms}ms`);
+            console.log(`   - Prefix padding: ${event.session.turn_detection.prefix_padding_ms}ms`);
+          }
           await this.handleSessionUpdated(event);
           break;
           
@@ -50,6 +83,18 @@ export class ToolCoordinator {
           
         case 'response.audio.delta':
         case 'response.output_audio.delta':
+          // Log first 30 audio delta events to verify they're being received
+          // Use outboundAudioChunkCount if available, otherwise fall back to audioChunkCount
+          const outboundCount = this.state.outboundAudioChunkCount || 0;
+          const shouldLogAudioDelta = outboundCount < 30 || !this.state.audioDeltaLogged;
+          if (shouldLogAudioDelta) {
+            const hasPayload = !!event.delta;
+            const payloadSize = hasPayload ? (typeof event.delta === 'string' ? event.delta.length : JSON.stringify(event.delta).length) : 0;
+            console.log(`🎵 [${this.state.callSid}] Received audio delta event - type: ${event.type}, outbound chunk: ${outboundCount + 1}, hasPayload: ${hasPayload}, payloadSize: ${payloadSize} bytes`);
+            if (outboundCount >= 29) {
+              this.state.audioDeltaLogged = true; // Stop logging after first 30
+            }
+          }
           this.responseHandler.handleAudioDelta(event);
           break;
           
@@ -63,10 +108,63 @@ export class ToolCoordinator {
           
         case 'conversation.item.input_audio_transcription.completed':
           await this.transcriptionHandler.handleTranscriptionCompleted(event);
+          // Check if agent is waiting and should respond immediately
+          if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+            // Create response immediately when user speaks and agent is waiting
+            try {
+              this.state.explicitResponseRequested = true;
+              this.openaiWs.send(JSON.stringify({
+                type: 'response.create',
+                response: {
+                  modalities: ['audio', 'text']
+                }
+              }));
+              console.log(`🎯 [${this.state.callSid}] Created response immediately after user transcription`);
+            } catch (err) {
+              console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
+            }
+          }
           break;
           
         case 'input_audio_buffer.speech_stopped':
-          await this.transcriptionHandler.handleSpeechStopped(event);
+          const speechStoppedResult = await this.transcriptionHandler.handleSpeechStopped(event);
+          // Handle process_transcriptions return value
+          if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
+            const transcriptions = speechStoppedResult.transcriptions || [];
+            if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+              // Create response immediately when transcriptions are ready and agent is waiting
+              try {
+                this.state.explicitResponseRequested = true;
+                this.openaiWs.send(JSON.stringify({
+                  type: 'response.create',
+                  response: {
+                    modalities: ['audio', 'text']
+                  }
+                }));
+                console.log(`🎯 [${this.state.callSid}] Created response immediately after processing ${transcriptions.length} transcriptions`);
+              } catch (err) {
+                console.error(`❌ [${this.state.callSid}] Error creating response after processing transcriptions:`, err);
+              }
+            }
+          }
+          // Handle acknowledge_interruption return value
+          if (speechStoppedResult && speechStoppedResult.type === 'acknowledge_interruption') {
+            // Create response to acknowledge interruption
+            if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null) {
+              try {
+                this.state.explicitResponseRequested = true;
+                this.openaiWs.send(JSON.stringify({
+                  type: 'response.create',
+                  response: {
+                    modalities: ['audio', 'text']
+                  }
+                }));
+                console.log(`🎯 [${this.state.callSid}] Created response to acknowledge interruption`);
+              } catch (err) {
+                console.error(`❌ [${this.state.callSid}] Error creating response for interruption:`, err);
+              }
+            }
+          }
           break;
           
         case 'response.output_item.done':
@@ -123,7 +221,6 @@ export class ToolCoordinator {
         // Set timeout for consent response if needed
         if (this.state.recordingConsentState.requested && this.state.recordingConsentState.given === null) {
           console.log(`⏱️ [${this.state.callSid}] Starting consent timeout (${this.state.CONSENT_TIMEOUT_MS/1000}s) - waiting for caller response`);
-          const { conversations } = await import('../../../shared/state.js');
           this.state.consentTimeout = setTimeout(() => {
             if (this.state.recordingConsentState.given === null && conversations[this.state.callSid].recordingConsent.given === null) {
               this.state.recordingConsentState.given = false;
@@ -142,6 +239,15 @@ export class ToolCoordinator {
         this.state.incrementErrorCount();
         console.error(`❌ [${this.state.callSid}] Error sending initial greeting:`, err);
       }
+    }
+  }
+
+  /**
+   * Cleanup all handlers
+   */
+  cleanup() {
+    if (this.responseHandler && typeof this.responseHandler.cleanup === 'function') {
+      this.responseHandler.cleanup();
     }
   }
 }

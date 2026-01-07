@@ -137,18 +137,30 @@ class ToolExecutor {
         }
       }
 
-      // Use configured maxTime if available, otherwise use default timeout
-      if (toolConfig.maxTime) {
-        timeout = toolConfig.maxTime;
-      } else {
-        // Increase timeout for browser automation tools - they need more time
-        if (toolName === 'crm_browser') {
-          timeout = 360000; // 360 seconds (6 minutes) for browser operations
-          console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
+      // Get tool instance BEFORE checking timeout (fixes ReferenceError)
+      const tool = this.toolRegistry.get(toolName);
+
+      // Check if tool has a custom timeout method (for step-based tools)
+      let toolSpecificTimeout = null;
+      if (tool && typeof tool.getTimeout === 'function') {
+        toolSpecificTimeout = tool.getTimeout();
+        if (toolSpecificTimeout !== null && toolSpecificTimeout > 0) {
+          timeout = toolSpecificTimeout;
+          console.log(`⏱️ [${callSid}] Using tool-specific timeout for ${toolName}: ${timeout}ms`);
         }
       }
-
-      const tool = this.toolRegistry.get(toolName);
+      
+      // Use configured maxTime if available and no tool-specific timeout was set
+      if (toolConfig.maxTime && toolSpecificTimeout === null) {
+        timeout = toolConfig.maxTime;
+      }
+      
+      // Increase timeout for browser automation tools - they need more time
+      // Only if no tool-specific timeout and no config maxTime
+      if (toolName === 'crm_browser' && toolSpecificTimeout === null && !toolConfig.maxTime) {
+        timeout = 360000; // 360 seconds (6 minutes) for browser operations
+        console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
+      }
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Executing tool: ${toolName}`);
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Parameters:`, JSON.stringify(validatedParameters, null, 2));
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Timeout: ${timeout}ms`);

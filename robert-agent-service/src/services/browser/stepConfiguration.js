@@ -262,12 +262,32 @@ const STEP_CONFIGURATIONS = {
 /**
  * Get step number for a given course type, workflow type, and step name
  * @param {string} courseType - Course type (ITM, CBT, etc.)
- * @param {string} workflowType - 'existing' or 'new'
+ * @param {string} workflowType - 'existing' or 'new' (can be null for checkAvailability)
  * @param {string} stepName - Step name (from STEP_NAMES)
  * @returns {number|null} Step number or null if not found
  */
 export function getStepNumber(courseType, workflowType, stepName) {
-  if (!courseType || !workflowType || !stepName) {
+  if (!courseType || !stepName) {
+    return null;
+  }
+
+  // Special case: checkAvailability can run without workflowType
+  // It's step 1 for both 'existing' and 'new' workflows
+  if (!workflowType && stepName === STEP_NAMES.CHECK_AVAILABILITY) {
+    // Try 'existing' first (both should return 1, but we need to check)
+    const result = getStepNumber(courseType, 'existing', stepName);
+    return result !== null ? result : getStepNumber(courseType, 'new', stepName);
+  }
+
+  // Special case: authenticate can also run without workflowType
+  // It's step 2 for both 'existing' and 'new' workflows
+  if (!workflowType && stepName === STEP_NAMES.AUTHENTICATE) {
+    // Try 'existing' first (both should return 2, but we need to check)
+    const result = getStepNumber(courseType, 'existing', stepName);
+    return result !== null ? result : getStepNumber(courseType, 'new', stepName);
+  }
+
+  if (!workflowType) {
     return null;
   }
 

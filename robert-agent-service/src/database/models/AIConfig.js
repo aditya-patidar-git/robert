@@ -72,7 +72,7 @@ const AIConfigSchema = new mongoose.Schema({
     },
     language: { 
       type: String, 
-      default: "en-US"
+      default: "en-GB"
     }
   },
   uncertaintyGate: {

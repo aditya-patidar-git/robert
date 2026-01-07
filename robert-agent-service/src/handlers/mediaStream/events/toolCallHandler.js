@@ -16,6 +16,15 @@ export class ToolCallHandler {
   }
 
   /**
+   * Update OpenAI WebSocket reference (called after connection is established)
+   */
+  setOpenAIWebSocket(openaiWs) {
+    this.openaiWs = openaiWs;
+    // Update result submitter with new WebSocket reference
+    this.resultSubmitter = new WebSocketResultSubmitter(openaiWs, this.state);
+  }
+
+  /**
    * Handle function_call output_item.done event
    */
   async handleToolCall(event) {
