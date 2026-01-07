@@ -14,10 +14,9 @@ const connectDB = async () => {
     console.log(`🔌 [backend] Connecting to MongoDB database: ${dbName}`);
     console.log(`🔌 [backend] MongoDB URI: ${mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials
     
-    await mongoose.connect(mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    await mongoose.connect(mongoUri);
+    // Note: useNewUrlParser and useUnifiedTopology are deprecated in MongoDB Driver 4.0.0+
+    // They are now the default behavior and should not be specified
     
     console.log(`✅ [backend] Connected to MongoDB database: ${mongoose.connection.db.databaseName}`);
     console.log(`✅ [backend] MongoDB connection state: ${mongoose.connection.readyState} (1=connected)`);

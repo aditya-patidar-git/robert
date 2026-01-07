@@ -233,6 +233,17 @@ app.post('/api/inbound/recording-status', recordingStatus);
 app.get('/api/inbound/recording/:callSid', proxyRecording);
 
 // API Routes - SIP (OpenAI Realtime SIP webhooks)
+// Add diagnostic logging middleware for ALL SIP webhook requests
+app.use('/api/sip', (req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`🔍 [SIP WEBHOOK] ${timestamp} - ${req.method} ${req.path}`);
+  console.log(`🔍 [SIP WEBHOOK] Headers:`, JSON.stringify(req.headers, null, 2));
+  console.log(`🔍 [SIP WEBHOOK] Body:`, JSON.stringify(req.body, null, 2));
+  console.log(`🔍 [SIP WEBHOOK] Query:`, JSON.stringify(req.query, null, 2));
+  console.log(`🔍 [SIP WEBHOOK] IP: ${req.ip}, User-Agent: ${req.get('user-agent')}`);
+  next();
+});
+
 app.use('/api/sip', sipRoutes);
 
 // API Routes - Tools (for admin portal to discover available tools)

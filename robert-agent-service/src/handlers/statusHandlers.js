@@ -35,7 +35,7 @@ export const callStatus = async (req, res) => {
         sessionManagementService.initializeSession(CallSid, {
             from: From,
             to: To,
-            language: 'en-US',
+            language: 'en-GB',
             callType: 'Twilio'
         });
     } else {

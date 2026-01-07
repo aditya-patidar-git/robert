@@ -40,9 +40,12 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     console.log(`📅 [AVAILABILITY] Checking availability for ${courseType}...`);
     console.log(`📅 Navigating to availability page: ${availabilityUrl}`);
     
-    // Navigate to public availability page
-    await page.goto(availabilityUrl);
-    await page.waitForLoadState('networkidle');
+    // Navigate to public availability page with increased timeout for network latency
+    await page.goto(availabilityUrl, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000 // 60 seconds - increased for network latency
+    });
+    await page.waitForLoadState('networkidle', { timeout: 60000 });
     
     // Take screenshot of availability page
     await takeScreenshot(page, `availability-${courseType.toLowerCase().replace(/\s+/g, '-')}-loaded.png`, screenshotsDir);

@@ -17,7 +17,7 @@ export function createConversationState(callSid, options = {}) {
     transcript: options.transcript || [],
     from: options.from || null,
     to: options.to || null,
-    language: options.language || 'en-US',
+    language: options.language || 'en-GB',
     startTime: options.startTime || now,
     lastActivityTime: now, // For TTL tracking
     callType: options.callType || 'Twilio', // 'Twilio' | 'SIP'

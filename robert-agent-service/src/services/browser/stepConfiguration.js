@@ -279,6 +279,14 @@ export function getStepNumber(courseType, workflowType, stepName) {
     return result !== null ? result : getStepNumber(courseType, 'new', stepName);
   }
 
+  // Special case: authenticate can also run without workflowType
+  // It's step 2 for both 'existing' and 'new' workflows
+  if (!workflowType && stepName === STEP_NAMES.AUTHENTICATE) {
+    // Try 'existing' first (both should return 2, but we need to check)
+    const result = getStepNumber(courseType, 'existing', stepName);
+    return result !== null ? result : getStepNumber(courseType, 'new', stepName);
+  }
+
   if (!workflowType) {
     return null;
   }

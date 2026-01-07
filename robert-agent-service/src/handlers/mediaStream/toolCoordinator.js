@@ -33,6 +33,14 @@ export class ToolCoordinator {
     if (this.transcriptionHandler) {
       this.transcriptionHandler.openaiWs = openaiWs;
     }
+    // Update tool call handler with openaiWs
+    if (this.toolCallHandler) {
+      this.toolCallHandler.setOpenAIWebSocket(openaiWs);
+    }
+    // Update barge-in handler with openaiWs
+    if (this.bargeInHandler) {
+      this.bargeInHandler.openaiWs = openaiWs;
+    }
   }
 
   /**

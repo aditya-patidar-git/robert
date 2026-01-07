@@ -68,16 +68,17 @@ class SipCallRouter {
           ? `https://${process.env.TUNNEL_DOMAIN}` 
           : process.env.BASE_URL || 'http://localhost:3002';
         
-        // For SIP connector, routing happens at the trunk level
-        // Twilio requires either 'url' or 'twiml', but we use a minimal webhook
-        // The webhook returns minimal TwiML to keep call alive while trunk routes to OpenAI
+        // For SIP connector, we need to provide a URL that returns TwiML with <Sip> verb
+        // Twilio requires either 'url' or 'twiml' parameter when creating calls
+        // The webhook will return TwiML with <Sip> verb that routes to OpenAI's SIP endpoint
         const sipWebhookUrl = options.sipWebhookUrl || `${baseUrl}/api/sip/call-handler`;
         
         const callOptions = {
           to: trimmedTo, // Use phone number directly
           from: from,
-          // Use webhook URL - the handler will return minimal TwiML
-          // The actual routing to OpenAI happens at the SIP Trunk level (configured in Twilio console)
+          // For SIP connector, provide URL that returns TwiML with <Sip> verb
+          // The <Sip> verb routes the call to OpenAI's SIP endpoint
+          // OpenAI will then send call.accept webhook to /api/sip/call-accept
           url: sipWebhookUrl,
           // Status callback for tracking
           statusCallback: options.statusCallback || `${baseUrl}/api/outbound/call-status`,

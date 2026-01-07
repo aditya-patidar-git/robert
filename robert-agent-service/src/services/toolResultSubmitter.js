@@ -49,8 +49,11 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
    * @param {object} options - Additional options
    */
   async submitResult(callId, toolCallId, result, options = {}) {
-    if (!this.openaiWs || this.openaiWs.readyState !== 1) {
-      const wsState = this.openaiWs ? this.openaiWs.readyState : 'null';
+    // Get WebSocket from stored reference or state manager as fallback
+    const openaiWs = this.openaiWs || this.stateManager?.openaiWs;
+    
+    if (!openaiWs || openaiWs.readyState !== 1) {
+      const wsState = openaiWs ? openaiWs.readyState : 'null';
       const callClosed = this.stateManager?.isClosed ? ' (call closed)' : '';
       console.log(`ℹ️ [${callId}] Cannot submit result - WebSocket state: ${wsState}${callClosed}. This is expected if the call ended before tool completion.`);
       return;
@@ -64,7 +67,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
     const output = JSON.stringify(result);
     
     try {
-      this.openaiWs.send(JSON.stringify({
+      openaiWs.send(JSON.stringify({
         type: 'conversation.item.create',
         item: {
           type: 'function_call_output',
@@ -86,7 +89,10 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
    * @param {object} options - Additional options
    */
   async triggerResponse(callId, options = {}) {
-    if (!this.openaiWs || this.openaiWs.readyState !== 1) {
+    // Get WebSocket from stored reference or state manager as fallback
+    const openaiWs = this.openaiWs || this.stateManager?.openaiWs;
+    
+    if (!openaiWs || openaiWs.readyState !== 1) {
       return;
     }
 
@@ -102,7 +108,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       this.stateManager.explicitResponseRequested = true;
       
       try {
-        this.openaiWs.send(JSON.stringify({
+        openaiWs.send(JSON.stringify({
           type: 'response.create'
         }));
         console.log(`✅ [${callId}] Response triggered after tool completion`);

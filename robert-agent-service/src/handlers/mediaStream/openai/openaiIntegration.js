@@ -286,7 +286,7 @@ export class OpenAIIntegration {
       const sessionManagementService = (await import('../../../services/sessionManagementService.js')).default;
       if (!conversations[this.state.callSid]) {
         sessionManagementService.initializeSession(this.state.callSid, {
-          language: 'en-US',
+          language: 'en-GB',
           realtimeWs: this.ws,
           from: this.state.phoneNumber,
           to: this.state.phoneNumber,
@@ -410,7 +410,7 @@ ${config.instructions}`;
         conversations[this.state.callSid].transcript = [];
       }
       if (!conversations[this.state.callSid].language) {
-        conversations[this.state.callSid].language = 'en-US';
+        conversations[this.state.callSid].language = 'en-GB';
       }
       if (!conversations[this.state.callSid].realtimeWs) {
         conversations[this.state.callSid].realtimeWs = this.ws;
@@ -538,7 +538,7 @@ ${config.instructions}`;
       };
     }
     if (!conv.transcript) conv.transcript = [];
-    if (!conv.language) conv.language = 'en-US';
+    if (!conv.language) conv.language = 'en-GB';
     if (!conv.realtimeWs) conv.realtimeWs = this.ws;
     if (!conv.from) conv.from = this.state.phoneNumber;
     if (!conv.to) conv.to = this.state.phoneNumber;

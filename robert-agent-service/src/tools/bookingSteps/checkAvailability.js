@@ -21,6 +21,14 @@ export class CheckAvailabilityStep extends BaseStepTool {
   }
 
   /**
+   * Get timeout for availability check - browser automation needs more time
+   * @returns {number} Timeout in milliseconds (60 seconds)
+   */
+  getTimeout() {
+    return 60000; // 60 seconds for browser automation (launch, navigate, load, extract) - increased due to network latency
+  }
+
+  /**
    * Override getBrowserSession to use unauthenticated page for public availability check
    * Availability pages are public and don't require CRM login
    */

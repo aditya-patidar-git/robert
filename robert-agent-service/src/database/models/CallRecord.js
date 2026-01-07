@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 const callRecordSchema = new mongoose.Schema({
-  callSid: { type: String, index: true, unique: true },
+  callSid: { type: String, unique: true }, // unique: true already creates an index, no need for index: true
   from: String,
   to: String,
   callStatus: {

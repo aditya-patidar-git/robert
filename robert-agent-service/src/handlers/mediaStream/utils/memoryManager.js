@@ -35,8 +35,8 @@ export class MemoryManager {
           conversations[this.state.callSid].memoryConsent.requestedAt = new Date();
           
           // Inject instruction to ask for consent, but don't inject full memory yet
-          // The AI will ask: "Shall I pick up from our last conversation about [topic]?"
-          const memoryConsentInstruction = `\n\nIMPORTANT: You have previous interaction history with this caller. You should ask for their consent before referencing it. Say something like: "Shall I pick up from our last conversation about [brief topic]?" Only reference previous interactions if they consent.`;
+          // CRITICAL: Do NOT assume user intent from previous calls - wait for explicit request
+          const memoryConsentInstruction = `\n\nIMPORTANT: You have previous interaction history with this caller. DO NOT assume they want to continue or book anything from previous calls. You should ONLY ask for their consent to reference previous interactions, saying something like: "I see we've spoken before. Would you like me to reference our previous conversation, or is this a new inquiry?" ONLY reference previous interactions if they explicitly consent AND explicitly state their current intent. Do NOT call booking tools or assume booking intent unless the user explicitly requests it in THIS call.`;
           
           // Wait for OpenAI WebSocket to be ready before sending session update
           // This prevents errors if called too early
