@@ -230,7 +230,7 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
       {/* Controls */}
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <FormControl fullWidth size="small">
               <InputLabel>Period</InputLabel>
               <Select
@@ -245,7 +245,7 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
               </Select>
             </FormControl>
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <Button
               variant="outlined"
               startIcon={<Refresh />}
@@ -265,13 +265,13 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
       <StatGrid metrics={statMetrics} />
 
       {/* SLO Compliance Gauges */}
-      <Paper sx={{ p: 3, mb: 3 }}>
+      <Paper sx={{ p: 3, mt: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           SLO Compliance
         </Typography>
         <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
-            <Box>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <Box display="flex" justifyContent="space-between" mb={1}>
                 <Typography variant="body2">MOS &gt; 3.5</Typography>
                 <Chip
@@ -291,8 +291,8 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
               </Typography>
             </Box>
           </Grid>
-          <Grid item xs={12} md={4}>
-            <Box>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <Box display="flex" justifyContent="space-between" mb={1}>
                 <Typography variant="body2">Latency &lt; 200ms</Typography>
                 <Chip
@@ -312,8 +312,8 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
               </Typography>
             </Box>
           </Grid>
-          <Grid item xs={12} md={4}>
-            <Box>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <Box display="flex" justifyContent="space-between" mb={1}>
                 <Typography variant="body2">Packet Loss &lt; 5%</Typography>
                 <Chip
@@ -339,7 +339,7 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
       {/* Charts */}
       <Grid container spacing={3}>
         {/* MOS Trend Chart */}
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 3 }}>
           <ChartContainer title="MOS Score Trend">
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={mosTrendData}>
@@ -375,7 +375,7 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
         </Grid>
 
         {/* Quality Distribution */}
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 3 }}>
           <ChartContainer title="Call Quality Distribution">
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
@@ -400,7 +400,7 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
         </Grid>
 
         {/* Latency Distribution */}
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 3 }}>
           <ChartContainer title="Latency Distribution">
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={latencyData}>
@@ -443,7 +443,7 @@ const VoiceInsightsDashboard = ({ timeRange = '24h' }) => {
         </Grid>
 
         {/* Jitter & Packet Loss */}
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 3 }}>
           <ChartContainer title="Jitter & Packet Loss">
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={jitterPacketLossData}>

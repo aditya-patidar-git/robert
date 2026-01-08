@@ -5,10 +5,27 @@
 
 /**
  * Get the exact verification prompt per CRM module requirements
- * @returns {string} - Exact verification prompt text
+ * Split into three separate questions asked sequentially
+ * @returns {string} - First verification prompt (full name)
  */
 export function getVerificationPrompt() {
-  return "Thanks for this; I believe that I have found your profile with us; However, for data protection purposes, could you please confirm: (1) your full name, (2) your post code, and (3) your telephone number?";
+  return "Thanks for this; I believe that I have found your profile with us; However, for data protection purposes, could you please confirm your full name?";
+}
+
+/**
+ * Get the postcode verification prompt (second question)
+ * @returns {string} - Postcode verification prompt text
+ */
+export function getPostcodePrompt() {
+  return "Thank you. Now, could you please confirm your post code?";
+}
+
+/**
+ * Get the telephone number verification prompt (third question)
+ * @returns {string} - Telephone number verification prompt text
+ */
+export function getTelephonePrompt() {
+  return "Thank you. Finally, could you please confirm your telephone number?";
 }
 
 /**

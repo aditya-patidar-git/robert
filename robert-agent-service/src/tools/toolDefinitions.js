@@ -249,7 +249,7 @@ function getStepBookingToolDefinitions() {
     {
       type: 'function',
       name: 'booking_step_process_payment',
-      description: `Step 9 (Existing) / Step 8 (New): Process payment and complete booking. Requires card details and terms acceptance. CRITICAL: Only ask for terms acceptance AFTER card details are filled.`,
+      description: `Step 9 (Existing) / Step 8 (New): Process payment and complete booking. Uses updated payment procedure: payment link (sent via SMS/email) or Twilio Pay (DTMF-based phone payment). CRITICAL: Do NOT collect card details directly - the system handles payment automatically. Only ask for terms acceptance AFTER payment is confirmed.`,
       parameters: {
         type: 'object',
         properties: {
@@ -265,27 +265,12 @@ function getStepBookingToolDefinitions() {
           },
           paymentMethod: {
             type: 'string',
-            description: 'Payment method (e.g., "Visa Debit", "Mastercard", etc.)'
-          },
-          cardNumber: {
-            type: 'string',
-            description: 'Card number'
-          },
-          expiryDate: {
-            type: 'string',
-            description: 'Card expiry date (MM/YY format)'
-          },
-          cvv: {
-            type: 'string',
-            description: 'Card CVV/security code'
-          },
-          cardholderName: {
-            type: 'string',
-            description: 'Cardholder name as it appears on card'
+            enum: ['payment_link', 'twilio_pay', 'phone_payment'],
+            description: 'Payment method: "payment_link" (default, sends secure payment link via SMS/email) or "twilio_pay"/"phone_payment" (DTMF-based phone payment). If not provided, defaults to "payment_link".'
           },
           termsAccepted: {
             type: 'boolean',
-            description: 'Whether client accepted terms and conditions (REQUIRED - ask AFTER card details are filled)'
+            description: 'Whether client accepted terms and conditions (REQUIRED - ask AFTER payment is confirmed, just before clicking "Make booking" button)'
           }
         },
         required: ['courseType', 'workflowType', 'termsAccepted']

@@ -85,16 +85,16 @@ const CallQualityTab = ({ state }) => {
           )}
           <Grid container spacing={3}>
             <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent>
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="h4" color="primary">
                     {audioMetrics.metrics.averageLatency?.toFixed(1) || '0'}ms
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     Average Latency
                   </Typography>
                   {audioMetrics.metrics.minLatency !== null && audioMetrics.metrics.maxLatency !== null && (
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
                       Range: {audioMetrics.metrics.minLatency?.toFixed(1)} - {audioMetrics.metrics.maxLatency?.toFixed(1)}ms
                     </Typography>
                   )}
@@ -102,12 +102,12 @@ const CallQualityTab = ({ state }) => {
               </Card>
             </Grid>
             <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent>
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="h4" color="success.main">
                     {audioMetrics.metrics.mosScore?.toFixed(2) || '0'}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     MOS Score
                   </Typography>
                   {audioMetrics.metrics.callQuality && (
@@ -126,16 +126,16 @@ const CallQualityTab = ({ state }) => {
               </Card>
             </Grid>
             <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent>
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="h4" color="warning.main">
                     {audioMetrics.metrics.packetLoss?.toFixed(2) || '0'}%
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     Packet Loss
                   </Typography>
                   {audioMetrics.metrics.minPacketLoss !== null && audioMetrics.metrics.maxPacketLoss !== null && (
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
                       Range: {audioMetrics.metrics.minPacketLoss?.toFixed(2)} - {audioMetrics.metrics.maxPacketLoss?.toFixed(2)}%
                     </Typography>
                   )}
@@ -143,16 +143,16 @@ const CallQualityTab = ({ state }) => {
               </Card>
             </Grid>
             <Grid item xs={12} md={3}>
-              <Card>
-                <CardContent>
+              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="h4" color="info.main">
                     {audioMetrics.metrics.jitter?.toFixed(2) || '0'}ms
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     Jitter
                   </Typography>
                   {audioMetrics.metrics.minJitter !== null && audioMetrics.metrics.maxJitter !== null && (
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
                       Range: {audioMetrics.metrics.minJitter?.toFixed(2)} - {audioMetrics.metrics.maxJitter?.toFixed(2)}ms
                     </Typography>
                   )}

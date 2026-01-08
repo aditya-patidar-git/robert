@@ -285,11 +285,12 @@ class CBTExecutiveBookingService extends BaseBookingService {
       const bikeType = bookingArgs.bikeType; // Already validated above
       
       const bikeTypeMap = {
-        '125cc automatic': /125cc automatic.*scooter/i,
-        '50cc automatic': /50cc automatic/i,
-        '125cc manual': /125cc manual.*geared/i,
-        '500cc restricted': /500cc restricted/i,
-        '600cc': /600cc/i
+        // Updated patterns to handle spacing variations: "50cc" vs "50 cc", "125cc" vs "125 cc"
+        '125cc automatic': /125\s*cc\s+automatic.*scooter/i,
+        '50cc automatic': /50\s*cc\s+automatic/i,
+        '125cc manual': /125\s*cc\s+manual.*geared/i,
+        '500cc restricted': /500\s*cc\s+restricted/i,
+        '600cc': /600\s*cc/i
       };
       
       const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
@@ -378,6 +379,12 @@ class CBTExecutiveBookingService extends BaseBookingService {
       }
       
       console.log('✅ [STEP 8] CBT Executive booking options selected and Next button clicked');
+      
+      // Return success - booking options were selected
+      return {
+        success: true,
+        message: 'Booking options selected successfully'
+      };
       
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);

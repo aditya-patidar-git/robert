@@ -10,7 +10,7 @@ const VALID_OPTIONS = {
     ITM: ['125cc automatic', '50cc automatic', '125cc manual'],
     CBT: ['125cc automatic', '50cc automatic', '125cc manual'],
     'CBT Executive': ['125cc automatic', '50cc automatic', '125cc manual'],
-    'Private Lesson': ['125cc automatic', '50cc automatic', '125cc manual'],
+    'Private Lesson': ['125cc automatic', '50cc automatic', '125cc manual', '500cc restricted', '600cc'],
     'Gear Conversion': ['125cc automatic', '50cc automatic', '125cc manual'],
     'TfL 1-2-1': ['125cc automatic', '50cc automatic', '125cc manual'],
     'TfL Beyond CBT': ['125cc automatic', '50cc automatic', '125cc manual'],

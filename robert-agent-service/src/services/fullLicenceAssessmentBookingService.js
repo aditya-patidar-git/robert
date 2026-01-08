@@ -422,6 +422,12 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
       
       console.log('✅ [STEP 7/5] Full Licence Assessment booking options selected and Next button clicked');
       
+      // Return success - booking options were selected
+      return {
+        success: true,
+        message: 'Booking options selected successfully'
+      };
+      
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);
       await commonSteps.takeScreenshot(page, 'booking-options-error.png', this.screenshotsDir);

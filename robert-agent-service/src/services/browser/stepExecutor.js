@@ -422,7 +422,19 @@ export class StepExecutor {
       // Other courses use service class with selectBookingOptions method
       const serviceModule = await serviceLoader();
       const ServiceClass = serviceModule.default;
-      const service = new ServiceClass();
+      
+      // Check if it's already an instance (some services export instances)
+      let service;
+      if (ServiceClass && typeof ServiceClass === 'object' && ServiceClass.selectBookingOptions) {
+        // It's already an instance
+        service = ServiceClass;
+      } else if (ServiceClass && typeof ServiceClass === 'function') {
+        // It's a class, need to instantiate
+        service = new ServiceClass();
+      } else {
+        throw new Error(`Service for ${courseType} has invalid export structure`);
+      }
+      
       if (!service.selectBookingOptions) {
         throw new Error(`Service for ${courseType} does not have selectBookingOptions method`);
       }
@@ -481,33 +493,29 @@ export class StepExecutor {
   }
 
   async executeProcessPayment(page, args, sessionState) {
-    // Payment involves multiple steps: select payment option, method, fill card, accept terms
-    // Use existing step functions
+    // Use the updated payment handler (payment links/Twilio Pay) instead of old card details method
     const screenshots = [];
-    await commonSteps.selectPaymentOption(page, this.screenshotsDir);
-    await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
     
-    if (args.cardNumber) {
-      await commonSteps.fillCardDetails(page, {
-        cardNumber: args.cardNumber,
-        expiryDate: args.expiryDate,
-        cvv: args.cvv,
-        cardholderName: args.cardholderName
-      }, this.screenshotsDir, screenshots);
-    }
+    // Import payment handler dynamically to avoid circular dependencies
+    const { processPayment } = await import('../commonBookingSteps/paymentHandler.js');
     
-    // Accept terms and make booking
-    const result = await commonSteps.acceptTermsAndMakeBooking(
-      page, 
-      this.screenshotsDir, 
-      args.termsAccepted !== false, // Default to true if not explicitly false
-      false // Don't skip make booking
+    const paymentResult = await processPayment(
+      page,
+      {
+        ...args,
+        paymentMethod: args.paymentMethod || process.env.DEFAULT_PAYMENT_METHOD || 'payment_link',
+        termsAccepted: args.termsAccepted !== undefined ? args.termsAccepted : true
+      },
+      this.screenshotsDir,
+      screenshots
     );
 
     return {
-      success: result.success,
-      paymentCompleted: result.success || false,
-      grandTotal: result.grandTotal
+      success: paymentResult.success,
+      paymentCompleted: paymentResult.paymentCompleted || false,
+      paymentMethod: paymentResult.paymentMethod,
+      grandTotal: paymentResult.grandTotal,
+      error: paymentResult.error
     };
   }
 

@@ -378,6 +378,12 @@ class GearConversionBookingService extends BaseBookingService {
       
       console.log('✅ [STEP 8] Gear Conversion booking options selected and Next button clicked');
       
+      // Return success - booking options were selected
+      return {
+        success: true,
+        message: 'Booking options selected successfully'
+      };
+      
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);
       await commonSteps.takeScreenshot(page, 'booking-options-error.png', this.screenshotsDir);

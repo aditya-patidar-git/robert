@@ -199,8 +199,20 @@ export const handleMediaStreamConnection = (ws, req) => {
         });
         
         // Setup Twilio WebSocket close handler
-        ws.on('close', () => {
+        ws.on('close', (code, reason) => {
             console.log(`🔌 [${stateManager.callSid}] Twilio WebSocket closed`);
+            console.log(`   - Close code: ${code}`);
+            console.log(`   - Close reason: ${reason || 'No reason provided'}`);
+            console.log(`   - Close code meanings: 1000=Normal, 1001=Going Away, 1006=Abnormal, 1008=Policy Violation, 1011=Server Error`);
+            
+            // Log additional context
+            const duration = stateManager.callStartTime ? Math.floor((Date.now() - stateManager.callStartTime) / 1000) : null;
+            console.log(`   - Call duration: ${duration ? `${duration}s` : 'unknown'}`);
+            console.log(`   - Was responding: ${stateManager.isResponding || false}`);
+            console.log(`   - OpenAI readyState: ${openaiIntegration?.state?.openaiWs?.readyState || 'N/A'} (1=OPEN, 2=CLOSING, 3=CLOSED)`);
+            console.log(`   - Twilio WebSocket readyState: ${ws.readyState} (1=OPEN, 2=CLOSING, 3=CLOSED)`);
+            console.log(`   - Error count: ${stateManager.errorCount || 0}`);
+            
             cleanup('twilio_close');
         });
         

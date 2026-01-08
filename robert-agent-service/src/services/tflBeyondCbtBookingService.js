@@ -362,9 +362,10 @@ class TfLBeyondCbtBookingService extends BaseBookingService {
       const bikeType = bookingArgs.bikeType.trim().toLowerCase();
       
       const bikeTypeMap = {
-        '125cc automatic': /125cc automatic.*scooter/i,
-        '50cc automatic': /50cc automatic/i,
-        '125cc manual': /125cc manual.*geared/i
+        // Updated patterns to handle spacing variations: "50cc" vs "50 cc", "125cc" vs "125 cc"
+        '125cc automatic': /125\s*cc\s+automatic.*scooter/i,
+        '50cc automatic': /50\s*cc\s+automatic/i,
+        '125cc manual': /125\s*cc\s+manual.*geared/i
       };
       
       const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
@@ -456,6 +457,12 @@ class TfLBeyondCbtBookingService extends BaseBookingService {
       }
       
       console.log('✅ [STEP 7/5] TfL Beyond CBT booking options selected and Next button clicked');
+      
+      // Return success - booking options were selected
+      return {
+        success: true,
+        message: 'Booking options selected successfully'
+      };
       
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);

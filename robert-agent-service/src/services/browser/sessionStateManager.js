@@ -43,6 +43,7 @@ class SessionStateManager {
         browserSessionId: `browser_${callSid}_${Date.now()}`,
         currentStep: null,
         workflowType: null,
+        workflowTypeAsked: false, // Track if Step 3 (workflow type question) has been asked
         courseType: courseType || null,
         knownPreferences: {},
         sessionDetails: null,
@@ -158,9 +159,27 @@ class SessionStateManager {
     }
 
     session.workflowType = workflowType;
+    session.workflowTypeAsked = true; // Mark that Step 3 (workflow type question) has been asked
     session.lastActivity = Date.now();
 
-    console.log(`🔄 [SESSION] ${callSid}: Workflow type set to ${workflowType}`);
+    console.log(`🔄 [SESSION] ${callSid}: Workflow type set to ${workflowType} (Step 3 completed)`);
+  }
+
+  /**
+   * Mark that Step 3 (workflow type question) has been asked
+   * This is called when the agent asks the workflow type question conversationally
+   * @param {string} callSid - Call SID identifier
+   */
+  markWorkflowTypeAsked(callSid) {
+    const session = this.getSession(callSid);
+    if (!session) {
+      throw new Error(`No booking session found for ${callSid}`);
+    }
+
+    session.workflowTypeAsked = true;
+    session.lastActivity = Date.now();
+
+    console.log(`✅ [SESSION] ${callSid}: Step 3 (workflow type question) marked as asked`);
   }
 
   /**

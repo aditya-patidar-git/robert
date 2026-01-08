@@ -83,8 +83,41 @@ export async function lookupContactAndWait(page, email, screenshotsDir, clientPo
       throw new Error('Lookup contact button not found in contact choice page');
     }
     
-    await lookupButton.waitFor({ state: 'visible', timeout: 5000 });
-    await lookupButton.click();
+    // FIX: Wait for button to be attached (not visible, as it may be hidden but still clickable)
+    try {
+      await lookupButton.waitFor({ state: 'attached', timeout: 10000 });
+      console.log('✅ [STEP 9] Lookup contact button is attached to DOM');
+      
+      // Try to scroll button into view
+      try {
+        await lookupButton.scrollIntoViewIfNeeded({ timeout: 2000 });
+        console.log('✅ [STEP 9] Scrolled Lookup contact button into view');
+      } catch (scrollErr) {
+        console.log('⚠️ [STEP 9] Could not scroll Lookup contact button into view:', scrollErr.message);
+      }
+      
+      // Check if button is visible
+      const isVisible = await lookupButton.isVisible().catch(() => false);
+      
+      if (isVisible) {
+        // Button is visible, click normally
+        await lookupButton.click({ timeout: 5000 });
+        console.log('✅ [STEP 9] Clicked Lookup contact button (visible)');
+      } else {
+        // Button is hidden, use force click (button exists in DOM and is clickable)
+        console.log('⚠️ [STEP 9] Lookup contact button is hidden, using force click');
+        await lookupButton.click({ force: true, timeout: 5000 });
+        console.log('✅ [STEP 9] Clicked Lookup contact button (force)');
+      }
+    } catch (clickErr) {
+      // Handle browser closure or other errors gracefully
+      if (clickErr.message.includes('Target page, context or browser has been closed')) {
+        console.log('⚠️ [STEP 9] Browser was closed during Lookup contact button click');
+        throw new Error('Browser was closed - cannot proceed with Lookup contact button click');
+      }
+      // Re-throw other errors
+      throw clickErr;
+    }
     
     // WAIT FOR LOOKUP PAGE TO LOAD - 8 seconds
     console.log('⏳ [STEP 9] Waiting for contact lookup page to fully load...');

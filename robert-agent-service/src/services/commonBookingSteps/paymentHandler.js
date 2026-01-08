@@ -201,45 +201,40 @@ async function processTwilioPay(page, bookingArgs, screenshotsDir, screenshots) 
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {Array} screenshots - Screenshots array
  * @returns {Promise<{confirmed: boolean, confirmationTime?: Date}>}
+ * 
+ * NOTE: Actual payment and booking confirmation is verified by checking for #afterBookingMenu
+ * in acceptTermsAndMakeBooking after clicking "Make booking". This function provides
+ * initial waiting time for external payment processing (payment links).
  */
 async function waitForPaymentConfirmation(page, paymentMethod, screenshotsDir, screenshots) {
   try {
     console.log('⏳ [PAYMENT] Waiting for payment confirmation...');
     
-    // For payment link: Wait for webhook or check payment status
+    // For payment link: Payment happens externally, so we wait a reasonable time
+    // The actual confirmation will be verified when acceptTermsAndMakeBooking checks for #afterBookingMenu
     if (paymentMethod === 'payment_link') {
-      // In production, this would:
-      // 1. Check payment status via API
-      // 2. Wait for webhook confirmation
-      // 3. Poll payment status if needed
+      console.log('⏳ [PAYMENT] Payment link method - waiting for external payment completion...');
+      // Wait for user to complete payment via link (sent via SMS/email)
+      // In production, this could be replaced with webhook polling or status API checks
+      await page.waitForTimeout(5000); // Give time for payment link to be processed
       
-      // For now, simulate confirmation after a short wait
-      // In production, replace this with actual payment status check
-      console.log('⏳ [PAYMENT] Checking payment link status...');
-      await page.waitForTimeout(2000); // Simulate API call
-      
-      // TODO: Implement actual payment status check
-      // const paymentStatus = await checkPaymentStatus(paymentLinkId);
-      // if (paymentStatus !== 'confirmed') {
-      //   return { confirmed: false };
-      // }
-      
-      // For now, assume confirmed (in production, verify via API)
-      console.log('✅ [PAYMENT] Payment link confirmed');
+      // Note: Actual payment confirmation will be verified by checking #afterBookingMenu
+      // in acceptTermsAndMakeBooking after clicking "Make booking"
+      // The appearance of #afterBookingMenu is the definitive indicator that payment
+      // was successful and booking was completed
+      console.log('✅ [PAYMENT] Payment link processing time elapsed - confirmation will be verified via #afterBookingMenu after booking');
       return { confirmed: true, confirmationTime: new Date() };
     }
     
     // For Twilio Pay: Payment is confirmed during call
     if (paymentMethod === 'twilio_pay' || paymentMethod === 'phone_payment') {
       // Twilio Pay confirmation happens during the call
-      // The call handler should set paymentConfirmed flag
-      // For now, assume confirmed if we reach this point
-      console.log('✅ [PAYMENT] Twilio Pay confirmed (processed during call)');
+      // The actual confirmation will be verified when acceptTermsAndMakeBooking checks for #afterBookingMenu
+      console.log('✅ [PAYMENT] Twilio Pay confirmed (processed during call) - final confirmation via #afterBookingMenu');
       return { confirmed: true, confirmationTime: new Date() };
     }
     
-    // Fallback: If card details were filled, assume payment will be processed
-    // This maintains backward compatibility
+    // Fallback
     console.log('⚠️ [PAYMENT] Unknown payment method, assuming payment will be processed');
     return { confirmed: true, confirmationTime: new Date() };
     
@@ -250,19 +245,27 @@ async function waitForPaymentConfirmation(page, paymentMethod, screenshotsDir, s
 }
 
 /**
- * Check payment status (to be implemented with actual payment provider API)
- * @param {string} paymentId - Payment ID or reference
- * @returns {Promise<{status: string, confirmed: boolean}>}
+ * Verify payment and booking completion by checking for the after booking menu
+ * This is more reliable than API polling for this use case - the UI state is the source of truth
+ * @param {Page} page - Playwright page object
+ * @returns {Promise<{confirmed: boolean}>}
  */
-async function checkPaymentStatus(paymentId) {
-  // TODO: Implement actual payment status check
-  // This would call the payment provider's API to check status
-  // For payment links: Check if link has been paid
-  // For Twilio Pay: Check if payment was processed
-  
-  return {
-    status: 'pending',
-    confirmed: false
-  };
+async function verifyPaymentViaAfterBookingMenu(page) {
+  try {
+    // Check for #afterBookingMenu - definitive indicator of successful payment and booking
+    const afterBookingMenu = page.locator('#afterBookingMenu').first();
+    const exists = await afterBookingMenu.count() > 0;
+    if (exists) {
+      const isVisible = await afterBookingMenu.isVisible().catch(() => false);
+      if (isVisible) {
+        console.log('✅ [PAYMENT] Payment confirmed via after booking menu detection');
+        return { confirmed: true };
+      }
+    }
+    return { confirmed: false };
+  } catch (error) {
+    console.error('❌ [PAYMENT] Error verifying payment via after booking menu:', error);
+    return { confirmed: false };
+  }
 }
 
