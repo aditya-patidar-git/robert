@@ -56,6 +56,9 @@ export class StepExecutor {
         case 'processPayment':
           result = await this.executeProcessPayment(page, args, sessionState);
           break;
+        case 'sendPaymentRequest':
+          result = await this.executeSendPaymentRequest(page, args, sessionState);
+          break;
         case 'sendConfirmation':
           result = await this.executeSendConfirmation(page, args, sessionState);
           break;
@@ -516,6 +519,34 @@ export class StepExecutor {
       paymentMethod: paymentResult.paymentMethod,
       grandTotal: paymentResult.grandTotal,
       error: paymentResult.error
+    };
+  }
+
+  async executeSendPaymentRequest(page, args, sessionState) {
+    // Use sendPaymentRequest from commonBookingSteps
+    const { sendPaymentRequest } = await import('../commonBookingSteps/sendPaymentRequest.js');
+    
+    const deliveryMethod = args.deliveryMethod; // 'email' or 'sms' (required)
+    if (!deliveryMethod || (deliveryMethod !== 'email' && deliveryMethod !== 'sms')) {
+      throw new Error('deliveryMethod is required and must be "email" or "sms"');
+    }
+    
+    const clientEmail = args.clientEmail || null;
+    const clientMobile = args.clientMobile || null;
+    
+    const result = await sendPaymentRequest(
+      page,
+      this.screenshotsDir,
+      deliveryMethod,
+      clientEmail,
+      clientMobile
+    );
+    
+    return {
+      success: result.success,
+      paymentCompleted: result.paymentCompleted || false,
+      error: result.error,
+      message: result.message
     };
   }
 

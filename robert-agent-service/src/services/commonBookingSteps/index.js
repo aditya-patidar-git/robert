@@ -7,6 +7,7 @@ export { createNewContact } from './createNewContact.js';
 export { fillContactDetails } from './fillContactDetails.js';
 export { selectPaymentOption } from './selectPaymentOption.js';
 export { selectPaymentMethod } from './selectPaymentMethod.js';
+export { sendPaymentRequest } from './sendPaymentRequest.js';
 export { fillCardDetails } from './fillCardDetails.js';
 export { acceptTermsAndMakeBooking } from './acceptTermsAndMakeBooking.js';
 export { sendBookingConfirmationEmail } from './sendBookingConfirmationEmail.js';

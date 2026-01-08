@@ -12,6 +12,7 @@ import selectBookingOptionsTool from './selectBookingOptions.js';
 import createNewContactTool from './createNewContact.js';
 import fillContactDetailsTool from './fillContactDetails.js';
 import processPaymentTool from './processPayment.js';
+import sendPaymentRequestTool from './sendPaymentRequest.js';
 import sendConfirmationTool from './sendConfirmation.js';
 import sendTermsTool from './sendTerms.js';
 import sendSMSTool from './sendSMS.js';
@@ -27,6 +28,7 @@ export const bookingStepTools = {
   'booking_step_create_new_contact': createNewContactTool,
   'booking_step_fill_contact_details': fillContactDetailsTool,
   'booking_step_process_payment': processPaymentTool,
+  'booking_step_send_payment_request': sendPaymentRequestTool,
   'booking_step_send_confirmation': sendConfirmationTool,
   'booking_step_send_terms': sendTermsTool,
   'booking_step_send_sms': sendSMSTool
@@ -43,6 +45,7 @@ export {
   createNewContactTool,
   fillContactDetailsTool,
   processPaymentTool,
+  sendPaymentRequestTool,
   sendConfirmationTool,
   sendTermsTool,
   sendSMSTool

@@ -278,6 +278,40 @@ function getStepBookingToolDefinitions() {
     },
     {
       type: 'function',
+      name: 'booking_step_send_payment_request',
+      description: `Step 9 (Existing) / Step 8 (New): Send payment request via email or SMS. Use this AFTER selecting "Send a payment request" option in payment dropdown. The system will automatically poll every 30 seconds for up to 5 minutes to detect when the client completes payment and the "Make booking" button appears, then click it automatically.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          deliveryMethod: {
+            type: 'string',
+            enum: ['email', 'sms'],
+            description: 'Delivery method: "email" to send payment request via email, or "sms" to send via SMS text message. Ask the client for their preference before calling this tool.'
+          },
+          clientEmail: {
+            type: 'string',
+            description: 'Client email address (optional, only needed if deliveryMethod is "email" and email is not pre-filled)'
+          },
+          clientMobile: {
+            type: 'string',
+            description: 'Client mobile number (optional, only needed if deliveryMethod is "sms" and mobile is not pre-filled)'
+          }
+        },
+        required: ['courseType', 'workflowType', 'deliveryMethod']
+      }
+    },
+    {
+      type: 'function',
       name: 'booking_step_send_confirmation',
       description: `Step 10 (Existing) / Step 9 (New): Send booking confirmation email to customer.`,
       parameters: {
