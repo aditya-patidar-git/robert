@@ -257,13 +257,39 @@ export class TranscriptionHandler {
             try {
               this.state.explicitResponseRequested = true;
               if (this.openaiWs && this.openaiWs.readyState === 1) {
+                // CRITICAL FIX: Temporarily disable tools to ensure natural language response
+                // Step 1: Disable tools
                 this.openaiWs.send(JSON.stringify({
+                  type: 'session.update',
+                  session: {
+                    tool_choice: 'none'
+                  }
+                }));
+                
+                await new Promise(resolve => setTimeout(resolve, 150));
+                
+                // Step 2: Create response - OpenAI will generate naturally based on context
+                const responseCreatePayload = {
                   type: 'response.create',
                   response: {
                     modalities: ['audio', 'text']
                   }
+                };
+                this.openaiWs.send(JSON.stringify(responseCreatePayload));
+                
+                // Step 3: Re-enable tools after delay
+                setTimeout(() => {
+                  if (this.openaiWs && this.openaiWs.readyState === 1) {
+                    this.openaiWs.send(JSON.stringify({
+                      type: 'session.update',
+                      session: {
+                        tool_choice: 'auto'
+                  }
                 }));
-                console.log(`🎯 [${this.state.callSid}] Created response immediately after grace period (${transcriptionsToProcess.length} transcriptions)`);
+                  }
+                }, 3000);
+                
+                console.log(`🎯 [${this.state.callSid}] Created response after grace period (${transcriptionsToProcess.length} transcriptions)`);
               }
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after grace period:`, err);

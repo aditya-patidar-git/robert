@@ -167,7 +167,12 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
       
       // If button found, click it immediately and return success
       if (makeBookingButton) {
+        console.log('✅ [PAYMENT_REQUEST] ============================================');
+        console.log('✅ [PAYMENT_REQUEST] PAYMENT COMPLETED SUCCESSFULLY!');
+        console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button after ${attempt} polling attempt(s)`);
         console.log('🖱️ [PAYMENT_REQUEST] Clicking "Make booking" button...');
+        console.log('✅ [PAYMENT_REQUEST] ============================================');
+        
         try {
           await makeBookingButton.waitFor({ state: 'visible', timeout: 5000 });
           await makeBookingButton.click({ timeout: 5000 });
@@ -175,10 +180,20 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           
           await takeScreenshot(page, 'payment-completed-make-booking-clicked.png', screenshotsDir);
           
+          // Wait a moment for booking to process
+          await page.waitForTimeout(2000);
+          
+          console.log('✅ [PAYMENT_REQUEST] ============================================');
+          console.log('✅ [PAYMENT_REQUEST] SUCCESS: Booking finalized!');
+          console.log('✅ [PAYMENT_REQUEST] Payment completed and "Make booking" button clicked.');
+          console.log('✅ [PAYMENT_REQUEST] Booking is now complete.');
+          console.log('✅ [PAYMENT_REQUEST] ============================================');
+          
           return {
             success: true,
             paymentCompleted: true,
-            message: 'Payment request sent and payment completed. "Make booking" button clicked.'
+            bookingFinalized: true,
+            message: '✅ SUCCESS: Payment request sent via ' + deliveryMethod + ' and payment completed successfully. "Make booking" button clicked. Booking finalized and completed.'
           };
         } catch (clickError) {
           console.error('❌ [PAYMENT_REQUEST] Error clicking "Make booking" button:', clickError);
@@ -186,10 +201,20 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           try {
             await makeBookingButton.click({ force: true, timeout: 5000 });
             console.log('✅ [PAYMENT_REQUEST] "Make booking" button clicked with force');
+            
+            await page.waitForTimeout(2000);
+            
+            console.log('✅ [PAYMENT_REQUEST] ============================================');
+            console.log('✅ [PAYMENT_REQUEST] SUCCESS: Booking finalized!');
+            console.log('✅ [PAYMENT_REQUEST] Payment completed and "Make booking" button clicked.');
+            console.log('✅ [PAYMENT_REQUEST] Booking is now complete.');
+            console.log('✅ [PAYMENT_REQUEST] ============================================');
+            
             return {
               success: true,
               paymentCompleted: true,
-              message: 'Payment request sent and payment completed. "Make booking" button clicked.'
+              bookingFinalized: true,
+              message: '✅ SUCCESS: Payment request sent via ' + deliveryMethod + ' and payment completed successfully. "Make booking" button clicked. Booking finalized and completed.'
             };
           } catch (forceClickError) {
             console.error('❌ [PAYMENT_REQUEST] Error with force click:', forceClickError);

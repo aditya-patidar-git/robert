@@ -341,10 +341,15 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
       
       await commonSteps.takeScreenshot(targetPage, 'price-page-loaded.png', this.screenshotsDir);
       
-      // Select bike type from Booking options based on licence category and transmission
-      console.log('🚲 [STEP 7/5] Selecting bike type from Booking options...');
-      await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
-      await page.waitForTimeout(2000);
+      // Find all booking option groups
+      console.log('📋 [STEP 7/5] Finding all booking option groups...');
+      const allGroups = searchContext.locator('.jqxInputBookingOptionsSelectGroupOuter');
+      const groupCount = await allGroups.count();
+      console.log(`📊 [STEP 7/5] Found ${groupCount} booking option group(s)`);
+      
+      if (groupCount === 0) {
+        throw new Error('No booking option groups found on price page');
+      }
       
       const licenceCategory = bookingArgs.licenceCategory.trim().toUpperCase();
       const transmission = (bookingArgs.transmission || bookingArgs.bikeType || '').trim().toLowerCase();
@@ -361,36 +366,99 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
       
       console.log(`✅ [STEP 7/5] Selecting option for ${licenceCategory} ${transmission}`);
       
-      // Find and select the matching option
-      if (expectedOptionPattern) {
-        const bikeOption = searchContext.locator(`[role="radio"]:has-text("${expectedOptionPattern.source}"), input[type="radio"]`).filter({ hasText: expectedOptionPattern }).first();
+      let optionSelected = false;
+      
+      // Process each group to find and select the matching option
+      for (let groupIndex = 0; groupIndex < groupCount; groupIndex++) {
+        const group = allGroups.nth(groupIndex);
         
-        if (await bikeOption.count() > 0) {
-          await bikeOption.check();
-        } else {
-          // Fallback: try selecting first available option
-          const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-          if (await firstOption.count() > 0) {
+        // Get group heading to identify what question this group is asking
+        const groupHeading = group.locator('h1.jqx_formBoilerPlateText.jqx_formHeading span').first();
+        const headingText = await groupHeading.textContent().catch(() => '');
+        const normalizedHeading = headingText ? headingText.trim().toLowerCase() : '';
+        
+        console.log(`📋 [STEP 7/5] Processing group ${groupIndex + 1}/${groupCount}: "${normalizedHeading || '(no heading)'}"`);
+        
+        // Skip CBT course type group (not relevant for Full Licence Assessment)
+        if (normalizedHeading.includes('cbt course type')) {
+          console.log(`⏭️ [STEP 7/5] Skipping "${normalizedHeading}" group (not relevant for Full Licence Assessment)`);
+          continue;
+        }
+        
+        const groupOptions = group.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+        const optionCount = await groupOptions.count();
+        console.log(`   Found ${optionCount} options in this group`);
+        
+        if (optionCount === 0) {
+          console.log(`⚠️ [STEP 7/5] No options found in group "${normalizedHeading}", skipping...`);
+          continue;
+        }
+        
+        // This should be the Full Licence courses group
+        if (expectedOptionPattern) {
+          for (let i = 0; i < optionCount; i++) {
+            const optionRow = groupOptions.nth(i);
+            const optionNameSpan = optionRow.locator('.optionName span');
+            
+            if (await optionNameSpan.count() > 0) {
+              const optionText = await optionNameSpan.textContent();
+              
+              if (optionText && expectedOptionPattern.test(optionText)) {
+                console.log(`✅ [STEP 7/5] Found matching option: "${optionText}"`);
+                const checkDiv = optionRow.locator('.jqx_inputBookingOptionsSelect_check').first();
+                if (await checkDiv.count() > 0) {
+                  await checkDiv.click();
+                  console.log(`✅ [STEP 7/5] Selected option: "${optionText}"`);
+                  optionSelected = true;
+                  await page.waitForTimeout(500);
+                  break;
+                } else {
+                  await optionRow.click();
+                  console.log(`✅ [STEP 7/5] Clicked option row: "${optionText}"`);
+                  optionSelected = true;
+                  await page.waitForTimeout(500);
+                  break;
+                }
+              }
+            }
+          }
+        }
+        
+        if (optionSelected) {
+          break; // Found and selected, no need to check other groups
+        }
+      }
+      
+      // Fallback: try selecting first available option if pattern matching failed
+      if (!optionSelected) {
+        console.log(`⚠️ [STEP 7/5] WARNING: No matching option found, trying fallback...`);
+        for (let groupIndex = 0; groupIndex < groupCount; groupIndex++) {
+          const group = allGroups.nth(groupIndex);
+          const groupHeading = group.locator('h1.jqx_formBoilerPlateText.jqx_formHeading span').first();
+          const headingText = await groupHeading.textContent().catch(() => '');
+          const normalizedHeading = headingText ? headingText.trim().toLowerCase() : '';
+          
+          if (normalizedHeading.includes('cbt course type')) {
+            continue; // Skip CBT type group
+          }
+          
+          const groupOptions = group.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+          if (await groupOptions.count() > 0) {
+            const firstOption = groupOptions.first();
             const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
             if (await checkDiv.count() > 0) {
               await checkDiv.click();
             } else {
               await firstOption.click();
             }
-          }
-        }
-      } else {
-        // Fallback: try selecting first available option
-        const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-        if (await firstOption.count() > 0) {
-          const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
-          if (await checkDiv.count() > 0) {
-            await checkDiv.click();
-          } else {
-            await firstOption.click();
+            optionSelected = true;
+            console.log(`✅ [STEP 7/5] Selected first available option as fallback`);
+            break;
           }
         }
       }
+      
+      await page.waitForTimeout(1000);
       
       await page.waitForTimeout(1000);
       

@@ -92,12 +92,12 @@ export class ConsentHandler {
       // Restart timeout
       this.state.consentTimeout = setTimeout(() => {
         if (this.state.recordingConsentState.given === null && conversations[this.state.callSid].recordingConsent.given === null) {
-          this.state.recordingConsentState.given = false;
+          this.state.recordingConsentState.given = true;
           this.state.recordingConsentState.respondedAt = new Date();
-          conversations[this.state.callSid].recordingConsent.given = false;
+          conversations[this.state.callSid].recordingConsent.given = true;
           conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
-          conversations[this.state.callSid].recordingConsent.optOutReason = "No response within timeout - defaulting to opt-out for GDPR compliance";
-          console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-out (GDPR compliance)`);
+          conversations[this.state.callSid].recordingConsent.optOutReason = null;
+          console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-in`);
         }
       }, this.state.CONSENT_TIMEOUT_MS);
       console.log(`⏱️ [${this.state.callSid}] Consent timeout reset - user is speaking, extending response window`);

@@ -17,10 +17,10 @@ export class ProcessPaymentStep extends BaseStepTool {
 
   /**
    * Payment processing may take longer due to payment gateway interactions
-   * @returns {number} Timeout in milliseconds (45 seconds)
+   * @returns {number} Timeout in milliseconds (120 seconds)
    */
   getTimeout() {
-    return 45000; // 45 seconds for payment processing
+    return 120000; // 120 seconds for payment processing (increased from 45 seconds)
   }
 }
 

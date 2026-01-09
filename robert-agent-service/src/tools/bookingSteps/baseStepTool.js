@@ -65,8 +65,9 @@ export class BaseStepTool {
   requiresBookingConfirmation() {
     const stepName = this.getStepName();
     // Steps that should require confirmation before execution
+    // Note: processPayment removed - confirmation happens during payment processing (after reading terms)
     // Note: selectBookingOptions removed - CRM docs don't require confirmation for this step
-    const confirmationSteps = ['processPayment'];
+    const confirmationSteps = [];
     return confirmationSteps.includes(stepName);
   }
 

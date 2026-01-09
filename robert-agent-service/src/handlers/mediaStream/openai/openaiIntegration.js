@@ -675,12 +675,9 @@ ${config.instructions}`;
       try {
         const event = JSON.parse(data.toString());
         
-        // DEBUG: Log session.updated to verify audio format
+        // Minimal logging - only log important events
         if (event.type === 'session.updated') {
-          console.log(`✅ [${this.state.callSid}] Session updated confirmed by OpenAI:`);
-          console.log(`   - input_audio_format: ${event.session?.input_audio_format || 'not specified'}`);
-          console.log(`   - output_audio_format: ${event.session?.output_audio_format || 'not specified'}`);
-          console.log(`   - voice: ${event.session?.voice || 'not specified'}`);
+          console.log(`✅ [${this.state.callSid}] Session updated - audio format: ${event.session?.output_audio_format || 'N/A'}, voice: ${event.session?.voice || 'N/A'}`);
         }
         
         // Handle error events

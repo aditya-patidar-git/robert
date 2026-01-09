@@ -43,6 +43,7 @@ export class LanguageDetector {
       this.state.openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
+          modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
           voice: config.voice.id,
           instructions: config.instructions
         }

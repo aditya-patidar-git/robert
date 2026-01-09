@@ -208,6 +208,7 @@ const bookingStepProcessPaymentSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
   termsAccepted: z.boolean(),
+  confirmed: z.boolean().optional(), // Optional confirmation flag (for future use if needed)
   paymentMethod: z.string().optional(),
   cardNumber: z.string().optional(),
   expiryDate: z.string().optional(),

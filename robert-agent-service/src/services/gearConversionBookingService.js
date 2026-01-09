@@ -207,6 +207,7 @@ class GearConversionBookingService extends BaseBookingService {
       
       // Step 1: Validate provided preferences (if any)
       const validDurations = ['2', '3', '4'];
+      const validBikeTypes = ['125cc automatic', '50cc automatic', '125cc manual'];
       const invalidPreferences = [];
       
       if (bookingArgs.duration) {
@@ -222,13 +223,35 @@ class GearConversionBookingService extends BaseBookingService {
         }
       }
       
+      if (bookingArgs.bikeType) {
+        const normalizedBikeType = bookingArgs.bikeType.trim().toLowerCase();
+        const isValid = validBikeTypes.some(valid => valid.toLowerCase() === normalizedBikeType);
+        if (!isValid) {
+          invalidPreferences.push({
+            preference: 'bikeType',
+            providedValue: bookingArgs.bikeType,
+            validOptions: validBikeTypes
+          });
+        }
+      }
+      
       if (invalidPreferences.length > 0) {
         const invalidPref = invalidPreferences[0];
+        let message = `I'm sorry, but "${invalidPref.providedValue}" is not a valid ${invalidPref.preference === 'duration' ? 'duration' : 'bike type'} for the Gear Conversion course. `;
+        if (invalidPref.preference === 'duration') {
+          message += `Please choose one of: "${validDurations.join('", "')}" hours.`;
+        } else {
+          message += `Please choose one of: "${validBikeTypes.join('", "')}".`;
+        }
+        
         return {
           requiresPreferences: true,
           invalidPreferences: invalidPreferences.map(p => p.preference),
-          message: `I'm sorry, but "${invalidPref.providedValue}" is not a valid duration for the Gear Conversion course. Please choose one of: "${validDurations.join('", "')}" hours.`,
-          validOptions: validDurations
+          message: message,
+          validOptions: {
+            duration: validDurations,
+            bikeType: validBikeTypes
+          }
         };
       }
       
@@ -237,13 +260,28 @@ class GearConversionBookingService extends BaseBookingService {
       if (!bookingArgs.duration) {
         missingPreferences.push('duration');
       }
+      if (!bookingArgs.bikeType) {
+        missingPreferences.push('bikeType');
+      }
       
       if (missingPreferences.length > 0) {
+        let message = 'I need some additional information to proceed with your Gear Conversion booking. ';
+        
+        if (missingPreferences.includes('duration')) {
+          message += 'How many hours of training would you like: 2 hours, 3 hours, or 4 hours? ';
+        }
+        if (missingPreferences.includes('bikeType')) {
+          message += 'Which bike type would you prefer?';
+        }
+        
         return {
           requiresPreferences: true,
           missingPreferences: missingPreferences,
-          message: `I need to know your preferred duration for the Gear Conversion course. Would you like a 2-hour, 3-hour, or 4-hour session?`,
-          validOptions: validDurations
+          message: message.trim(),
+          validOptions: {
+            duration: validDurations,
+            bikeType: validBikeTypes
+          }
         };
       }
       
@@ -278,77 +316,138 @@ class GearConversionBookingService extends BaseBookingService {
       
       await commonSteps.takeScreenshot(targetPage, 'price-page-loaded.png', this.screenshotsDir);
       
-      // Select duration from Booking options (2 hours, 3 hours, or 4 hours)
-      console.log('⏱️ [STEP 8] Selecting duration from Booking options...');
-      await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
-      await page.waitForTimeout(2000);
+      // Find all booking option groups
+      console.log('📋 [STEP 8] Finding all booking option groups...');
+      const allGroups = searchContext.locator('.jqxInputBookingOptionsSelectGroupOuter');
+      const groupCount = await allGroups.count();
+      console.log(`📊 [STEP 8] Found ${groupCount} booking option group(s)`);
+      
+      if (groupCount === 0) {
+        throw new Error('No booking option groups found on price page');
+      }
       
       const duration = bookingArgs.duration; // Already validated above
+      const bikeType = bookingArgs.bikeType; // Already validated above
       
-      const durationMap = {
-        '2': /2 hours/i,
-        '3': /3 hours/i,
-        '4': /4 hours/i
-      };
+      let durationSelected = false;
+      let bikeTypeSelected = false;
       
-      const durationPattern = durationMap[duration] || durationMap['2'];
-      console.log(`✅ [STEP 8] Selecting duration: ${duration} hours`);
-      
-      // Find and select the duration option using div-based checkbox structure
-      // Options are in: .jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable
-      // Checkbox is: .jqx_inputBookingOptionsSelect_check
-      // Option text is in: .optionName span
-      const allOptions = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
-      const optionCount = await allOptions.count();
-      console.log(`🔍 [STEP 8] Found ${optionCount} selectable booking options`);
-      
-      let matchingOption = null;
-      let matchingRowIndex = -1;
-      
-      // Iterate through all options to find matching duration
-      for (let i = 0; i < optionCount; i++) {
-        const optionRow = allOptions.nth(i);
-        const optionNameSpan = optionRow.locator('.optionName span');
+      // Process each group to select required options
+      for (let groupIndex = 0; groupIndex < groupCount; groupIndex++) {
+        const group = allGroups.nth(groupIndex);
         
-        if (await optionNameSpan.count() > 0) {
-          const optionText = await optionNameSpan.textContent();
-          const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+        // Get group heading to identify what question this group is asking
+        const groupHeading = group.locator('h1.jqx_formBoilerPlateText.jqx_formHeading span').first();
+        const headingText = await groupHeading.textContent().catch(() => '');
+        const normalizedHeading = headingText ? headingText.trim().toLowerCase() : '';
+        
+        console.log(`📋 [STEP 8] Processing group ${groupIndex + 1}/${groupCount}: "${normalizedHeading || '(no heading)'}"`);
+        
+        const groupOptions = group.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+        const optionCount = await groupOptions.count();
+        console.log(`   Found ${optionCount} options in this group`);
+        
+        if (optionCount === 0) {
+          console.log(`⚠️ [STEP 8] No options found in group "${normalizedHeading}", skipping...`);
+          continue;
+        }
+        
+        // STEP 1: Handle duration group (hours selection)
+        if (normalizedHeading.includes('hour') || normalizedHeading.includes('duration') || normalizedHeading.includes('time')) {
+          console.log(`⏱️ [STEP 8] Found duration group, selecting ${duration} hours...`);
           
-          // Check if option text matches the duration pattern
-          if (normalizedText && durationPattern.test(normalizedText)) {
-            console.log(`✅ [STEP 8] Found matching option at index ${i}: "${optionText}"`);
-            matchingOption = optionRow;
-            matchingRowIndex = i;
-            break;
+          const durationMap = {
+            '2': /2\s*hours?/i,
+            '3': /3\s*hours?/i,
+            '4': /4\s*hours?/i
+          };
+          
+          const durationPattern = durationMap[duration] || durationMap['2'];
+          
+          for (let i = 0; i < optionCount; i++) {
+            const optionRow = groupOptions.nth(i);
+            const optionNameSpan = optionRow.locator('.optionName span');
+            
+            if (await optionNameSpan.count() > 0) {
+              const optionText = await optionNameSpan.textContent();
+              const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+              
+              if (normalizedText && durationPattern.test(normalizedText)) {
+                console.log(`✅ [STEP 8] Found matching duration option: "${optionText}"`);
+                const checkDiv = optionRow.locator('.jqx_inputBookingOptionsSelect_check').first();
+                if (await checkDiv.count() > 0) {
+                  await checkDiv.click();
+                  console.log(`✅ [STEP 8] Selected duration: "${optionText}"`);
+                  durationSelected = true;
+                  await page.waitForTimeout(500);
+                  break;
+                } else {
+                  await optionRow.click();
+                  console.log(`✅ [STEP 8] Clicked duration row: "${optionText}"`);
+                  durationSelected = true;
+                  await page.waitForTimeout(500);
+                  break;
+                }
+              }
+            }
           }
+          continue; // Move to next group
+        }
+        
+        // STEP 2: Handle bike type group
+        if (!normalizedHeading || normalizedHeading === '' || normalizedHeading.includes('bike') || normalizedHeading.includes('motorcycle')) {
+          console.log('🚲 [STEP 8] This appears to be the bike type group, selecting bike type...');
+          
+          const bikeTypeMap = {
+            '125cc automatic': /125\s*cc\s+automatic.*scooter/i,
+            '50cc automatic': /50\s*cc\s+automatic/i,
+            '125cc manual': /125\s*cc\s+manual.*geared/i
+          };
+          
+          const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
+          console.log(`✅ [STEP 8] Selecting bike type: ${bikeType}`);
+          
+          for (let i = 0; i < optionCount; i++) {
+            const optionRow = groupOptions.nth(i);
+            const optionNameSpan = optionRow.locator('.optionName span');
+            
+            if (await optionNameSpan.count() > 0) {
+              const optionText = await optionNameSpan.textContent();
+              const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+              
+              if (normalizedText && bikePattern.test(normalizedText)) {
+                console.log(`✅ [STEP 8] Found matching bike type option: "${optionText}"`);
+                const checkDiv = optionRow.locator('.jqx_inputBookingOptionsSelect_check').first();
+                if (await checkDiv.count() > 0) {
+                  await checkDiv.click();
+                  console.log(`✅ [STEP 8] Selected bike type: "${optionText}"`);
+                  bikeTypeSelected = true;
+                  await page.waitForTimeout(500);
+                  break;
+                } else {
+                  await optionRow.click();
+                  console.log(`✅ [STEP 8] Clicked bike type row: "${optionText}"`);
+                  bikeTypeSelected = true;
+                  await page.waitForTimeout(500);
+                  break;
+                }
+              }
+            }
+          }
+          
+          if (!bikeTypeSelected) {
+            console.log(`⚠️ [STEP 8] No matching bike type found in this group`);
+          }
+          continue; // Move to next group
         }
       }
       
-      if (matchingOption && matchingRowIndex >= 0) {
-        // Click the checkbox div inside the matching row
-        const checkDiv = matchingOption.locator('.jqx_inputBookingOptionsSelect_check').first();
-        if (await checkDiv.count() > 0) {
-          await checkDiv.click();
-          console.log(`✅ [STEP 8] Clicked checkbox for duration option at index ${matchingRowIndex}`);
-        } else {
-          // Fallback: click the row itself
-          await matchingOption.click();
-          console.log(`✅ [STEP 8] Clicked row for duration option at index ${matchingRowIndex}`);
-        }
-      } else {
-        // Fallback: try selecting first available option
-        console.log('⚠️ [STEP 8] No matching duration option found, selecting first available option');
-        const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-        if (await firstOption.count() > 0) {
-          const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
-          if (await checkDiv.count() > 0) {
-            await checkDiv.click();
-            console.log('✅ [STEP 8] Selected first available option as fallback');
-          } else {
-            await firstOption.click();
-            console.log('✅ [STEP 8] Clicked first available option row as fallback');
-          }
-        }
+      // Verify both options were selected
+      if (!durationSelected) {
+        console.log(`⚠️ [STEP 8] WARNING: Duration was not selected`);
+      }
+      if (!bikeTypeSelected) {
+        console.log(`⚠️ [STEP 8] WARNING: Bike type was not selected`);
       }
       
       await page.waitForTimeout(1000);

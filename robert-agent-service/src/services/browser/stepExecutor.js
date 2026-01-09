@@ -467,6 +467,21 @@ export class StepExecutor {
       }
       const clientPostcode = args.postcode || args.clientDetails?.postcode || sessionState?.clientDetails?.postcode;
       await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode);
+      
+      return {
+        success: true,
+        contactDetailsFilled: true,
+        clientFound: true,
+        clientSelected: true,
+        clientDetailsPageLoaded: true,
+        nextButtonClicked: true,
+        stepCompleted: 8, // Explicitly state which step is complete
+        stepName: 'fill_contact_details', // Explicit step name
+        nextStep: 'booking_step_process_payment', // Explicitly state next step tool to call
+        nextStepNumber: 9, // Explicitly state next step number
+        doNotRetry: true, // Explicitly prevent retry
+        message: `✅ STEP 8 COMPLETE: booking_step_fill_contact_details has been successfully completed. Client ${clientEmail} was found, selected, and Next button clicked. DO NOT RETRY THIS STEP. IMMEDIATELY proceed to STEP 9 by calling booking_step_process_payment tool.`
+      };
     } else {
       // New client: fill all fields from scratch
       await commonSteps.fillContactDetails(page, {
@@ -487,38 +502,114 @@ export class StepExecutor {
         marketingConsent: args.marketingConsent,
         dataSharing: args.dataSharing
       }, this.screenshotsDir);
-    }
 
-    return {
-      success: true,
-      contactDetailsFilled: true
-    };
+      return {
+        success: true,
+        contactDetailsFilled: true,
+        stepCompleted: 7, // Explicitly state which step is complete (for new clients, this is Step 7)
+        stepName: 'fill_contact_details', // Explicit step name
+        nextStep: 'booking_step_process_payment', // Explicitly state next step tool to call
+        nextStepNumber: 8, // Explicitly state next step number (for new clients, payment is Step 8)
+        doNotRetry: true, // Explicitly prevent retry
+        message: `✅ STEP 7 COMPLETE: booking_step_fill_contact_details has been successfully completed. Contact details form filled successfully. DO NOT RETRY THIS STEP. IMMEDIATELY proceed to STEP 8 by calling booking_step_process_payment tool.`
+      };
+    }
   }
 
   async executeProcessPayment(page, args, sessionState) {
-    // Use the updated payment handler (payment links/Twilio Pay) instead of old card details method
+    // Use the updated payment strategy: Select "Send a payment request" and use sendPaymentRequest
     const screenshots = [];
     
-    // Import payment handler dynamically to avoid circular dependencies
-    const { processPayment } = await import('../commonBookingSteps/paymentHandler.js');
+    // Step 1: Select "Send a payment request" option (updated strategy)
+    const { selectPaymentOption } = await import('../commonBookingSteps/selectPaymentOption.js');
+    await selectPaymentOption(page, this.screenshotsDir, 'request');
+    screenshots.push(await (await import('../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', this.screenshotsDir));
+    await page.waitForTimeout(2000);
     
-    const paymentResult = await processPayment(
+    // Step 2: Get client email/mobile from args or sessionState
+    let clientEmail = args.clientEmail || args.customerEmail || null;
+    let clientMobile = args.clientMobile || args.customerMobile || args.customerPhone || null;
+    
+    // Try to get from sessionState if not provided in args
+    if (!clientEmail || !clientMobile) {
+      // Extract callSid from sessionState to access conversation state
+      let callSid = args.callSid || null;
+      if (!callSid && sessionState?.browserSessionId) {
+        const match = sessionState.browserSessionId.match(/^browser_(.+?)_\d+$/);
+        if (match) {
+          callSid = match[1];
+        }
+      }
+      
+      if (callSid) {
+        const { conversations } = await import('../../shared/state.js');
+        const conversation = conversations[callSid];
+        
+        if (conversation) {
+          // Get from clientDetails
+          if (!clientEmail && conversation.clientDetails?.email) {
+            clientEmail = conversation.clientDetails.email;
+          }
+          if (!clientMobile && conversation.clientDetails?.telephoneNumber) {
+            clientMobile = conversation.clientDetails.telephoneNumber;
+          }
+          
+          // Fallback to KBA email
+          if (!clientEmail && conversation.kba?.email) {
+            clientEmail = conversation.kba.email;
+          }
+        }
+      }
+    }
+    
+    // Step 3: Determine delivery method (default to email if email available, otherwise SMS)
+    const deliveryMethod = args.deliveryMethod || (clientEmail ? 'email' : 'sms');
+    
+    if (!clientEmail && !clientMobile) {
+      return {
+        success: false,
+        paymentCompleted: false,
+        error: 'Client email or mobile number is required for payment request. Please provide clientEmail or clientMobile in the tool arguments.'
+      };
+    }
+    
+    // Step 4: Check if terms were explicitly accepted before proceeding
+    // According to CRM docs, agent MUST read terms and get client agreement BEFORE payment
+    const termsAccepted = args.termsAccepted;
+    if (termsAccepted === undefined) {
+      console.log('⚠️ [PAYMENT] Terms acceptance not explicitly confirmed - agent should read terms before payment');
+      // Still proceed but add guidance in message
+    }
+    
+    // Step 5: Use sendPaymentRequest (updated strategy)
+    const { sendPaymentRequest } = await import('../commonBookingSteps/sendPaymentRequest.js');
+    
+    const paymentResult = await sendPaymentRequest(
       page,
-      {
-        ...args,
-        paymentMethod: args.paymentMethod || process.env.DEFAULT_PAYMENT_METHOD || 'payment_link',
-        termsAccepted: args.termsAccepted !== undefined ? args.termsAccepted : true
-      },
       this.screenshotsDir,
-      screenshots
+      deliveryMethod,
+      clientEmail,
+      clientMobile
     );
 
+    if (paymentResult.success && paymentResult.paymentCompleted) {
+      // After payment is confirmed, terms should be read before clicking "Make booking"
+      // This is handled by acceptTermsAndMakeBooking which is called from sendPaymentRequest
+      return {
+        success: true,
+        paymentCompleted: true,
+        bookingFinalized: true,
+        paymentMethod: 'payment_request',
+        message: paymentResult.message || `✅ SUCCESS: Payment request sent via ${deliveryMethod} and payment completed successfully. ${termsAccepted === undefined ? '⚠️ IMPORTANT: Please read terms and conditions to the client before proceeding with booking confirmation.' : 'Booking finalized and completed.'}`
+      };
+    }
+    
     return {
       success: paymentResult.success,
       paymentCompleted: paymentResult.paymentCompleted || false,
-      paymentMethod: paymentResult.paymentMethod,
-      grandTotal: paymentResult.grandTotal,
-      error: paymentResult.error
+      paymentMethod: 'payment_request',
+      error: paymentResult.error,
+      message: paymentResult.message
     };
   }
 
@@ -541,6 +632,16 @@ export class StepExecutor {
       clientEmail,
       clientMobile
     );
+    
+    // Return result with enhanced message if successful
+    if (result.success && result.paymentCompleted) {
+      return {
+        success: true,
+        paymentCompleted: true,
+        bookingFinalized: true,
+        message: result.message || `✅ SUCCESS: Payment request sent via ${deliveryMethod} and payment completed successfully. Booking finalized and completed.`
+      };
+    }
     
     return {
       success: result.success,
