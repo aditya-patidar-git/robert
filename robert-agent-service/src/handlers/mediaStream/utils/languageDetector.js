@@ -36,19 +36,20 @@ export class LanguageDetector {
         conversations[this.state.callSid].locale = languageConfig.code;
       }
       
-      // Get updated config with new language
+      // Get updated config with new language (respects database config priority)
       const config = configManager.getConfigForNumber(this.state.phoneNumber, detectedLanguageCode);
       
-      // Update OpenAI session with new language and voice
+      // Update OpenAI session with new language and voice (use config.voice to respect database settings)
       this.state.openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
-          voice: languageConfig.voice,
+          modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
+          voice: config.voice.id,
           instructions: config.instructions
         }
       }));
       
-      console.log(`🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${languageConfig.voice}`);
+      console.log(`🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${config.voice.id}`);
       return true;
     } catch (error) {
       console.error(`❌ [${this.state.callSid}] Error switching language:`, error);

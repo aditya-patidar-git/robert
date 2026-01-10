@@ -276,10 +276,35 @@ export class OpenAIIntegration {
       const currentLanguage = conversations[this.state.callSid]?.language || 'en';
       const config = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
       const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+      
+      // Detect flow type from conversation context (if available)
+      let flowType = 'default';
+      try {
+        const flowDetectionService = (await import('../../../services/flowDetectionService.js')).default;
+        const conversation = conversations[this.state.callSid] || {};
+        const transcript = conversation.transcript || [];
+        const recentText = transcript.slice(-5).map(t => t.text || t.content || '').join(' ');
+        
+        flowType = flowDetectionService.detectFlow(recentText, transcript, {
+          callSid: this.state.callSid,
+          phoneNumber: this.state.phoneNumber
+        });
+      } catch (error) {
+        console.warn(`⚠️ [${this.state.callSid}] Flow detection failed, using default:`, error.message);
+      }
+      
+      // Get effective parameters (flow-specific or global)
+      const aiConfig = configManager.getAIConfig();
+      const effectiveParams = configManager.getEffectiveParameters(flowType, aiConfig);
+      
+      // Override temperature with effective params if flow-specific override exists
+      const effectiveTemperature = effectiveParams.temperature ?? config.temperature;
+      
       console.log('📋 Using config:', {
         voice: config.voice.id,
-        temperature: config.temperature,
-        confidence: config.confidenceThreshold
+        temperature: effectiveTemperature,
+        confidence: config.confidenceThreshold,
+        flowType: flowType
       });
       
       // Initialize conversation state with recording consent tracking
@@ -337,9 +362,15 @@ export class OpenAIIntegration {
 1. First, say: "${consentNotice}"
 2. Then immediately ask: "${consentQuestion}"
 3. WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
-4. Only after they respond, continue with: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+4. If the caller's response is unclear, ambiguous, or you detect background noise/barge-in that prevents you from understanding their answer, IMMEDIATELY repeat the question: "${consentQuestion}" - DO NOT proceed until you receive a clear yes or no answer
+5. Only after they respond clearly, continue with: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+6. If the language preference is unclear or you detect noise/barge-in, repeat: "What language would you like to use today?" until you get a clear answer
 
-CRITICAL: You MUST ask the consent question before proceeding with any other conversation. Do not skip this step.
+CRITICAL: 
+- You MUST ask the consent question before proceeding with any other conversation
+- If you cannot clearly understand the caller's response (due to noise, barge-in, or unclear speech), you MUST repeat the question
+- Do not assume or guess the answer - always wait for a clear response
+- The same applies to the language preference question - repeat if unclear
 
 ${config.instructions}`;
         
@@ -457,7 +488,7 @@ ${config.instructions}`;
               modalities: ['audio', 'text'],
               instructions: modifiedInstructions || config.instructions,
               voice: config.voice.id,
-              temperature: Math.max(0.6, config.temperature), // Minimum is 0.6 for Realtime API
+              temperature: Math.max(0.6, effectiveTemperature), // Use flow-specific temperature if available
               input_audio_format: 'g711_ulaw',
               output_audio_format: 'g711_ulaw',  // Direct format - no conversion needed
               turn_detection: {
@@ -475,7 +506,7 @@ ${config.instructions}`;
           console.log(`   - input_audio_format: g711_ulaw`);
           console.log(`   - output_audio_format: g711_ulaw (direct format - no conversion needed)`);
           console.log(`   - voice: ${config.voice.id}`);
-          console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
+          console.log(`   - temperature: ${Math.max(0.6, effectiveTemperature)} (flow: ${flowType})`);
           if (audioConfig?.energyThresholdAutoCalibrate !== false) {
             console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
           }
@@ -644,12 +675,9 @@ ${config.instructions}`;
       try {
         const event = JSON.parse(data.toString());
         
-        // DEBUG: Log session.updated to verify audio format
+        // Minimal logging - only log important events
         if (event.type === 'session.updated') {
-          console.log(`✅ [${this.state.callSid}] Session updated confirmed by OpenAI:`);
-          console.log(`   - input_audio_format: ${event.session?.input_audio_format || 'not specified'}`);
-          console.log(`   - output_audio_format: ${event.session?.output_audio_format || 'not specified'}`);
-          console.log(`   - voice: ${event.session?.voice || 'not specified'}`);
+          console.log(`✅ [${this.state.callSid}] Session updated - audio format: ${event.session?.output_audio_format || 'N/A'}, voice: ${event.session?.voice || 'N/A'}`);
         }
         
         // Handle error events

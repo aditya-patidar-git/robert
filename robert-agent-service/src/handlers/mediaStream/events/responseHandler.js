@@ -89,6 +89,18 @@ export class ResponseHandler {
     
     console.log(`📝 [${this.state.callSid}] Response created - ID: ${this.state.activeResponseId}, modalities: ${JSON.stringify(event.response?.modalities || [])}, isResponding: ${this.state.isResponding}`);
     
+    // CRITICAL DEBUG: Log detailed response information to diagnose audio issues
+    const responseModalities = event.response?.modalities || [];
+    const hasAudioModality = responseModalities.includes('audio');
+    console.log(`🔍 [${this.state.callSid}] Response creation details:`);
+    console.log(`   - Response ID: ${this.state.activeResponseId}`);
+    console.log(`   - Modalities: ${JSON.stringify(responseModalities)}`);
+    console.log(`   - Has audio modality: ${hasAudioModality}`);
+    console.log(`   - Explicit response requested: ${this.state.explicitResponseRequested}`);
+    if (!hasAudioModality) {
+      console.warn(`⚠️ [${this.state.callSid}] WARNING: Response created WITHOUT audio modality! This will prevent audio generation.`);
+    }
+    
     // Check if response has errors
     if (event.response?.error) {
       console.error(`❌ [${this.state.callSid}] Response created with error:`, JSON.stringify(event.response.error, null, 2));
@@ -158,11 +170,9 @@ export class ResponseHandler {
     // Track outbound audio separately
     this.state.outboundAudioChunkCount++;
     
-    // Log that we received an audio delta event (log first 30 chunks, then every 50th)
-    const shouldLog = this.state.outboundAudioChunkCount <= 30 || (this.state.outboundAudioChunkCount % 50 === 0);
-    if (shouldLog) {
-      const audioPayloadSize = event.delta ? (typeof event.delta === 'string' ? event.delta.length : JSON.stringify(event.delta).length) : 0;
-      console.log(`🔊 [${this.state.callSid}] Audio delta received - outbound chunk #${this.state.outboundAudioChunkCount}, total chunks: ${this.state.audioChunkCount + 1}, response: ${event.response_id || this.state.activeResponseId}, payload size: ${audioPayloadSize} bytes`);
+    // Minimal logging - only first chunk
+    if (this.state.outboundAudioChunkCount === 1) {
+      console.log(`🔊 [${this.state.callSid}] First audio delta received`);
     }
     
     this.state.isResponding = true;

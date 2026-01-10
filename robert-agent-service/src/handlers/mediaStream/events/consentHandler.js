@@ -92,16 +92,19 @@ export class ConsentHandler {
       // Restart timeout
       this.state.consentTimeout = setTimeout(() => {
         if (this.state.recordingConsentState.given === null && conversations[this.state.callSid].recordingConsent.given === null) {
-          this.state.recordingConsentState.given = false;
+          this.state.recordingConsentState.given = true;
           this.state.recordingConsentState.respondedAt = new Date();
-          conversations[this.state.callSid].recordingConsent.given = false;
+          conversations[this.state.callSid].recordingConsent.given = true;
           conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
-          conversations[this.state.callSid].recordingConsent.optOutReason = "No response within timeout - defaulting to opt-out for GDPR compliance";
-          console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-out (GDPR compliance)`);
+          conversations[this.state.callSid].recordingConsent.optOutReason = null;
+          console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-in`);
         }
       }, this.state.CONSENT_TIMEOUT_MS);
       console.log(`⏱️ [${this.state.callSid}] Consent timeout reset - user is speaking, extending response window`);
     }
+    
+    // Check if this is an unclear response (no clear yes/no detected)
+    const isUnclearResponse = !consentDetected && !declineDetected;
     
     if (consentDetected && !declineDetected) {
       // Clear timeout immediately
@@ -114,6 +117,11 @@ export class ConsentHandler {
       this.state.recordingConsentState.respondedAt = new Date();
       conversations[this.state.callSid].recordingConsent.given = true;
       conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
+      // Clear any unclear count when consent is given
+      if (conversations[this.state.callSid].recordingConsent.unclearCount) {
+        conversations[this.state.callSid].recordingConsent.unclearCount = 0;
+      }
+      conversations[this.state.callSid].recordingConsent.needsRepeat = false;
       console.log(`✅ [${this.state.callSid}] Recording consent GIVEN by user: "${transcript}"`);
     } else if (declineDetected) {
       // Clear timeout immediately
@@ -127,9 +135,28 @@ export class ConsentHandler {
       conversations[this.state.callSid].recordingConsent.given = false;
       conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
       conversations[this.state.callSid].recordingConsent.optOutReason = transcript;
+      // Clear any unclear count when consent is declined
+      if (conversations[this.state.callSid].recordingConsent.unclearCount) {
+        conversations[this.state.callSid].recordingConsent.unclearCount = 0;
+      }
+      conversations[this.state.callSid].recordingConsent.needsRepeat = false;
       console.log(`❌ [${this.state.callSid}] Recording consent DECLINED by user: "${transcript}"`);
-    } else {
-      console.log(`⚠️ [${this.state.callSid}] Unclear consent response, waiting for clarification: "${transcript}"`);
+    } else if (isUnclearResponse) {
+      // Track unclear responses
+      if (!conversations[this.state.callSid].recordingConsent.unclearCount) {
+        conversations[this.state.callSid].recordingConsent.unclearCount = 0;
+      }
+      conversations[this.state.callSid].recordingConsent.unclearCount++;
+      
+      console.log(`⚠️ [${this.state.callSid}] Unclear consent response (attempt ${conversations[this.state.callSid].recordingConsent.unclearCount}), waiting for clarification: "${transcript}"`);
+      
+      // If unclear response detected, mark that we need to repeat the question
+      // This will be handled by the OpenAI integration checking the state
+      if (conversations[this.state.callSid].recordingConsent.unclearCount >= 1) {
+        // Mark that we need to repeat the question
+        conversations[this.state.callSid].recordingConsent.needsRepeat = true;
+        console.log(`🔄 [${this.state.callSid}] Marking consent question for repeat due to unclear response`);
+      }
     }
   }
 
@@ -145,9 +172,17 @@ export class ConsentHandler {
     
     const { consentDetected, declineDetected } = this.detectConsent(transcript);
     
+    // Check if this is an unclear response
+    const isUnclearResponse = !consentDetected && !declineDetected;
+    
     if (consentDetected && !declineDetected) {
       conversations[this.state.callSid].memoryConsent.given = true;
       conversations[this.state.callSid].memoryConsent.respondedAt = new Date();
+      // Clear any unclear count when consent is given
+      if (conversations[this.state.callSid].memoryConsent.unclearCount) {
+        conversations[this.state.callSid].memoryConsent.unclearCount = 0;
+      }
+      conversations[this.state.callSid].memoryConsent.needsRepeat = false;
       console.log(`✅ [${this.state.callSid}] Memory consent GIVEN by user: "${transcript}"`);
       
       // Inject full memory context now that consent is given
@@ -155,9 +190,26 @@ export class ConsentHandler {
     } else if (declineDetected) {
       conversations[this.state.callSid].memoryConsent.given = false;
       conversations[this.state.callSid].memoryConsent.respondedAt = new Date();
+      // Clear any unclear count when consent is declined
+      if (conversations[this.state.callSid].memoryConsent.unclearCount) {
+        conversations[this.state.callSid].memoryConsent.unclearCount = 0;
+      }
+      conversations[this.state.callSid].memoryConsent.needsRepeat = false;
       console.log(`❌ [${this.state.callSid}] Memory consent DECLINED by user: "${transcript}"`);
-    } else {
-      console.log(`⚠️ [${this.state.callSid}] Unclear memory consent response, waiting for clarification: "${transcript}"`);
+    } else if (isUnclearResponse) {
+      // Track unclear responses
+      if (!conversations[this.state.callSid].memoryConsent.unclearCount) {
+        conversations[this.state.callSid].memoryConsent.unclearCount = 0;
+      }
+      conversations[this.state.callSid].memoryConsent.unclearCount++;
+      
+      console.log(`⚠️ [${this.state.callSid}] Unclear memory consent response (attempt ${conversations[this.state.callSid].memoryConsent.unclearCount}), waiting for clarification: "${transcript}"`);
+      
+      // Mark that we need to repeat the question
+      if (conversations[this.state.callSid].memoryConsent.unclearCount >= 1) {
+        conversations[this.state.callSid].memoryConsent.needsRepeat = true;
+        console.log(`🔄 [${this.state.callSid}] Marking memory consent question for repeat due to unclear response`);
+      }
     }
   }
 }

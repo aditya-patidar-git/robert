@@ -354,75 +354,116 @@ class TfLBeyondCbtBookingService extends BaseBookingService {
       
       await commonSteps.takeScreenshot(targetPage, 'price-page-loaded.png', this.screenshotsDir);
       
-      // Select bike type from Booking options
-      console.log('🚲 [STEP 7/5] Selecting bike type from Booking options...');
-      await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
-      await page.waitForTimeout(2000);
+      // Find all booking option groups
+      console.log('📋 [STEP 7/5] Finding all booking option groups...');
+      const allGroups = searchContext.locator('.jqxInputBookingOptionsSelectGroupOuter');
+      const groupCount = await allGroups.count();
+      console.log(`📊 [STEP 7/5] Found ${groupCount} booking option group(s)`);
+      
+      if (groupCount === 0) {
+        throw new Error('No booking option groups found on price page');
+      }
       
       const bikeType = bookingArgs.bikeType.trim().toLowerCase();
+      let bikeTypeSelected = false;
       
-      const bikeTypeMap = {
-        '125cc automatic': /125cc automatic.*scooter/i,
-        '50cc automatic': /50cc automatic/i,
-        '125cc manual': /125cc manual.*geared/i
-      };
-      
-      const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
-      console.log(`✅ [STEP 7/5] Selecting bike type: ${bikeType}`);
-      
-      // Find and select the bike type option using div-based checkbox structure
-      // Options are in: .jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable
-      // Checkbox is: .jqx_inputBookingOptionsSelect_check
-      // Option text is in: .optionName span
-      const allOptions = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
-      const optionCount = await allOptions.count();
-      console.log(`🔍 [STEP 7/5] Found ${optionCount} selectable booking options`);
-      
-      let matchingOption = null;
-      let matchingRowIndex = -1;
-      
-      // Iterate through all options to find matching bike type
-      for (let i = 0; i < optionCount; i++) {
-        const optionRow = allOptions.nth(i);
-        const optionNameSpan = optionRow.locator('.optionName span');
+      // Process each group to find and select bike type
+      for (let groupIndex = 0; groupIndex < groupCount; groupIndex++) {
+        const group = allGroups.nth(groupIndex);
         
-        if (await optionNameSpan.count() > 0) {
-          const optionText = await optionNameSpan.textContent();
-          const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+        // Get group heading to identify what question this group is asking
+        const groupHeading = group.locator('h1.jqx_formBoilerPlateText.jqx_formHeading span').first();
+        const headingText = await groupHeading.textContent().catch(() => '');
+        const normalizedHeading = headingText ? headingText.trim().toLowerCase() : '';
+        
+        console.log(`📋 [STEP 7/5] Processing group ${groupIndex + 1}/${groupCount}: "${normalizedHeading || '(no heading)'}"`);
+        
+        // Skip CBT course type and Full Licence groups (not relevant for TfL Beyond CBT)
+        if (normalizedHeading.includes('cbt course type') || normalizedHeading.includes('full licence')) {
+          console.log(`⏭️ [STEP 7/5] Skipping "${normalizedHeading}" group (not relevant for TfL Beyond CBT)`);
+          continue;
+        }
+        
+        const groupOptions = group.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+        const optionCount = await groupOptions.count();
+        console.log(`   Found ${optionCount} options in this group`);
+        
+        if (optionCount === 0) {
+          console.log(`⚠️ [STEP 7/5] No options found in group "${normalizedHeading}", skipping...`);
+          continue;
+        }
+        
+        // This should be the bike type group
+        console.log('🚲 [STEP 7/5] This appears to be the bike type group, selecting bike type...');
+        
+        const bikeTypeMap = {
+          '125cc automatic': /125\s*cc\s+automatic.*scooter/i,
+          '50cc automatic': /50\s*cc\s+automatic/i,
+          '125cc manual': /125\s*cc\s+manual.*geared/i
+        };
+        
+        const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
+        console.log(`✅ [STEP 7/5] Selecting bike type: ${bikeType}`);
+        
+        for (let i = 0; i < optionCount; i++) {
+          const optionRow = groupOptions.nth(i);
+          const optionNameSpan = optionRow.locator('.optionName span');
           
-          // Check if option text matches the bike type pattern
-          if (normalizedText && bikePattern.test(normalizedText)) {
-            console.log(`✅ [STEP 7/5] Found matching option at index ${i}: "${optionText}"`);
-            matchingOption = optionRow;
-            matchingRowIndex = i;
-            break;
+          if (await optionNameSpan.count() > 0) {
+            const optionText = await optionNameSpan.textContent();
+            const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
+            
+            if (normalizedText && bikePattern.test(normalizedText)) {
+              console.log(`✅ [STEP 7/5] Found matching bike type option: "${optionText}"`);
+              const checkDiv = optionRow.locator('.jqx_inputBookingOptionsSelect_check').first();
+              if (await checkDiv.count() > 0) {
+                await checkDiv.click();
+                console.log(`✅ [STEP 7/5] Selected bike type: "${optionText}"`);
+                bikeTypeSelected = true;
+                await page.waitForTimeout(500);
+                break;
+              } else {
+                await optionRow.click();
+                console.log(`✅ [STEP 7/5] Clicked bike type row: "${optionText}"`);
+                bikeTypeSelected = true;
+                await page.waitForTimeout(500);
+                break;
+              }
+            }
           }
+        }
+        
+        if (bikeTypeSelected) {
+          break; // Found and selected, no need to check other groups
         }
       }
       
-      if (matchingOption && matchingRowIndex >= 0) {
-        // Click the checkbox div inside the matching row
-        const checkDiv = matchingOption.locator('.jqx_inputBookingOptionsSelect_check').first();
-        if (await checkDiv.count() > 0) {
-          await checkDiv.click();
-          console.log(`✅ [STEP 7/5] Clicked checkbox for bike type option at index ${matchingRowIndex}`);
-        } else {
-          // Fallback: click the row itself
-          await matchingOption.click();
-          console.log(`✅ [STEP 7/5] Clicked row for bike type option at index ${matchingRowIndex}`);
-        }
-      } else {
-        // Fallback: try selecting first available option
-        console.log('⚠️ [STEP 7/5] No matching bike type option found, selecting first available option');
-        const firstOption = searchContext.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable').first();
-        if (await firstOption.count() > 0) {
-          const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
-          if (await checkDiv.count() > 0) {
-            await checkDiv.click();
-            console.log('✅ [STEP 7/5] Selected first available option as fallback');
-          } else {
-            await firstOption.click();
-            console.log('✅ [STEP 7/5] Clicked first available option row as fallback');
+      // Verify bike type was selected
+      if (!bikeTypeSelected) {
+        console.log(`⚠️ [STEP 7/5] WARNING: Bike type was not selected, trying fallback...`);
+        // Fallback: try selecting first available option from any group (excluding CBT type and Full Licence groups)
+        for (let groupIndex = 0; groupIndex < groupCount; groupIndex++) {
+          const group = allGroups.nth(groupIndex);
+          const groupHeading = group.locator('h1.jqx_formBoilerPlateText.jqx_formHeading span').first();
+          const headingText = await groupHeading.textContent().catch(() => '');
+          const normalizedHeading = headingText ? headingText.trim().toLowerCase() : '';
+          
+          if (normalizedHeading.includes('cbt course type') || normalizedHeading.includes('full licence')) {
+            continue; // Skip CBT type and Full Licence groups
+          }
+          
+          const groupOptions = group.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
+          if (await groupOptions.count() > 0) {
+            const firstOption = groupOptions.first();
+            const checkDiv = firstOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+            if (await checkDiv.count() > 0) {
+              await checkDiv.click();
+            } else {
+              await firstOption.click();
+            }
+            bikeTypeSelected = true;
+            console.log(`✅ [STEP 7/5] Selected first available option as fallback for bike type`);
+            break;
           }
         }
       }
@@ -456,6 +497,12 @@ class TfLBeyondCbtBookingService extends BaseBookingService {
       }
       
       console.log('✅ [STEP 7/5] TfL Beyond CBT booking options selected and Next button clicked');
+      
+      // Return success - booking options were selected
+      return {
+        success: true,
+        message: 'Booking options selected successfully'
+      };
       
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);

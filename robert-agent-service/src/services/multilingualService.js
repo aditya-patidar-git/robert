@@ -1,11 +1,13 @@
 /**
  * Multilingual Service
  * Handles language detection, switching, and formatting for multi-language support
+ * Loads language mappings from database with fallback to defaults
  */
 
 class MultilingualService {
   constructor() {
-    this.supportedLanguages = {
+    // Default languages as fallback (backward compatible)
+    this.defaultLanguages = {
       'en': { name: 'English (British)', code: 'en-GB', voice: 'ash' }, // British English with Ash voice
       'fr': { name: 'French', code: 'fr-FR', voice: 'nova' },
       'de': { name: 'German', code: 'de-DE', voice: 'nova' },
@@ -16,7 +18,53 @@ class MultilingualService {
       'pl': { name: 'Polish', code: 'pl-PL', voice: 'nova' }
     };
     
+    this.supportedLanguages = { ...this.defaultLanguages }; // Start with defaults
     this.defaultLanguage = 'en';
+    this.languageCache = null;
+    this.lastFetch = 0;
+    this.cacheTTL = 60000; // 1 minute cache
+  }
+
+  /**
+   * Load language mappings from database
+   * Merges database mappings with defaults (database takes precedence)
+   */
+  async loadLanguageMappings() {
+    const now = Date.now();
+    if (this.languageCache && (now - this.lastFetch) < this.cacheTTL) {
+      return this.languageCache;
+    }
+
+    try {
+      const LanguageVoiceMapping = (await import('../database/models/LanguageVoiceMapping.js')).default;
+      const mappings = await LanguageVoiceMapping.find({ isActive: true }).lean();
+      
+      // Convert to map format
+      const languageMap = {};
+      mappings.forEach(mapping => {
+        languageMap[mapping.languageCode] = {
+          name: mapping.languageName,
+          code: mapping.localeCode,
+          voice: mapping.voiceId
+        };
+      });
+      
+      // Merge with defaults (database takes precedence)
+      this.languageCache = { ...this.defaultLanguages, ...languageMap };
+      this.supportedLanguages = this.languageCache; // Update supported languages
+      this.lastFetch = now;
+      
+      if (mappings.length > 0) {
+        console.log(`✅ Language mappings loaded: ${mappings.length} from database`);
+      }
+      return this.languageCache;
+    } catch (error) {
+      console.error('Error loading language mappings:', error);
+      // Return defaults on error (backward compatible)
+      this.languageCache = this.defaultLanguages;
+      this.supportedLanguages = this.defaultLanguages;
+      return this.defaultLanguages;
+    }
   }
 
   /**
@@ -84,11 +132,24 @@ class MultilingualService {
 
   /**
    * Get language configuration
+   * Synchronous version for backward compatibility
    * @param {string} languageCode - Language code (e.g., 'fr', 'en')
    * @returns {Object} - Language config with name, code, voice
    */
   getLanguageConfig(languageCode) {
-    return this.supportedLanguages[languageCode] || this.supportedLanguages[this.defaultLanguage];
+    // Use cached mappings if available, otherwise use defaults
+    const languages = this.languageCache || this.supportedLanguages;
+    return languages[languageCode] || languages[this.defaultLanguage];
+  }
+
+  /**
+   * Get language configuration (async version that loads from database)
+   * @param {string} languageCode - Language code (e.g., 'fr', 'en')
+   * @returns {Promise<Object>} - Language config with name, code, voice
+   */
+  async getLanguageConfigAsync(languageCode) {
+    await this.loadLanguageMappings();
+    return this.getLanguageConfig(languageCode);
   }
 
   /**

@@ -112,7 +112,7 @@ class SilenceDetectionService {
           role: 'assistant',
           content: [
             {
-              type: 'input_text',
+              type: 'text',
               text: message
             }
           ]

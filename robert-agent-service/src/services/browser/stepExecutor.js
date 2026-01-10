@@ -56,6 +56,9 @@ export class StepExecutor {
         case 'processPayment':
           result = await this.executeProcessPayment(page, args, sessionState);
           break;
+        case 'sendPaymentRequest':
+          result = await this.executeSendPaymentRequest(page, args, sessionState);
+          break;
         case 'sendConfirmation':
           result = await this.executeSendConfirmation(page, args, sessionState);
           break;
@@ -149,6 +152,17 @@ export class StepExecutor {
       preferences
     );
 
+    // CRITICAL FIX: Ensure selectedSlot includes course name
+    let sessionDetails = result.selectedSlot;
+    if (sessionDetails && !sessionDetails.course) {
+      // Map courseType to actual course name
+      if (courseType === 'Introduction to Motorcycling' || courseType === 'ITM') {
+        sessionDetails.course = 'Introduction to Motorcycling';
+      } else {
+        sessionDetails.course = courseType;
+      }
+    }
+
     // Wrap result with success flag and sessionDetails
     // This ensures currentStep gets set to 1 and sessionDetails is available for next steps
     return {
@@ -157,7 +171,7 @@ export class StepExecutor {
       selectedSlot: result.selectedSlot,
       monthYear: result.monthYear,
       // If a slot was selected, include it as sessionDetails for next steps
-      sessionDetails: result.selectedSlot || null
+      sessionDetails: sessionDetails || null
     };
   }
 
@@ -219,14 +233,116 @@ export class StepExecutor {
   }
 
   async executeSearchClient(page, args, sessionState) {
-    // Use existing findAndVerifyClient logic
-    const result = await commonSteps.findAndVerifyClient(page, {
-      customerMobile: args.customerMobile || args.customerPhone,
-      customerEmail: args.customerEmail,
-      customerName: args.customerName
-    }, this.screenshotsDir);
+    // Determine search type and value
+    let searchType = null;
+    let searchValue = null;
+    let email = null;
+    
+    if (args.customerMobile || args.customerPhone) {
+      searchType = 'mobile';
+      searchValue = args.customerMobile || args.customerPhone;
+    } else if (args.customerEmail) {
+      searchType = 'email';
+      searchValue = args.customerEmail;
+      email = args.customerEmail;
+    } else {
+      return {
+        success: false,
+        error: 'Either customerMobile or customerEmail is required for client search'
+      };
+    }
+    
+    // Get callSid from args or extract from browserSessionId if available
+    let callSid = args.callSid || null;
+    if (!callSid && sessionState?.browserSessionId) {
+      // Extract callSid from browserSessionId pattern: browser_{callSid}_{timestamp}
+      const match = sessionState.browserSessionId.match(/^browser_(.+?)_\d+$/);
+      if (match) {
+        callSid = match[1];
+      }
+    }
+    
+    // CRITICAL FIX: Check if client was already found in a previous search attempt
+    // This handles the case where a timeout occurred but the search completed successfully
+    if (callSid) {
+      const { conversations } = await import('../../shared/state.js');
+      if (conversations[callSid]?.clientDetails) {
+        console.log(`✅ [searchClient] Client already found in previous search, using existing client details`);
+        return {
+          success: true,
+          clientDetails: conversations[callSid].clientDetails,
+          requiresVerification: true,
+          verificationPrompt: 'I found your profile. Can you please confirm your postcode to verify your identity?'
+        };
+      }
+    }
+    
+    try {
+      // Call findAndVerifyClient with correct parameters
+      const result = await commonSteps.findAndVerifyClient(
+        page, 
+        searchType, 
+        searchValue, 
+        this.screenshotsDir,
+        email,
+        null, // clientPostcode
+        callSid
+      );
 
-    return result;
+      // Wrap result to match expected format
+      if (result.found) {
+        // Store client details in conversation state for future reference
+        // This prevents the "not found" error if a timeout occurs but search completes
+        if (callSid) {
+          const { conversations } = await import('../../shared/state.js');
+          if (conversations[callSid]) {
+            conversations[callSid].clientDetails = result.clientDetails;
+          }
+        }
+        
+        return {
+          success: true,
+          clientDetails: result.clientDetails,
+          requiresVerification: result.requiresVerification,
+          verificationPrompt: result.verificationPrompt
+        };
+      } else {
+        // Only return retry prompt if we haven't exhausted attempts
+        // Don't return retry prompt if client was already found (handled above)
+        return {
+          success: false,
+          error: result.error || 'Client not found',
+          retryPrompt: result.retryPrompt,
+          requiresPostcodeVerification: result.requiresPostcodeVerification
+        };
+      }
+    } catch (error) {
+      // CRITICAL FIX: If timeout occurs, check if client was already found
+      if (error.message && (error.message.includes('timeout') || error.message.includes('exceeded'))) {
+        console.log(`⚠️ [searchClient] Timeout occurred, checking if client was already found...`);
+        
+        // Check if client details were stored during the search process
+        if (callSid) {
+          const { conversations } = await import('../../shared/state.js');
+          if (conversations[callSid]?.clientDetails) {
+            console.log(`✅ [searchClient] Client was found before timeout, using stored details`);
+            return {
+              success: true,
+              clientDetails: conversations[callSid].clientDetails,
+              requiresVerification: true,
+              verificationPrompt: 'I found your profile. Can you please confirm your postcode to verify your identity?'
+            };
+          }
+        }
+      }
+      
+      // If no client found, return error
+      return {
+        success: false,
+        error: error.message || 'Client search failed',
+        retryPrompt: 'Unfortunately, I could not locate your profile with us with the provided mobile number, could you please repeat your full mobile number to me so that I can try again?'
+      };
+    }
   }
 
   async executeSelectSession(page, args, sessionState) {
@@ -234,6 +350,30 @@ export class StepExecutor {
     
     if (!sessionDetails) {
       throw new Error('Session details are required to select a session');
+    }
+
+    // CRITICAL FIX: Ensure course and instructor are included in sessionDetails
+    // If they're missing, try to get them from the courseType or sessionState
+    const courseType = args.courseType || sessionState?.courseType;
+    
+    // Map courseType to actual course name for ITM
+    if (!sessionDetails.course && courseType) {
+      if (courseType === 'Introduction to Motorcycling' || courseType === 'ITM') {
+        sessionDetails.course = 'Introduction to Motorcycling';
+      } else {
+        // For other courses, use the courseType as the course name
+        sessionDetails.course = courseType;
+      }
+    }
+    
+    // If instructor is missing but was provided in preferences, use it
+    if (!sessionDetails.instructor && sessionState?.preferences?.instructor) {
+      sessionDetails.instructor = sessionState.preferences.instructor;
+    }
+    
+    // If instructor is still missing, set to empty string (will match any instructor)
+    if (!sessionDetails.instructor) {
+      sessionDetails.instructor = '';
     }
 
     // Use existing navigateToDiariesAndSelectSession logic
@@ -285,7 +425,19 @@ export class StepExecutor {
       // Other courses use service class with selectBookingOptions method
       const serviceModule = await serviceLoader();
       const ServiceClass = serviceModule.default;
-      const service = new ServiceClass();
+      
+      // Check if it's already an instance (some services export instances)
+      let service;
+      if (ServiceClass && typeof ServiceClass === 'object' && ServiceClass.selectBookingOptions) {
+        // It's already an instance
+        service = ServiceClass;
+      } else if (ServiceClass && typeof ServiceClass === 'function') {
+        // It's a class, need to instantiate
+        service = new ServiceClass();
+      } else {
+        throw new Error(`Service for ${courseType} has invalid export structure`);
+      }
+      
       if (!service.selectBookingOptions) {
         throw new Error(`Service for ${courseType} does not have selectBookingOptions method`);
       }
@@ -310,11 +462,44 @@ export class StepExecutor {
     if (workflowType === 'existing') {
       // Existing client: use lookupContactAndWait to fill missing fields
       const clientEmail = args.customerEmail || args.clientDetails?.email || sessionState?.clientDetails?.email;
+      
+      // CRITICAL: Validate email - reject example/test emails
+      if (clientEmail) {
+        const invalidEmailPatterns = [
+          /@example\.com/i,
+          /test@/i,
+          /robert@example/i,
+          /john@example/i,
+          /placeholder@/i,
+          /default@/i
+        ];
+        
+        const isInvalid = invalidEmailPatterns.some(pattern => pattern.test(clientEmail));
+        if (isInvalid) {
+          throw new Error(`Invalid email detected: ${clientEmail}. Email must come from booking_step_search_client result (result.clientDetails.email) or be explicitly provided by the caller. Never use example, test, or placeholder emails.`);
+        }
+      }
+      
       if (!clientEmail) {
-        throw new Error('Client email is required for contact lookup (existing client workflow)');
+        throw new Error('Client email is required for contact lookup (existing client workflow). Email must come from booking_step_search_client result or be provided by the caller.');
       }
       const clientPostcode = args.postcode || args.clientDetails?.postcode || sessionState?.clientDetails?.postcode;
       await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode);
+      
+      return {
+        success: true,
+        contactDetailsFilled: true,
+        clientFound: true,
+        clientSelected: true,
+        clientDetailsPageLoaded: true,
+        nextButtonClicked: true,
+        stepCompleted: 8, // Explicitly state which step is complete
+        stepName: 'fill_contact_details', // Explicit step name
+        nextStep: 'booking_step_process_payment', // Explicitly state next step tool to call
+        nextStepNumber: 9, // Explicitly state next step number
+        doNotRetry: true, // Explicitly prevent retry
+        message: `✅ STEP 8 COMPLETE: booking_step_fill_contact_details has been successfully completed. Client ${clientEmail} was found, selected, and Next button clicked. DO NOT RETRY THIS STEP. IMMEDIATELY proceed to STEP 9 by calling booking_step_process_payment tool.`
+      };
     } else {
       // New client: fill all fields from scratch
       await commonSteps.fillContactDetails(page, {
@@ -335,42 +520,187 @@ export class StepExecutor {
         marketingConsent: args.marketingConsent,
         dataSharing: args.dataSharing
       }, this.screenshotsDir);
-    }
 
-    return {
-      success: true,
-      contactDetailsFilled: true
-    };
+      return {
+        success: true,
+        contactDetailsFilled: true,
+        stepCompleted: 7, // Explicitly state which step is complete (for new clients, this is Step 7)
+        stepName: 'fill_contact_details', // Explicit step name
+        nextStep: 'booking_step_process_payment', // Explicitly state next step tool to call
+        nextStepNumber: 8, // Explicitly state next step number (for new clients, payment is Step 8)
+        doNotRetry: true, // Explicitly prevent retry
+        message: `✅ STEP 7 COMPLETE: booking_step_fill_contact_details has been successfully completed. Contact details form filled successfully. DO NOT RETRY THIS STEP. IMMEDIATELY proceed to STEP 8 by calling booking_step_process_payment tool.`
+      };
+    }
   }
 
   async executeProcessPayment(page, args, sessionState) {
-    // Payment involves multiple steps: select payment option, method, fill card, accept terms
-    // Use existing step functions
+    // Use the updated payment strategy: Select "Send a payment request" and use sendPaymentRequest
     const screenshots = [];
-    await commonSteps.selectPaymentOption(page, this.screenshotsDir);
-    await commonSteps.selectPaymentMethod(page, this.screenshotsDir);
     
-    if (args.cardNumber) {
-      await commonSteps.fillCardDetails(page, {
-        cardNumber: args.cardNumber,
-        expiryDate: args.expiryDate,
-        cvv: args.cvv,
-        cardholderName: args.cardholderName
-      }, this.screenshotsDir, screenshots);
+    // CRITICAL: Wait for page to fully transition from contact details to payment page
+    console.log('⏳ [PAYMENT] Waiting for page transition from contact details to payment page...');
+    await page.waitForTimeout(5000); // Increased wait time for page transition
+    
+    // Verify we're on the payment page before proceeding
+    console.log('🔍 [PAYMENT] Verifying payment page is loaded...');
+    const paymentPageIndicators = [
+      page.locator('text=/Confirm and Pay/i').first(),
+      page.locator('text=/4. Pay/i').first(),
+      page.locator('text=/Payment/i').first(),
+      page.locator('#eventNewBooking2_iframe').first()
+    ];
+    
+    let pageReady = false;
+    for (let i = 0; i < 5; i++) {
+      for (const indicator of paymentPageIndicators) {
+        const count = await indicator.count();
+        if (count > 0) {
+          pageReady = true;
+          break;
+        }
+      }
+      if (pageReady) break;
+      if (i < 4) {
+        console.log(`⏳ [PAYMENT] Payment page not ready yet, waiting (${i + 1}/5)...`);
+        await page.waitForTimeout(2000);
+      }
     }
     
-    // Accept terms and make booking
-    const result = await commonSteps.acceptTermsAndMakeBooking(
-      page, 
-      this.screenshotsDir, 
-      args.termsAccepted !== false, // Default to true if not explicitly false
-      false // Don't skip make booking
+    if (!pageReady) {
+      console.log('⚠️ [PAYMENT] Payment page indicators not found, but continuing...');
+    } else {
+      console.log('✅ [PAYMENT] Payment page is ready');
+    }
+    
+    // Step 1: Select "Send a payment request" option (updated strategy)
+    const { selectPaymentOption } = await import('../commonBookingSteps/selectPaymentOption.js');
+    await selectPaymentOption(page, this.screenshotsDir, 'request');
+    screenshots.push(await (await import('../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', this.screenshotsDir));
+    await page.waitForTimeout(3000); // Increased from 2000 to 3000
+    
+    // Step 2: Get client email/mobile from args or sessionState
+    let clientEmail = args.clientEmail || args.customerEmail || null;
+    let clientMobile = args.clientMobile || args.customerMobile || args.customerPhone || null;
+    
+    // Try to get from sessionState if not provided in args
+    if (!clientEmail || !clientMobile) {
+      // Extract callSid from sessionState to access conversation state
+      let callSid = args.callSid || null;
+      if (!callSid && sessionState?.browserSessionId) {
+        const match = sessionState.browserSessionId.match(/^browser_(.+?)_\d+$/);
+        if (match) {
+          callSid = match[1];
+        }
+      }
+      
+      if (callSid) {
+        const { conversations } = await import('../../shared/state.js');
+        const conversation = conversations[callSid];
+        
+        if (conversation) {
+          // Get from clientDetails
+          if (!clientEmail && conversation.clientDetails?.email) {
+            clientEmail = conversation.clientDetails.email;
+          }
+          if (!clientMobile && conversation.clientDetails?.telephoneNumber) {
+            clientMobile = conversation.clientDetails.telephoneNumber;
+          }
+          
+          // Fallback to KBA email
+          if (!clientEmail && conversation.kba?.email) {
+            clientEmail = conversation.kba.email;
+          }
+        }
+      }
+    }
+    
+    // Step 3: Determine delivery method (default to email if email available, otherwise SMS)
+    const deliveryMethod = args.deliveryMethod || (clientEmail ? 'email' : 'sms');
+    
+    if (!clientEmail && !clientMobile) {
+      return {
+        success: false,
+        paymentCompleted: false,
+        error: 'Client email or mobile number is required for payment request. Please provide clientEmail or clientMobile in the tool arguments.'
+      };
+    }
+    
+    // Step 4: Check if terms were explicitly accepted before proceeding
+    // According to CRM docs, agent MUST read terms and get client agreement BEFORE payment
+    const termsAccepted = args.termsAccepted;
+    if (termsAccepted === undefined) {
+      console.log('⚠️ [PAYMENT] Terms acceptance not explicitly confirmed - agent should read terms before payment');
+      // Still proceed but add guidance in message
+    }
+    
+    // Step 5: Use sendPaymentRequest (updated strategy)
+    const { sendPaymentRequest } = await import('../commonBookingSteps/sendPaymentRequest.js');
+    
+    const paymentResult = await sendPaymentRequest(
+      page,
+      this.screenshotsDir,
+      deliveryMethod,
+      clientEmail,
+      clientMobile
     );
 
+    if (paymentResult.success && paymentResult.paymentCompleted) {
+      // After payment is confirmed, terms should be read before clicking "Make booking"
+      // This is handled by acceptTermsAndMakeBooking which is called from sendPaymentRequest
+      return {
+        success: true,
+        paymentCompleted: true,
+        bookingFinalized: true,
+        paymentMethod: 'payment_request',
+        message: paymentResult.message || `✅ SUCCESS: Payment request sent via ${deliveryMethod} and payment completed successfully. ${termsAccepted === undefined ? '⚠️ IMPORTANT: Please read terms and conditions to the client before proceeding with booking confirmation.' : 'Booking finalized and completed.'}`
+      };
+    }
+    
+    return {
+      success: paymentResult.success,
+      paymentCompleted: paymentResult.paymentCompleted || false,
+      paymentMethod: 'payment_request',
+      error: paymentResult.error,
+      message: paymentResult.message
+    };
+  }
+
+  async executeSendPaymentRequest(page, args, sessionState) {
+    // Use sendPaymentRequest from commonBookingSteps
+    const { sendPaymentRequest } = await import('../commonBookingSteps/sendPaymentRequest.js');
+    
+    const deliveryMethod = args.deliveryMethod; // 'email' or 'sms' (required)
+    if (!deliveryMethod || (deliveryMethod !== 'email' && deliveryMethod !== 'sms')) {
+      throw new Error('deliveryMethod is required and must be "email" or "sms"');
+    }
+    
+    const clientEmail = args.clientEmail || null;
+    const clientMobile = args.clientMobile || null;
+    
+    const result = await sendPaymentRequest(
+      page,
+      this.screenshotsDir,
+      deliveryMethod,
+      clientEmail,
+      clientMobile
+    );
+    
+    // Return result with enhanced message if successful
+    if (result.success && result.paymentCompleted) {
+      return {
+        success: true,
+        paymentCompleted: true,
+        bookingFinalized: true,
+        message: result.message || `✅ SUCCESS: Payment request sent via ${deliveryMethod} and payment completed successfully. Booking finalized and completed.`
+      };
+    }
+    
     return {
       success: result.success,
-      paymentCompleted: result.success || false,
-      grandTotal: result.grandTotal
+      paymentCompleted: result.paymentCompleted || false,
+      error: result.error,
+      message: result.message
     };
   }
 

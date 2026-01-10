@@ -9,11 +9,27 @@ class ProgressIndicatorService {
   }
 
   /**
+   * Check if a tool is a step-based booking tool
+   * @param {string} toolName - Name of the tool
+   * @returns {boolean} - True if it's a step-based tool
+   */
+  isStepBasedTool(toolName) {
+    // Step-based tools start with "booking_step_"
+    return toolName && toolName.startsWith('booking_step_');
+  }
+
+  /**
    * Start tracking a tool execution
    * @param {string} callSid - Call SID
    * @param {string} toolName - Name of the tool being executed
    */
   startToolExecution(callSid, toolName) {
+    // Skip progress tracking for step-based tools
+    if (this.isStepBasedTool(toolName)) {
+      console.log(`📊 [${callSid}] Skipping progress tracking for step-based tool: ${toolName}`);
+      return;
+    }
+
     this.activeExecutions.set(callSid, {
       toolName,
       startTime: Date.now(),
@@ -34,6 +50,11 @@ class ProgressIndicatorService {
   checkAndSendAcknowledgment(callSid, openaiWs, config) {
     const execution = this.activeExecutions.get(callSid);
     if (!execution || !config?.progressIndicators?.enabled) {
+      return false;
+    }
+
+    // Skip acknowledgment for step-based tools
+    if (this.isStepBasedTool(execution.toolName)) {
       return false;
     }
 
@@ -66,7 +87,7 @@ class ProgressIndicatorService {
               role: 'assistant',
               content: [
                 {
-                  type: 'input_text',
+                  type: 'text',
                   text: message
                 }
               ]
@@ -98,6 +119,12 @@ class ProgressIndicatorService {
   startPeriodicUpdates(callSid, openaiWs, config) {
     const execution = this.activeExecutions.get(callSid);
     if (!execution || !config?.progressIndicators?.enabled) {
+      return;
+    }
+
+    // Skip periodic updates for step-based tools
+    if (this.isStepBasedTool(execution.toolName)) {
+      console.log(`📊 [${callSid}] Skipping periodic updates for step-based tool: ${execution.toolName}`);
       return;
     }
 
@@ -140,7 +167,7 @@ class ProgressIndicatorService {
             role: 'assistant',
             content: [
               {
-                type: 'input_text',
+                type: 'text',
                 text: message
               }
             ]
@@ -179,6 +206,9 @@ class ProgressIndicatorService {
       const duration = Date.now() - execution.startTime;
       console.log(`📊 [${callSid}] Tool execution completed: ${execution.toolName} (duration: ${duration}ms)`);
       this.activeExecutions.delete(callSid);
+    } else {
+      // Execution might not exist if it was a step-based tool (skipped tracking)
+      // This is expected and not an error
     }
   }
 

@@ -17,6 +17,16 @@ export class SelectBookingOptionsStep extends BaseStepTool {
     // This is handled by preferenceValidator
     return ['bikeType']; // Default - will be validated per course type
   }
+
+  /**
+   * Get timeout for booking options selection - browser automation needs more time
+   * Booking options selection involves: waiting for price page, finding booking form,
+   * scrolling to options, selecting bike type, and clicking Next button
+   * @returns {number} Timeout in milliseconds (120 seconds)
+   */
+  getTimeout() {
+    return 120000; // 120 seconds for complex browser automation (iframe/popup detection, option selection, group-based selection)
+  }
 }
 
 export default new SelectBookingOptionsStep();

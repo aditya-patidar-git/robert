@@ -39,8 +39,11 @@ export class ToolCallHandler {
     });
     
     // Start progress tracking (Media Streams specific)
+    // Skip progress tracking for step-based tools to avoid redundant "hold on" messages
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
-    if (conversationBehaviorConfig?.progressIndicators?.enabled) {
+    const isStepBasedTool = name && name.startsWith('booking_step_');
+    
+    if (conversationBehaviorConfig?.progressIndicators?.enabled && !isStepBasedTool) {
       progressIndicatorService.startToolExecution(this.state.callSid, name);
       
       setTimeout(() => {
@@ -55,6 +58,8 @@ export class ToolCallHandler {
           }
         }
       }, conversationBehaviorConfig.progressIndicators.acknowledgmentThresholdMs || 2000);
+    } else if (isStepBasedTool) {
+      console.log(`📊 [${this.state.callSid}] Skipping progress tracking for step-based tool: ${name}`);
     }
     
     // Create progress callback for browser operations

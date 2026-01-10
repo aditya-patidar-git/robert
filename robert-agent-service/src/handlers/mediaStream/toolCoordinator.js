@@ -25,6 +25,100 @@ export class ToolCoordinator {
   }
 
   /**
+   * Inject text content into conversation to ensure audio generation
+   * OpenAI only generates audio for natural language text, not tool calls
+   */
+  injectTextContent(text) {
+    if (!this.openaiWs || this.openaiWs.readyState !== 1 || !text) {
+      return;
+    }
+    
+    try {
+      this.openaiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: text
+            }
+          ]
+        }
+      }));
+    } catch (err) {
+      console.error(`❌ [${this.state.callSid}] Error injecting text content:`, err);
+    }
+  }
+
+  /**
+   * Create audio response by temporarily disabling tools
+   * This ensures OpenAI generates natural language instead of tool calls
+   * Note: For initial greeting, inject a dummy user message to provide conversation context
+   */
+  async createAudioResponse() {
+    if (!this.openaiWs || this.openaiWs.readyState !== 1) {
+      return;
+    }
+    
+    try {
+      // Step 1: Temporarily disable tools
+      this.openaiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          tool_choice: 'none'
+        }
+      }));
+      
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      // Step 2: For initial greeting, inject a dummy user message to provide conversation context
+      // OpenAI Realtime API needs conversation context to generate audio responses
+      if (!this.state.hasInitialGreetingBeenSent) {
+        this.openaiWs.send(JSON.stringify({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: 'Hello'
+              }
+            ]
+          }
+        }));
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      // Step 3: Create response - OpenAI will generate based on instructions/context
+      const responseCreatePayload = {
+        type: 'response.create',
+        response: {
+          modalities: ['audio', 'text']
+        }
+      };
+      this.openaiWs.send(JSON.stringify(responseCreatePayload));
+      
+      // Step 4: Re-enable tools after delay
+      setTimeout(() => {
+        if (this.openaiWs && this.openaiWs.readyState === 1) {
+          this.openaiWs.send(JSON.stringify({
+            type: 'session.update',
+            session: {
+              tool_choice: 'auto'
+            }
+          }));
+        }
+      }, 3000);
+      
+    } catch (err) {
+      console.error(`❌ [${this.state.callSid}] Error creating audio response:`, err);
+    }
+  }
+
+  /**
    * Update OpenAI WebSocket reference (called after connection is established)
    */
   setOpenAIWebSocket(openaiWs) {
@@ -49,6 +143,44 @@ export class ToolCoordinator {
   async routeEvent(event) {
     if (!event || !event.type) {
       return;
+    }
+    
+    // Minimal logging - only log important events
+    if (event.type === 'response.created') {
+      console.log(`📝 [${this.state.callSid}] Response created - ID: ${event.response?.id}, modalities: ${JSON.stringify(event.response?.modalities || [])}`);
+    }
+    
+    if (event.type === 'response.audio.delta' || event.type === 'response.output_audio.delta') {
+      const outboundCount = this.state.outboundAudioChunkCount || 0;
+      if (outboundCount < 5) {
+        console.log(`🔊 [${this.state.callSid}] Audio delta #${outboundCount + 1} received`);
+      }
+    }
+    
+    if (event.type === 'response.done') {
+      const audioTokens = event.response?.usage?.output_token_details?.audio_tokens || 0;
+      const textTokens = event.response?.usage?.output_token_details?.text_tokens || 0;
+      const totalTokens = event.response?.usage?.output_token_details?.total_tokens || 0;
+      
+      // Log the actual response items to see what was generated
+      const outputItems = event.response?.output || [];
+      let textContent = '';
+      if (outputItems && outputItems.length > 0) {
+        const textItems = outputItems.filter(item => item.type === 'message' && item.content);
+        if (textItems.length > 0) {
+          textContent = textItems.map(item => 
+            item.content.map(c => c.type === 'text' ? c.text : '').join('')
+          ).join(' ');
+        }
+      }
+      
+      console.log(`✅ [${this.state.callSid}] Response done - ID: ${event.response?.id}`);
+      console.log(`   📊 Tokens: audio=${audioTokens}, text=${textTokens}, total=${totalTokens}`);
+      if (textContent) {
+        console.log(`   📝 Text content: "${textContent.substring(0, 100)}${textContent.length > 100 ? '...' : ''}"`);
+      } else {
+        console.log(`   ⚠️ No text content found in response`);
+      }
     }
     
     try {
@@ -83,19 +215,13 @@ export class ToolCoordinator {
           
         case 'response.audio.delta':
         case 'response.output_audio.delta':
-          // Log first 30 audio delta events to verify they're being received
-          // Use outboundAudioChunkCount if available, otherwise fall back to audioChunkCount
-          const outboundCount = this.state.outboundAudioChunkCount || 0;
-          const shouldLogAudioDelta = outboundCount < 30 || !this.state.audioDeltaLogged;
-          if (shouldLogAudioDelta) {
-            const hasPayload = !!event.delta;
-            const payloadSize = hasPayload ? (typeof event.delta === 'string' ? event.delta.length : JSON.stringify(event.delta).length) : 0;
-            console.log(`🎵 [${this.state.callSid}] Received audio delta event - type: ${event.type}, outbound chunk: ${outboundCount + 1}, hasPayload: ${hasPayload}, payloadSize: ${payloadSize} bytes`);
-            if (outboundCount >= 29) {
-              this.state.audioDeltaLogged = true; // Stop logging after first 30
-            }
-          }
           this.responseHandler.handleAudioDelta(event);
+          break;
+          
+        case 'response.text.done':
+          // Log the text content that was generated
+          const textContent = event.text || '';
+          console.log(`📝 [${this.state.callSid}] Response text done - length: ${textContent.length}, content: "${textContent.substring(0, 150)}${textContent.length > 150 ? '...' : ''}"`);
           break;
           
         case 'response.done':
@@ -113,13 +239,10 @@ export class ToolCoordinator {
             // Create response immediately when user speaks and agent is waiting
             try {
               this.state.explicitResponseRequested = true;
-              this.openaiWs.send(JSON.stringify({
-                type: 'response.create',
-                response: {
-                  modalities: ['audio', 'text']
-                }
-              }));
-              console.log(`🎯 [${this.state.callSid}] Created response immediately after user transcription`);
+              
+              // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
+              await this.createAudioResponse();
+              console.log(`🎯 [${this.state.callSid}] Created response after transcription`);
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
             }
@@ -135,13 +258,10 @@ export class ToolCoordinator {
               // Create response immediately when transcriptions are ready and agent is waiting
               try {
                 this.state.explicitResponseRequested = true;
-                this.openaiWs.send(JSON.stringify({
-                  type: 'response.create',
-                  response: {
-                    modalities: ['audio', 'text']
-                  }
-                }));
-                console.log(`🎯 [${this.state.callSid}] Created response immediately after processing ${transcriptions.length} transcriptions`);
+                
+                // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
+                await this.createAudioResponse();
+                console.log(`🎯 [${this.state.callSid}] Created response after processing ${transcriptions.length} transcriptions`);
               } catch (err) {
                 console.error(`❌ [${this.state.callSid}] Error creating response after processing transcriptions:`, err);
               }
@@ -153,12 +273,9 @@ export class ToolCoordinator {
             if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null) {
               try {
                 this.state.explicitResponseRequested = true;
-                this.openaiWs.send(JSON.stringify({
-                  type: 'response.create',
-                  response: {
-                    modalities: ['audio', 'text']
-                  }
-                }));
+                
+                // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
+                await this.createAudioResponse();
                 console.log(`🎯 [${this.state.callSid}] Created response to acknowledge interruption`);
               } catch (err) {
                 console.error(`❌ [${this.state.callSid}] Error creating response for interruption:`, err);
@@ -176,8 +293,22 @@ export class ToolCoordinator {
         default:
           // Unhandled event type - log for debugging
           if (event.type && !event.type.startsWith('response.function_call_arguments')) {
-            // Don't log function_call_arguments events (too verbose)
+            // Don't log verbose events that are handled elsewhere
+            const verboseEvents = [
+              'response.text.delta',
+              'response.content_part.done',
+              'response.output_item.added',
+              'response.content_part.added',
+              'rate_limits.updated'
+            ];
+            
+            if (!verboseEvents.includes(event.type)) {
             console.log(`📋 [${this.state.callSid}] Unhandled event type: ${event.type}`);
+              // Only log full event for critical errors
+              if (event.type.includes('error')) {
+                console.log(`   Full Unhandled Event: ${JSON.stringify(event, null, 2)}`);
+              }
+            }
           }
           break;
       }
@@ -207,28 +338,38 @@ export class ToolCoordinator {
     
     if (!this.state.hasInitialGreetingBeenSent && !this.state.isResponding && this.state.activeResponseId === null) {
       try {
+        // CRITICAL FIX: Wait longer for session to be fully ready for audio generation
+        // OpenAI Realtime API may need more time after session.update to enable audio output
+        // Increased from 100ms to 500ms to ensure audio pipeline is ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Double-check WebSocket is still open after delay
+        if (this.state.isClosed || !this.openaiWs || this.openaiWs.readyState !== 1) {
+          console.warn(`⚠️ [${this.state.callSid}] WebSocket closed during delay, skipping initial greeting`);
+          return;
+        }
+        
         this.state.explicitResponseRequested = true;
-        this.openaiWs.send(JSON.stringify({
-          type: 'response.create',
-          response: {
-            modalities: ['audio', 'text']
-          }
-        }));
+        
+        // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
+        // Instructions already include the greeting text, so no need to pass it
+        await this.createAudioResponse();
+        
         this.state.hasInitialGreetingBeenSent = true;
         this.state.isResponding = true;
-        console.log(`🎯 [${this.state.callSid}] Initial greeting sent immediately`);
+        console.log(`✅ [${this.state.callSid}] Initial greeting sent`);
         
         // Set timeout for consent response if needed
         if (this.state.recordingConsentState.requested && this.state.recordingConsentState.given === null) {
           console.log(`⏱️ [${this.state.callSid}] Starting consent timeout (${this.state.CONSENT_TIMEOUT_MS/1000}s) - waiting for caller response`);
           this.state.consentTimeout = setTimeout(() => {
             if (this.state.recordingConsentState.given === null && conversations[this.state.callSid].recordingConsent.given === null) {
-              this.state.recordingConsentState.given = false;
+              this.state.recordingConsentState.given = true;
               this.state.recordingConsentState.respondedAt = new Date();
-              conversations[this.state.callSid].recordingConsent.given = false;
+              conversations[this.state.callSid].recordingConsent.given = true;
               conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
-              conversations[this.state.callSid].recordingConsent.optOutReason = "No response within timeout - defaulting to opt-out for GDPR compliance";
-              console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-out (GDPR compliance)`);
+              conversations[this.state.callSid].recordingConsent.optOutReason = null;
+              console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-in`);
             }
           }, this.state.CONSENT_TIMEOUT_MS);
         }

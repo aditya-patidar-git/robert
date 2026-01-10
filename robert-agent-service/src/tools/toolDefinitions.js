@@ -118,7 +118,7 @@ function getStepBookingToolDefinitions() {
     {
       type: 'function',
       name: 'booking_step_select_session',
-      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot. Requires sessionDetails from availability check.`,
+      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot. Session details are automatically retrieved from the availability check if not provided.`,
       parameters: {
         type: 'object',
         properties: {
@@ -134,10 +134,10 @@ function getStepBookingToolDefinitions() {
           },
           sessionDetails: {
             type: 'object',
-            description: 'Session details from availability check (date, time, location, instructor)'
+            description: 'Session details from availability check (date, time, location, instructor). Optional - will be retrieved from session state if not provided.'
           }
         },
-        required: ['courseType', 'workflowType', 'sessionDetails']
+        required: ['courseType', 'workflowType']
       }
     },
     {
@@ -249,7 +249,7 @@ function getStepBookingToolDefinitions() {
     {
       type: 'function',
       name: 'booking_step_process_payment',
-      description: `Step 9 (Existing) / Step 8 (New): Process payment and complete booking. Requires card details and terms acceptance. CRITICAL: Only ask for terms acceptance AFTER card details are filled.`,
+      description: `Step 9 (Existing) / Step 8 (New): Process payment and complete booking. Uses updated payment procedure: payment link (sent via SMS/email) or Twilio Pay (DTMF-based phone payment). CRITICAL: Do NOT collect card details directly - the system handles payment automatically. Only ask for terms acceptance AFTER payment is confirmed.`,
       parameters: {
         type: 'object',
         properties: {
@@ -265,30 +265,49 @@ function getStepBookingToolDefinitions() {
           },
           paymentMethod: {
             type: 'string',
-            description: 'Payment method (e.g., "Visa Debit", "Mastercard", etc.)'
-          },
-          cardNumber: {
-            type: 'string',
-            description: 'Card number'
-          },
-          expiryDate: {
-            type: 'string',
-            description: 'Card expiry date (MM/YY format)'
-          },
-          cvv: {
-            type: 'string',
-            description: 'Card CVV/security code'
-          },
-          cardholderName: {
-            type: 'string',
-            description: 'Cardholder name as it appears on card'
+            enum: ['payment_link', 'twilio_pay', 'phone_payment'],
+            description: 'Payment method: "payment_link" (default, sends secure payment link via SMS/email) or "twilio_pay"/"phone_payment" (DTMF-based phone payment). If not provided, defaults to "payment_link".'
           },
           termsAccepted: {
             type: 'boolean',
-            description: 'Whether client accepted terms and conditions (REQUIRED - ask AFTER card details are filled)'
+            description: 'Whether client accepted terms and conditions (REQUIRED - ask AFTER payment is confirmed, just before clicking "Make booking" button)'
           }
         },
         required: ['courseType', 'workflowType', 'termsAccepted']
+      }
+    },
+    {
+      type: 'function',
+      name: 'booking_step_send_payment_request',
+      description: `Step 9 (Existing) / Step 8 (New): Send payment request via email or SMS. Use this AFTER selecting "Send a payment request" option in payment dropdown. The system will automatically poll every 30 seconds for up to 5 minutes to detect when the client completes payment and the "Make booking" button appears, then click it automatically.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing', 'new'],
+            description: 'Workflow type: "existing" or "new"'
+          },
+          deliveryMethod: {
+            type: 'string',
+            enum: ['email', 'sms'],
+            description: 'Delivery method: "email" to send payment request via email, or "sms" to send via SMS text message. Ask the client for their preference before calling this tool.'
+          },
+          clientEmail: {
+            type: 'string',
+            description: 'Client email address (optional, only needed if deliveryMethod is "email" and email is not pre-filled)'
+          },
+          clientMobile: {
+            type: 'string',
+            description: 'Client mobile number (optional, only needed if deliveryMethod is "sms" and mobile is not pre-filled)'
+          }
+        },
+        required: ['courseType', 'workflowType', 'deliveryMethod']
       }
     },
     {

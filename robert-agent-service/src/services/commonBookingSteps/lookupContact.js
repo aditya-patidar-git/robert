@@ -24,15 +24,168 @@ export async function lookupContactAndWait(page, email, screenshotsDir, clientPo
     // Use cleaned email for all operations
     email = cleanedEmail;
     
+    // CRITICAL: FIRST check if we're already on the client details page
+    // This prevents re-trying the lookup flow if the client was already selected
+    console.log('🔍 [STEP 9] Checking if already on client details page...');
+    await page.waitForTimeout(2000); // Brief wait for page to stabilize
+    
+    const eventBookingIframeExistsEarly = await page.locator('#eventNewBooking2_iframe').count() > 0;
+    const contactSelectIframeExistsEarly = await page.locator('#contactSelect_iframe').count() > 0;
+    
+    if (eventBookingIframeExistsEarly || contactSelectIframeExistsEarly) {
+      const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+      const contactSelectIframe = contactSelectIframeExistsEarly ? page.frameLocator('#contactSelect_iframe') : null;
+      
+      // Check multiple indicators that we're already on client details page
+      const alreadyOnClientDetails = 
+        (await eventBookingIframe.locator('text=First Names').count() > 0) ||
+        (await eventBookingIframe.locator('text=Surname').count() > 0) ||
+        (await eventBookingIframe.locator('text=Contact e-mail').count() > 0) ||
+        (await eventBookingIframe.locator(`text=${email}`).count() > 0) ||
+        (contactSelectIframe && await contactSelectIframe.locator('text=First Names').count() > 0) ||
+        (contactSelectIframe && await contactSelectIframe.locator('text=Surname').count() > 0);
+      
+      if (alreadyOnClientDetails) {
+        console.log('✅ [STEP 9] ============================================');
+        console.log('✅ [STEP 9] ALREADY ON CLIENT DETAILS PAGE!');
+        console.log(`✅ [STEP 9] Client with email ${email} was previously selected successfully.`);
+        console.log('✅ [STEP 9] Client details page is already loaded.');
+        console.log('✅ [STEP 9] Skipping lookup flow and proceeding directly to Next button...');
+        console.log('✅ [STEP 9] ============================================');
+        
+        await takeScreenshot(page, 'client-already-selected.png', screenshotsDir);
+        
+        // Proceed directly to Next button click (skip entire lookup flow)
+        // Use the iframe that exists
+        const iframeForNext = eventBookingIframeExistsEarly ? eventBookingIframe : contactSelectIframe;
+        const iframeIdForNext = eventBookingIframeExistsEarly ? '#eventNewBooking2_iframe' : '#contactSelect_iframe';
+        
+        // Wait for form to render
+        console.log('⏳ [STEP 9] Waiting for Contact Details form to fully render...');
+        await page.waitForTimeout(3000);
+        
+        // Click Next button
+        console.log('👆 [STEP 9] Clicking Next button on Contact Details page...');
+        
+        let nextButton = iframeForNext.locator('#diaryNewCourseBookingWiz_nextBtn').first();
+        
+        if (await nextButton.count() === 0) {
+          nextButton = iframeForNext.locator('[aria-label="Next"], [aria-label="next"]').first();
+        }
+        
+        if (await nextButton.count() === 0) {
+          nextButton = iframeForNext.locator('button:has-text("Next"), button:has-text("next")').first();
+        }
+        
+        if (await nextButton.count() === 0) {
+          nextButton = iframeForNext.locator('.jqx_wizardBtn, .dx-button:has-text("Next"), .jqx_button:has-text("Next")').first();
+        }
+        
+        if (await nextButton.count() === 0) {
+          // Try main page as fallback
+          nextButton = page.locator('#diaryNewCourseBookingWiz_nextBtn, [aria-label="Next"], button:has-text("Next")').first();
+        }
+        
+        if (await nextButton.count() === 0) {
+          await takeScreenshot(page, 'next-button-not-found-skip.png', screenshotsDir);
+          throw new Error('Next button not found on Contact Details page');
+        }
+        
+        await nextButton.waitFor({ state: 'attached', timeout: 10000 });
+        console.log('✅ [STEP 9] Next button is attached to DOM');
+        
+        // CRITICAL: Use JavaScript click (same approach as normal flow) - works even if button is not visible
+        // This ensures reliable clicking and immediate return after success
+        console.log('👆 [STEP 9] Clicking Next button using JavaScript (bypasses visibility checks)...');
+        
+        // Determine which iframe to use for JavaScript evaluation (same pattern as normal flow)
+        let targetFrame = null;
+        if (eventBookingIframeExistsEarly) {
+          try {
+            const frameElement = await page.$('#eventNewBooking2_iframe');
+            if (frameElement) {
+              targetFrame = await frameElement.contentFrame();
+            }
+          } catch (e) {
+            console.log(`⚠️ [STEP 9] Could not get eventNewBooking2_iframe for evaluation: ${e.message}`);
+          }
+        }
+        
+        if (!targetFrame && contactSelectIframeExistsEarly) {
+          try {
+            const frameElement = await page.$('#contactSelect_iframe');
+            if (frameElement) {
+              targetFrame = await frameElement.contentFrame();
+            }
+          } catch (e) {
+            console.log(`⚠️ [STEP 9] Could not get contactSelect_iframe for evaluation: ${e.message}`);
+          }
+        }
+        
+        if (targetFrame) {
+          try {
+            const clickSuccess = await targetFrame.evaluate(() => {
+              const btn = document.querySelector('#diaryNewCourseBookingWiz_nextBtn');
+              if (btn) {
+                btn.click();
+                return true;
+              }
+              // Try alternative selectors
+              const altBtn = document.querySelector('[aria-label="Next"], [aria-label="next"]');
+              if (altBtn) {
+                altBtn.click();
+                return true;
+              }
+              return false;
+            });
+            
+            if (clickSuccess) {
+              console.log('✅ [STEP 9] ============================================');
+              console.log('✅ [STEP 9] SUCCESS: Next button clicked successfully!');
+              console.log(`✅ [STEP 9] Client: ${email}`);
+              console.log('✅ [STEP 9] Contact details step completed.');
+              console.log('✅ [STEP 9] IMMEDIATELY proceeding to payment step.');
+              console.log('✅ [STEP 9] ============================================');
+              
+              // CRITICAL: Return immediately after successful click - no delays, no screenshots, no further checks
+              return; // Early return - skip all lookup flow and any further processing
+            }
+          } catch (jsErr) {
+            console.log(`⚠️ [STEP 9] JavaScript click failed: ${jsErr.message}, trying Playwright click as fallback...`);
+          }
+        }
+        
+        // Fallback to Playwright click only if JavaScript fails or frame not available
+        const isVisible = await nextButton.isVisible().catch(() => false);
+        if (isVisible) {
+          await nextButton.click({ timeout: 5000 });
+          console.log('✅ [STEP 9] Clicked Next button (Playwright fallback - visible)');
+        } else {
+          await nextButton.click({ force: true, timeout: 5000 });
+          console.log('✅ [STEP 9] Clicked Next button (Playwright fallback - force)');
+        }
+        
+        console.log('✅ [STEP 9] ============================================');
+        console.log('✅ [STEP 9] SUCCESS: Contact details step completed!');
+        console.log(`✅ [STEP 9] Client: ${email}`);
+        console.log('✅ [STEP 9] Next button clicked successfully.');
+        console.log('✅ [STEP 9] Ready to proceed to payment step.');
+        console.log('✅ [STEP 9] ============================================');
+        
+        // Return immediately after successful click
+        return; // Early return - skip all lookup flow
+      }
+    }
+    
     // WAIT FOR CONTACT PAGE TO LOAD - 3 seconds
     console.log('⏳ [STEP 9] Waiting for contact page to load...');
     await page.waitForTimeout(3000);
     
     // The contact choice page is inside eventNewBooking2_iframe
     console.log('🔍 [STEP 9] Checking for contact choice page in iframe...');
-    const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+    const eventBookingIframeExistsCheck = await page.locator('#eventNewBooking2_iframe').count() > 0;
     
-    if (!eventBookingIframeExists) {
+    if (!eventBookingIframeExistsCheck) {
       throw new Error('eventNewBooking2_iframe not found - contact choice page may not have loaded');
     }
     
@@ -83,8 +236,41 @@ export async function lookupContactAndWait(page, email, screenshotsDir, clientPo
       throw new Error('Lookup contact button not found in contact choice page');
     }
     
-    await lookupButton.waitFor({ state: 'visible', timeout: 5000 });
-    await lookupButton.click();
+    // FIX: Wait for button to be attached (not visible, as it may be hidden but still clickable)
+    try {
+      await lookupButton.waitFor({ state: 'attached', timeout: 10000 });
+      console.log('✅ [STEP 9] Lookup contact button is attached to DOM');
+      
+      // Try to scroll button into view
+      try {
+        await lookupButton.scrollIntoViewIfNeeded({ timeout: 2000 });
+        console.log('✅ [STEP 9] Scrolled Lookup contact button into view');
+      } catch (scrollErr) {
+        console.log('⚠️ [STEP 9] Could not scroll Lookup contact button into view:', scrollErr.message);
+      }
+      
+      // Check if button is visible
+      const isVisible = await lookupButton.isVisible().catch(() => false);
+      
+      if (isVisible) {
+        // Button is visible, click normally
+        await lookupButton.click({ timeout: 5000 });
+        console.log('✅ [STEP 9] Clicked Lookup contact button (visible)');
+      } else {
+        // Button is hidden, use force click (button exists in DOM and is clickable)
+        console.log('⚠️ [STEP 9] Lookup contact button is hidden, using force click');
+        await lookupButton.click({ force: true, timeout: 5000 });
+        console.log('✅ [STEP 9] Clicked Lookup contact button (force)');
+      }
+    } catch (clickErr) {
+      // Handle browser closure or other errors gracefully
+      if (clickErr.message.includes('Target page, context or browser has been closed')) {
+        console.log('⚠️ [STEP 9] Browser was closed during Lookup contact button click');
+        throw new Error('Browser was closed - cannot proceed with Lookup contact button click');
+      }
+      // Re-throw other errors
+      throw clickErr;
+    }
     
     // WAIT FOR LOOKUP PAGE TO LOAD - 8 seconds
     console.log('⏳ [STEP 9] Waiting for contact lookup page to fully load...');
@@ -599,7 +785,13 @@ export async function lookupContactAndWait(page, email, screenshotsDir, clientPo
     const contactEmailField = await iframe.locator('text=Contact e-mail').count() > 0;
     
     if (clientNameVisible || clientEmailVisible || firstNameField || surnameField || contactEmailField) {
-      console.log('✅ [STEP 9] Client details page is already loaded - no need to wait for navigation');
+      console.log('✅ [STEP 9] ============================================');
+      console.log('✅ [STEP 9] SUCCESS: Client details page is already loaded!');
+      console.log(`✅ [STEP 9] Client email: ${email}`);
+      console.log('✅ [STEP 9] Client found and selected successfully.');
+      console.log('✅ [STEP 9] Client details page loaded and ready.');
+      console.log('✅ [STEP 9] Proceeding to click Next button...');
+      console.log('✅ [STEP 9] ============================================');
       
       // Take screenshot of the already loaded page
       await takeScreenshot(page, 'client-selected.png', screenshotsDir);
@@ -730,27 +922,88 @@ export async function lookupContactAndWait(page, email, screenshotsDir, clientPo
       await nextButton.waitFor({ state: 'attached', timeout: 10000 });
       console.log('✅ [STEP 9] Next button is attached to DOM');
       
-      // Try to scroll button into view
-      try {
-        await nextButton.scrollIntoViewIfNeeded({ timeout: 2000 });
-        console.log('✅ [STEP 9] Scrolled Next button into view');
-      } catch (scrollErr) {
-        console.log('⚠️ [STEP 9] Could not scroll Next button into view:', scrollErr.message);
+      // CRITICAL: Use JavaScript click (same approach as early check) - works even if button is not visible
+      // This ensures reliable clicking and immediate return after success
+      console.log('👆 [STEP 9] Clicking Next button using JavaScript (bypasses visibility checks)...');
+      
+      // Determine which iframe to use for JavaScript evaluation
+      let targetFrame = null;
+      if (eventBookingIframeForNextExists) {
+        try {
+          const frameElement = await page.$('#eventNewBooking2_iframe');
+          if (frameElement) {
+            targetFrame = await frameElement.contentFrame();
+          }
+        } catch (e) {
+          console.log(`⚠️ [STEP 9] Could not get eventNewBooking2_iframe for evaluation: ${e.message}`);
+        }
       }
       
-      // Check if button is visible
+      if (!targetFrame && iframe) {
+        try {
+          const frameElement = await page.$(iframeId);
+          if (frameElement) {
+            targetFrame = await frameElement.contentFrame();
+          }
+        } catch (e) {
+          console.log(`⚠️ [STEP 9] Could not get iframe for evaluation: ${e.message}`);
+        }
+      }
+      
+      if (targetFrame) {
+        try {
+          const clickSuccess = await targetFrame.evaluate(() => {
+            const btn = document.querySelector('#diaryNewCourseBookingWiz_nextBtn');
+            if (btn) {
+              btn.click();
+              return true;
+            }
+            // Try alternative selectors
+            const altBtn = document.querySelector('[aria-label="Next"], [aria-label="next"]');
+            if (altBtn) {
+              altBtn.click();
+              return true;
+            }
+            return false;
+          });
+          
+          if (clickSuccess) {
+            console.log('✅ [STEP 9] ============================================');
+            console.log('✅ [STEP 9] SUCCESS: Next button clicked successfully!');
+            console.log('✅ [STEP 9] Contact details step completed.');
+            console.log('✅ [STEP 9] IMMEDIATELY proceeding to payment step.');
+            console.log('✅ [STEP 9] ============================================');
+            
+            // CRITICAL: Return immediately after successful click - no delays, no screenshots, no further checks
+            return; // Return immediately - skip all further processing
+          }
+        } catch (jsErr) {
+          console.log(`⚠️ [STEP 9] JavaScript click failed: ${jsErr.message}, trying Playwright click as fallback...`);
+        }
+      }
+      
+      // Fallback to Playwright click only if JavaScript fails or frame not available
       const isVisible = await nextButton.isVisible().catch(() => false);
       
       if (isVisible) {
         // Button is visible, click normally
         await nextButton.click({ timeout: 5000 });
-        console.log('✅ [STEP 9] Clicked Next button (visible)');
+        console.log('✅ [STEP 9] Clicked Next button (Playwright fallback - visible)');
       } else {
         // Button is hidden, use force click
         console.log('⚠️ [STEP 9] Next button is hidden, using force click');
         await nextButton.click({ force: true, timeout: 5000 });
-        console.log('✅ [STEP 9] Clicked Next button (force)');
+        console.log('✅ [STEP 9] Clicked Next button (Playwright fallback - force)');
       }
+      
+      console.log('✅ [STEP 9] ============================================');
+      console.log('✅ [STEP 9] SUCCESS: Next button clicked successfully!');
+      console.log('✅ [STEP 9] Contact details step completed.');
+      console.log('✅ [STEP 9] Ready to proceed to payment step.');
+      console.log('✅ [STEP 9] ============================================');
+      
+      // CRITICAL: Return immediately after successful click - no delays, no screenshots, no further checks
+      return; // Return immediately - skip all further processing
     } catch (clickErr) {
       // Handle browser closure or other errors gracefully
       if (clickErr.message.includes('Target page, context or browser has been closed')) {
@@ -759,40 +1012,6 @@ export async function lookupContactAndWait(page, email, screenshotsDir, clientPo
       }
       throw clickErr;
     }
-    
-    console.log('✅ [STEP 9] Next button clicked, waiting for next page to load...');
-    
-    // Wait for next page to load (could be payment page or confirmation page)
-    await page.waitForTimeout(3000);
-    
-    // Check if we're still in an iframe context and wait for iframe content to update
-    if (iframeId === '#eventNewBooking2_iframe' || iframeId === '#contactLookup_iframe') {
-      console.log('⏳ [STEP 9] Waiting for iframe content to update after navigation...');
-      await page.waitForTimeout(2000);
-      
-      // Try to detect indicators of the next page (could be payment page, confirmation, etc.)
-      const nextPageIndicators = iframe.locator('text=4. Pay, text=Payment, text=Pay, text=Confirm, button:has-text("Pay"), button:has-text("Confirm")').first();
-      await nextPageIndicators.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
-        console.log('⚠️ [STEP 9] Next page indicators not found, but continuing...');
-      });
-    } else {
-      // Main page context - use normal wait
-      await page.waitForLoadState('networkidle').catch(() => {
-        console.log('⚠️ [STEP 9] Network idle wait failed, continuing...');
-      });
-    }
-    
-    // Take screenshot after clicking Next
-    await takeScreenshot(page, 'after-next-click.png', screenshotsDir);
-    
-    // Take final screenshot
-    await takeScreenshot(page, 'final-contact-page.png', screenshotsDir);
-    
-    // Wait for 10 seconds
-    console.log('⏰ [STEP 9] Waiting 10 seconds before closing...');
-    await page.waitForTimeout(10000);
-    
-    console.log('✅ [STEP 9] Contact lookup completed and waited 10 seconds');
     
   } catch (error) {
     console.error('Error in lookupContactAndWait:', error);

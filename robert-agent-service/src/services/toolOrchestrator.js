@@ -7,11 +7,27 @@
 import responsesApiService from './responsesApiService.js';
 import toolExecutor from '../tools/index.js';
 import uncertaintyGateService from './uncertaintyGateService.js';
+import configManager from '../agent/configManager.js';
 
 class ToolOrchestrator {
   constructor() {
-    this.useResponsesApiForComplexTools = true;
     this.complexToolThreshold = 2; // Use Responses API if 2+ tools need to be called
+  }
+
+  /**
+   * Get Responses API configuration from AIConfig
+   * @returns {Object} - Responses API configuration with fallbacks
+   */
+  getResponsesApiConfig() {
+    const aiConfig = configManager.getAIConfig();
+    const responsesApi = aiConfig?.responsesApi || {};
+    
+    return {
+      enabled: responsesApi.enabled !== false, // Default to true (backward compatible)
+      model: responsesApi.model?.id || 'gpt-4o-mini', // Default to current hardcoded value
+      useForComplexTools: responsesApi.useForComplexTools !== false, // Default to true
+      fallbackOnRealtimeFailure: responsesApi.fallbackOnRealtimeFailure !== false // Default to true
+    };
   }
 
   /**
@@ -21,7 +37,9 @@ class ToolOrchestrator {
    * @returns {boolean} - True if should use Responses API
    */
   shouldUseResponsesApi(toolCalls, context = {}) {
-    if (!this.useResponsesApiForComplexTools) {
+    const config = this.getResponsesApiConfig();
+    
+    if (!config.enabled || !config.useForComplexTools) {
       return false;
     }
 
@@ -55,6 +73,10 @@ class ToolOrchestrator {
       // Prepare messages for Responses API
       const messages = this.prepareMessagesForResponsesApi(conversationHistory, toolCalls);
 
+      // Get Responses API config from database
+      const responsesApiConfig = this.getResponsesApiConfig();
+      const aiConfig = configManager.getAIConfig();
+      
       // Execute with tool orchestrator
       const result = await responsesApiService.generateResponseWithTools(
         messages,
@@ -64,9 +86,9 @@ class ToolOrchestrator {
         },
         callContext,
         {
-          model: 'gpt-4o-mini',
-          temperature: 0.4,
-          maxTokens: 1000
+          model: responsesApiConfig.model, // Use configured model
+          temperature: aiConfig?.parameters?.temperature ?? 0.4,
+          maxTokens: aiConfig?.parameters?.maxTokens ?? 1000
         }
       );
 
@@ -144,7 +166,7 @@ class ToolOrchestrator {
             type: 'message',
             role: 'assistant',
             content: [{
-              type: 'input_text',
+              type: 'text',
               text: responsesApiResult.content
             }]
           }
@@ -211,18 +233,27 @@ class ToolOrchestrator {
    */
   async fallbackToResponsesApi(conversationHistory, callContext = {}) {
     try {
+      const responsesApiConfig = this.getResponsesApiConfig();
+      
+      // Check if fallback is enabled
+      if (!responsesApiConfig.fallbackOnRealtimeFailure) {
+        throw new Error('Responses API fallback is disabled in configuration');
+      }
+
       console.log(`🔄 [${callContext.callSid || 'unknown'}] Falling back to Responses API`);
 
       const messages = this.prepareMessagesForResponsesApi(conversationHistory);
       const toolDefinitions = toolExecutor.getToolDefinitions();
       const formattedTools = responsesApiService.formatToolsForResponsesApi(toolDefinitions);
+      
+      const aiConfig = configManager.getAIConfig();
 
       const result = await responsesApiService.generateResponse(
         messages,
         formattedTools,
         {
-          model: 'gpt-4o-mini',
-          temperature: 0.4,
+          model: responsesApiConfig.model, // Use configured model
+          temperature: aiConfig?.parameters?.temperature ?? 0.4,
           maxTokens: 500
         }
       );

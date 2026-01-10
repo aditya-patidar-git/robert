@@ -49,6 +49,7 @@ export class MemoryManager {
             this.state.openaiWs.send(JSON.stringify({
               type: 'session.update',
               session: {
+                modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
                 instructions: updatedInstructions
               }
             }));
@@ -66,6 +67,7 @@ export class MemoryManager {
                   this.state.openaiWs.send(JSON.stringify({
                     type: 'session.update',
                     session: {
+                      modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
                       instructions: updatedInstructions
                     }
                   }));
@@ -102,6 +104,7 @@ export class MemoryManager {
         this.state.openaiWs.send(JSON.stringify({
           type: 'session.update',
           session: {
+            modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
             instructions: updatedInstructions
           }
         }));

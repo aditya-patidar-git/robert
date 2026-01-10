@@ -181,6 +181,7 @@ export class AudioProcessor {
       this.state.openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
+          modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
           turn_detection: {
             type: 'server_vad',
             threshold: calibrated,

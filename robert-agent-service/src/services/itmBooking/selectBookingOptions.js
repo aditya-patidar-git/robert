@@ -474,10 +474,8 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
     console.log('⏳ [STEP 8] Waiting for booking options to be visible...');
     await page.waitForTimeout(2000);
     
-    // Scroll to booking options section
-    console.log('📜 [STEP 8] Scrolling to booking options section...');
-    await searchContext.locator('text=/Booking options/i').scrollIntoViewIfNeeded();
-    await page.waitForTimeout(2000);
+    // NOTE: Scroll to booking options is already handled at line 467 above
+    // Removed redundant scroll that was causing timeout errors
     
     // Find all booking option groups
     console.log('📋 [STEP 8] Finding all booking option groups...');
@@ -536,18 +534,22 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
         
         const bikeType = bookingArgs.bikeType || '125cc automatic';
         const bikeTypeMap = {
-          '125cc automatic': /125cc automatic.*scooter/i,
-          '50cc automatic': /50cc automatic/i,
-          '125cc manual': /125cc manual.*geared/i
+          // Updated patterns to handle spacing variations: "50cc" vs "50 cc", "125cc" vs "125 cc"
+          '125cc automatic': /125\s*cc\s+automatic.*scooter/i,
+          '50cc automatic': /50\s*cc\s+automatic/i,
+          '125cc manual': /125\s*cc\s+manual.*geared/i
         };
         
         const bikePattern = bikeTypeMap[bikeType] || bikeTypeMap['125cc automatic'];
         console.log(`✅ [STEP 8] Selecting bike type: ${bikeType}`);
+        console.log(`🔍 [STEP 8] Using flexible regex pattern: ${bikePattern}`);
         
         let matchingOption = null;
         let matchingRowIndex = -1;
         
         // Find matching bike type option in this group
+        console.log(`🔍 [STEP 8] Searching through ${optionCount} options for bike type: "${bikeType}"`);
+        
         for (let i = 0; i < optionCount; i++) {
           const optionRow = groupOptions.nth(i);
           const optionNameSpan = optionRow.locator('.optionName span');
@@ -556,12 +558,42 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
             const optionText = await optionNameSpan.textContent();
             const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
             
+            // Log first few options for debugging
+            if (i < 5) {
+              console.log(`   Option ${i + 1}: "${optionText}"`);
+            }
+            
             if (normalizedText && bikePattern.test(normalizedText)) {
               console.log(`✅ [STEP 8] Found matching bike type option at index ${i}: "${optionText}"`);
               matchingOption = optionRow;
               matchingRowIndex = i;
               break;
             }
+          } else {
+            // Try alternative selector if .optionName span doesn't exist
+            const alternativeText = await optionRow.textContent().catch(() => '');
+            if (alternativeText) {
+              const normalizedAlt = alternativeText.trim().toLowerCase();
+              if (bikePattern.test(normalizedAlt)) {
+                console.log(`✅ [STEP 8] Found matching bike type using alternative selector at index ${i}: "${alternativeText}"`);
+                matchingOption = optionRow;
+                matchingRowIndex = i;
+                break;
+              }
+            }
+          }
+        }
+        
+        // If no match found, log all options for debugging
+        if (!matchingOption) {
+          console.log(`⚠️ [STEP 8] No matching bike type found. Listing all ${optionCount} options:`);
+          for (let i = 0; i < Math.min(optionCount, 11); i++) {
+            const optionRow = groupOptions.nth(i);
+            const optionNameSpan = optionRow.locator('.optionName span');
+            const optionText = await optionNameSpan.textContent().catch(() => {
+              return optionRow.textContent().catch(() => 'N/A');
+            });
+            console.log(`   Option ${i + 1}: "${optionText}"`);
           }
         }
         
