@@ -234,6 +234,14 @@ const bookingStepSendSMSSchema = z.object({
   customerMobile: z.string()
 });
 
+const bookingStepSendPaymentRequestSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing', 'new']),
+  deliveryMethod: z.enum(['email', 'sms']),
+  clientEmail: z.string().email().optional(),
+  clientMobile: z.string().optional()
+});
+
 // Schema map for all tools
 const toolSchemas = {
   web_search: webSearchSchema,
@@ -257,6 +265,7 @@ const toolSchemas = {
   booking_step_create_new_contact: bookingStepCreateNewContactSchema,
   booking_step_fill_contact_details: bookingStepFillContactDetailsSchema,
   booking_step_process_payment: bookingStepProcessPaymentSchema,
+  booking_step_send_payment_request: bookingStepSendPaymentRequestSchema,
   booking_step_send_confirmation: bookingStepSendConfirmationSchema,
   booking_step_send_terms: bookingStepSendTermsSchema,
   booking_step_send_sms: bookingStepSendSMSSchema

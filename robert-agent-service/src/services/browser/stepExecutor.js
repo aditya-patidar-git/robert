@@ -462,8 +462,26 @@ export class StepExecutor {
     if (workflowType === 'existing') {
       // Existing client: use lookupContactAndWait to fill missing fields
       const clientEmail = args.customerEmail || args.clientDetails?.email || sessionState?.clientDetails?.email;
+      
+      // CRITICAL: Validate email - reject example/test emails
+      if (clientEmail) {
+        const invalidEmailPatterns = [
+          /@example\.com/i,
+          /test@/i,
+          /robert@example/i,
+          /john@example/i,
+          /placeholder@/i,
+          /default@/i
+        ];
+        
+        const isInvalid = invalidEmailPatterns.some(pattern => pattern.test(clientEmail));
+        if (isInvalid) {
+          throw new Error(`Invalid email detected: ${clientEmail}. Email must come from booking_step_search_client result (result.clientDetails.email) or be explicitly provided by the caller. Never use example, test, or placeholder emails.`);
+        }
+      }
+      
       if (!clientEmail) {
-        throw new Error('Client email is required for contact lookup (existing client workflow)');
+        throw new Error('Client email is required for contact lookup (existing client workflow). Email must come from booking_step_search_client result or be provided by the caller.');
       }
       const clientPostcode = args.postcode || args.clientDetails?.postcode || sessionState?.clientDetails?.postcode;
       await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode);
@@ -520,11 +538,46 @@ export class StepExecutor {
     // Use the updated payment strategy: Select "Send a payment request" and use sendPaymentRequest
     const screenshots = [];
     
+    // CRITICAL: Wait for page to fully transition from contact details to payment page
+    console.log('⏳ [PAYMENT] Waiting for page transition from contact details to payment page...');
+    await page.waitForTimeout(5000); // Increased wait time for page transition
+    
+    // Verify we're on the payment page before proceeding
+    console.log('🔍 [PAYMENT] Verifying payment page is loaded...');
+    const paymentPageIndicators = [
+      page.locator('text=/Confirm and Pay/i').first(),
+      page.locator('text=/4. Pay/i').first(),
+      page.locator('text=/Payment/i').first(),
+      page.locator('#eventNewBooking2_iframe').first()
+    ];
+    
+    let pageReady = false;
+    for (let i = 0; i < 5; i++) {
+      for (const indicator of paymentPageIndicators) {
+        const count = await indicator.count();
+        if (count > 0) {
+          pageReady = true;
+          break;
+        }
+      }
+      if (pageReady) break;
+      if (i < 4) {
+        console.log(`⏳ [PAYMENT] Payment page not ready yet, waiting (${i + 1}/5)...`);
+        await page.waitForTimeout(2000);
+      }
+    }
+    
+    if (!pageReady) {
+      console.log('⚠️ [PAYMENT] Payment page indicators not found, but continuing...');
+    } else {
+      console.log('✅ [PAYMENT] Payment page is ready');
+    }
+    
     // Step 1: Select "Send a payment request" option (updated strategy)
     const { selectPaymentOption } = await import('../commonBookingSteps/selectPaymentOption.js');
     await selectPaymentOption(page, this.screenshotsDir, 'request');
     screenshots.push(await (await import('../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', this.screenshotsDir));
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000); // Increased from 2000 to 3000
     
     // Step 2: Get client email/mobile from args or sessionState
     let clientEmail = args.clientEmail || args.customerEmail || null;

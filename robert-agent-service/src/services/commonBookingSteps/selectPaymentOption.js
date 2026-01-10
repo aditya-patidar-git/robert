@@ -10,38 +10,92 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
   try {
     console.log(`💳 [STEP 10] Selecting payment option (type: ${paymentType})...`);
     
-    // Wait for payment page to load
+    // Wait for payment page to load - give more time for page transition
     console.log('⏳ [STEP 10] Waiting for payment page to load...');
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000); // Increased from 3000 to 5000
     
-    // Check for "Confirm and Pay" page indicator
+    // Check for "Confirm and Pay" page indicator with retry logic
     console.log('🔍 [STEP 10] Checking for Confirm and Pay page...');
-    const confirmPayHeader = page.locator('text=/Confirm and Pay/i, text=/4. Pay/i, text=/Payment/i').first();
-    const headerExists = await confirmPayHeader.count() > 0;
+    let headerExists = false;
+    for (let i = 0; i < 3; i++) {
+      const confirmPayHeader = page.locator('text=/Confirm and Pay/i, text=/4. Pay/i, text=/Payment/i').first();
+      headerExists = await confirmPayHeader.count() > 0;
+      if (headerExists) break;
+      if (i < 2) {
+        console.log(`⏳ [STEP 10] Payment page header not found, retrying (${i + 1}/3)...`);
+        await page.waitForTimeout(2000);
+      }
+    }
     
     if (!headerExists) {
       console.log('⚠️ [STEP 10] Confirm and Pay page not immediately visible, continuing...');
     }
     
     // Determine if we need to work with iframe or main page (same pattern as location dropdown)
-    const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+    // Wait for iframe to be present and loaded
+    let eventBookingIframeExists = false;
     let paymentDropdown;
     let searchContext;
     
-    if (eventBookingIframeExists) {
-      console.log('🔍 [STEP 10] Working with eventNewBooking2_iframe for payment dropdown...');
-      const iframe = page.frameLocator('#eventNewBooking2_iframe');
-      paymentDropdown = iframe.locator('[data-onchange="jqx_chgPayWhen"]').first();
-      searchContext = iframe;
-    } else {
+    // Try to detect iframe with retry logic
+    for (let i = 0; i < 5; i++) {
+      eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+      if (eventBookingIframeExists) {
+        // Verify iframe is actually loaded
+        try {
+          const iframe = page.frameLocator('#eventNewBooking2_iframe');
+          const testLocator = iframe.locator('body').first();
+          await testLocator.waitFor({ state: 'attached', timeout: 2000 });
+          console.log('🔍 [STEP 10] Working with eventNewBooking2_iframe for payment dropdown...');
+          paymentDropdown = iframe.locator('[data-onchange="jqx_chgPayWhen"]').first();
+          searchContext = iframe;
+          break;
+        } catch (iframeError) {
+          console.log(`⚠️ [STEP 10] Iframe detected but not loaded yet, retrying (${i + 1}/5)...`);
+          if (i < 4) await page.waitForTimeout(2000);
+        }
+      } else {
+        if (i < 4) {
+          console.log(`⏳ [STEP 10] Iframe not found, retrying (${i + 1}/5)...`);
+          await page.waitForTimeout(2000);
+        }
+      }
+    }
+    
+    if (!eventBookingIframeExists || !paymentDropdown) {
       console.log('🔍 [STEP 10] Working with main page for payment dropdown...');
       paymentDropdown = page.locator('[data-onchange="jqx_chgPayWhen"]').first();
       searchContext = page;
     }
     
-    // Wait for dropdown to be visible
-    await paymentDropdown.waitFor({ state: 'visible', timeout: 10000 });
-    console.log('✅ [STEP 10] Found payment dropdown');
+    // Wait for dropdown to be visible with increased timeout and retry logic
+    let dropdownFound = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await paymentDropdown.waitFor({ state: 'visible', timeout: 15000 }); // Increased from 10000 to 15000
+        dropdownFound = true;
+        console.log('✅ [STEP 10] Found payment dropdown');
+        break;
+      } catch (error) {
+        if (attempt < 2) {
+          console.log(`⚠️ [STEP 10] Payment dropdown not visible yet, retrying (${attempt + 1}/3)...`);
+          await page.waitForTimeout(3000);
+          // Try refreshing the locator
+          if (eventBookingIframeExists) {
+            const iframe = page.frameLocator('#eventNewBooking2_iframe');
+            paymentDropdown = iframe.locator('[data-onchange="jqx_chgPayWhen"]').first();
+          } else {
+            paymentDropdown = page.locator('[data-onchange="jqx_chgPayWhen"]').first();
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
+    
+    if (!dropdownFound) {
+      throw new Error('Payment dropdown not found after multiple attempts');
+    }
     
     // Click on the dropdown to open it (same pattern as Contacts tab and location dropdown)
     console.log('💳 [STEP 10] Clicking payment dropdown to open...');

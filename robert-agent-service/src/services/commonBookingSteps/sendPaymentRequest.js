@@ -17,22 +17,93 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     // Wait for payment request modal/popup to appear
     console.log('⏳ [PAYMENT_REQUEST] Waiting for payment request modal (#sendForm) to appear...');
     
-    // Determine if we need to work with iframe or main page
-    const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+    // Give time for modal to appear after payment option selection
+    await page.waitForTimeout(3000);
+    
+    // Determine if we need to work with iframe or main page with retry logic
+    let eventBookingIframeExists = false;
     let searchContext;
     
-    if (eventBookingIframeExists) {
-      console.log('🔍 [PAYMENT_REQUEST] Working with eventNewBooking2_iframe for payment request modal...');
-      searchContext = page.frameLocator('#eventNewBooking2_iframe');
-    } else {
+    // Try to detect iframe with retry logic
+    for (let i = 0; i < 5; i++) {
+      eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+      if (eventBookingIframeExists) {
+        // Verify iframe is actually loaded
+        try {
+          const iframe = page.frameLocator('#eventNewBooking2_iframe');
+          const testLocator = iframe.locator('body').first();
+          await testLocator.waitFor({ state: 'attached', timeout: 2000 });
+          console.log('🔍 [PAYMENT_REQUEST] Working with eventNewBooking2_iframe for payment request modal...');
+          searchContext = iframe;
+          break;
+        } catch (iframeError) {
+          console.log(`⚠️ [PAYMENT_REQUEST] Iframe detected but not loaded yet, retrying (${i + 1}/5)...`);
+          if (i < 4) await page.waitForTimeout(2000);
+        }
+      } else {
+        if (i < 4) {
+          console.log(`⏳ [PAYMENT_REQUEST] Iframe not found, retrying (${i + 1}/5)...`);
+          await page.waitForTimeout(2000);
+        }
+      }
+    }
+    
+    if (!eventBookingIframeExists || !searchContext) {
       console.log('🔍 [PAYMENT_REQUEST] Working with main page for payment request modal...');
       searchContext = page;
     }
     
-    // Wait for payment request form to appear
-    const sendForm = searchContext.locator('#sendForm').first();
-    await sendForm.waitFor({ state: 'visible', timeout: 15000 });
-    console.log('✅ [PAYMENT_REQUEST] Payment request modal appeared');
+    // Wait for payment request form to appear with retry logic
+    let sendForm;
+    let modalFound = false;
+    
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        sendForm = searchContext.locator('#sendForm').first();
+        await sendForm.waitFor({ state: 'visible', timeout: 20000 }); // Increased from 15000 to 20000
+        modalFound = true;
+        console.log('✅ [PAYMENT_REQUEST] Payment request modal appeared');
+        break;
+      } catch (error) {
+        if (attempt < 2) {
+          console.log(`⚠️ [PAYMENT_REQUEST] Payment request modal not visible yet, retrying (${attempt + 1}/3)...`);
+          await page.waitForTimeout(3000);
+          // Try alternative selectors
+          const altSelectors = [
+            '#sendForm',
+            'form#sendForm',
+            '[id="sendForm"]',
+            'form:has-text("Send")',
+            '.jqx-window-content:has(#sendForm)'
+          ];
+          
+          for (const selector of altSelectors) {
+            try {
+              const altForm = searchContext.locator(selector).first();
+              if (await altForm.count() > 0) {
+                const isVisible = await altForm.isVisible({ timeout: 2000 }).catch(() => false);
+                if (isVisible) {
+                  sendForm = altForm;
+                  modalFound = true;
+                  console.log(`✅ [PAYMENT_REQUEST] Found payment request modal using alternative selector: ${selector}`);
+                  break;
+                }
+              }
+            } catch (altError) {
+              continue;
+            }
+          }
+          
+          if (modalFound) break;
+        } else {
+          throw error;
+        }
+      }
+    }
+    
+    if (!modalFound || !sendForm) {
+      throw new Error('Payment request modal (#sendForm) not found after multiple attempts');
+    }
     
     await takeScreenshot(page, 'payment-request-modal-opened.png', screenshotsDir);
     
