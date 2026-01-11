@@ -241,6 +241,14 @@ function getStepBookingToolDefinitions() {
           drivingLicenceNumber: {
             type: 'string',
             description: 'Driving licence number (optional)'
+          },
+          addressConfirmed: {
+            type: 'boolean',
+            description: 'Whether the client has confirmed the auto-populated address. Set to false on first call to get confirmation, then set to true after client confirms. Default: false'
+          },
+          correctedAddress: {
+            type: 'string',
+            description: 'Corrected address if the client said the auto-populated address was incorrect. Only provide this if client said "no" to the address confirmation.'
           }
         },
         required: ['courseType', 'workflowType']
@@ -305,6 +313,10 @@ function getStepBookingToolDefinitions() {
           clientMobile: {
             type: 'string',
             description: 'Client mobile number (optional, only needed if deliveryMethod is "sms" and mobile is not pre-filled)'
+          },
+          confirmed: {
+            type: 'boolean',
+            description: 'Whether the client has confirmed the email/phone number. Set to false on first call to get confirmation, then set to true after client confirms. Default: false'
           }
         },
         required: ['courseType', 'workflowType', 'deliveryMethod']

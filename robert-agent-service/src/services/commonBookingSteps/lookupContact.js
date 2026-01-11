@@ -6,8 +6,9 @@ import { takeScreenshot, cleanEmail } from './utils.js';
  * @param {string} email - Client email address to lookup (may contain "Copy" text)
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} [clientPostcode] - Optional postcode for verification when multiple results appear
+ * @param {boolean} [skipNextClick] - If true, skip clicking Next button (for address confirmation flow)
  */
-export async function lookupContactAndWait(page, email, screenshotsDir, clientPostcode = null) {
+export async function lookupContactAndWait(page, email, screenshotsDir, clientPostcode = null, skipNextClick = false) {
   try {
     console.log('🔍 [STEP 9] Looking up contact...');
     
@@ -851,6 +852,12 @@ export async function lookupContactAndWait(page, email, screenshotsDir, clientPo
     // Wait a bit more for the form to fully render
     console.log('⏳ [STEP 9] Waiting for Contact Details form to fully render...');
     await page.waitForTimeout(3000);
+    
+    // If skipNextClick is true, return here (for address confirmation flow)
+    if (skipNextClick) {
+      console.log('⏸️ [STEP 9] Skipping Next button click (address confirmation required)');
+      return;
+    }
     
     // Click Next button to proceed to next step
     // Need to check both contactSelect_iframe AND eventNewBooking2_iframe

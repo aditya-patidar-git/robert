@@ -377,10 +377,18 @@ export class ResponseHandler {
   handleResponseDone(event) {
     const status = event.response?.status || 'completed';
     const responseId = event.response?.id;
-    const error = event.response?.error;
+    // Fix: Error is nested under status_details, not directly under response
+    const error = event.response?.status_details?.error || event.response?.error;
     
     if (status === 'failed') {
-      console.error(`❌ [${this.state.callSid}] Response failed:`, error);
+      console.error(`❌ [${this.state.callSid}] Response failed:`, error || 'undefined');
+      if (error) {
+        console.error(`   🔍 Error type: ${error.type || 'unknown'}`);
+        console.error(`   🔍 Error code: ${error.code || 'null'}`);
+        console.error(`   🔍 Error message: ${error.message || 'No message'}`);
+      }
+      console.error(`   📋 Full event:`, JSON.stringify(event, null, 2));
+      console.error(`   📋 Response object:`, JSON.stringify(event.response, null, 2));
     }
     
     // Only clear response tracking if this is the active response

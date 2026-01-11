@@ -53,17 +53,68 @@ export class ToolCoordinator {
   }
 
   /**
+   * Wait for session.updated event with timeout
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 5000ms)
+   * @returns {Promise<void>}
+   */
+  async waitForSessionUpdate(timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.state.pendingSessionUpdatePromise = null;
+        reject(new Error(`Session update timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      
+      // Store the resolver so routeEvent can call it
+      this.state.pendingSessionUpdatePromise = () => {
+        clearTimeout(timeout);
+        this.state.pendingSessionUpdatePromise = null;
+        resolve();
+      };
+    });
+  }
+
+  /**
+   * Wait for conversation.item.created event with timeout
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 5000ms)
+   * @returns {Promise<void>}
+   */
+  async waitForItemCreated(timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.state.pendingItemCreatePromise = null;
+        reject(new Error(`Item creation timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      
+      // Store the resolver so routeEvent can call it
+      this.state.pendingItemCreatePromise = () => {
+        clearTimeout(timeout);
+        this.state.pendingItemCreatePromise = null;
+        resolve();
+      };
+    });
+  }
+
+  /**
    * Create audio response by temporarily disabling tools
    * This ensures OpenAI generates natural language instead of tool calls
    * Note: For initial greeting, inject a dummy user message to provide conversation context
+   * CRITICAL FIX: Now waits for event confirmations instead of fixed delays
    */
   async createAudioResponse() {
     if (!this.openaiWs || this.openaiWs.readyState !== 1) {
+      console.error(`❌ [${this.state.callSid}] WebSocket not ready: ${this.openaiWs?.readyState}`);
+      return;
+    }
+    
+    // 🚨 CRITICAL: Prevent concurrent calls
+    if (this.state.isResponding || this.state.activeResponseId !== null) {
+      console.warn(`⚠️ [${this.state.callSid}] Already responding (responseId: ${this.state.activeResponseId}), skipping duplicate createAudioResponse call`);
       return;
     }
     
     try {
-      // Step 1: Temporarily disable tools
+      // Step 1: Temporarily disable tools and wait for confirmation
+      console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
       this.openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
@@ -71,11 +122,26 @@ export class ToolCoordinator {
         }
       }));
       
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Wait for session.updated event confirmation
+      try {
+        await this.waitForSessionUpdate(10000); // Increased timeout to 10 seconds for consistency
+        console.log(`✅ [${this.state.callSid}] Session update confirmed`);
+      } catch (err) {
+        console.error(`❌ [${this.state.callSid}] Session update timeout:`, err.message);
+        console.warn(`⚠️ [${this.state.callSid}] Continuing without session update confirmation - session may already be in correct state`);
+        // Continue anyway - session might already be in the correct state
+      }
+      
+      // Verify WebSocket is still open
+      if (!this.openaiWs || this.openaiWs.readyState !== 1) {
+        console.error(`❌ [${this.state.callSid}] WebSocket closed after session.update`);
+        return;
+      }
       
       // Step 2: For initial greeting, inject a dummy user message to provide conversation context
       // OpenAI Realtime API needs conversation context to generate audio responses
       if (!this.state.hasInitialGreetingBeenSent) {
+        console.log(`📤 [${this.state.callSid}] Sending conversation.item.create for initial greeting...`);
         this.openaiWs.send(JSON.stringify({
           type: 'conversation.item.create',
           item: {
@@ -89,16 +155,47 @@ export class ToolCoordinator {
             ]
           }
         }));
-        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // 🚨 CRITICAL: Wait for conversation.item.created event confirmation
+        // Without conversation context, OpenAI will fail with server_error and input_tokens: 0
+        try {
+          await this.waitForItemCreated(10000); // Increased timeout to 10 seconds
+          console.log(`✅ [${this.state.callSid}] Conversation item created confirmed`);
+        } catch (err) {
+          console.error(`❌ [${this.state.callSid}] Item creation timeout:`, err.message);
+          console.error(`❌ [${this.state.callSid}] Cannot proceed without conversation context - aborting response creation`);
+          // Reset state on error
+          this.state.isResponding = false;
+          this.state.explicitResponseRequested = false;
+          this.state.pendingItemCreatePromise = null;
+          return; // 🚨 CRITICAL: Don't continue without conversation context
+        }
+        
+        // Verify WebSocket is still open
+        if (!this.openaiWs || this.openaiWs.readyState !== 1) {
+          console.error(`❌ [${this.state.callSid}] WebSocket closed after item.create`);
+          // Reset state on error
+          this.state.isResponding = false;
+          this.state.explicitResponseRequested = false;
+          return;
+        }
       }
       
       // Step 3: Create response - OpenAI will generate based on instructions/context
+      // Now the session is confirmed to be ready
       const responseCreatePayload = {
         type: 'response.create',
         response: {
           modalities: ['audio', 'text']
         }
       };
+      
+      console.log(`📤 [${this.state.callSid}] Sending response.create, WebSocket state: ${this.openaiWs.readyState}`);
+      
+      // Set state BEFORE sending to prevent duplicate calls
+      this.state.isResponding = true;
+      this.state.explicitResponseRequested = true;
+      
       this.openaiWs.send(JSON.stringify(responseCreatePayload));
       
       // Step 4: Re-enable tools after delay
@@ -115,6 +212,11 @@ export class ToolCoordinator {
       
     } catch (err) {
       console.error(`❌ [${this.state.callSid}] Error creating audio response:`, err);
+      // Reset state on error
+      this.state.hasInitialGreetingBeenSent = false;
+      this.state.isResponding = false;
+      this.state.pendingSessionUpdatePromise = null;
+      this.state.pendingItemCreatePromise = null;
     }
   }
 
@@ -200,6 +302,13 @@ export class ToolCoordinator {
             console.log(`   - Silence duration: ${event.session.turn_detection.silence_duration_ms}ms`);
             console.log(`   - Prefix padding: ${event.session.turn_detection.prefix_padding_ms}ms`);
           }
+          
+          // Resolve pending session update promise if waiting
+          if (this.state.pendingSessionUpdatePromise) {
+            console.log(`✅ [${this.state.callSid}] Resolving pending session update promise`);
+            this.state.pendingSessionUpdatePromise();
+          }
+          
           await this.handleSessionUpdated(event);
           break;
           
@@ -208,6 +317,12 @@ export class ToolCoordinator {
           break;
           
         case 'conversation.item.created':
+          // Resolve pending item create promise if waiting (for any role, not just assistant)
+          if (this.state.pendingItemCreatePromise) {
+            console.log(`✅ [${this.state.callSid}] Resolving pending item create promise (role: ${event.item?.role})`);
+            this.state.pendingItemCreatePromise();
+          }
+          
           if (event.item?.role === 'assistant') {
             this.responseHandler.handleItemCreated(event);
           }

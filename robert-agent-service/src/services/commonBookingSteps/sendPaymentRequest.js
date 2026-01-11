@@ -8,17 +8,18 @@ import { takeScreenshot } from './utils.js';
  * @param {string} deliveryMethod - 'email' or 'sms'
  * @param {string} clientEmail - Optional client email address
  * @param {string} clientMobile - Optional client mobile number
- * @returns {Promise<{success: boolean, paymentCompleted: boolean, error?: string}>}
+ * @param {boolean} confirmed - Whether client has confirmed the email/phone number (default: false)
+ * @returns {Promise<{success: boolean, paymentCompleted: boolean, requiresConfirmation?: boolean, emailAddress?: string, phoneNumber?: string, error?: string}>}
  */
-export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null) {
+export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null, confirmed = false) {
   try {
     console.log(`💳 [PAYMENT_REQUEST] Sending payment request via ${deliveryMethod}...`);
     
-    // Wait for payment request modal/popup to appear
-    console.log('⏳ [PAYMENT_REQUEST] Waiting for payment request modal (#sendForm) to appear...');
+    // FIX 4: Wait for page content to change (local redirection) after payment option selection
+    console.log('⏳ [PAYMENT_REQUEST] Waiting for payment request page to load (local redirection)...');
     
-    // Give time for modal to appear after payment option selection
-    await page.waitForTimeout(3000);
+    // Give more time for the page content to change after selecting "Send a payment request"
+    await page.waitForTimeout(5000); // Increased from 3000 to 5000
     
     // Determine if we need to work with iframe or main page with retry logic
     let eventBookingIframeExists = false;
@@ -53,48 +54,70 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
       searchContext = page;
     }
     
-    // Wait for payment request form to appear with retry logic
+    // FIX 4: Wait for payment request form to appear - check for multiple indicators
+    // The page content changes to show the payment request form, so we need to wait for:
+    // 1. The form element (#sendForm)
+    // 2. The header text "Send payment request to..."
+    // 3. The email/mobile input fields
     let sendForm;
     let modalFound = false;
     
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) { // Increased retries from 3 to 5
       try {
-        sendForm = searchContext.locator('#sendForm').first();
-        await sendForm.waitFor({ state: 'visible', timeout: 20000 }); // Increased from 15000 to 20000
-        modalFound = true;
-        console.log('✅ [PAYMENT_REQUEST] Payment request modal appeared');
-        break;
-      } catch (error) {
-        if (attempt < 2) {
-          console.log(`⚠️ [PAYMENT_REQUEST] Payment request modal not visible yet, retrying (${attempt + 1}/3)...`);
-          await page.waitForTimeout(3000);
-          // Try alternative selectors
-          const altSelectors = [
-            '#sendForm',
-            'form#sendForm',
-            '[id="sendForm"]',
-            'form:has-text("Send")',
-            '.jqx-window-content:has(#sendForm)'
-          ];
-          
-          for (const selector of altSelectors) {
-            try {
-              const altForm = searchContext.locator(selector).first();
-              if (await altForm.count() > 0) {
-                const isVisible = await altForm.isVisible({ timeout: 2000 }).catch(() => false);
-                if (isVisible) {
-                  sendForm = altForm;
-                  modalFound = true;
-                  console.log(`✅ [PAYMENT_REQUEST] Found payment request modal using alternative selector: ${selector}`);
-                  break;
+        // Try multiple indicators that the payment request page has loaded
+        const indicators = [
+          () => searchContext.locator('#sendForm').first(),
+          () => searchContext.locator('form#sendForm').first(),
+          () => searchContext.locator('[id="sendForm"]').first(),
+          () => searchContext.locator('text=/Send payment request to/i').first(), // Header text
+          () => searchContext.locator('#cnt_email').first(), // Email input container
+          () => searchContext.locator('#cnt_mobile_number').first(), // Mobile input container
+          () => searchContext.locator('#btnSendByEmail').first(), // Send by email button
+          () => searchContext.locator('#btnSendBySMS').first() // Send by SMS button
+        ];
+        
+        let foundIndicator = null;
+        let indicatorIndex = -1;
+        for (let idx = 0; idx < indicators.length; idx++) {
+          try {
+            const indicator = indicators[idx]();
+            if (await indicator.count() > 0) {
+              const isVisible = await indicator.isVisible({ timeout: 3000 }).catch(() => false);
+              if (isVisible) {
+                foundIndicator = indicator;
+                indicatorIndex = idx;
+                // If it's one of the form selectors (first 3), use it directly
+                if (idx < 3) {
+                  sendForm = indicator;
+                } else {
+                  // Found another indicator (header, email field, etc.), now find the form
+                  sendForm = searchContext.locator('#sendForm').first();
                 }
+                modalFound = true;
+                console.log(`✅ [PAYMENT_REQUEST] Payment request page loaded (found indicator at index ${idx})`);
+                break;
               }
-            } catch (altError) {
-              continue;
             }
+          } catch (indicatorError) {
+            continue;
           }
-          
-          if (modalFound) break;
+        }
+        
+        if (modalFound && sendForm) {
+          // Verify the form is actually visible
+          await sendForm.waitFor({ state: 'visible', timeout: 5000 });
+          console.log('✅ [PAYMENT_REQUEST] Payment request form is visible');
+          break;
+        }
+        
+        if (attempt < 4) {
+          console.log(`⚠️ [PAYMENT_REQUEST] Payment request page not loaded yet, retrying (${attempt + 1}/5)...`);
+          await page.waitForTimeout(3000);
+        }
+      } catch (error) {
+        if (attempt < 4) {
+          console.log(`⚠️ [PAYMENT_REQUEST] Error checking for payment request page, retrying (${attempt + 1}/5)...`);
+          await page.waitForTimeout(3000);
         } else {
           throw error;
         }
@@ -102,7 +125,9 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     }
     
     if (!modalFound || !sendForm) {
-      throw new Error('Payment request modal (#sendForm) not found after multiple attempts');
+      // Take screenshot for debugging
+      await takeScreenshot(page, 'payment-request-not-found.png', screenshotsDir);
+      throw new Error('Payment request page (#sendForm) not found after multiple attempts. The page content may not have changed after selecting "Send a payment request".');
     }
     
     await takeScreenshot(page, 'payment-request-modal-opened.png', screenshotsDir);
@@ -119,17 +144,58 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     // Fill email or mobile if provided
     if (deliveryMethod === 'email' && clientEmail) {
       console.log(`📧 [PAYMENT_REQUEST] Filling email address: ${clientEmail}`);
-      const emailInput = searchContext.locator('#cnt_email').first();
+      const emailInput = searchContext.locator('#cnt_email input').first();
       await emailInput.waitFor({ state: 'visible', timeout: 5000 });
       await emailInput.fill(clientEmail);
       await page.waitForTimeout(500);
     } else if (deliveryMethod === 'sms' && clientMobile) {
       console.log(`📱 [PAYMENT_REQUEST] Filling mobile number: ${clientMobile}`);
-      const mobileInput = searchContext.locator('#cnt_mobile_number').first();
+      const mobileInput = searchContext.locator('#cnt_mobile_number input').first();
       await mobileInput.waitFor({ state: 'visible', timeout: 5000 });
       await mobileInput.fill(clientMobile);
       await page.waitForTimeout(500);
     }
+    
+    // Read the current values from the form for confirmation
+    let emailAddress = null;
+    let phoneNumber = null;
+    
+    if (deliveryMethod === 'email') {
+      try {
+        const emailInput = searchContext.locator('#cnt_email input').first();
+        emailAddress = await emailInput.inputValue();
+        console.log(`📧 [PAYMENT_REQUEST] Email address in form: ${emailAddress}`);
+      } catch (error) {
+        console.warn('⚠️ [PAYMENT_REQUEST] Could not read email value:', error.message);
+      }
+    } else if (deliveryMethod === 'sms') {
+      try {
+        const mobileInput = searchContext.locator('#cnt_mobile_number input').first();
+        phoneNumber = await mobileInput.inputValue();
+        console.log(`📱 [PAYMENT_REQUEST] Phone number in form: ${phoneNumber}`);
+      } catch (error) {
+        console.warn('⚠️ [PAYMENT_REQUEST] Could not read mobile value:', error.message);
+      }
+    }
+    
+    // Check if confirmation is required (if confirmed parameter is not true)
+    if (!confirmed) {
+      console.log('⏸️ [PAYMENT_REQUEST] Confirmation required before sending payment request');
+      return {
+        success: true,
+        paymentCompleted: false,
+        requiresConfirmation: true,
+        emailAddress: emailAddress,
+        phoneNumber: phoneNumber,
+        deliveryMethod: deliveryMethod,
+        message: deliveryMethod === 'email' 
+          ? `Payment request will be sent to ${emailAddress}. Please confirm with the client before proceeding.`
+          : `Payment request will be sent to ${phoneNumber}. Please confirm with the client before proceeding.`
+      };
+    }
+    
+    // Only proceed to click send button if confirmed is true
+    console.log('✅ [PAYMENT_REQUEST] Client confirmed, proceeding to send payment request...');
     
     // Click appropriate button based on delivery method
     let sendButton;

@@ -461,7 +461,29 @@ export class StepExecutor {
     
     if (workflowType === 'existing') {
       // Existing client: use lookupContactAndWait to fill missing fields
-      const clientEmail = args.customerEmail || args.clientDetails?.email || sessionState?.clientDetails?.email;
+      let clientEmail = args.customerEmail || args.clientDetails?.email || sessionState?.clientDetails?.email;
+      
+      // FIX 1: Check conversation state for email (from clientVerification/search_client)
+      if (!clientEmail) {
+        // Extract callSid from sessionState to access conversation state
+        let callSid = args.callSid || null;
+        if (!callSid && sessionState?.browserSessionId) {
+          const match = sessionState.browserSessionId.match(/^browser_(.+?)_\d+$/);
+          if (match) {
+            callSid = match[1];
+          }
+        }
+        
+        if (callSid) {
+          const { conversations } = await import('../../shared/state.js');
+          const conversation = conversations[callSid];
+          
+          if (conversation?.clientDetails?.email) {
+            clientEmail = conversation.clientDetails.email;
+            console.log(`✅ [STEP 8] Using email from conversation state (clientVerification/search_client): ${clientEmail}`);
+          }
+        }
+      }
       
       // CRITICAL: Validate email - reject example/test emails
       if (clientEmail) {
@@ -483,8 +505,106 @@ export class StepExecutor {
       if (!clientEmail) {
         throw new Error('Client email is required for contact lookup (existing client workflow). Email must come from booking_step_search_client result or be provided by the caller.');
       }
+      const addressConfirmed = args.addressConfirmed || false;
+      const correctedAddress = args.correctedAddress || null;
       const clientPostcode = args.postcode || args.clientDetails?.postcode || sessionState?.clientDetails?.postcode;
-      await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode);
+      
+      // If address is already confirmed, skip lookup and just click Next
+      if (addressConfirmed) {
+        // Client is already selected, just handle address correction if needed and click Next
+        const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+        const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+        
+        if (eventBookingIframeExists && correctedAddress) {
+          // Update address if corrected
+          console.log(`📝 [STEP 8] Updating Address 1 with corrected address: ${correctedAddress}`);
+          let address1Field = eventBookingIframe.getByLabel('Address 1');
+          if (await address1Field.count() === 0) {
+            address1Field = eventBookingIframe.locator('#cmp_address_1 .dx-texteditor-input');
+          }
+          if (await address1Field.count() > 0) {
+            await address1Field.fill(correctedAddress);
+            await page.waitForTimeout(500);
+          }
+        }
+        
+        // Click Next button (lookupContactAndWait will detect we're already on the page and just click Next)
+        await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode, false);
+      } else {
+        // FIX 2: First call lookupContactAndWait to get to the client details page (skip Next click)
+        await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode, true);
+        
+        // Now check if house number field is empty on the page
+        const houseNumber = args.houseNumber || args.houseNumberOrName;
+        let needsHouseNumber = false;
+        
+        try {
+          const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+          const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+          
+          if (eventBookingIframeExists) {
+            // Wait for form to be fully loaded
+            await page.waitForTimeout(2000);
+            
+            // Check if house number field exists and is empty
+            let houseNumberField = eventBookingIframe.getByLabel('House number or name');
+            if (await houseNumberField.count() === 0) {
+              houseNumberField = eventBookingIframe.locator('#cmp_buildingnumber .dx-texteditor-input');
+            }
+            
+            if (await houseNumberField.count() > 0) {
+              const houseNumberValue = await houseNumberField.inputValue().catch(() => '');
+              if (!houseNumberValue || houseNumberValue.trim() === '') {
+                needsHouseNumber = true;
+                console.log('📝 [STEP 8] House number field is empty on client details page');
+                
+                // If house number is provided in args, fill it and check for address auto-population
+                if (houseNumber) {
+                  console.log(`📝 [STEP 8] Filling House number or name: ${houseNumber}`);
+                  await houseNumberField.fill(houseNumber);
+                  
+                  // Press Tab to trigger address auto-population
+                  await houseNumberField.press('Tab');
+                  await page.waitForTimeout(2000);
+                  
+                  // Read the auto-populated address for confirmation
+                  let address1Field = eventBookingIframe.getByLabel('Address 1');
+                  if (await address1Field.count() === 0) {
+                    address1Field = eventBookingIframe.locator('#cmp_address_1 .dx-texteditor-input');
+                  }
+                  
+                  if (await address1Field.count() > 0) {
+                    const autoPopulatedAddress = await address1Field.inputValue();
+                    if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
+                      console.log(`📍 [STEP 8] Address 1 auto-populated: ${autoPopulatedAddress}`);
+                      
+                      // Return for address confirmation before clicking Next
+                      return {
+                        success: true,
+                        requiresAddressConfirmation: true,
+                        autoPopulatedAddress: autoPopulatedAddress,
+                        message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`
+                      };
+                    }
+                  }
+                } else {
+                  // House number is missing but not provided - ask agent to get it
+                  return {
+                    success: false,
+                    requiresHouseNumber: true,
+                    message: 'The house number or name field is missing on the client details page. Please ask the client for their house number or name before proceeding.'
+                  };
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ [STEP 8] Could not check house number field:', error.message);
+        }
+        
+        // If no address confirmation needed, click Next now
+        await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode, false);
+      }
       
       return {
         success: true,
@@ -502,7 +622,10 @@ export class StepExecutor {
       };
     } else {
       // New client: fill all fields from scratch
-      await commonSteps.fillContactDetails(page, {
+      const addressConfirmed = args.addressConfirmed || false;
+      const correctedAddress = args.correctedAddress || null;
+      
+      const fillResult = await commonSteps.fillContactDetails(page, {
         title: args.title,
         firstNames: args.firstNames || args.customerName?.split(' ')[0],
         surname: args.surname || args.customerName?.split(' ').slice(1).join(' '),
@@ -518,8 +641,20 @@ export class StepExecutor {
         hearAboutUs: args.hearAboutUs,
         ridingExperience: args.ridingExperience,
         marketingConsent: args.marketingConsent,
-        dataSharing: args.dataSharing
-      }, this.screenshotsDir);
+        dataSharing: args.dataSharing,
+        correctedAddress: correctedAddress
+      }, this.screenshotsDir, addressConfirmed);
+
+      // Check if address confirmation is required
+      if (fillResult && fillResult.requiresAddressConfirmation) {
+        return {
+          success: true,
+          requiresAddressConfirmation: true,
+          autoPopulatedAddress: fillResult.autoPopulatedAddress,
+          townCity: fillResult.townCity,
+          message: fillResult.message
+        };
+      }
 
       return {
         success: true,
@@ -615,8 +750,17 @@ export class StepExecutor {
       }
     }
     
-    // Step 3: Determine delivery method (default to email if email available, otherwise SMS)
-    const deliveryMethod = args.deliveryMethod || (clientEmail ? 'email' : 'sms');
+    // Step 3: Determine delivery method - MUST be provided by agent (agent should ask client first)
+    const deliveryMethod = args.deliveryMethod;
+    if (!deliveryMethod || (deliveryMethod !== 'email' && deliveryMethod !== 'sms')) {
+      return {
+        success: false,
+        paymentCompleted: false,
+        error: 'deliveryMethod is required and must be "email" or "sms". The agent must ask the client "Would you like to receive the payment request via email or SMS?" before calling this tool.',
+        requiresPaymentMethod: true,
+        message: 'Would you like to receive the payment request via email or SMS?'
+      };
+    }
     
     if (!clientEmail && !clientMobile) {
       return {
@@ -672,19 +816,40 @@ export class StepExecutor {
     
     const deliveryMethod = args.deliveryMethod; // 'email' or 'sms' (required)
     if (!deliveryMethod || (deliveryMethod !== 'email' && deliveryMethod !== 'sms')) {
-      throw new Error('deliveryMethod is required and must be "email" or "sms"');
+      return {
+        success: false,
+        paymentCompleted: false,
+        error: 'deliveryMethod is required and must be "email" or "sms". The agent must ask the client "Would you like to receive the payment request via email or SMS?" before calling this tool.',
+        requiresPaymentMethod: true,
+        message: 'Would you like to receive the payment request via email or SMS?'
+      };
     }
     
     const clientEmail = args.clientEmail || null;
     const clientMobile = args.clientMobile || null;
+    const confirmed = args.confirmed || false;
     
     const result = await sendPaymentRequest(
       page,
       this.screenshotsDir,
       deliveryMethod,
       clientEmail,
-      clientMobile
+      clientMobile,
+      confirmed
     );
+    
+    // If confirmation is required, return early
+    if (result.requiresConfirmation) {
+      return {
+        success: true,
+        paymentCompleted: false,
+        requiresConfirmation: true,
+        emailAddress: result.emailAddress,
+        phoneNumber: result.phoneNumber,
+        deliveryMethod: deliveryMethod,
+        message: result.message
+      };
+    }
     
     // Return result with enhanced message if successful
     if (result.success && result.paymentCompleted) {

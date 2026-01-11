@@ -111,6 +111,10 @@ export class CallStateManager {
       lastOutgoingTime: null,
       lastResponseTime: null
     };
+    
+    // Event waiting promises for race condition fixes
+    this.pendingSessionUpdatePromise = null;
+    this.pendingItemCreatePromise = null;
   }
 
   /**
