@@ -148,8 +148,8 @@ const defaultVoices = [
     sampleText: "Hello, this is Robert from Universal Motorcycle Training. How can I help you today?"
   },
   {
-    id: "ballads",
-    name: "Ballads",
+    id: "ballad",
+    name: "Ballad",
     description: "A melodic and expressive voice",
     language: "en-GB",
     gender: "neutral",

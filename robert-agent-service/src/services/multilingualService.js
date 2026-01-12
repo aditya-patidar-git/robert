@@ -9,13 +9,13 @@ class MultilingualService {
     // Default languages as fallback (backward compatible)
     this.defaultLanguages = {
       'en': { name: 'English (British)', code: 'en-GB', voice: 'ash' }, // British English with Ash voice
-      'fr': { name: 'French', code: 'fr-FR', voice: 'nova' },
-      'de': { name: 'German', code: 'de-DE', voice: 'nova' },
-      'es': { name: 'Spanish', code: 'es-ES', voice: 'nova' },
-      'it': { name: 'Italian', code: 'it-IT', voice: 'nova' },
-      'pt': { name: 'Portuguese', code: 'pt-PT', voice: 'nova' },
-      'nl': { name: 'Dutch', code: 'nl-NL', voice: 'nova' },
-      'pl': { name: 'Polish', code: 'pl-PL', voice: 'nova' }
+      'fr': { name: 'French', code: 'fr-FR', voice: 'sage' }, // Changed from 'nova' - not supported by Realtime API
+      'de': { name: 'German', code: 'de-DE', voice: 'sage' }, // Changed from 'nova' - not supported by Realtime API
+      'es': { name: 'Spanish', code: 'es-ES', voice: 'sage' }, // Changed from 'nova' - not supported by Realtime API
+      'it': { name: 'Italian', code: 'it-IT', voice: 'sage' }, // Changed from 'nova' - not supported by Realtime API
+      'pt': { name: 'Portuguese', code: 'pt-PT', voice: 'sage' }, // Changed from 'nova' - not supported by Realtime API
+      'nl': { name: 'Dutch', code: 'nl-NL', voice: 'sage' }, // Changed from 'nova' - not supported by Realtime API
+      'pl': { name: 'Polish', code: 'pl-PL', voice: 'sage' } // Changed from 'nova' - not supported by Realtime API
     };
     
     this.supportedLanguages = { ...this.defaultLanguages }; // Start with defaults

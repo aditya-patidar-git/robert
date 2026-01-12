@@ -36,6 +36,7 @@ import {
 import { useToast } from '../common/ToastProvider';
 import languageVoiceService from '../../services/languageVoiceService';
 import voiceService from '../../services/voiceService';
+import { filterValidRealtimeVoices } from '../../constants/validVoices';
 
 // Common language codes reference
 const COMMON_LANGUAGE_CODES = [
@@ -420,7 +421,10 @@ const LanguageVoiceMapping = ({
     setFormErrors({});
   };
 
-  const voices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
+  const allVoices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
+  
+  // Filter to only show valid Realtime voices
+  const voices = filterValidRealtimeVoices(allVoices);
 
   return (
     <Paper sx={{ p: 3, mb: 3 }}>

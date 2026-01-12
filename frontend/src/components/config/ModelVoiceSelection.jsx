@@ -40,6 +40,7 @@ import { Controller, useFormContext } from 'react-hook-form';
 import { useToast } from '../common/ToastProvider';
 import aiService from '../../services/aiService';
 import voiceService from '../../services/voiceService';
+import { filterValidRealtimeVoices } from '../../constants/validVoices';
 
 const ModelVoiceSelection = ({ 
   control,
@@ -74,7 +75,10 @@ const ModelVoiceSelection = ({
   });
 
   const availableModels = Array.isArray(models) ? models : [];
-  const voices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
+  const allVoices = Array.isArray(voicesData) ? voicesData : (voicesData?.voices || []);
+  
+  // Filter to only show valid Realtime voices
+  const voices = filterValidRealtimeVoices(allVoices);
   
   // Filter to only show voice-based (speech-to-speech) models
   const voiceBasedModels = availableModels.filter(model => {

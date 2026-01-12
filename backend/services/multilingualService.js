@@ -2,13 +2,13 @@ class MultilingualService {
   constructor() {
     this.supportedLanguages = {
       'en': { name: 'English', code: 'en-GB', voice: 'ash' },
-      'fr': { name: 'French', code: 'fr-FR', voice: 'nova' },
-      'de': { name: 'German', code: 'de-DE', voice: 'nova' },
-      'es': { name: 'Spanish', code: 'es-ES', voice: 'nova' },
-      'it': { name: 'Italian', code: 'it-IT', voice: 'nova' },
-      'pt': { name: 'Portuguese', code: 'pt-PT', voice: 'nova' },
-      'nl': { name: 'Dutch', code: 'nl-NL', voice: 'nova' },
-      'pl': { name: 'Polish', code: 'pl-PL', voice: 'nova' }
+      'fr': { name: 'French', code: 'fr-FR', voice: 'sage' },
+      'de': { name: 'German', code: 'de-DE', voice: 'sage' },
+      'es': { name: 'Spanish', code: 'es-ES', voice: 'sage' },
+      'it': { name: 'Italian', code: 'it-IT', voice: 'sage' },
+      'pt': { name: 'Portuguese', code: 'pt-PT', voice: 'sage' },
+      'nl': { name: 'Dutch', code: 'nl-NL', voice: 'sage' },
+      'pl': { name: 'Polish', code: 'pl-PL', voice: 'sage' }
     };
     
     this.defaultLanguage = 'en';

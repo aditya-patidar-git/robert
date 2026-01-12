@@ -5,6 +5,7 @@ import { useToast } from '../../../components/common/ToastProvider';
 import ModelVoiceSelection from '../../../components/config/ModelVoiceSelection';
 import LanguageVoiceMapping from '../../../components/config/LanguageVoiceMapping';
 import voiceService from '../../../services/voiceService';
+import { filterValidRealtimeVoices } from '../../../constants/validVoices';
 
 const VoiceManagementTab = ({ state, handlers }) => {
   const {
@@ -146,7 +147,9 @@ const VoiceManagementTab = ({ state, handlers }) => {
               gap: 3
             }}
           >
-            {(Array.isArray(voicesData) ? voicesData : (voicesData?.voices || [])).map((voice) => {
+            {filterValidRealtimeVoices(
+              Array.isArray(voicesData) ? voicesData : (voicesData?.voices || [])
+            ).map((voice) => {
               const isPreviewing = previewingVoice === voice.id;
               
               return (
