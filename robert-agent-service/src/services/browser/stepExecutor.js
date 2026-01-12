@@ -602,8 +602,40 @@ export class StepExecutor {
           console.warn('⚠️ [STEP 8] Could not check house number field:', error.message);
         }
         
-        // If no address confirmation needed, click Next now
-        await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode, false);
+        // FIX 2: If no address confirmation needed, click Next directly instead of calling lookupContactAndWait again
+        // This prevents duplicate calls and page state confusion
+        console.log('👆 [STEP 8] Clicking Next button directly (address confirmed or no address needed)...');
+        const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+        const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+        
+        if (eventBookingIframeExists) {
+          let nextButton = eventBookingIframe.locator('#diaryNewCourseBookingWiz_nextBtn').first();
+          
+          if (await nextButton.count() === 0) {
+            nextButton = eventBookingIframe.locator('[aria-label="Next"], [aria-label="next"]').first();
+          }
+          
+          if (await nextButton.count() === 0) {
+            nextButton = eventBookingIframe.locator('button:has-text("Next"), button:has-text("next")').first();
+          }
+          
+          if (await nextButton.count() === 0) {
+            nextButton = eventBookingIframe.locator('.jqx_wizardBtn, .dx-button:has-text("Next"), .jqx_button:has-text("Next")').first();
+          }
+          
+          if (await nextButton.count() > 0) {
+            await nextButton.waitFor({ state: 'visible', timeout: 5000 });
+            await nextButton.click({ timeout: 5000 });
+            console.log('✅ [STEP 8] Next button clicked successfully');
+            await page.waitForTimeout(2000); // Wait for navigation
+          } else {
+            console.warn('⚠️ [STEP 8] Next button not found, falling back to lookupContactAndWait');
+            await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode, false);
+          }
+        } else {
+          console.warn('⚠️ [STEP 8] eventNewBooking2_iframe not found, falling back to lookupContactAndWait');
+          await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir, clientPostcode, false);
+        }
       }
       
       return {
@@ -712,7 +744,38 @@ export class StepExecutor {
     const { selectPaymentOption } = await import('../commonBookingSteps/selectPaymentOption.js');
     await selectPaymentOption(page, this.screenshotsDir, 'request');
     screenshots.push(await (await import('../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', this.screenshotsDir));
-    await page.waitForTimeout(3000); // Increased from 2000 to 3000
+    
+    // CRITICAL FIX: Verify page transition completed before proceeding
+    // After selecting "Send a payment request", we must be on paymentRequestLink page
+    // (contactSend3DSecureRequest_iframe), NOT on PaymentPage (eventNewBooking2_iframe)
+    console.log('🔍 [PAYMENT] Verifying page transition to payment request link page...');
+    let onPaymentRequestPage = false;
+    for (let i = 0; i < 5; i++) {
+      const paymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
+      if (paymentRequestIframeExists) {
+        try {
+          const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+          const testLocator = paymentRequestIframe.locator('body').first();
+          await testLocator.waitFor({ state: 'attached', timeout: 2000 });
+          console.log('✅ [PAYMENT] Confirmed: On payment request link page (contactSend3DSecureRequest_iframe)');
+          onPaymentRequestPage = true;
+          break;
+        } catch (iframeError) {
+          // Iframe exists but not loaded yet
+        }
+      }
+      if (i < 4) {
+        await page.waitForTimeout(2000);
+        console.log(`⏳ [PAYMENT] Waiting for payment request page transition (${i + 1}/5)...`);
+      }
+    }
+    
+    if (!onPaymentRequestPage) {
+      console.warn('⚠️ [PAYMENT] Page transition verification failed - may still be on payment page');
+      console.warn('⚠️ [PAYMENT] sendPaymentRequest will attempt to detect correct page');
+    }
+    
+    await page.waitForTimeout(2000); // Additional wait for page stability
     
     // Step 2: Get client email/mobile from args or sessionState
     let clientEmail = args.clientEmail || args.customerEmail || null;
@@ -814,6 +877,53 @@ export class StepExecutor {
     // Use sendPaymentRequest from commonBookingSteps
     const { sendPaymentRequest } = await import('../commonBookingSteps/sendPaymentRequest.js');
     
+    // CRITICAL FIX: Check if we're still on PaymentPage (need to select "Send a payment request" first)
+    // After ClientDetailsPage, we first land on PaymentPage, not paymentRequestLink page
+    // We must select "Send a payment request" from dropdown before we can access paymentRequestLink page
+    console.log('🔍 [SEND_PAYMENT_REQUEST] Checking current page state...');
+    
+    const isOnPaymentPage = await page.locator('#eventNewBooking2_iframe').count() > 0;
+    const isOnPaymentRequestPage = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
+    
+    if (isOnPaymentPage && !isOnPaymentRequestPage) {
+      console.log('⚠️ [SEND_PAYMENT_REQUEST] Still on PaymentPage - need to select "Send a payment request" first');
+      console.log('📋 [SEND_PAYMENT_REQUEST] Calling selectPaymentOption to select "Send a payment request"...');
+      
+      // Step 1: Select "Send a payment request" option
+      const { selectPaymentOption } = await import('../commonBookingSteps/selectPaymentOption.js');
+      await selectPaymentOption(page, this.screenshotsDir, 'request');
+      
+      // Step 2: Wait for page transition to paymentRequestLink page
+      console.log('⏳ [SEND_PAYMENT_REQUEST] Waiting for page transition to payment request link page...');
+      let transitionComplete = false;
+      for (let i = 0; i < 10; i++) {
+        const paymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
+        if (paymentRequestIframeExists) {
+          try {
+            const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+            const testLocator = paymentRequestIframe.locator('body').first();
+            await testLocator.waitFor({ state: 'attached', timeout: 2000 });
+            console.log('✅ [SEND_PAYMENT_REQUEST] Page transition complete - now on payment request link page');
+            transitionComplete = true;
+            break;
+          } catch (iframeError) {
+            // Iframe exists but not loaded yet
+          }
+        }
+        if (i < 9) {
+          await page.waitForTimeout(2000);
+        }
+      }
+      
+      if (!transitionComplete) {
+        console.warn('⚠️ [SEND_PAYMENT_REQUEST] Page transition may not have completed, but proceeding...');
+      }
+    } else if (isOnPaymentRequestPage) {
+      console.log('✅ [SEND_PAYMENT_REQUEST] Already on payment request link page');
+    } else {
+      console.warn('⚠️ [SEND_PAYMENT_REQUEST] Could not determine current page state, proceeding...');
+    }
+    
     const deliveryMethod = args.deliveryMethod; // 'email' or 'sms' (required)
     if (!deliveryMethod || (deliveryMethod !== 'email' && deliveryMethod !== 'sms')) {
       return {
@@ -827,7 +937,15 @@ export class StepExecutor {
     
     const clientEmail = args.clientEmail || null;
     const clientMobile = args.clientMobile || null;
-    const confirmed = args.confirmed || false;
+    
+    // FIX: Explicitly check for true boolean value, not just truthy
+    // Handle both boolean true and string "true" (in case it comes as string from JSON)
+    // Also check for undefined/null and default to false
+    const confirmed = args.confirmed === true || args.confirmed === 'true';
+    
+    // Debug logging to trace parameter passing
+    console.log(`🔍 [SEND_PAYMENT_REQUEST] All args keys:`, Object.keys(args));
+    console.log(`🔍 [SEND_PAYMENT_REQUEST] Confirmed parameter: ${args.confirmed} (type: ${typeof args.confirmed}), evaluated as: ${confirmed}`);
     
     const result = await sendPaymentRequest(
       page,

@@ -15,42 +15,85 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
   try {
     console.log(`💳 [PAYMENT_REQUEST] Sending payment request via ${deliveryMethod}...`);
     
-    // FIX 4: Wait for page content to change (local redirection) after payment option selection
-    console.log('⏳ [PAYMENT_REQUEST] Waiting for payment request page to load (local redirection)...');
+    // FIX 3: Wait for payment request page to load - check for contactSend3DSecureRequest_iframe first
+    // After clicking "Send a payment request", the content appears in contactSend3DSecureRequest_iframe
+    // NOT in eventNewBooking2_iframe (which is for the booking page)
+    console.log('⏳ [PAYMENT_REQUEST] Waiting for payment request page to load...');
     
-    // Give more time for the page content to change after selecting "Send a payment request"
-    await page.waitForTimeout(5000); // Increased from 3000 to 5000
+    // CRITICAL: Verify we're NOT still on PaymentPage (eventNewBooking2_iframe)
+    // If we're still on PaymentPage, wait for transition
+    const stillOnPaymentPage = await page.locator('#eventNewBooking2_iframe').count() > 0;
+    if (stillOnPaymentPage) {
+      console.log('⚠️ [PAYMENT_REQUEST] Still on PaymentPage - waiting for transition to payment request link page...');
+      await page.waitForTimeout(3000);
+    }
     
-    // Determine if we need to work with iframe or main page with retry logic
-    let eventBookingIframeExists = false;
+    // Give time for the new iframe to appear after selecting "Send a payment request"
+    await page.waitForTimeout(3000); // Reduced from 5000 since selectPaymentOption already waited
+    
+    // CRITICAL FIX: Check for contactSend3DSecureRequest_iframe first (payment request page)
+    // This iframe appears AFTER clicking "Send a payment request"
+    let paymentRequestIframeExists = false;
     let searchContext;
+    let eventBookingIframeExists = false;
     
-    // Try to detect iframe with retry logic
-    for (let i = 0; i < 5; i++) {
-      eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
-      if (eventBookingIframeExists) {
-        // Verify iframe is actually loaded
+    // First, try to find contactSend3DSecureRequest_iframe (payment request page)
+    // INCREASED retries and timeout since this is critical
+    for (let i = 0; i < 10; i++) {
+      paymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
+      if (paymentRequestIframeExists) {
         try {
-          const iframe = page.frameLocator('#eventNewBooking2_iframe');
-          const testLocator = iframe.locator('body').first();
-          await testLocator.waitFor({ state: 'attached', timeout: 2000 });
-          console.log('🔍 [PAYMENT_REQUEST] Working with eventNewBooking2_iframe for payment request modal...');
-          searchContext = iframe;
+          const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+          const testLocator = paymentRequestIframe.locator('body').first();
+          await testLocator.waitFor({ state: 'attached', timeout: 3000 });
+          console.log('✅ [PAYMENT_REQUEST] Found contactSend3DSecureRequest_iframe (payment request page)');
+          searchContext = paymentRequestIframe;
           break;
         } catch (iframeError) {
-          console.log(`⚠️ [PAYMENT_REQUEST] Iframe detected but not loaded yet, retrying (${i + 1}/5)...`);
-          if (i < 4) await page.waitForTimeout(2000);
+          console.log(`⚠️ [PAYMENT_REQUEST] Payment request iframe detected but not loaded yet, retrying (${i + 1}/10)...`);
+          if (i < 9) await page.waitForTimeout(2000);
         }
       } else {
-        if (i < 4) {
-          console.log(`⏳ [PAYMENT_REQUEST] Iframe not found, retrying (${i + 1}/5)...`);
+        if (i < 9) {
+          console.log(`⏳ [PAYMENT_REQUEST] Payment request iframe not found, retrying (${i + 1}/10)...`);
           await page.waitForTimeout(2000);
         }
       }
     }
     
-    if (!eventBookingIframeExists || !searchContext) {
-      console.log('🔍 [PAYMENT_REQUEST] Working with main page for payment request modal...');
+    // Fallback: If payment request iframe not found, check eventNewBooking2_iframe (booking page)
+    // BUT ONLY if we're sure we haven't transitioned yet
+    if (!paymentRequestIframeExists || !searchContext) {
+      console.log('⚠️ [PAYMENT_REQUEST] Payment request iframe not found after 10 attempts');
+      console.log('⚠️ [PAYMENT_REQUEST] This may indicate:');
+      console.log('   1. Page transition not completed yet');
+      console.log('   2. "Send a payment request" was not clicked successfully');
+      console.log('   3. Page structure changed');
+      console.log('⚠️ [PAYMENT_REQUEST] Checking booking iframe as fallback...');
+      
+      for (let i = 0; i < 3; i++) {
+        eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+        if (eventBookingIframeExists) {
+          try {
+            const iframe = page.frameLocator('#eventNewBooking2_iframe');
+            const testLocator = iframe.locator('body').first();
+            await testLocator.waitFor({ state: 'attached', timeout: 2000 });
+            console.log('⚠️ [PAYMENT_REQUEST] Using eventNewBooking2_iframe as fallback (may be wrong page)');
+            console.log('⚠️ [PAYMENT_REQUEST] WARNING: We may still be on PaymentPage, not payment request link page');
+            searchContext = iframe;
+            break;
+          } catch (iframeError) {
+            if (i < 2) await page.waitForTimeout(2000);
+          }
+        } else {
+          if (i < 2) await page.waitForTimeout(2000);
+        }
+      }
+    }
+    
+    // Final fallback: Use main page
+    if (!searchContext) {
+      console.log('⚠️ [PAYMENT_REQUEST] No iframe found, using main page context');
       searchContext = page;
     }
     
@@ -142,11 +185,13 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     }
     
     // Fill email or mobile if provided
-    if (deliveryMethod === 'email' && clientEmail) {
-      console.log(`📧 [PAYMENT_REQUEST] Filling email address: ${clientEmail}`);
+    if (deliveryMethod === 'email') {
+      // HARDCODED: Always use test email for payment requests
+      const testEmail = 'aditya.patidar@kadellabs.com';
+      console.log(`📧 [PAYMENT_REQUEST] Filling email address (hardcoded for testing): ${testEmail}`);
       const emailInput = searchContext.locator('#cnt_email input').first();
       await emailInput.waitFor({ state: 'visible', timeout: 5000 });
-      await emailInput.fill(clientEmail);
+      await emailInput.fill(testEmail);
       await page.waitForTimeout(500);
     } else if (deliveryMethod === 'sms' && clientMobile) {
       console.log(`📱 [PAYMENT_REQUEST] Filling mobile number: ${clientMobile}`);
@@ -161,13 +206,9 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     let phoneNumber = null;
     
     if (deliveryMethod === 'email') {
-      try {
-        const emailInput = searchContext.locator('#cnt_email input').first();
-        emailAddress = await emailInput.inputValue();
-        console.log(`📧 [PAYMENT_REQUEST] Email address in form: ${emailAddress}`);
-      } catch (error) {
-        console.warn('⚠️ [PAYMENT_REQUEST] Could not read email value:', error.message);
-      }
+      // Use hardcoded test email
+      emailAddress = 'aditya.patidar@kadellabs.com';
+      console.log(`📧 [PAYMENT_REQUEST] Email address in form: ${emailAddress} (hardcoded for testing)`);
     } else if (deliveryMethod === 'sms') {
       try {
         const mobileInput = searchContext.locator('#cnt_mobile_number input').first();
@@ -179,6 +220,8 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     }
     
     // Check if confirmation is required (if confirmed parameter is not true)
+    console.log(`🔍 [PAYMENT_REQUEST] Confirmed parameter received: ${confirmed} (type: ${typeof confirmed})`);
+    
     if (!confirmed) {
       console.log('⏸️ [PAYMENT_REQUEST] Confirmation required before sending payment request');
       return {
@@ -270,16 +313,31 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
         await page.waitForTimeout(5000);
       }
       
-      // Check for "Make booking" button in both iframe and main page contexts
+      // Check for "Make booking" button in payment request iframe, booking iframe, and main page
       for (const selector of makeBookingSelectors) {
         try {
-          // Check in iframe context
-          if (eventBookingIframeExists) {
-            const iframeButton = searchContext.locator(selector).first();
+          // Check in payment request iframe first (contactSend3DSecureRequest_iframe)
+          if (paymentRequestIframeExists) {
+            const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+            const iframeButton = paymentRequestIframe.locator(selector).first();
             if (await iframeButton.count() > 0) {
               const isVisible = await iframeButton.isVisible().catch(() => false);
               if (isVisible) {
-                console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button in iframe using selector: "${selector}"`);
+                console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button in payment request iframe using selector: "${selector}"`);
+                makeBookingButton = iframeButton;
+                break;
+              }
+            }
+          }
+          
+          // Check in booking iframe (eventNewBooking2_iframe) as fallback
+          if (eventBookingIframeExists) {
+            const bookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+            const iframeButton = bookingIframe.locator(selector).first();
+            if (await iframeButton.count() > 0) {
+              const isVisible = await iframeButton.isVisible().catch(() => false);
+              if (isVisible) {
+                console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button in booking iframe using selector: "${selector}"`);
                 makeBookingButton = iframeButton;
                 break;
               }

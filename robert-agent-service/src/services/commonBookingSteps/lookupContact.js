@@ -51,6 +51,35 @@ export async function lookupContactAndWait(page, email, screenshotsDir, clientPo
         console.log('✅ [STEP 9] ALREADY ON CLIENT DETAILS PAGE!');
         console.log(`✅ [STEP 9] Client with email ${email} was previously selected successfully.`);
         console.log('✅ [STEP 9] Client details page is already loaded.');
+        
+        // CRITICAL FIX: Respect skipNextClick parameter
+        if (skipNextClick) {
+          console.log('⏸️ [STEP 9] Skipping Next button click (skipNextClick=true) - house number may need to be filled first');
+          console.log('✅ [STEP 9] ============================================');
+          await takeScreenshot(page, 'client-already-selected.png', screenshotsDir);
+          return; // Return early without clicking Next
+        }
+        
+        // Also check if house number field is empty - if so, don't click Next yet
+        // This allows fillContactDetails to fill the house number first
+        try {
+          const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+          const houseNumberField = eventBookingIframe.locator('#cmp_buildingnumber .dx-texteditor-input');
+          
+          if (await houseNumberField.count() > 0) {
+            const houseNumberValue = await houseNumberField.inputValue().catch(() => '');
+            if (!houseNumberValue || houseNumberValue.trim() === '') {
+              console.log('⏸️ [STEP 9] House number field is empty - skipping Next button click to allow fillContactDetails to fill it first');
+              console.log('✅ [STEP 9] ============================================');
+              await takeScreenshot(page, 'client-already-selected.png', screenshotsDir);
+              return; // Return early without clicking Next - let fillContactDetails handle house number first
+            }
+          }
+        } catch (checkError) {
+          // If we can't check the house number field, continue with Next button click
+          console.log(`⚠️ [STEP 9] Could not check house number field: ${checkError.message}, proceeding with Next button click`);
+        }
+        
         console.log('✅ [STEP 9] Skipping lookup flow and proceeding directly to Next button...');
         console.log('✅ [STEP 9] ============================================');
         

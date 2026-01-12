@@ -99,19 +99,59 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
           break;
 
         case 'booking_existing_client':
-          instructions = `You're booking for an existing client. CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email). NEVER use placeholder or example emails. If no email found, ask caller: "Could you please provide your email address?"`;
+          instructions = `You're booking for an existing client. CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email). NEVER use placeholder or example emails. If no email found, ask caller: "Could you please provide your email address?"
+
+AUTOMATIC CONTINUATION: After any tool completes successfully, IMMEDIATELY acknowledge the result and proceed to the next step. Do NOT wait for the caller to prompt you. For example:
+- After client_verification returns verified: true → Say "Thank you, your identity has been verified successfully. Now let me continue with your booking." and IMMEDIATELY call the next booking step (booking_step_select_session).
+- After booking_step_search_client finds a client → IMMEDIATELY proceed to verification or next step.
+- After booking_step_select_session completes → IMMEDIATELY proceed to select booking options.
+- After booking_step_fill_contact_details completes → IMMEDIATELY proceed to payment step.`;
+          break;
+
+        case 'booking_options':
+          instructions = `You're on the booking options page (SelectBookingOptions). CRITICAL WORKFLOW ORDER:
+
+1. FIRST: Ask about course-specific options BEFORE collecting contact details:
+   - For CBT courses: Ask "Which CBT type should be selected?" (e.g., Standard CBT, Executive CBT, etc.)
+   - For other courses: Ask about relevant course options
+   - Ask about bike type/preferences if applicable
+
+2. ONLY AFTER collecting course options: Proceed to collect contact details (house number, address, etc.)
+
+DO NOT ask for house number or contact details until you've collected the course-specific options (like CBT type). The workflow should be:
+- Select session → Select booking options (CBT type, bike type) → Fill contact details (house number, etc.)
+
+AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes, IMMEDIATELY proceed to fill contact details step. Do NOT wait for prompts.`;
           break;
 
         case 'booking_new_client':
-          instructions = `You're booking for a new client. Collect: name, email, mobile, postcode, house number. Use booking_step_create_new_contact, then booking_step_fill_contact_details.`;
+          instructions = `You're booking for a new client. Collect: name, email, mobile, postcode, house number. Use booking_step_create_new_contact, then booking_step_fill_contact_details.
+
+AUTOMATIC CONTINUATION: After any tool completes successfully, IMMEDIATELY acknowledge the result and proceed to the next step. Do NOT wait for the caller to prompt you.`;
           break;
 
         case 'booking_payment':
-          instructions = `Processing payment. CRITICAL: Only say "Booking confirmed" when paymentCompleted: true appears in tool result. Terms acceptance ONLY after payment is confirmed, just before clicking "Make booking" button.`;
+          instructions = `Processing payment. CRITICAL: Only say "Booking confirmed" when paymentCompleted: true appears in tool result. Terms acceptance ONLY after payment is confirmed, just before clicking "Make booking" button.
+
+AUTOMATIC CONTINUATION: After payment tools complete, IMMEDIATELY proceed to next steps (confirmation email, terms, SMS). Do NOT wait for prompts.`;
           break;
 
         case 'booking_completion':
-          instructions = `Booking is complete. Send confirmation email and SMS if applicable. Be friendly and confirm next steps.`;
+          instructions = `Booking is complete. Send confirmation email and SMS if applicable. Be friendly and confirm next steps.
+
+AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS, IMMEDIATELY confirm completion with the caller. Do NOT wait for prompts.`;
+          break;
+
+        case 'booking_availability':
+          instructions = `Present available slots naturally. Ask about preferences: date, time, location, instructor. Once agreed on a slot, proceed to authentication step.
+
+AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIATELY present the slots to the caller. Do NOT wait for prompts.`;
+          break;
+
+        case 'booking_authentication':
+          instructions = `Authenticating with CRM (automatic). Once authenticated, ask: "Have you done training with us before?" This determines if we use existing client workflow or new client workflow.
+
+AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY ask the workflow type question. Do NOT wait for prompts.`;
           break;
 
         default:
@@ -173,7 +213,8 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
         if (currentStep === 2) return 'booking_authentication';
         if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
         if (currentStep === 6 && bookingSession?.workflowType === 'new') return 'booking_new_client';
-        if (currentStep >= 7 && currentStep <= 9) {
+        if (currentStep === 7) return 'booking_options'; // Select booking options (CBT type, bike type, etc.)
+        if (currentStep >= 8 && currentStep <= 9) {
           // Payment steps
           return 'booking_payment';
         }

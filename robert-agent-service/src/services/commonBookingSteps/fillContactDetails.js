@@ -175,12 +175,15 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
     let townCity = null;
     if (contactDetails.houseNumberOrName && !addressConfirmed) {
       // Only fill house number if address hasn't been confirmed yet (first call)
-      console.log(`📝 [STEP 7] Filling House number or name: ${contactDetails.houseNumberOrName}`);
-      const houseNumberField = await fillTextField(eventBookingIframe, 'House number or name', 'cmp_buildingnumber', contactDetails.houseNumberOrName);
+      console.log(`📝 [STEP 8] House number field is empty on client details page`);
+      console.log(`📝 [STEP 8] Filling House number or name: ${contactDetails.houseNumberOrName}`);
       
-      // Press Tab to trigger address auto-population
-      await houseNumberField.press('Tab');
-      await page.waitForTimeout(2000);
+      try {
+        const houseNumberField = await fillTextField(eventBookingIframe, 'House number or name', 'cmp_buildingnumber', contactDetails.houseNumberOrName);
+        
+        // Press Tab to trigger address auto-population
+        await houseNumberField.press('Tab');
+        await page.waitForTimeout(2000);
       
       // Address 1 and Town/City should auto-populate
       // Read the auto-populated address for confirmation
@@ -204,16 +207,29 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
         console.log(`📍 [STEP 7] Town/City auto-populated: ${townCity}`);
       }
       
-      // If address was auto-populated, return it for confirmation before clicking Next
-      if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
-        return {
-          success: true,
-          requiresAddressConfirmation: true,
-          autoPopulatedAddress: autoPopulatedAddress,
-          townCity: townCity,
-          message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`
-        };
+        // If address was auto-populated, return it for confirmation before clicking Next
+        if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
+          return {
+            success: true,
+            requiresAddressConfirmation: true,
+            autoPopulatedAddress: autoPopulatedAddress,
+            townCity: townCity,
+            message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`
+          };
+        }
+      } catch (error) {
+        // If field is not visible/editable, check if address was already confirmed
+        if (addressConfirmed) {
+          console.log(`⚠️ [STEP 8] House number field not accessible, but addressConfirmed=true, skipping house number fill`);
+          // Continue without filling house number - address was already confirmed
+        } else {
+          // Re-throw if this is the first attempt and address not confirmed
+          console.error(`❌ [STEP 8] Error filling house number field:`, error.message);
+          throw error;
+        }
       }
+    } else if (addressConfirmed) {
+      console.log(`✅ [STEP 8] Address already confirmed, skipping house number fill`);
     } else if (addressConfirmed && contactDetails.correctedAddress) {
       // Address was confirmed but incorrect, update it
       console.log(`📝 [STEP 7] Updating Address 1 with corrected address: ${contactDetails.correctedAddress}`);

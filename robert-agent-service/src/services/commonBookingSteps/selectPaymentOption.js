@@ -200,6 +200,42 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
         }
       } else if (paymentType === 'request') {
         console.log('✅ [STEP 10] Payment request option selected - payment method dropdown may not appear (expected)');
+        
+        // CRITICAL FIX: Wait for page transition to paymentRequestLink page
+        // After clicking "Send a payment request", the page transitions from PaymentPage 
+        // (eventNewBooking2_iframe) to paymentRequestLink page (contactSend3DSecureRequest_iframe)
+        console.log('⏳ [STEP 10] Waiting for page transition to payment request link page...');
+        
+        let transitionComplete = false;
+        for (let i = 0; i < 10; i++) {
+          // Check if contactSend3DSecureRequest_iframe has appeared (payment request link page)
+          const paymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
+          
+          if (paymentRequestIframeExists) {
+            try {
+              const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+              const testLocator = paymentRequestIframe.locator('body').first();
+              await testLocator.waitFor({ state: 'attached', timeout: 2000 });
+              console.log('✅ [STEP 10] Page transition complete - payment request link page loaded');
+              transitionComplete = true;
+              break;
+            } catch (iframeError) {
+              // Iframe exists but not loaded yet, continue waiting
+            }
+          }
+          
+          if (i < 9) {
+            await page.waitForTimeout(1000);
+            if (i % 2 === 0) {
+              console.log(`⏳ [STEP 10] Waiting for page transition (${i + 1}/10)...`);
+            }
+          }
+        }
+        
+        if (!transitionComplete) {
+          console.warn('⚠️ [STEP 10] Page transition may not have completed - payment request iframe not detected');
+          console.warn('⚠️ [STEP 10] Continuing anyway - sendPaymentRequest will handle retry logic');
+        }
       }
       
       // Take screenshot after payment option selection
