@@ -21,6 +21,9 @@ import { takeScreenshot } from './utils.js';
  * @param {boolean} contactDetails.marketingConsent - Keep you updated (YES/NO)
  * @param {boolean} contactDetails.dataSharing - Send details to others (YES/NO)
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @param {boolean} addressConfirmed - Whether the client has confirmed the auto-populated address (default: false)
+ * @param {string} correctedAddress - Corrected address if client said the auto-populated address was incorrect
+ * @returns {Promise<{success: boolean, requiresAddressConfirmation?: boolean, autoPopulatedAddress?: string, townCity?: string, message?: string}>}
  */
 
 /**
@@ -84,7 +87,7 @@ async function selectDropdownOption(iframe, page, labelText, fieldId, optionValu
   }
 }
 
-export async function fillContactDetails(page, contactDetails, screenshotsDir) {
+export async function fillContactDetails(page, contactDetails, screenshotsDir, addressConfirmed = false) {
   try {
     console.log('📝 [STEP 7] Filling contact details for new client...');
     
@@ -168,16 +171,22 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir) {
     }
     
     // 8. House number or name
-    if (contactDetails.houseNumberOrName) {
-      console.log(`📝 [STEP 7] Filling House number or name: ${contactDetails.houseNumberOrName}`);
-      const houseNumberField = await fillTextField(eventBookingIframe, 'House number or name', 'cmp_buildingnumber', contactDetails.houseNumberOrName);
+    let autoPopulatedAddress = null;
+    let townCity = null;
+    if (contactDetails.houseNumberOrName && !addressConfirmed) {
+      // Only fill house number if address hasn't been confirmed yet (first call)
+      console.log(`📝 [STEP 8] House number field is empty on client details page`);
+      console.log(`📝 [STEP 8] Filling House number or name: ${contactDetails.houseNumberOrName}`);
       
-      // Press Tab to trigger address auto-population
-      await houseNumberField.press('Tab');
-      await page.waitForTimeout(2000);
+      try {
+        const houseNumberField = await fillTextField(eventBookingIframe, 'House number or name', 'cmp_buildingnumber', contactDetails.houseNumberOrName);
+        
+        // Press Tab to trigger address auto-population
+        await houseNumberField.press('Tab');
+        await page.waitForTimeout(2000);
       
       // Address 1 and Town/City should auto-populate
-      // These will be verified by voice agent, so we just wait for them
+      // Read the auto-populated address for confirmation
       let address1Field = eventBookingIframe.getByLabel('Address 1');
       if (await address1Field.count() === 0) {
         address1Field = eventBookingIframe.locator('#cmp_address_1 .dx-texteditor-input');
@@ -189,13 +198,49 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir) {
       }
       
       if (await address1Field.count() > 0) {
-        const address1 = await address1Field.inputValue();
-        console.log(`📍 [STEP 7] Address 1 auto-populated: ${address1}`);
+        autoPopulatedAddress = await address1Field.inputValue();
+        console.log(`📍 [STEP 7] Address 1 auto-populated: ${autoPopulatedAddress}`);
       }
       
       if (await townCityField.count() > 0) {
-        const townCity = await townCityField.inputValue();
+        townCity = await townCityField.inputValue();
         console.log(`📍 [STEP 7] Town/City auto-populated: ${townCity}`);
+      }
+      
+        // If address was auto-populated, return it for confirmation before clicking Next
+        if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
+          return {
+            success: true,
+            requiresAddressConfirmation: true,
+            autoPopulatedAddress: autoPopulatedAddress,
+            townCity: townCity,
+            message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`
+          };
+        }
+      } catch (error) {
+        // If field is not visible/editable, check if address was already confirmed
+        if (addressConfirmed) {
+          console.log(`⚠️ [STEP 8] House number field not accessible, but addressConfirmed=true, skipping house number fill`);
+          // Continue without filling house number - address was already confirmed
+        } else {
+          // Re-throw if this is the first attempt and address not confirmed
+          console.error(`❌ [STEP 8] Error filling house number field:`, error.message);
+          throw error;
+        }
+      }
+    } else if (addressConfirmed) {
+      console.log(`✅ [STEP 8] Address already confirmed, skipping house number fill`);
+    } else if (addressConfirmed && contactDetails.correctedAddress) {
+      // Address was confirmed but incorrect, update it
+      console.log(`📝 [STEP 7] Updating Address 1 with corrected address: ${contactDetails.correctedAddress}`);
+      let address1Field = eventBookingIframe.getByLabel('Address 1');
+      if (await address1Field.count() === 0) {
+        address1Field = eventBookingIframe.locator('#cmp_address_1 .dx-texteditor-input');
+      }
+      if (await address1Field.count() > 0) {
+        await address1Field.fill(contactDetails.correctedAddress);
+        console.log(`✅ [STEP 7] Address 1 updated with corrected address`);
+        await page.waitForTimeout(500);
       }
     }
     
@@ -260,7 +305,8 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir) {
     // Take screenshot before clicking Next
     await takeScreenshot(page, 'contact-details-filled.png', screenshotsDir);
     
-    // 16. Click Next button
+    // 16. Click Next button (only if address was confirmed or no address was auto-populated)
+    // If address confirmation is required, it should have been returned earlier
     console.log('👆 [STEP 7] Clicking Next button...');
     let nextButton = eventBookingIframe.locator('#diaryNewCourseBookingWiz_nextBtn').first();
     

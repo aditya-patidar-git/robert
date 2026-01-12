@@ -4,6 +4,9 @@
  * Supports both WebSocket (Media Streams) and HTTP (SIP) submission
  */
 
+import promptService from './promptService.js';
+import { conversations } from '../shared/state.js';
+
 /**
  * Base class for tool result submission
  */
@@ -85,6 +88,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
   /**
    * Trigger response after tool completion
+   * PHASE 1: Includes contextual instructions and proper response creation pattern
    * @param {string} callId - Call ID
    * @param {object} options - Additional options
    */
@@ -104,16 +108,84 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
     if (this.stateManager && 
         !this.stateManager.isResponding && 
         this.stateManager.activeResponseId === null) {
-      this.stateManager.isResponding = true;
-      this.stateManager.explicitResponseRequested = true;
       
       try {
+        // PHASE 1: Get contextual instructions for automatic continuation after tool execution
+        const callSid = callId;
+        const workflowPhase = await promptService.determineWorkflowPhase(this.stateManager, callSid);
+        
+        // Get booking session info if available
+        let courseType = null;
+        let workflowType = null;
+        let currentStep = null;
+        
+        if (callSid && conversations[callSid]?.bookingSession) {
+          const bookingSession = conversations[callSid].bookingSession;
+          courseType = bookingSession.courseType;
+          workflowType = bookingSession.workflowType;
+          currentStep = bookingSession.currentStep;
+        }
+        
+        // Get contextual instructions for automatic continuation
+        const responseInstructions = promptService.getContextualInstructions({
+          isInitialGreeting: false,
+          workflowPhase,
+          courseType,
+          workflowType,
+          currentStep,
+          activeTool: null // Tool just completed
+        });
+        
+        // Step 1: Disable tools before creating response (prevents tool calls during response)
+        this.stateManager.isResponding = true;
+        this.stateManager.explicitResponseRequested = true;
+        
         openaiWs.send(JSON.stringify({
-          type: 'response.create'
+          type: 'session.update',
+          session: {
+            tool_choice: 'none'
+          }
         }));
-        console.log(`✅ [${callId}] Response triggered after tool completion`);
+        
+        // Small delay to ensure session update is processed
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+        // Step 2: Create response with contextual instructions
+        const responseCreatePayload = {
+          type: 'response.create',
+          response: {
+            modalities: ['audio', 'text']
+          }
+        };
+        
+        // PHASE 1: Include contextual instructions to ensure automatic continuation
+        if (responseInstructions) {
+          responseCreatePayload.response.instructions = responseInstructions;
+          console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase})`);
+        }
+        
+        openaiWs.send(JSON.stringify(responseCreatePayload));
+        console.log(`✅ [${callId}] Response triggered after tool completion with contextual instructions`);
+        
+        // Step 3: Re-enable tools after delay
+        setTimeout(() => {
+          if (openaiWs && openaiWs.readyState === 1) {
+            openaiWs.send(JSON.stringify({
+              type: 'session.update',
+              session: {
+                tool_choice: 'auto'
+              }
+            }));
+          }
+        }, 3000);
+        
       } catch (error) {
         console.error(`❌ [${callId}] Error triggering response:`, error);
+        // Reset state on error
+        if (this.stateManager) {
+          this.stateManager.isResponding = false;
+          this.stateManager.explicitResponseRequested = false;
+        }
       }
     }
   }

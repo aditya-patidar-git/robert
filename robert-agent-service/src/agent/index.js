@@ -232,6 +232,61 @@ app.post('/api/inbound/call-status', callStatus);
 app.post('/api/inbound/recording-status', recordingStatus);
 app.get('/api/inbound/recording/:callSid', proxyRecording);
 
+// API Routes - Diagnostics (non-intrusive, optional)
+app.get('/api/diagnostic/call/:callSid', async (req, res) => {
+  try {
+    const { callSid } = req.params;
+    const audioDiagnosticService = (await import('../services/audioDiagnosticService.js')).default;
+    const { conversations } = await import('../shared/state.js');
+    
+    const conversation = conversations[callSid];
+    const diagnostic = audioDiagnosticService.getDiagnostics(callSid);
+    
+    // Get additional state if available
+    const stateManager = conversation?.stateManager || null;
+    
+    const response = {
+      callSid,
+      hasConversation: !!conversation,
+      diagnostic: diagnostic || null,
+      audioMetrics: stateManager ? {
+        outboundChunks: stateManager.outboundAudioChunkCount || 0,
+        inboundChunks: stateManager.inboundAudioChunkCount || 0,
+        audioBufferSize: stateManager.outboundAudioBuffer?.length || 0,
+        lastAudioChunkTime: stateManager.lastAudioChunkTime || null,
+        isResponding: stateManager.isResponding || false,
+        activeResponseId: stateManager.activeResponseId || null
+      } : null,
+      openaiStatus: stateManager ? {
+        websocketReady: stateManager.openaiWs?.readyState === 1,
+        errorCount: stateManager.errorCount || 0,
+        hasMaxErrors: stateManager.hasMaxErrors?.() || false
+      } : null,
+      responseStatus: stateManager ? {
+        hasInitialGreeting: stateManager.hasInitialGreetingBeenSent || false,
+        waitingForUser: stateManager.waitingForUser || false,
+        isInterrupted: stateManager.isInterrupted || false
+      } : null
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error getting diagnostic:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/diagnostic/all', async (req, res) => {
+  try {
+    const audioDiagnosticService = (await import('../services/audioDiagnosticService.js')).default;
+    const diagnostics = audioDiagnosticService.getAllDiagnostics();
+    res.json({ diagnostics, count: diagnostics.length });
+  } catch (error) {
+    console.error('Error getting all diagnostics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // API Routes - SIP (OpenAI Realtime SIP webhooks)
 // Add diagnostic logging middleware for ALL SIP webhook requests
 app.use('/api/sip', (req, res, next) => {

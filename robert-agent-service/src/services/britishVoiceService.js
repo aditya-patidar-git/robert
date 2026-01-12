@@ -80,10 +80,15 @@ Use British address formatting (postcodes, etc.).`;
   getVoiceName(voiceId) {
     const voiceNames = {
       'ash': 'Ash',
-      'cedar': 'Cedar',
-      'marin': 'Marin',
-      'alloy': 'Alloy',
-      'nova': 'Nova'
+    'cedar': 'Cedar',
+    'marin': 'Marin',
+    'alloy': 'Alloy',
+    'sage': 'Sage',
+    'shimmer': 'Shimmer',
+    'verse': 'Verse',
+    'echo': 'Echo',
+    'coral': 'Coral',
+    'ballad': 'Ballad'
     };
     return voiceNames[voiceId] || voiceId;
   }

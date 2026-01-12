@@ -95,21 +95,6 @@ class VoiceDiscoveryService {
         sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
       },
       {
-        id: 'nova',
-        name: 'Nova',
-        description: 'A standard female voice',
-        language: 'en-GB',
-        gender: 'female',
-        provider: 'openai',
-        isDefault: false,
-        capabilities: {
-          realtime: true,
-          streaming: true,
-          bargeIn: true
-        },
-        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
-      },
-      {
         id: 'alloy',
         name: 'Alloy',
         description: 'A versatile and balanced neutral voice',
@@ -140,36 +125,6 @@ class VoiceDiscoveryService {
         sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
       },
       {
-        id: 'fable',
-        name: 'Fable',
-        description: 'A warm and expressive male voice',
-        language: 'en-GB',
-        gender: 'male',
-        provider: 'openai',
-        isDefault: false,
-        capabilities: {
-          realtime: true,
-          streaming: true,
-          bargeIn: true
-        },
-        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
-      },
-      {
-        id: 'onyx',
-        name: 'Onyx',
-        description: 'A deep and authoritative male voice',
-        language: 'en-GB',
-        gender: 'male',
-        provider: 'openai',
-        isDefault: false,
-        capabilities: {
-          realtime: true,
-          streaming: true,
-          bargeIn: true
-        },
-        sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
-      },
-      {
         id: 'shimmer',
         name: 'Shimmer',
         description: 'A bright and cheerful female voice',
@@ -185,8 +140,8 @@ class VoiceDiscoveryService {
         sampleText: 'Hello, this is Robert from Universal Motorcycle Training. How can I help you today?'
       },
       {
-        id: 'ballads',
-        name: 'Ballads',
+        id: 'ballad',
+        name: 'Ballad',
         description: 'A melodic and expressive voice',
         language: 'en-GB',
         gender: 'neutral',

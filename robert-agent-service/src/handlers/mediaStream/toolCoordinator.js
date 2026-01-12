@@ -1,6 +1,8 @@
 import { BargeInHandler, ConsentHandler, ResponseHandler, TranscriptionHandler, ToolCallHandler } from './events/index.js';
 import { MemoryManager, LanguageDetector } from './utils/index.js';
 import { conversations } from '../../shared/state.js';
+import { getRecordingConsent, updateRecordingConsent, conversationExists } from '../../shared/conversationStateAccessor.js';
+import promptService from '../../services/promptService.js';
 
 /**
  * Tool Coordinator
@@ -53,17 +55,151 @@ export class ToolCoordinator {
   }
 
   /**
+   * Wait for session.updated event with timeout
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 5000ms)
+   * @returns {Promise<void>}
+   */
+  async waitForSessionUpdate(timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.state.pendingSessionUpdatePromise = null;
+        reject(new Error(`Session update timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      
+      // Store the resolver so routeEvent can call it
+      this.state.pendingSessionUpdatePromise = () => {
+        clearTimeout(timeout);
+        this.state.pendingSessionUpdatePromise = null;
+        resolve();
+      };
+    });
+  }
+
+  /**
+   * Wait for conversation.item.created event with timeout
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 5000ms)
+   * @returns {Promise<void>}
+   */
+  async waitForItemCreated(timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.state.pendingItemCreatePromise = null;
+        reject(new Error(`Item creation timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      
+      // Store the resolver so routeEvent can call it
+      this.state.pendingItemCreatePromise = () => {
+        clearTimeout(timeout);
+        this.state.pendingItemCreatePromise = null;
+        resolve();
+      };
+    });
+  }
+
+  /**
    * Create audio response by temporarily disabling tools
    * This ensures OpenAI generates natural language instead of tool calls
-   * Note: For initial greeting, inject a dummy user message to provide conversation context
+   * 
+   * IMPROVED FLOW:
+   * - For initial greeting: Rely on instructions (no dummy user message), disable tools, then create response
+   * - For subsequent responses: Disable tools, create response, then re-enable tools
+   * 
+   * CRITICAL: 
+   * - Always disable tools before creating response (tools are set to 'auto' in session setup)
+   * - Without disabling tools, OpenAI may call tools and generate JSON/URL output instead of speech
+   * - For initial greeting, we rely on instructions rather than dummy conversation items to avoid confusion
    */
   async createAudioResponse() {
     if (!this.openaiWs || this.openaiWs.readyState !== 1) {
+      console.error(`❌ [${this.state.callSid}] WebSocket not ready: ${this.openaiWs?.readyState}`);
+      return;
+    }
+    
+    // 🚨 CRITICAL: Prevent concurrent calls
+    if (this.state.isResponding || this.state.activeResponseId !== null) {
+      console.warn(`⚠️ [${this.state.callSid}] Already responding (responseId: ${this.state.activeResponseId}), skipping duplicate createAudioResponse call`);
       return;
     }
     
     try {
-      // Step 1: Temporarily disable tools
+      const isInitialGreeting = !this.state.hasInitialGreetingBeenSent;
+      
+      // Step 1: Get contextual instructions based on conversation state
+      // PHASE 1: Use promptService to get contextual instructions instead of full prompt
+      let responseInstructions = null;
+      
+      if (isInitialGreeting) {
+        console.log(`📤 [${this.state.callSid}] Preparing initial greeting with contextual instructions`);
+        
+        // Get consent notice/question if needed
+        const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
+        let privacySettings = null;
+        if (privacyConfig) {
+          privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        }
+        
+        const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
+        const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
+        const consentQuestion = "Do you consent to this call being recorded?";
+        
+        // Get contextual instructions for initial greeting
+        responseInstructions = promptService.getContextualInstructions({
+          isInitialGreeting: true,
+          requireConsent: requireExplicitConsent,
+          consentNotice,
+          consentQuestion
+        });
+        
+        console.log(`📋 [${this.state.callSid}] Using contextual instructions for initial greeting (length: ${responseInstructions?.length || 0})`);
+        
+        // Small delay to ensure session is fully ready
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Verify WebSocket is still open
+        if (!this.openaiWs || this.openaiWs.readyState !== 1) {
+          console.error(`❌ [${this.state.callSid}] WebSocket closed during preparation`);
+          this.state.isResponding = false;
+          this.state.explicitResponseRequested = false;
+          return;
+        }
+      } else {
+        // PHASE 1: Get contextual instructions for subsequent responses
+        // Determine workflow phase from state (pass callSid to access booking session)
+        const workflowPhase = await promptService.determineWorkflowPhase(this.state, this.state.callSid);
+        
+        // Get active tool name if available
+        const activeToolName = this.state.activeToolName || 
+          (this.state.activeResponseId ? 'processing_response' : null);
+        
+        // Get booking session info if available
+        let courseType = null;
+        let workflowType = null;
+        let currentStep = null;
+        
+        if (this.state.callSid && conversations[this.state.callSid]?.bookingSession) {
+          const bookingSession = conversations[this.state.callSid].bookingSession;
+          courseType = bookingSession.courseType;
+          workflowType = bookingSession.workflowType;
+          currentStep = bookingSession.currentStep;
+        }
+        
+        // Get contextual instructions for this response
+        responseInstructions = promptService.getContextualInstructions({
+          isInitialGreeting: false,
+          workflowPhase,
+          courseType,
+          workflowType,
+          currentStep,
+          activeTool: activeToolName
+        });
+        
+        console.log(`📋 [${this.state.callSid}] Using contextual instructions for subsequent response (phase: ${workflowPhase}, length: ${responseInstructions?.length || 0})`);
+      }
+      
+      // Step 2: ALWAYS disable tools before creating response
+      // CRITICAL FIX: Tools are set to 'auto' in session setup, so we MUST disable them
+      // to prevent tool calls during greeting (which causes JSON/URL output instead of speech)
+      console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
       this.openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
@@ -71,34 +207,47 @@ export class ToolCoordinator {
         }
       }));
       
-      await new Promise(resolve => setTimeout(resolve, 150));
-      
-      // Step 2: For initial greeting, inject a dummy user message to provide conversation context
-      // OpenAI Realtime API needs conversation context to generate audio responses
-      if (!this.state.hasInitialGreetingBeenSent) {
-        this.openaiWs.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'user',
-            content: [
-              {
-                type: 'input_text',
-                text: 'Hello'
-              }
-            ]
-          }
-        }));
-        await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for session.updated event confirmation
+      try {
+        await this.waitForSessionUpdate(10000);
+        console.log(`✅ [${this.state.callSid}] Session update confirmed - tools disabled`);
+      } catch (err) {
+        console.error(`❌ [${this.state.callSid}] Session update timeout:`, err.message);
+        console.warn(`⚠️ [${this.state.callSid}] Continuing without session update confirmation`);
       }
       
-      // Step 3: Create response - OpenAI will generate based on instructions/context
+      // Verify WebSocket is still open
+      if (!this.openaiWs || this.openaiWs.readyState !== 1) {
+        console.error(`❌ [${this.state.callSid}] WebSocket closed after session.update`);
+        return;
+      }
+      
+      // Step 3: Create response - PHASE 1: Include contextual instructions in response.create
+      // Contextual instructions prevent model from falling back to full prompt (which causes code generation)
       const responseCreatePayload = {
         type: 'response.create',
         response: {
           modalities: ['audio', 'text']
         }
       };
+      
+      // PHASE 1: Include contextual instructions in response.create for both initial greeting and subsequent responses
+      // This prevents the model from using the full prompt and generating code/JSON instead of speech
+      if (responseInstructions) {
+        responseCreatePayload.response.instructions = responseInstructions;
+        if (isInitialGreeting) {
+          console.log(`📋 [${this.state.callSid}] Including contextual instructions in response.create for initial greeting`);
+        } else {
+          console.log(`📋 [${this.state.callSid}] Including contextual instructions in response.create for subsequent response`);
+        }
+      }
+      
+      console.log(`📤 [${this.state.callSid}] Sending response.create, WebSocket state: ${this.openaiWs.readyState}`);
+      
+      // Set state BEFORE sending to prevent duplicate calls
+      this.state.isResponding = true;
+      this.state.explicitResponseRequested = true;
+      
       this.openaiWs.send(JSON.stringify(responseCreatePayload));
       
       // Step 4: Re-enable tools after delay
@@ -115,6 +264,11 @@ export class ToolCoordinator {
       
     } catch (err) {
       console.error(`❌ [${this.state.callSid}] Error creating audio response:`, err);
+      // Reset state on error
+      this.state.hasInitialGreetingBeenSent = false;
+      this.state.isResponding = false;
+      this.state.pendingSessionUpdatePromise = null;
+      this.state.pendingItemCreatePromise = null;
     }
   }
 
@@ -200,6 +354,13 @@ export class ToolCoordinator {
             console.log(`   - Silence duration: ${event.session.turn_detection.silence_duration_ms}ms`);
             console.log(`   - Prefix padding: ${event.session.turn_detection.prefix_padding_ms}ms`);
           }
+          
+          // Resolve pending session update promise if waiting
+          if (this.state.pendingSessionUpdatePromise) {
+            console.log(`✅ [${this.state.callSid}] Resolving pending session update promise`);
+            this.state.pendingSessionUpdatePromise();
+          }
+          
           await this.handleSessionUpdated(event);
           break;
           
@@ -208,6 +369,12 @@ export class ToolCoordinator {
           break;
           
         case 'conversation.item.created':
+          // Resolve pending item create promise if waiting (for any role, not just assistant)
+          if (this.state.pendingItemCreatePromise) {
+            console.log(`✅ [${this.state.callSid}] Resolving pending item create promise (role: ${event.item?.role})`);
+            this.state.pendingItemCreatePromise();
+          }
+          
           if (event.item?.role === 'assistant') {
             this.responseHandler.handleItemCreated(event);
           }
@@ -340,8 +507,9 @@ export class ToolCoordinator {
       try {
         // CRITICAL FIX: Wait longer for session to be fully ready for audio generation
         // OpenAI Realtime API may need more time after session.update to enable audio output
-        // Increased from 100ms to 500ms to ensure audio pipeline is ready
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Increased delay to ensure audio pipeline is fully initialized
+        // This helps prevent 0 audio token responses
+        await new Promise(resolve => setTimeout(resolve, 800));
         
         // Double-check WebSocket is still open after delay
         if (this.state.isClosed || !this.openaiWs || this.openaiWs.readyState !== 1) {
@@ -363,12 +531,21 @@ export class ToolCoordinator {
         if (this.state.recordingConsentState.requested && this.state.recordingConsentState.given === null) {
           console.log(`⏱️ [${this.state.callSid}] Starting consent timeout (${this.state.CONSENT_TIMEOUT_MS/1000}s) - waiting for caller response`);
           this.state.consentTimeout = setTimeout(() => {
-            if (this.state.recordingConsentState.given === null && conversations[this.state.callSid].recordingConsent.given === null) {
+            // FIX: Safely check conversation state - it may have been cleaned up
+            if (!conversationExists(this.state.callSid)) {
+              console.warn(`⚠️ [${this.state.callSid}] Conversation cleaned up, skipping consent timeout handler`);
+              return;
+            }
+            
+            const consent = getRecordingConsent(this.state.callSid);
+            if (this.state.recordingConsentState.given === null && consent && consent.given === null) {
               this.state.recordingConsentState.given = true;
               this.state.recordingConsentState.respondedAt = new Date();
-              conversations[this.state.callSid].recordingConsent.given = true;
-              conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
-              conversations[this.state.callSid].recordingConsent.optOutReason = null;
+              updateRecordingConsent(this.state.callSid, {
+                given: true,
+                respondedAt: new Date(),
+                optOutReason: null
+              });
               console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-in`);
             }
           }, this.state.CONSENT_TIMEOUT_MS);

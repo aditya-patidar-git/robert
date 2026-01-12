@@ -239,7 +239,8 @@ const bookingStepSendPaymentRequestSchema = z.object({
   workflowType: z.enum(['existing', 'new']),
   deliveryMethod: z.enum(['email', 'sms']),
   clientEmail: z.string().email().optional(),
-  clientMobile: z.string().optional()
+  clientMobile: z.string().optional(),
+  confirmed: z.boolean().optional()
 });
 
 // Schema map for all tools

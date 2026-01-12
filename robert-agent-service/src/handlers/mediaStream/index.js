@@ -67,6 +67,10 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Initialize state with call information
             stateManager.callSid = callSid;
             stateManager.streamSid = streamSid;
+            
+            // Initialize audio diagnostics (non-intrusive, optional)
+            const audioDiagnosticService = (await import('../../services/audioDiagnosticService.js')).default;
+            audioDiagnosticService.initializeCall(callSid);
             stateManager.phoneNumber = phoneNumber;
             
             console.log(`📞 Start event - callSid: ${callSid}, phoneNumber: ${phoneNumber}`);
@@ -240,6 +244,10 @@ export const handleMediaStreamConnection = (ws, req) => {
             if (toolCoordinator) {
                 toolCoordinator.cleanup();
             }
+            
+            // Cleanup audio diagnostics (non-intrusive, optional)
+            const audioDiagnosticService = (await import('../../services/audioDiagnosticService.js')).default;
+            audioDiagnosticService.cleanup(stateManager.callSid);
             
             // Cleanup Twilio WebSocket
             if (ws) {

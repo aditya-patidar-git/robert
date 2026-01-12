@@ -380,6 +380,16 @@ ${config.instructions}`;
         conversations[this.state.callSid].recordingConsent.requested = true;
         conversations[this.state.callSid].recordingConsent.requestedAt = new Date();
         console.log(`📋 [${this.state.callSid}] Recording consent will be requested - instructions modified to include consent flow`);
+      } else {
+        // Opt-in by default: automatically set consent to given
+        this.state.recordingConsentState.requested = false;
+        this.state.recordingConsentState.given = true;
+        this.state.recordingConsentState.respondedAt = new Date();
+        conversations[this.state.callSid].recordingConsent.requested = false;
+        conversations[this.state.callSid].recordingConsent.given = true;
+        conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
+        conversations[this.state.callSid].recordingConsent.optOutReason = null;
+        console.log(`✅ [${this.state.callSid}] Recording consent set to opt-in by default (given: true)`);
       }
       
       // Use model from database configuration, fallback to default if not available
@@ -751,6 +761,11 @@ ${config.instructions}`;
           
           this.state.incrementErrorCount();
           console.error(`❌ [${this.state.callSid}] OpenAI error logged (error count: ${this.state.errorCount})`);
+          
+          // Track in diagnostic service (non-intrusive, optional)
+          const audioDiagnosticService = (await import('../../../services/audioDiagnosticService.js')).default;
+          audioDiagnosticService.trackOpenAIError(this.state.callSid, event);
+          
           if (this.state.hasMaxErrors()) {
             console.error(`❌ [${this.state.callSid}] Max errors reached, triggering error event`);
             if (this.onEvent) this.onEvent({ type: 'error', error: 'openai_error', details: event.error });

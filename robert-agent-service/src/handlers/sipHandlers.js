@@ -10,6 +10,7 @@ import sipService from "../services/sipService.js";
 import toolExecutionService from "../services/toolExecutionService.js";
 import { HTTPResultSubmitter } from "../services/toolResultSubmitter.js";
 import CallRecord from "../database/models/CallRecord.js";
+import { generateSipRoutingTwiML, generateMinimalTwiML } from "../utils/twimlGenerator.js";
 
 /**
  * Handle OpenAI Realtime SIP call.accept webhook
@@ -358,10 +359,7 @@ export const handleSipCallHandler = async (req, res) => {
     if (!sipEndpoint) {
       console.error(`❌ [SIP] OpenAI SIP endpoint not configured - falling back to minimal TwiML`);
       // Fallback to minimal TwiML if endpoint not configured
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Pause length="3600"/>
-</Response>`;
+      const twiml = generateMinimalTwiML();
       res.type('text/xml');
       res.send(twiml);
       return;
@@ -372,12 +370,7 @@ export const handleSipCallHandler = async (req, res) => {
     // Return TwiML with <Dial><Sip> to route call to OpenAI's SIP endpoint
     // The <Dial><Sip> verb routes the call to OpenAI, which will then send call.accept webhook
     // Note: <Sip> must be wrapped in <Dial> for proper routing
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial>
-    <Sip>${sipEndpoint}</Sip>
-  </Dial>
-</Response>`;
+    const twiml = generateSipRoutingTwiML(sipEndpoint);
     
     res.type('text/xml');
     res.send(twiml);
@@ -389,10 +382,7 @@ export const handleSipCallHandler = async (req, res) => {
     console.error(`❌ [SIP] Error handling SIP call handler:`, error);
     console.error(`❌ [SIP] Error stack:`, error.stack);
     // Return minimal TwiML even on error to prevent call failure
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Pause length="3600"/>
-</Response>`;
+    const twiml = generateMinimalTwiML();
     res.type('text/xml');
     res.send(twiml);
   }

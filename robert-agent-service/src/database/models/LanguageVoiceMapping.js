@@ -29,7 +29,7 @@ const LanguageVoiceMappingSchema = new mongoose.Schema({
   openaiVoiceId: {
     type: String,
     trim: true,
-    default: null // OpenAI voice ID (e.g., 'ash', 'nova', 'alloy')
+    default: null // OpenAI voice ID (e.g., 'ash', 'sage', 'alloy', 'shimmer', 'verse', 'echo', 'coral', 'ballad', 'marin', 'cedar')
   },
   isActive: { 
     type: Boolean, 
