@@ -2,6 +2,7 @@ import configManager from '../../../agent/configManager.js';
 import adaptiveTimingService from '../../../services/adaptiveTimingService.js';
 import silenceDetectionService from '../../../services/silenceDetectionService.js';
 import complaintDetectionService from '../../../services/complaintDetectionService.js';
+import promptService from '../../../services/promptService.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
 
 /**
@@ -268,13 +269,49 @@ export class TranscriptionHandler {
                 
                 await new Promise(resolve => setTimeout(resolve, 150));
                 
-                // Step 2: Create response - OpenAI will generate naturally based on context
+                // Step 2: Create response - PHASE 1: Include contextual instructions to prevent code generation
+                // Determine workflow phase from state (pass callSid to access booking session)
+                const workflowPhase = await promptService.determineWorkflowPhase(this.state, this.state.callSid);
+                
+                // Get active tool name if available
+                const activeToolName = this.state.activeToolName || null;
+                
+                // Get booking session info if available
+                const { conversations } = await import('../../../shared/state.js');
+                let courseType = null;
+                let workflowType = null;
+                let currentStep = null;
+                
+                if (this.state.callSid && conversations[this.state.callSid]?.bookingSession) {
+                  const bookingSession = conversations[this.state.callSid].bookingSession;
+                  courseType = bookingSession.courseType;
+                  workflowType = bookingSession.workflowType;
+                  currentStep = bookingSession.currentStep;
+                }
+                
+                // Get contextual instructions for this response
+                const responseInstructions = promptService.getContextualInstructions({
+                  isInitialGreeting: false,
+                  workflowPhase,
+                  courseType,
+                  workflowType,
+                  currentStep,
+                  activeTool: activeToolName
+                });
+                
                 const responseCreatePayload = {
                   type: 'response.create',
                   response: {
                     modalities: ['audio', 'text']
                   }
                 };
+                
+                // PHASE 1: Include contextual instructions to prevent model from using full prompt
+                if (responseInstructions) {
+                  responseCreatePayload.response.instructions = responseInstructions;
+                  console.log(`📋 [${this.state.callSid}] Including contextual instructions in response.create after grace period (phase: ${workflowPhase})`);
+                }
+                
                 this.openaiWs.send(JSON.stringify(responseCreatePayload));
                 
                 // Step 3: Re-enable tools after delay

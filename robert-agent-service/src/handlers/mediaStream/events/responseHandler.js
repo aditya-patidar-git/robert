@@ -1,6 +1,7 @@
 import { WebSocket } from "ws";
 import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
+import audioDiagnosticService from '../../../services/audioDiagnosticService.js';
 import { MemoryManager } from '../utils/index.js';
 
 /**
@@ -106,6 +107,9 @@ export class ResponseHandler {
       console.error(`❌ [${this.state.callSid}] Response created with error:`, JSON.stringify(event.response.error, null, 2));
     }
     
+    // Track in diagnostic service (non-intrusive, optional)
+    audioDiagnosticService.trackResponseCreated(this.state.callSid, event);
+    
     // Block automatic responses that we didn't explicitly request
     if (!this.state.explicitResponseRequested) {
       const currentTime = Date.now();
@@ -174,6 +178,9 @@ export class ResponseHandler {
     if (this.state.outboundAudioChunkCount === 1) {
       console.log(`🔊 [${this.state.callSid}] First audio delta received`);
     }
+    
+    // Track in diagnostic service (non-intrusive, optional)
+    audioDiagnosticService.trackAudioDelta(this.state.callSid, event);
     
     this.state.isResponding = true;
     this.state.lastAudioChunkTime = Date.now();
@@ -397,8 +404,62 @@ export class ResponseHandler {
       const outboundChunksForResponse = this.state.outboundAudioChunkCount;
       const totalInboundChunks = this.state.inboundAudioChunkCount || 0;
       
+      // Extract token counts
+      const audioTokens = event.response?.usage?.output_token_details?.audio_tokens || 
+                         event.response?.usage?.output_audio_tokens || 0;
+      const textTokens = event.response?.usage?.output_token_details?.text_tokens || 
+                        event.response?.usage?.output_text_tokens || 0;
+      
+      // Check for OpenAI refusal response (0 audio tokens despite audio modality)
+      const hasAudioModality = event.response?.modalities?.includes('audio') || false;
+      const isRefusalResponse = audioTokens === 0 && hasAudioModality && textTokens > 0;
+      
+      // Extract response text to check for refusal patterns
+      const outputItems = event.response?.output || [];
+      let responseText = '';
+      if (outputItems && outputItems.length > 0) {
+        const textItems = outputItems.filter(item => item.type === 'message' && item.content);
+        if (textItems.length > 0) {
+          responseText = textItems.map(item => 
+            item.content.map(c => c.type === 'text' ? c.text : '').join('')
+          ).join(' ').toLowerCase();
+        }
+      }
+      
+      const refusalPatterns = [
+        "i'm sorry, but i'm not able to continue",
+        "i'm sorry, it seems like there was an error",
+        "i can't continue",
+        "i cannot continue"
+      ];
+      const isRefusalText = refusalPatterns.some(pattern => responseText.includes(pattern));
+      
       console.log(`✅ [${this.state.callSid}] Response done - ID: ${responseId}, status: ${status}`);
       console.log(`   📊 Audio summary: ${outboundChunksForResponse} outbound chunks sent, ${totalInboundChunks} inbound chunks received`);
+      console.log(`   📊 Tokens: audio=${audioTokens}, text=${textTokens}`);
+      
+      // Detect and log refusal response
+      if (isRefusalResponse || isRefusalText) {
+        console.warn(`⚠️ [${this.state.callSid}] OpenAI refusal response detected:`);
+        console.warn(`   - Audio tokens: ${audioTokens} (expected > 0)`);
+        console.warn(`   - Text tokens: ${textTokens}`);
+        console.warn(`   - Has audio modality: ${hasAudioModality}`);
+        console.warn(`   - Response text contains refusal pattern: ${isRefusalText}`);
+        console.warn(`   - Possible causes:`);
+        console.warn(`     1. Conversation context not properly established`);
+        console.warn(`     2. Instructions causing OpenAI to refuse`);
+        console.warn(`     3. Safety/content filter triggered`);
+        console.warn(`     4. Session configuration issue`);
+        
+        // For initial greeting, this is critical - log as error
+        if (!this.state.hasInitialGreetingCompleted) {
+          console.error(`❌ [${this.state.callSid}] CRITICAL: Initial greeting failed - no audio generated`);
+          console.error(`   This will result in silent call. Check conversation context and instructions.`);
+        }
+      }
+      
+      // Track in diagnostic service (non-intrusive, optional)
+      audioDiagnosticService.trackResponseDone(this.state.callSid, event);
       
       // Mark that agent finished speaking
       this.state.agentFinishedSpeakingTime = Date.now();

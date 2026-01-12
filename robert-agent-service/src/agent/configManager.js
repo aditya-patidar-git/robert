@@ -7,6 +7,7 @@ import ConversationBehaviorConfig from '../database/models/ConversationBehaviorC
 import FlowParameterOverride from '../database/models/FlowParameterOverride.js';
 import CRMTasksConfig from '../database/models/CRMTasksConfig.js';
 import multilingualService from '../services/multilingualService.js';
+import promptService from '../services/promptService.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -368,7 +369,10 @@ class ConfigManager {
           enhancedInstructions = `${languageInstructions}${britishAccentEmphasis}`;
         }
         
-        const baseInstructions = aiConfig?.globalPrompt || 'You are a friendly AI assistant.';
+        // PHASE 1: Use minimal core prompt instead of full globalPrompt to prevent model overwhelm
+        // The full globalPrompt (100k+ chars) causes code/JSON generation instead of audio
+        // Detailed instructions are provided contextually via response.create instead
+        const baseInstructions = promptService.getCorePrompt();
         // Combine base instructions with enhanced language-specific instructions
         const fullInstructions = `${baseInstructions}\n\n${enhancedInstructions}`;
         
@@ -402,8 +406,10 @@ class ConfigManager {
       enhancedInstructions = `${languageInstructions}${britishAccentEmphasis}`;
     }
 
-    // Return global config
-    const baseInstructions = aiConfig?.globalPrompt || 'You are a friendly AI assistant.';
+    // PHASE 1: Use minimal core prompt instead of full globalPrompt to prevent model overwhelm
+    // The full globalPrompt (100k+ chars) causes code/JSON generation instead of audio
+    // Detailed instructions are provided contextually via response.create instead
+    const baseInstructions = promptService.getCorePrompt();
     // Combine base instructions with enhanced language-specific instructions
     const fullInstructions = `${baseInstructions}\n\n${enhancedInstructions}`;
     

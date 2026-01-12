@@ -751,6 +751,11 @@ ${config.instructions}`;
           
           this.state.incrementErrorCount();
           console.error(`❌ [${this.state.callSid}] OpenAI error logged (error count: ${this.state.errorCount})`);
+          
+          // Track in diagnostic service (non-intrusive, optional)
+          const audioDiagnosticService = (await import('../../../services/audioDiagnosticService.js')).default;
+          audioDiagnosticService.trackOpenAIError(this.state.callSid, event);
+          
           if (this.state.hasMaxErrors()) {
             console.error(`❌ [${this.state.callSid}] Max errors reached, triggering error event`);
             if (this.onEvent) this.onEvent({ type: 'error', error: 'openai_error', details: event.error });
