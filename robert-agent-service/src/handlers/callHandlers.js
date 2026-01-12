@@ -255,9 +255,14 @@ export const handleIncomingCall = async (req, res) => {
             incrementActiveCalls({ entry_path: entryPath });
         }
 
-        // Generate Media Streams TwiML
+        // Generate Media Streams TwiML with recording enabled
         const wsUrl = buildMediaStreamsWsUrl(CallSid);
-        const twiml = generateMediaStreamsTwiML(wsUrl);
+        const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
+        const recordingStatusCallback = `${baseUrl}/api/inbound/recording-status`;
+        const twiml = generateMediaStreamsTwiML(wsUrl, {
+            enableRecording: true,
+            recordingStatusCallback: recordingStatusCallback
+        });
 
         span.setStatus({ code: SpanStatusCode.OK });
         span.end();

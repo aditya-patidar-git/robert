@@ -62,16 +62,47 @@ export const callStatus = async (req, res) => {
     }
 
     // Generate and store call summary on completion
-    if (CallStatus === "completed" && conversations[CallSid]) {
+    if (CallStatus === "completed") {
         try {
-            const conversation = conversations[CallSid];
+            // Get conversation data - may be cleaned up, so check CallRecord as fallback
+            let conversation = conversations[CallSid];
+            let consent = conversation?.recordingConsent;
+            let consentGiven = consent?.given === true;
+            
+            // If conversation cleaned up, try to get consent from CallRecord
+            if (!conversation || !consent) {
+                try {
+                    const existingRecord = await CallRecord.findOne({ callSid: CallSid }).lean();
+                    if (existingRecord?.recordingConsent) {
+                        consent = existingRecord.recordingConsent;
+                        consentGiven = consent.given === true;
+                        // Use existing record data if conversation is gone
+                        if (!conversation && existingRecord) {
+                            conversation = {
+                                transcript: existingRecord.transcript || [],
+                                from: existingRecord.from,
+                                to: existingRecord.to,
+                                duration: existingRecord.duration,
+                                language: existingRecord.language || 'en-GB'
+                            };
+                        }
+                    }
+                } catch (dbError) {
+                    console.error(`❌ [${CallSid}] Error fetching consent from CallRecord:`, dbError);
+                }
+            }
+            
+            if (!conversation) {
+                console.log(`⚠️ [${CallSid}] No conversation data found on call completion`);
+                res.sendStatus(200);
+                return;
+            }
+            
             const callerId = From || conversation.from;
             
             // Save transcript to CallRecord immediately when call completes
             // This ensures transcript is saved even if recording webhook fails
             // BUT only if recording consent was given (GDPR compliance)
-            const consent = conversation.recordingConsent;
-            const consentGiven = consent?.given === true;
             
             if (conversation.transcript && conversation.transcript.length > 0) {
                 if (consentGiven) {

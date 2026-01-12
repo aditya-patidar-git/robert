@@ -31,17 +31,31 @@ export function generateSipRoutingTwiML(sipEndpoint, options = {}) {
  * @param {Object} options - Additional options
  * @param {string} options.track - Track type: 'inbound', 'outbound', or 'both_tracks' (default: 'both_tracks')
  * @param {number} options.pauseLength - Pause length in seconds (default: 3600)
+ * @param {boolean} options.enableRecording - Enable call recording (default: false)
+ * @param {string} options.recordingStatusCallback - URL for recording status callback
  * @returns {string} - TwiML XML string
  */
 export function generateMediaStreamsTwiML(wsUrl, options = {}) {
   const track = options.track || 'both_tracks';
   const pauseLength = options.pauseLength || 3600;
+  const enableRecording = options.enableRecording || false;
+  const recordingStatusCallback = options.recordingStatusCallback;
+  
+  let recordingXml = '';
+  if (enableRecording && recordingStatusCallback) {
+    recordingXml = `
+  <Record 
+    recordingStatusCallback="${recordingStatusCallback}"
+    recordingStatusCallbackMethod="POST"
+    recordingChannels="dual"
+  />`;
+  }
   
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Start>
     <Stream url="${wsUrl}" track="${track}"/>
-  </Start>
+  </Start>${recordingXml}
   <Pause length="${pauseLength}"/>
 </Response>`;
 }
