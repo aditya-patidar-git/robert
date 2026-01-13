@@ -3,6 +3,7 @@ import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
 import audioDiagnosticService from '../../../services/audioDiagnosticService.js';
 import { MemoryManager } from '../utils/index.js';
+import { convertPcm16ToMulaw } from '../../../utils/audioConversion.js';
 
 /**
  * Response Handler
@@ -12,6 +13,35 @@ export class ResponseHandler {
   constructor(stateManager, ws) {
     this.state = stateManager;
     this.ws = ws;
+  }
+
+  /**
+   * Detect if audio chunk is PCM16 format
+   * @param {Buffer} audioChunk - Audio chunk to analyze
+   * @returns {boolean} - True if PCM16 format detected
+   */
+  isPcm16Format(audioChunk) {
+    if (!audioChunk || audioChunk.length < 4) return false;
+    
+    // Check if chunk size is multiple of 2 (PCM16 requirement)
+    if (audioChunk.length % 2 !== 0) return false;
+    
+    // Sample multiple values to detect PCM16 pattern
+    // PCM16 samples are typically in range -32768 to 32767
+    // g711_ulaw bytes are 0-255
+    let pcm16Indicators = 0;
+    const sampleCount = Math.min(10, Math.floor(audioChunk.length / 2));
+    
+    for (let i = 0; i < sampleCount; i++) {
+      const sample = audioChunk.readInt16LE(i * 2);
+      // PCM16 samples typically have larger absolute values
+      if (Math.abs(sample) > 255) {
+        pcm16Indicators++;
+      }
+    }
+    
+    // If most samples indicate PCM16, it's likely PCM16
+    return pcm16Indicators >= sampleCount * 0.7;
   }
 
   /**
@@ -45,8 +75,8 @@ export class ResponseHandler {
     console.log(`   - Byte range: ${minValue} - ${maxValue}`);
     console.log(`   - Zero bytes: ${zeroCount}/${Math.min(100, chunkSize)} (first 100 bytes)`);
     
-    // Check for PCM16 patterns (alternating high/low bytes)
-    if (chunkSize >= 4) {
+    // Enhanced PCM16 detection
+    if (chunkSize >= 4 && chunkSize % 2 === 0) {
       const firstSample = audioChunk.readInt16LE(0);
       const secondSample = audioChunk.readInt16LE(2);
       console.log(`   - First 2 samples as Int16LE: ${firstSample}, ${secondSample}`);
@@ -56,6 +86,7 @@ export class ResponseHandler {
       // g711_ulaw bytes are 0-255
       if (Math.abs(firstSample) > 255 || Math.abs(secondSample) > 255) {
         console.warn(`   ⚠️ DETECTED: Values suggest PCM16 format (samples: ${firstSample}, ${secondSample})`);
+        console.warn(`   ⚠️ ACTION REQUIRED: Will convert PCM16 to g711_ulaw before sending to Twilio`);
       } else {
         console.log(`   ℹ️ Values suggest g711_ulaw format (bytes: ${audioChunk[0]}, ${audioChunk[1]})`);
       }
@@ -199,7 +230,7 @@ export class ResponseHandler {
     const withinGracePeriod = cancellationTimestamp && timeSinceCancellation < this.state.AUDIO_CANCELLATION_GRACE_PERIOD;
     
     if (this.state.isInterrupted || isCancelledResponse || (cancellationTimestamp && withinGracePeriod)) {
-      if (shouldLog) {
+      if (this.state.outboundAudioChunkCount <= 3) {
         console.log(`🔇 [${this.state.callSid}] Blocking audio chunk #${this.state.outboundAudioChunkCount} - isInterrupted: ${this.state.isInterrupted}, isCancelled: ${isCancelledResponse}, withinGracePeriod: ${withinGracePeriod}`);
       }
       return false; // Don't send audio chunks
@@ -207,26 +238,20 @@ export class ResponseHandler {
     
     // Verify audio payload format
     if (!event.delta) {
-      if (shouldLog) {
-        console.warn(`⚠️ [${this.state.callSid}] Audio delta event missing payload for chunk #${this.state.outboundAudioChunkCount}`);
-      }
+      console.warn(`⚠️ [${this.state.callSid}] Audio delta event missing payload for chunk #${this.state.outboundAudioChunkCount}`);
       return false;
     }
     
-    // Validate payload is a string (base64-encoded g711_ulaw)
+    // Validate payload is a string (base64-encoded audio)
     const audioPayload = event.delta;
     if (typeof audioPayload !== 'string') {
-      if (shouldLog) {
-        console.warn(`⚠️ [${this.state.callSid}] Audio payload is not a string - type: ${typeof audioPayload}`);
-      }
+      console.warn(`⚠️ [${this.state.callSid}] Audio payload is not a string - type: ${typeof audioPayload}`);
       return false;
     }
     
     // Validate it looks like base64 (basic check)
     if (audioPayload.length === 0) {
-      if (shouldLog) {
-        console.warn(`⚠️ [${this.state.callSid}] Audio payload is empty`);
-      }
+      console.warn(`⚠️ [${this.state.callSid}] Audio payload is empty`);
       return false;
     }
     
@@ -239,7 +264,7 @@ export class ResponseHandler {
     }
     
     try {
-      // Decode base64 - this is g711_ulaw from OpenAI (direct format, no conversion needed)
+      // Decode base64 audio payload
       const audioChunk = Buffer.from(audioPayload, 'base64');
       
       // DEBUG: Analyze first few chunks to detect format
@@ -247,9 +272,32 @@ export class ResponseHandler {
         this.analyzeAudioFormat(audioChunk, this.state.outboundAudioChunkCount, event);
       }
       
-      // Direct format: OpenAI sends g711_ulaw, we can send it directly to Twilio
-      // Buffer the g711_ulaw audio
-      this.state.outboundAudioBuffer = Buffer.concat([this.state.outboundAudioBuffer, audioChunk]);
+      // CRITICAL: Detect format and convert if necessary
+      // OpenAI may send PCM16 even when configured for g711_ulaw
+      // Twilio Media Streams requires g711_ulaw format
+      let processedAudio = audioChunk;
+      
+      if (this.isPcm16Format(audioChunk)) {
+        // Convert PCM16 to g711_ulaw before sending to Twilio
+        try {
+          const pcm16Base64 = audioChunk.toString('base64');
+          const mulawBase64 = convertPcm16ToMulaw(pcm16Base64);
+          processedAudio = Buffer.from(mulawBase64, 'base64');
+          
+          if (this.state.outboundAudioChunkCount <= 3) {
+            console.log(`🔄 [${this.state.callSid}] Converting PCM16 to g711_ulaw - chunk #${this.state.outboundAudioChunkCount}`);
+            console.log(`   - Input size: ${audioChunk.length} bytes (PCM16)`);
+            console.log(`   - Output size: ${processedAudio.length} bytes (g711_ulaw)`);
+          }
+        } catch (conversionErr) {
+          console.error(`❌ [${this.state.callSid}] Error converting PCM16 to g711_ulaw:`, conversionErr);
+          // Fallback: try to use original chunk (may cause audio issues)
+          processedAudio = audioChunk;
+        }
+      }
+      
+      // Buffer the g711_ulaw audio (now guaranteed to be in correct format)
+      this.state.outboundAudioBuffer = Buffer.concat([this.state.outboundAudioBuffer, processedAudio]);
       
       // Constants for g711_ulaw at 8kHz: 160 bytes = 20ms of audio
       const FRAME_SIZE = 160; // 20ms of g711_ulaw at 8kHz
@@ -259,8 +307,11 @@ export class ResponseHandler {
       const now = Date.now();
       const timeSinceLastSend = now - this.state.lastOutboundSendTime;
       
+      // Enable logging for first few frames
+      const enableLogging = this.state.outboundAudioChunkCount <= 5;
+      
       if (timeSinceLastSend >= FRAME_INTERVAL_MS && this.state.outboundAudioBuffer.length >= FRAME_SIZE) {
-        this.sendAudioFrame(FRAME_SIZE, false);
+        this.sendAudioFrame(FRAME_SIZE, enableLogging);
       }
       
       // Start pacer if not already running and we have buffered data
@@ -293,27 +344,43 @@ export class ResponseHandler {
       this.state.outboundAudioBuffer = this.state.outboundAudioBuffer.slice(frameSize);
       this.state.lastOutboundSendTime = Date.now();
       
-      // DEBUG: Log first frame details
-      if (shouldLog && this.state.outboundAudioChunkCount <= 3) {
-        console.log(`🔍 [${this.state.callSid}] Sending frame to Twilio:`);
+      // CRITICAL FIX: Validate audio frame is not all silence
+      let silenceCount = 0;
+      for (let i = 0; i < frame.length; i++) {
+        const byte = frame[i];
+        // g711_ulaw silence is typically 0xFF (255) or 0x7F (127)
+        if (byte === 0xFF || byte === 0x7F || (byte >= 0x7C && byte <= 0x83)) {
+          silenceCount++;
+        }
+      }
+      const silenceRatio = silenceCount / frame.length;
+      
+      // Log first few frames with details
+      if (this.state.outboundAudioChunkCount <= 5 || shouldLog) {
+        console.log(`🔍 [${this.state.callSid}] Sending frame #${this.state.outboundAudioChunkCount} to Twilio:`);
         console.log(`   - Frame size: ${frameSize} bytes`);
+        console.log(`   - Silence ratio: ${(silenceRatio * 100).toFixed(1)}%`);
         console.log(`   - First 10 bytes (hex): ${frame.slice(0, 10).toString('hex')}`);
         console.log(`   - First 10 bytes (decimal): ${Array.from(frame.slice(0, 10)).join(', ')}`);
         console.log(`   - Buffer remaining: ${this.state.outboundAudioBuffer.length} bytes`);
+        
+        if (silenceRatio > 0.9) {
+          console.warn(`   ⚠️ WARNING: Frame is mostly silence (${(silenceRatio * 100).toFixed(1)}%) - this may cause beep`);
+        }
       }
       
       const mediaMessage = {
         event: 'media',
         streamSid: this.state.streamSid,
         media: { 
-          payload: frame.toString('base64')
-          // NO track field - Twilio automatically routes to outbound
+          payload: frame.toString('base64'),
+          track: 'outbound'  // Explicitly specify outbound track for reliable routing (especially for inbound calls)
         }
       };
       
       this.ws.send(JSON.stringify(mediaMessage));
       
-      if (shouldLog) {
+      if (shouldLog || this.state.outboundAudioChunkCount <= 3) {
         console.log(`📤 [${this.state.callSid}] Sent audio frame to Twilio - frame: ${frameSize} bytes, buffer remaining: ${this.state.outboundAudioBuffer.length} bytes`);
       }
       
@@ -333,6 +400,9 @@ export class ResponseHandler {
       return; // Already running
     }
     
+    // Enable logging for first few frames
+    const enableLogging = this.state.outboundAudioChunkCount <= 5;
+    
     this.state.outboundAudioPacer = setInterval(() => {
       if (this.state.isClosed || !this.state.streamSid || this.ws.readyState !== WebSocket.OPEN) {
         this.stopAudioPacer();
@@ -340,14 +410,14 @@ export class ResponseHandler {
       }
       
       if (this.state.outboundAudioBuffer && this.state.outboundAudioBuffer.length >= frameSize) {
-        this.sendAudioFrame(frameSize, false);
+        this.sendAudioFrame(frameSize, enableLogging || shouldLog);
       } else {
         // Buffer empty or insufficient, stop pacer
         this.stopAudioPacer();
       }
     }, frameIntervalMs);
     
-    if (shouldLog) {
+    if (shouldLog || enableLogging) {
       console.log(`⏱️ [${this.state.callSid}] Started audio pacer - ${frameIntervalMs}ms intervals, ${frameSize} bytes per frame`);
     }
   }

@@ -40,6 +40,26 @@ export const mediaStream = async (req, res) => {
  */
 export const handleMediaStreamConnection = (ws, req) => {
     try {
+        // CRITICAL FIX: Prevent duplicate connections for the same call
+        // Parse callSid from query params early to check for existing connections
+        try {
+            const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+            const callSidFromQuery = url.searchParams.get('callSid');
+            
+            if (callSidFromQuery && realtimeClients[callSidFromQuery]) {
+                const existing = realtimeClients[callSidFromQuery];
+                console.warn(`⚠️ [${callSidFromQuery}] Duplicate WebSocket connection attempt detected`);
+                console.warn(`   - Existing streamSid: ${existing.streamSid}`);
+                console.warn(`   - Existing Twilio WS readyState: ${existing.twilioWs?.readyState} (1=OPEN)`);
+                console.warn(`   - Closing duplicate connection to prevent conflicts`);
+                ws.close(1000, 'Connection already exists for this call');
+                return;
+            }
+        } catch (urlError) {
+            // If URL parsing fails, continue with normal flow (callSid will be extracted from start event)
+            console.debug(`🔍 Could not parse URL for early duplicate check: ${urlError.message}`);
+        }
+        
         // Initialize connection manager
         const connectionManager = new ConnectionManager(ws, req);
         
@@ -62,6 +82,24 @@ export const handleMediaStreamConnection = (ws, req) => {
             if (!callSid) {
                 console.error('❌ No callSid in start event');
                 return { error: 'no_callsid' };
+            }
+            
+            // CRITICAL FIX: Double-check for duplicate connections (backup check)
+            if (realtimeClients[callSid]) {
+                const existing = realtimeClients[callSid];
+                // Only reject if existing connection is still open
+                if (existing.twilioWs && existing.twilioWs.readyState === WebSocket.OPEN) {
+                    console.warn(`⚠️ [${callSid}] Duplicate connection detected in start event handler`);
+                    console.warn(`   - Existing streamSid: ${existing.streamSid}`);
+                    console.warn(`   - New streamSid: ${streamSid}`);
+                    console.warn(`   - Existing connection is OPEN - closing duplicate`);
+                    ws.close(1000, 'Connection already exists for this call');
+                    return { error: 'duplicate_connection' };
+                } else {
+                    // Existing connection is closed, clean it up and allow new one
+                    console.log(`🧹 [${callSid}] Cleaning up closed connection before accepting new one`);
+                    delete realtimeClients[callSid];
+                }
             }
             
             // Initialize state with call information

@@ -33,6 +33,9 @@ export function generateSipRoutingTwiML(sipEndpoint, options = {}) {
  * @param {number} options.pauseLength - Pause length in seconds (default: 3600)
  * @param {boolean} options.enableRecording - Enable call recording (default: false)
  * @param {string} options.recordingStatusCallback - URL for recording status callback
+ * @param {boolean} options.useConnect - Use <Connect> verb for bidirectional streaming (default: false)
+ *   - <Start><Stream>: UNIDIRECTIONAL - receive audio only, cannot send audio back
+ *   - <Connect><Stream>: BIDIRECTIONAL - can send and receive audio (required for inbound calls)
  * @returns {string} - TwiML XML string
  */
 export function generateMediaStreamsTwiML(wsUrl, options = {}) {
@@ -40,9 +43,14 @@ export function generateMediaStreamsTwiML(wsUrl, options = {}) {
   const pauseLength = options.pauseLength || 3600;
   const enableRecording = options.enableRecording || false;
   const recordingStatusCallback = options.recordingStatusCallback;
+  const useConnect = options.useConnect || false;
   
+  // NOTE: <Record> verb conflicts with Media Streams and can cause audio silence
+  // Recording should be handled via Twilio API (using record: true in call creation)
+  // instead of TwiML verb when using Media Streams
   let recordingXml = '';
   if (enableRecording && recordingStatusCallback) {
+    console.warn('⚠️ [TwiML] <Record> verb with Media Streams may cause audio issues. Consider using Twilio API for recording instead.');
     recordingXml = `
   <Record 
     recordingStatusCallback="${recordingStatusCallback}"
@@ -51,6 +59,19 @@ export function generateMediaStreamsTwiML(wsUrl, options = {}) {
   />`;
   }
   
+  // Use <Connect> for bidirectional streaming (required for sending audio back to Twilio)
+  // Use <Start> for unidirectional streaming (receive only)
+  if (useConnect) {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="${wsUrl}" track="${track}"/>
+  </Connect>
+  <Pause length="${pauseLength}"/>
+</Response>`;
+  }
+  
+  // Default: Use <Start> for unidirectional streaming (outbound calls may use this)
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Start>
