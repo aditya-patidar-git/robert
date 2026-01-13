@@ -197,7 +197,8 @@ export const proxyRecording = async (req, res) => {
         }
 
         // Check consent before serving recording
-        if (rec.recordingConsent?.given === false) {
+        // Explicitly require consent to be true (not null, not false)
+        if (rec.recordingConsent?.given !== true) {
             return res.status(403).json({ 
                 error: 'Recording not available - consent not given',
                 message: 'Recording consent was not provided for this call.'

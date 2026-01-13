@@ -151,8 +151,15 @@ export class TranscriptionHandler {
         adaptiveTimingService.trackCallerBehavior(this.state.callSid, 'user_spoke', transcriptionTime);
       }
       
-      // Detect and switch language if enabled
-      if (conversations[this.state.callSid].languageDetectionEnabled && this.state.hasInitialGreetingCompleted) {
+      // Detect and switch language if waiting for language preference OR if language detection is enabled
+      const waitingForLanguage = this.state.waitingForLanguage || conversations[this.state.callSid]?.waitingForLanguage || false;
+      const languageSelected = this.state.languagePreferenceState?.selected || conversations[this.state.callSid]?.languagePreferenceState?.selected || false;
+      
+      if (waitingForLanguage && !languageSelected) {
+        // CRITICAL: Handle language preference selection
+        await this.languageDetector.detectAndSwitchLanguage(transcript);
+      } else if (conversations[this.state.callSid].languageDetectionEnabled && this.state.hasInitialGreetingCompleted) {
+        // Mid-call language switching (after initial greeting)
         await this.languageDetector.detectAndSwitchLanguage(transcript);
         conversations[this.state.callSid].languageDetectionEnabled = false;
       }

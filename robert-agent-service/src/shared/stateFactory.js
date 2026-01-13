@@ -39,6 +39,16 @@ export function createConversationState(callSid, options = {}) {
       respondedAt: null
     },
     
+    // Language preference
+    waitingForLanguage: options.waitingForLanguage || false,
+    languagePreferenceState: options.languagePreferenceState || {
+      asked: false,
+      selected: false,
+      language: null,
+      askedAt: null,
+      selectedAt: null
+    },
+    
     // KBA (Knowledge-Based Authentication)
     kba: options.kba || {
       verified: false,
@@ -106,7 +116,7 @@ export function mergeConversationState(existingState, updates) {
   Object.keys(updates).forEach(key => {
     if (key === 'recordingConsent' || key === 'memoryConsent' || key === 'kba' || 
         key === 'mobileSearchAttempts' || key === 'verificationAttempts' || 
-        key === 'bookingConsent' || key === 'policyCheck') {
+        key === 'bookingConsent' || key === 'policyCheck' || key === 'languagePreferenceState') {
       // Deep merge for nested objects
       merged[key] = { ...merged[key], ...updates[key] };
     } else if (key === 'transcript') {

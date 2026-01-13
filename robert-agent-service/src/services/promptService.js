@@ -48,6 +48,8 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
    * @param {boolean} context.requireConsent - Whether recording consent is required
    * @param {string} context.consentNotice - Consent notice text
    * @param {string} context.consentQuestion - Consent question text
+   * @param {boolean} context.waitingForLanguage - Whether waiting for language preference
+   * @param {boolean} context.languageSelected - Whether language has been selected
    * @returns {string|null} Contextual instructions or null if not needed
    */
   getContextualInstructions(context = {}) {
@@ -60,7 +62,9 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       activeTool = null,
       requireConsent = false,
       consentNotice = null,
-      consentQuestion = null
+      consentQuestion = null,
+      waitingForLanguage = false,
+      languageSelected = false
     } = context;
 
     // Initial greeting instructions
@@ -70,6 +74,15 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       } else {
         return `Say hello and introduce yourself as Robert from Universal Motorcycle Training. Ask what language the caller would like to use.`;
       }
+    }
+
+    // CRITICAL: After consent is given, MUST ask language preference before anything else
+    if (waitingForLanguage && !languageSelected) {
+      return `CRITICAL: You MUST ask the language preference question NOW before proceeding with any other conversation. Say exactly: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?" 
+
+WAIT for the caller's response. If their response is unclear or you detect noise/barge-in, repeat: "What language would you like to use today?" until you get a clear answer. 
+
+DO NOT proceed to "What would you like to do today?" or any business questions until language preference is confirmed.`;
     }
 
     // Subsequent response instructions based on workflow phase
@@ -233,7 +246,7 @@ AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY a
     }
 
     // Check if waiting for language selection
-    if (state.waitingForLanguage) {
+    if (state.waitingForLanguage && !state.languagePreferenceState?.selected) {
       return 'language_selection';
     }
 

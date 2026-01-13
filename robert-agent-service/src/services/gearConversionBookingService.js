@@ -271,7 +271,8 @@ class GearConversionBookingService extends BaseBookingService {
           message += 'How many hours of training would you like: 2 hours, 3 hours, or 4 hours? ';
         }
         if (missingPreferences.includes('bikeType')) {
-          message += 'Which bike type would you prefer?';
+          const { generateBikeTypeQuestion } = await import('./browser/preferenceValidator.js');
+          message += generateBikeTypeQuestion('Gear Conversion', validBikeTypes) + ' ';
         }
         
         return {

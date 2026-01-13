@@ -287,7 +287,7 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
           message += 'What licence category are you assessing for: A1, A2, or A/DAS? ';
         }
         if (missingPreferences.includes('transmission')) {
-          message += 'Do you prefer automatic or manual bike?';
+          message += 'Do you prefer automatic or manual transmission?';
         }
         
         return {

@@ -161,6 +161,30 @@ export function getValidOptions(preferenceType, courseType) {
 }
 
 /**
+ * Generate user-friendly bike type question with all options listed
+ * @param {string} courseType - Course type
+ * @param {Array} validBikeTypes - Valid bike types for this course
+ * @returns {string} Formatted question with options
+ */
+export function generateBikeTypeQuestion(courseType, validBikeTypes) {
+  if (!validBikeTypes || validBikeTypes.length === 0) {
+    return 'Which bike type would you prefer?';
+  }
+  
+  // Format options for natural speech
+  const formattedOptions = validBikeTypes.map((type, index) => {
+    if (index === validBikeTypes.length - 1 && validBikeTypes.length > 1) {
+      return `or "${type}"`;
+    }
+    return `"${type}"`;
+  });
+  
+  const optionsText = formattedOptions.join(', ');
+  
+  return `Which bike type would you prefer: ${optionsText}?`;
+}
+
+/**
  * Generate user-friendly error message for missing/invalid preferences
  * @param {Object} validationResult - Result from validatePreferences
  * @param {string} courseType - Course type
@@ -180,7 +204,8 @@ export function generatePreferenceErrorMessage(validationResult, courseType) {
     const missingMessages = missingPreferences.map(pref => {
       const options = validOptions[pref] || [];
       if (pref === 'bikeType') {
-        return `I need to know which bike type you prefer: "${options.join('", "')}".`;
+        const question = generateBikeTypeQuestion(courseType, options);
+        return `I need to know your bike type preference. ${question}`;
       } else if (pref === 'cbtType') {
         return `Is this a CBT Standard or CBT Renewal?`;
       } else if (pref === 'duration') {

@@ -270,7 +270,8 @@ class CBTExecutiveBookingService extends BaseBookingService {
           message += 'Is this a CBT Standard or CBT Renewal? ';
         }
         if (missingPreferences.includes('bikeType')) {
-          message += 'Which bike type would you prefer?';
+          const { generateBikeTypeQuestion } = await import('./browser/preferenceValidator.js');
+          message += generateBikeTypeQuestion('CBT Executive', validBikeTypes) + ' ';
         }
         
         return {

@@ -142,12 +142,18 @@ export class ToolCoordinator {
         const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
         const consentQuestion = "Do you consent to this call being recorded?";
         
-        // Get contextual instructions for initial greeting
+        // Check language preference state
+        const waitingForLanguage = conversations[this.state.callSid]?.waitingForLanguage || this.state.waitingForLanguage || false;
+        const languageSelected = conversations[this.state.callSid]?.languagePreferenceState?.selected || this.state.languagePreferenceState?.selected || false;
+        
+        // Get contextual instructions for initial greeting OR language question
         responseInstructions = promptService.getContextualInstructions({
-          isInitialGreeting: true,
-          requireConsent: requireExplicitConsent,
+          isInitialGreeting: !waitingForLanguage,
+          requireConsent: requireExplicitConsent && !waitingForLanguage,
           consentNotice,
-          consentQuestion
+          consentQuestion,
+          waitingForLanguage: waitingForLanguage && !languageSelected,
+          languageSelected
         });
         
         console.log(`📋 [${this.state.callSid}] Using contextual instructions for initial greeting (length: ${responseInstructions?.length || 0})`);
@@ -183,6 +189,10 @@ export class ToolCoordinator {
           currentStep = bookingSession.currentStep;
         }
         
+        // Check language preference state
+        const waitingForLanguage = conversations[this.state.callSid]?.waitingForLanguage || this.state.waitingForLanguage || false;
+        const languageSelected = conversations[this.state.callSid]?.languagePreferenceState?.selected || this.state.languagePreferenceState?.selected || false;
+        
         // Get contextual instructions for this response
         responseInstructions = promptService.getContextualInstructions({
           isInitialGreeting: false,
@@ -190,7 +200,9 @@ export class ToolCoordinator {
           courseType,
           workflowType,
           currentStep,
-          activeTool: activeToolName
+          activeTool: activeToolName,
+          waitingForLanguage: waitingForLanguage && !languageSelected,
+          languageSelected
         });
         
         console.log(`📋 [${this.state.callSid}] Using contextual instructions for subsequent response (phase: ${workflowPhase}, length: ${responseInstructions?.length || 0})`);
