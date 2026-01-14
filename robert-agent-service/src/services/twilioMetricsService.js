@@ -24,12 +24,16 @@ class TwilioMetricsService {
    * @returns {Promise<Object|null>} Metrics object or null if unavailable
    */
   async fetchAndSaveCallQualityMetrics(callSid, options = {}) {
-    const { maxRetries = 3, initialDelay = 2000 } = options;
+    // Increased retries and delays: Twilio metrics can take up to 90 seconds to be available
+    const { maxRetries = 6, initialDelay = 5000 } = options;
     
     try {
       let metrics = null;
       let retries = maxRetries;
       let delay = initialDelay;
+      let lastError = null;
+
+      console.log(`🔍 [${callSid}] Starting to fetch call quality metrics (max ${maxRetries} retries, initial delay ${initialDelay}ms)`);
 
       // Retry logic: Twilio metrics may take up to 90 seconds to be available
       while (retries > 0 && !metrics) {
@@ -37,53 +41,83 @@ class TwilioMetricsService {
           // Fetch call data from Twilio Voice Insights (metrics are included in the call object)
           const callInsights = await this.client.insights.v1.calls(callSid).fetch();
           
+          console.log(`📊 [${callSid}] Twilio API response received, checking for metrics...`);
+          
           // Metrics are available in the call object's metrics property
           if (callInsights && callInsights.metrics) {
             metrics = this._extractMetrics(callInsights.metrics);
             
+            console.log(`📊 [${callSid}] Extracted metrics:`, {
+              latency: metrics.latency,
+              jitter: metrics.jitter,
+              packetLoss: metrics.packetLoss
+            });
+            
             // Only proceed if we have at least one metric
             if (metrics.latency !== null || metrics.jitter !== null || metrics.packetLoss !== null) {
+              console.log(`✅ [${callSid}] Found valid metrics, proceeding to save`);
               break;
+            } else {
+              console.log(`⚠️ [${callSid}] Metrics object exists but all values are null`);
             }
+          } else {
+            console.log(`⚠️ [${callSid}] Call insights received but no metrics property found`);
           }
         } catch (error) {
+          lastError = error;
           // If metrics aren't available yet (404), retry with exponential backoff
           if (error.status === 404 || error.code === 20404) {
-            console.log(`⏳ [${callSid}] Call metrics not available yet, retrying in ${delay}ms... (${retries} retries left)`);
+            console.log(`⏳ [${callSid}] Call metrics not available yet (404), retrying in ${delay}ms... (${retries - 1} retries left)`);
             await new Promise(resolve => setTimeout(resolve, delay));
-            delay *= 2; // Exponential backoff
+            delay = Math.min(delay * 1.5, 30000); // Exponential backoff, max 30s delay
             retries--;
           } else {
-            // Other errors should be thrown
-            throw error;
+            // Log other errors but continue retrying (might be temporary network issues)
+            console.warn(`⚠️ [${callSid}] Error fetching metrics (status: ${error.status}, code: ${error.code}):`, error.message);
+            if (retries > 1) {
+              await new Promise(resolve => setTimeout(resolve, delay));
+              delay = Math.min(delay * 1.5, 30000);
+              retries--;
+            } else {
+              throw error;
+            }
           }
         }
       }
 
       // If we have metrics, calculate MOS and save to CallRecord
       if (metrics && (metrics.latency !== null || metrics.jitter !== null || metrics.packetLoss !== null)) {
-        // Use default values if some metrics are missing
-        const latency = metrics.latency || 0;
-        const jitter = metrics.jitter || 0;
-        const packetLoss = metrics.packetLoss || 0;
+        // Only use actual values, don't default to 0 (which would skew averages)
+        const latency = metrics.latency !== null ? metrics.latency : null;
+        const jitter = metrics.jitter !== null ? metrics.jitter : null;
+        const packetLoss = metrics.packetLoss !== null ? metrics.packetLoss : null;
+        
+        // Calculate MOS only if we have at least latency (required for calculation)
+        if (latency === null && jitter === null && packetLoss === null) {
+          console.log(`⚠️ [${callSid}] All metrics are null, cannot calculate MOS`);
+          return null;
+        }
 
-        // Calculate MOS score
-        const mosScore = this._calculateMOS(latency, jitter, packetLoss);
+        // Calculate MOS score (use 0 for null values in calculation, but don't save nulls)
+        const mosScore = this._calculateMOS(latency || 0, jitter || 0, packetLoss || 0);
         const callQuality = this._getQualityCategory(mosScore);
+
+        // Build update object - only include fields that have values
+        const updateFields = {
+          'audioQuality.mosScore': mosScore,
+          'audioQuality.callQuality': callQuality,
+          'audioQuality.measuredAt': new Date()
+        };
+        
+        if (latency !== null) updateFields['audioQuality.latency'] = latency;
+        if (jitter !== null) updateFields['audioQuality.jitter'] = jitter;
+        if (packetLoss !== null) updateFields['audioQuality.packetLoss'] = packetLoss;
 
         // Update CallRecord with audio quality metrics
         await CallRecord.findOneAndUpdate(
           { callSid: callSid },
-          {
-            $set: {
-              'audioQuality.latency': latency,
-              'audioQuality.jitter': jitter,
-              'audioQuality.packetLoss': packetLoss,
-              'audioQuality.mosScore': mosScore,
-              'audioQuality.callQuality': callQuality,
-              'audioQuality.measuredAt': new Date()
-            }
-          }
+          { $set: updateFields },
+          { upsert: false } // Don't create if doesn't exist (should already exist)
         );
 
         console.log(`✅ [${callSid}] Call quality metrics saved: MOS=${mosScore.toFixed(2)}, Latency=${latency}ms, Jitter=${jitter}ms, PacketLoss=${packetLoss.toFixed(2)}%`);
@@ -107,11 +141,16 @@ class TwilioMetricsService {
           callQuality
         };
       } else {
-        console.log(`⚠️ [${callSid}] No call quality metrics available from Twilio after ${maxRetries} retries`);
+        if (lastError) {
+          console.error(`❌ [${callSid}] No call quality metrics available from Twilio after ${maxRetries} retries. Last error:`, lastError.message);
+        } else {
+          console.log(`⚠️ [${callSid}] No call quality metrics available from Twilio after ${maxRetries} retries (metrics object was null or empty)`);
+        }
         return null;
       }
     } catch (error) {
-      console.error(`❌ [${callSid}] Error in fetchAndSaveCallQualityMetrics:`, error);
+      console.error(`❌ [${callSid}] Error in fetchAndSaveCallQualityMetrics:`, error.message);
+      console.error(`❌ [${callSid}] Error stack:`, error.stack);
       // Don't throw - we don't want to block call completion if metrics fail
       return null;
     }

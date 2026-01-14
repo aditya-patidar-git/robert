@@ -22,16 +22,20 @@ export const proxyRecording = async (req, res) => {
     }
 
     // Check consent first
-    // Explicitly require consent to be true (not null, not false)
-    if (callRecord.recordingConsent?.given !== true) {
+    // Default is opt-in, so null/undefined means consent given
+    // Only explicitly denied (false) should block access
+    if (callRecord.recordingConsent?.given === false) {
       return res.status(403).json({ 
         error: 'Recording not available - consent not given',
         message: 'Recording consent was not provided for this call.'
       });
     }
+    
+    // If consent is null/undefined and we have a recording URL, treat as opt-in (default behavior)
+    // This handles cases where consent was set to opt-in but not explicitly saved to database
 
-    // If recordingUrl is not set but consent was given, try fetching from Twilio API
-    if (!callRecord.recordingUrl && callRecord.recordingConsent?.given === true) {
+    // If recordingUrl is not set but consent allows (true or null for opt-in), try fetching from Twilio API
+    if (!callRecord.recordingUrl && callRecord.recordingConsent?.given !== false) {
       try {
         const twilioClient = twilio(
           process.env.TWILIO_SID || process.env.TWILIO_ACCOUNT_SID,
@@ -93,24 +97,27 @@ export const proxyRecording = async (req, res) => {
         password: process.env.TWILIO_AUTH_TOKEN
       },
       responseType: 'stream',
-      timeout: 30000 // 30 second timeout
+      timeout: 30000, // 30 second timeout
+      validateStatus: () => true // Don't throw on non-2xx status
     });
 
-    // Set appropriate headers for audio streaming
-    res.setHeader('Content-Type', 'audio/mpeg');
+    // Preserve Twilio's content-type if available, otherwise default to audio/mpeg
+    const contentType = response.headers['content-type'] || 'audio/mpeg';
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `inline; filename="recording-${callSid}.mp3"`);
+    res.setHeader('Accept-Ranges', 'bytes'); // Enable range requests for seeking
     res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
 
-    // Pipe the audio stream to the response
-    response.data.pipe(res);
-
-    // Handle stream errors
+    // Handle stream errors before piping
     response.data.on('error', (error) => {
       console.error('Error streaming recording:', error);
       if (!res.headersSent) {
         res.status(500).json({ error: 'Error streaming recording' });
       }
     });
+
+    // Pipe the audio stream to the response
+    response.data.pipe(res);
 
   } catch (error) {
     console.error('Recording proxy error:', error.message);

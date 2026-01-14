@@ -244,6 +244,10 @@ class ToolExecutionService {
     console.log(`🔧 [${callSid || callId}] Starting tool execution: ${toolName}`);
     console.log(`🔧 [${callSid || callId}] ========================================\n`);
 
+    // Track execution start time for metrics (declare outside try/catch for scope)
+    let executionStartTime = Date.now();
+    let executionTime = 0;
+
     // Prepare call context
     const conversation = conversations[callSid || callId] || {};
     const callContext = {
@@ -255,12 +259,16 @@ class ToolExecutionService {
 
     // Execute tool
     try {
+      executionStartTime = Date.now();
       const executionResult = await toolExecutor.execute(
         toolName,
         parameters,
         callContext,
         progressCallback
       );
+      
+      // Calculate execution time (use result's time if available, otherwise calculate)
+      executionTime = executionResult.executionTime || (Date.now() - executionStartTime);
 
       // Check uncertainty gate for file_search results
       if (toolName === 'file_search' && executionResult && executionResult.validationFailed === true) {
@@ -305,6 +313,12 @@ class ToolExecutionService {
       // Store conversation state
       this.storeConversationState(callSid || callId, toolName, executionResult);
 
+      // Save tool usage to CallRecord (async, don't wait)
+      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, true)
+        .catch(err => {
+          console.warn(`⚠️ [${callSid || callId}] Failed to save tool usage to CallRecord:`, err.message);
+        });
+
       // Clean up active execution tracking (only for Media Streams)
       if (stateManager) {
         stateManager.activeToolExecutions.delete(toolName);
@@ -319,6 +333,15 @@ class ToolExecutionService {
     } catch (error) {
       console.error(`❌ [${callSid || callId}] Tool ${toolName} execution error:`, error);
 
+      // Calculate execution time for failed execution
+      const executionTime = Date.now() - executionStartTime;
+
+      // Save failed tool usage to CallRecord (async, don't wait)
+      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, false)
+        .catch(err => {
+          console.warn(`⚠️ [${callSid || callId}] Failed to save failed tool usage to CallRecord:`, err.message);
+        });
+
       // Clean up active execution tracking (only for Media Streams)
       if (stateManager) {
         stateManager.activeToolExecutions.delete(toolName);
@@ -331,6 +354,41 @@ class ToolExecutionService {
         error: error.message || 'Tool execution failed',
         details: error.toString()
       };
+    }
+  }
+
+  /**
+   * Save tool usage to CallRecord database
+   * @param {string} callSid - Call SID
+   * @param {string} toolName - Tool name
+   * @param {number} executionTime - Execution time in milliseconds
+   * @param {boolean} success - Whether tool execution succeeded
+   * @returns {Promise<void>}
+   */
+  async saveToolUsageToCallRecord(callSid, toolName, executionTime, success) {
+    try {
+      const CallRecord = (await import('../database/models/CallRecord.js')).default;
+      
+      await CallRecord.findOneAndUpdate(
+        { callSid: callSid },
+        {
+          $push: {
+            toolsUsed: {
+              toolName: toolName,
+              executionTime: executionTime,
+              success: success,
+              timestamp: new Date()
+            }
+          }
+        },
+        { upsert: false } // Don't create if doesn't exist (should already exist)
+      );
+      
+      console.log(`📝 [${callSid}] Saved tool usage to CallRecord: ${toolName} (${executionTime}ms, success: ${success})`);
+    } catch (error) {
+      // Log but don't throw - tool execution shouldn't fail if DB update fails
+      console.error(`❌ [${callSid}] Error saving tool usage to CallRecord:`, error.message);
+      throw error; // Re-throw so caller can handle if needed
     }
   }
 

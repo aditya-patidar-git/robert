@@ -24,9 +24,19 @@ async function getRecordingConsent(callSid) {
     // Fallback: check CallRecord if conversation was cleaned up
     try {
         const existingRecord = await CallRecord.findOne({ callSid }).lean();
-        if (existingRecord?.recordingConsent) {
+        if (existingRecord) {
+            // If recordingConsent exists, use it (even if given is null - that means opt-in)
+            // If recordingConsent doesn't exist, default to opt-in (given: true)
+            const consent = existingRecord.recordingConsent || {
+                requested: false,
+                given: null, // null means opt-in by default
+                requestedAt: null,
+                respondedAt: null,
+                optOutReason: null
+            };
+            
             return {
-                consent: existingRecord.recordingConsent,
+                consent: consent,
                 from: existingRecord.from,
                 to: existingRecord.to,
                 transcript: existingRecord.transcript || []
@@ -36,7 +46,19 @@ async function getRecordingConsent(callSid) {
         console.error(`❌ [${callSid}] Error fetching consent from CallRecord:`, err);
     }
     
-    return null;
+    // If no record found, default to opt-in
+    return {
+        consent: {
+            requested: false,
+            given: null, // null means opt-in by default
+            requestedAt: null,
+            respondedAt: null,
+            optOutReason: null
+        },
+        from: null,
+        to: null,
+        transcript: []
+    };
 }
 
 // Recording status
@@ -70,7 +92,8 @@ export const recordingStatus = async (req, res) => {
         }
         
         const { consent, from, to, transcript } = consentData;
-        const consentGiven = consent?.given === true;
+        // Default is opt-in: null/undefined means consent given, only false means denied
+        const consentGiven = consent?.given !== false;
         
         if (!consentGiven) {
             // Consent was denied or not given - do not store recording OR transcript
@@ -143,6 +166,14 @@ export const recordingStatus = async (req, res) => {
             { upsert: true, new: true }
         );
 
+        // Cleanup conversation state now that recording is saved
+        // This ensures we don't keep memory longer than necessary
+        const { conversations } = await import('../shared/state.js');
+        if (conversations[CallSid]) {
+            console.log(`🧹 [${CallSid}] Cleaning up conversation state after recording webhook processed`);
+            delete conversations[CallSid];
+        }
+
         res.sendStatus(200);
     } catch (err) {
         console.error("Recording status error:", err);
@@ -159,8 +190,18 @@ export const proxyRecording = async (req, res) => {
             return res.status(404).json({ error: "Recording not found" });
         }
 
-        // If recordingUrl is missing but consent was given, try fetching from Twilio
-        if (!rec.recordingUrl && rec.recordingConsent?.given === true) {
+        // Check consent FIRST before attempting to fetch
+        // Default is opt-in, so null/undefined means consent given
+        // Only explicitly denied (false) should block access
+        if (rec.recordingConsent?.given === false) {
+            return res.status(403).json({ 
+                error: 'Recording not available - consent not given',
+                message: 'Recording consent was not provided for this call.'
+            });
+        }
+
+        // If recordingUrl is missing but consent allows (true or null for opt-in), try fetching from Twilio
+        if (!rec.recordingUrl && rec.recordingConsent?.given !== false) {
             console.log(`🔍 [${req.params.callSid}] Recording URL missing but consent given - fetching from Twilio...`);
             
             try {
@@ -196,15 +237,6 @@ export const proxyRecording = async (req, res) => {
             }
         }
 
-        // Check consent before serving recording
-        // Explicitly require consent to be true (not null, not false)
-        if (rec.recordingConsent?.given !== true) {
-            return res.status(403).json({ 
-                error: 'Recording not available - consent not given',
-                message: 'Recording consent was not provided for this call.'
-            });
-        }
-
         if (!rec.recordingUrl) {
             return res.status(404).json({ 
                 error: 'Recording not available',
@@ -222,11 +254,28 @@ export const proxyRecording = async (req, res) => {
                 password: process.env.TWILIO_AUTH_TOKEN 
             },
             responseType: "stream",
-            timeout: 30000
+            timeout: 30000,
+            validateStatus: () => true // Don't throw on non-2xx status
         });
 
-        res.setHeader("Content-Type", "audio/mpeg");
+        // Preserve Twilio's content-type if available, otherwise default to audio/mpeg
+        const contentType = response.headers['content-type'] || 'audio/mpeg';
+        res.setHeader("Content-Type", contentType);
         res.setHeader("Content-Disposition", `inline; filename="recording-${req.params.callSid}.mp3"`);
+        res.setHeader("Accept-Ranges", "bytes"); // Enable range requests for seeking
+        res.setHeader("Cache-Control", "public, max-age=3600");
+
+        // Handle errors before piping
+        response.data.on('error', (error) => {
+            console.error(`❌ [${req.params.callSid}] Stream error:`, error.message);
+            if (!res.headersSent) {
+                res.status(500).json({ 
+                    error: 'Error streaming recording',
+                    message: error.message 
+                });
+            }
+        });
+
         response.data.pipe(res);
     } catch (err) {
         console.error("recording proxy error:", err.message);

@@ -3,6 +3,7 @@ import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
 import audioDiagnosticService from '../../../services/audioDiagnosticService.js';
 import { MemoryManager } from '../utils/index.js';
+import { conversations } from '../../../shared/state.js';
 // Audio conversion removed - OpenAI is configured for g711_ulaw, we trust the configuration
 
 /**
@@ -322,15 +323,29 @@ export class ResponseHandler {
       const hasAudioModality = event.response?.modalities?.includes('audio') || false;
       const isRefusalResponse = audioTokens === 0 && hasAudioModality && textTokens > 0;
       
-      // Extract response text to check for refusal patterns
+      // Extract response text to check for refusal patterns AND add to transcript
       const outputItems = event.response?.output || [];
       let responseText = '';
+      let fullResponseText = ''; // Full text for transcript (not lowercased)
       if (outputItems && outputItems.length > 0) {
         const textItems = outputItems.filter(item => item.type === 'message' && item.content);
         if (textItems.length > 0) {
-          responseText = textItems.map(item => 
+          fullResponseText = textItems.map(item => 
             item.content.map(c => c.type === 'text' ? c.text : '').join('')
-          ).join(' ').toLowerCase();
+          ).join(' ').trim();
+          responseText = fullResponseText.toLowerCase();
+        }
+      }
+      
+      // Add agent response to conversation transcript
+      if (fullResponseText && status === 'completed') {
+        if (conversations[this.state.callSid]) {
+          conversations[this.state.callSid].transcript.push({
+            role: 'agent',
+            text: fullResponseText,
+            timestamp: new Date()
+          });
+          console.log(`📝 [${this.state.callSid}] Added agent response to transcript: "${fullResponseText.substring(0, 50)}${fullResponseText.length > 50 ? '...' : ''}"`);
         }
       }
       

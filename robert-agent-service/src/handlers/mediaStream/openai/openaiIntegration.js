@@ -407,13 +407,38 @@ ${config.instructions}`;
         console.log(`✅ [${this.state.callSid}] Recording consent already set (given: true) - skipping consent question`);
       } else {
         // Opt-in by default: automatically set consent to given
-        this.state.recordingConsentState.requested = false;
-        this.state.recordingConsentState.given = true;
-        this.state.recordingConsentState.respondedAt = new Date();
-        conversations[this.state.callSid].recordingConsent.requested = false;
-        conversations[this.state.callSid].recordingConsent.given = true;
-        conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
-        conversations[this.state.callSid].recordingConsent.optOutReason = null;
+        const consentData = {
+          requested: false,
+          given: true,
+          respondedAt: new Date(),
+          optOutReason: null
+        };
+        this.state.recordingConsentState.requested = consentData.requested;
+        this.state.recordingConsentState.given = consentData.given;
+        this.state.recordingConsentState.respondedAt = consentData.respondedAt;
+        conversations[this.state.callSid].recordingConsent.requested = consentData.requested;
+        conversations[this.state.callSid].recordingConsent.given = consentData.given;
+        conversations[this.state.callSid].recordingConsent.respondedAt = consentData.respondedAt;
+        conversations[this.state.callSid].recordingConsent.optOutReason = consentData.optOutReason;
+        
+        // CRITICAL: Save consent to CallRecord immediately so it's available when recording webhook arrives
+        try {
+          const CallRecord = (await import('../../../database/models/CallRecord.js')).default;
+          await CallRecord.findOneAndUpdate(
+            { callSid: this.state.callSid },
+            {
+              $set: {
+                recordingConsent: consentData
+              }
+            },
+            { upsert: true }
+          );
+          console.log(`✅ [${this.state.callSid}] Recording consent saved to CallRecord (opt-in by default)`);
+        } catch (dbError) {
+          console.error(`⚠️ [${this.state.callSid}] Error saving consent to CallRecord:`, dbError);
+          // Continue even if DB save fails - consent is still in memory
+        }
+        
         console.log(`✅ [${this.state.callSid}] Recording consent set to opt-in by default (given: true)`);
         
         // CRITICAL: Even when consent is opt-in, we MUST still ask language preference

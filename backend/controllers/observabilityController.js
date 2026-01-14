@@ -409,9 +409,12 @@ export const getToolMetrics = async (req, res) => {
     
     query.createdAt = { $gte: new Date(now.getTime() - timeRangeMs) };
     
-    const callRecords = await CallRecord.find(query).select('toolsUsed');
+    const callRecords = await CallRecord.find(query).select('toolsUsed callSid createdAt');
     
     const toolMetrics = {
+      totalCalls: callRecords.length,
+      callsWithTools: 0,
+      callsWithoutTools: 0,
       totalInvocations: 0,
       toolBreakdown: {},
       averageExecutionTime: 0,
@@ -426,6 +429,7 @@ export const getToolMetrics = async (req, res) => {
     
     for (const record of callRecords) {
       if (record.toolsUsed && record.toolsUsed.length > 0) {
+        toolMetrics.callsWithTools++;
         record.toolsUsed.forEach(tool => {
           toolMetrics.totalInvocations++;
           
@@ -446,7 +450,7 @@ export const getToolMetrics = async (req, res) => {
             breakdown.totalTime += tool.executionTime;
           }
           
-          if (tool.success) {
+          if (tool.success !== false) { // Default to success if not explicitly false
             toolMetrics.successfulExecutions++;
             breakdown.successes++;
           } else {
@@ -454,6 +458,8 @@ export const getToolMetrics = async (req, res) => {
             breakdown.failures++;
           }
         });
+      } else {
+        toolMetrics.callsWithoutTools++;
       }
     }
     

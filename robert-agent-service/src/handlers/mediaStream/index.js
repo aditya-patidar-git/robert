@@ -327,7 +327,8 @@ export const handleMediaStreamConnection = (ws, req) => {
                     
                     // Check recording consent before saving transcript (GDPR compliance)
                     const consent = conversation?.recordingConsent;
-                    const consentGiven = consent?.given === true;
+                    // Default is opt-in: null/undefined means consent given, only false means denied
+                    const consentGiven = consent?.given !== false;
                     
                     if (conversation?.transcript && conversation.transcript.length > 0) {
                         if (consentGiven) {
@@ -335,6 +336,15 @@ export const handleMediaStreamConnection = (ws, req) => {
                             updateData.transcript = conversation.transcript;
                             if (conversation.from) updateData.from = conversation.from;
                             if (conversation.to) updateData.to = conversation.to;
+                            
+                            // Ensure consent is saved (may have been set earlier, but ensure it's persisted)
+                            updateData.recordingConsent = {
+                                requested: consent?.requested || false,
+                                given: true,
+                                requestedAt: consent?.requestedAt || null,
+                                respondedAt: consent?.respondedAt || new Date(),
+                                optOutReason: null
+                            };
                             
                             // Generate summary if not already present
                             if (!updateData.summary && conversation.transcript.length > 0) {
@@ -365,6 +375,17 @@ export const handleMediaStreamConnection = (ws, req) => {
                                 optOutReason: consent?.optOutReason || "Consent not given"
                             };
                             console.log(`🚫 [${stateManager.callSid}] Transcript not saved - recording consent not given`);
+                        }
+                    } else {
+                        // No transcript but ensure consent is saved
+                        if (consent) {
+                            updateData.recordingConsent = {
+                                requested: consent.requested || false,
+                                given: consent.given !== false, // null/undefined means opt-in
+                                requestedAt: consent.requestedAt || null,
+                                respondedAt: consent.respondedAt || null,
+                                optOutReason: consent.optOutReason || null
+                            };
                         }
                     }
                     

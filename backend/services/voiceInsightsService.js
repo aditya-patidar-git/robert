@@ -21,8 +21,8 @@ class VoiceInsightsService {
         createdAt: {
           $gte: startDate,
           $lte: endDate
-        },
-        'audioQuality.mosScore': { $exists: true, $ne: null }
+        }
+        // Removed restrictive filter - show all calls, handle missing audioQuality gracefully
       };
 
       // Apply filters
@@ -48,15 +48,15 @@ class VoiceInsightsService {
           $group: {
             _id: groupFormat,
             count: { $sum: 1 },
+            // MongoDB $avg, $min, $max automatically ignore null values
             avgMOS: { $avg: '$audioQuality.mosScore' },
             avgLatency: { $avg: '$audioQuality.latency' },
             avgJitter: { $avg: '$audioQuality.jitter' },
             avgPacketLoss: { $avg: '$audioQuality.packetLoss' },
             minMOS: { $min: '$audioQuality.mosScore' },
             maxMOS: { $max: '$audioQuality.mosScore' },
-            p50Latency: { $percentile: { input: '$audioQuality.latency', p: [0.5], method: 'approximate' } },
-            p95Latency: { $percentile: { input: '$audioQuality.latency', p: [0.95], method: 'approximate' } },
-            p99Latency: { $percentile: { input: '$audioQuality.latency', p: [0.99], method: 'approximate' } },
+            // Collect latency values for percentile calculation (filter nulls later)
+            latencyValues: { $push: '$audioQuality.latency' },
             qualityDistribution: {
               $push: '$audioQuality.callQuality'
             }
@@ -67,15 +67,13 @@ class VoiceInsightsService {
             _id: 0,
             period: '$_id',
             count: 1,
-            avgMOS: { $round: ['$avgMOS', 2] },
-            avgLatency: { $round: ['$avgLatency', 2] },
-            avgJitter: { $round: ['$avgJitter', 2] },
-            avgPacketLoss: { $round: ['$avgPacketLoss', 2] },
-            minMOS: { $round: ['$minMOS', 2] },
-            maxMOS: { $round: ['$maxMOS', 2] },
-            p50Latency: { $ifNull: [{ $arrayElemAt: ['$p50Latency', 0] }, null] },
-            p95Latency: { $ifNull: [{ $arrayElemAt: ['$p95Latency', 0] }, null] },
-            p99Latency: { $ifNull: [{ $arrayElemAt: ['$p99Latency', 0] }, null] },
+            avgMOS: { $ifNull: [{ $round: ['$avgMOS', 2] }, null] },
+            avgLatency: { $ifNull: [{ $round: ['$avgLatency', 2] }, null] },
+            avgJitter: { $ifNull: [{ $round: ['$avgJitter', 2] }, null] },
+            avgPacketLoss: { $ifNull: [{ $round: ['$avgPacketLoss', 2] }, null] },
+            minMOS: { $ifNull: [{ $round: ['$minMOS', 2] }, null] },
+            maxMOS: { $ifNull: [{ $round: ['$maxMOS', 2] }, null] },
+            latencyValues: 1,
             qualityDistribution: 1
           }
         },
@@ -133,18 +131,47 @@ class VoiceInsightsService {
       };
     }
 
-    const totalCalls = results.reduce((sum, r) => sum + (r.count || 0), 0);
-    const totalMOS = results.reduce((sum, r) => sum + ((r.avgMOS || 0) * (r.count || 0)), 0);
-    const totalLatency = results.reduce((sum, r) => sum + ((r.avgLatency || 0) * (r.count || 0)), 0);
-    const totalJitter = results.reduce((sum, r) => sum + ((r.avgJitter || 0) * (r.count || 0)), 0);
-    const totalPacketLoss = results.reduce((sum, r) => sum + ((r.avgPacketLoss || 0) * (r.count || 0)), 0);
+    // Calculate weighted averages properly - only include non-null values
+    let totalCallsWithMetrics = 0;
+    let weightedMOS = 0;
+    let weightedLatency = 0;
+    let weightedJitter = 0;
+    let weightedPacketLoss = 0;
+
+    let callsWithMOS = 0;
+    let callsWithLatency = 0;
+    let callsWithJitter = 0;
+    let callsWithPacketLoss = 0;
+
+    results.forEach(r => {
+      const periodCount = r.count || 0;
+      totalCallsWithMetrics += periodCount;
+      
+      // Only include non-null values in weighted average
+      if (r.avgMOS !== null && r.avgMOS !== undefined && !isNaN(r.avgMOS)) {
+        weightedMOS += (r.avgMOS * periodCount);
+        callsWithMOS += periodCount;
+      }
+      if (r.avgLatency !== null && r.avgLatency !== undefined && !isNaN(r.avgLatency)) {
+        weightedLatency += (r.avgLatency * periodCount);
+        callsWithLatency += periodCount;
+      }
+      if (r.avgJitter !== null && r.avgJitter !== undefined && !isNaN(r.avgJitter)) {
+        weightedJitter += (r.avgJitter * periodCount);
+        callsWithJitter += periodCount;
+      }
+      if (r.avgPacketLoss !== null && r.avgPacketLoss !== undefined && !isNaN(r.avgPacketLoss)) {
+        weightedPacketLoss += (r.avgPacketLoss * periodCount);
+        callsWithPacketLoss += periodCount;
+      }
+    });
 
     return {
-      totalCalls,
-      avgMOS: totalCalls > 0 ? Math.round((totalMOS / totalCalls) * 100) / 100 : 0,
-      avgLatency: totalCalls > 0 ? Math.round((totalLatency / totalCalls) * 100) / 100 : 0,
-      avgJitter: totalCalls > 0 ? Math.round((totalJitter / totalCalls) * 100) / 100 : 0,
-      avgPacketLoss: totalCalls > 0 ? Math.round((totalPacketLoss / totalCalls) * 100) / 100 : 0
+      totalCalls: totalCallsWithMetrics,
+      avgMOS: callsWithMOS > 0 ? Math.round((weightedMOS / callsWithMOS) * 100) / 100 : 0,
+      avgLatency: callsWithLatency > 0 ? Math.round((weightedLatency / callsWithLatency) * 100) / 100 : 0,
+      avgJitter: callsWithJitter > 0 ? Math.round((weightedJitter / callsWithJitter) * 100) / 100 : 0,
+      avgPacketLoss: callsWithPacketLoss > 0 ? Math.round((weightedPacketLoss / callsWithPacketLoss) * 100) / 100 : 0
     };
   }
 
@@ -176,8 +203,8 @@ class VoiceInsightsService {
       }
 
       const matchStage = {
-        createdAt: { $gte: startDate },
-        'audioQuality.mosScore': { $exists: true, $ne: null }
+        createdAt: { $gte: startDate }
+        // Removed restrictive filter - show all calls, handle missing audioQuality gracefully
       };
 
       const pipeline = [
@@ -215,9 +242,14 @@ class VoiceInsightsService {
       const result = results[0] || {};
 
       const totalCalls = result.totalCalls || 0;
-      const mosCompliance = totalCalls > 0 ? (result.mosCompliant / totalCalls) * 100 : 0;
-      const latencyCompliance = totalCalls > 0 ? (result.latencyCompliant / totalCalls) * 100 : 0;
-      const packetLossCompliance = totalCalls > 0 ? (result.packetLossCompliant / totalCalls) * 100 : 0;
+      // Use separate totals for each metric (only count calls with that metric available)
+      const mosTotal = result.mosTotal || 0;
+      const latencyTotal = result.latencyTotal || 0;
+      const packetLossTotal = result.packetLossTotal || 0;
+      
+      const mosCompliance = mosTotal > 0 ? (result.mosCompliant / mosTotal) * 100 : 0;
+      const latencyCompliance = latencyTotal > 0 ? (result.latencyCompliant / latencyTotal) * 100 : 0;
+      const packetLossCompliance = packetLossTotal > 0 ? (result.packetLossCompliant / packetLossTotal) * 100 : 0;
 
       // Calculate error budget (assuming 99.9% SLO target)
       const sloTarget = 99.9;
@@ -232,21 +264,21 @@ class VoiceInsightsService {
             target: 3.5,
             compliance: Math.round(mosCompliance * 100) / 100,
             compliant: result.mosCompliant || 0,
-            total: totalCalls,
+            total: mosTotal,
             avgValue: Math.round((result.avgMOS || 0) * 100) / 100
           },
           latency: {
             target: 200, // ms
             compliance: Math.round(latencyCompliance * 100) / 100,
             compliant: result.latencyCompliant || 0,
-            total: totalCalls,
+            total: latencyTotal,
             avgValue: Math.round((result.avgLatency || 0) * 100) / 100
           },
           packetLoss: {
             target: 5, // %
             compliance: Math.round(packetLossCompliance * 100) / 100,
             compliant: result.packetLossCompliant || 0,
-            total: totalCalls,
+            total: packetLossTotal,
             avgValue: Math.round((result.avgPacketLoss || 0) * 100) / 100
           }
         },

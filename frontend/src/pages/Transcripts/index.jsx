@@ -168,15 +168,23 @@ const TranscriptsComplaintsPage = () => {
       // If already playing this recording, pause it
       if (playingCallSid === callSid && playingAudio) {
         playingAudio.pause();
+        // Clean up blob URL if it exists
+        if (playingAudio.src && playingAudio.src.startsWith('blob:')) {
+          URL.revokeObjectURL(playingAudio.src);
+        }
         setPlayingAudio(null);
         setPlayingCallSid(null);
         return;
       }
 
-      // Stop any currently playing audio
+      // Stop any currently playing audio and clean up blob URLs
       if (playingAudio) {
         playingAudio.pause();
         playingAudio.currentTime = 0;
+        // Clean up blob URL if it exists
+        if (playingAudio.src && playingAudio.src.startsWith('blob:')) {
+          URL.revokeObjectURL(playingAudio.src);
+        }
         playingAudio.src = '';
       }
 
@@ -188,25 +196,27 @@ const TranscriptsComplaintsPage = () => {
         return;
       }
 
-      // First, check if the URL is accessible and returns audio
-      // Note: HEAD request may fail due to CORS, so we make it optional
+      // Fetch audio as blob with authentication, then create blob URL for audio element
+      // This is necessary because HTML5 audio elements can't send Authorization headers
+      const token = localStorage.getItem('authToken');
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      let audioBlobUrl = null;
       try {
-        const token = localStorage.getItem('authToken');
-        const headers = {};
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        
-        const response = await fetch(audioUrl, { 
-          method: 'HEAD',
+        const audioResponse = await fetch(audioUrl, {
+          method: 'GET',
           headers,
           credentials: 'include'
         });
-        const contentType = response.headers.get('content-type');
         
-        if (!response.ok) {
-          if (response.status === 404) {
-            // Check if 404 is due to opt-out
+        if (!audioResponse.ok) {
+          if (audioResponse.status === 401 || audioResponse.status === 403) {
+            showError('You do not have permission to access this recording.');
+            return;
+          } else if (audioResponse.status === 404) {
             const transcript = transcripts.find(t => t.callSid === callSid);
             if (transcript?.recordingConsent?.given === false) {
               showError('Recording not available: The customer did not provide consent for call recording. In compliance with GDPR, we do not store recordings when consent is not given.');
@@ -214,37 +224,53 @@ const TranscriptsComplaintsPage = () => {
               showError('Recording not found. The recording may not be available for this call.');
             }
             return;
-          } else if (response.status === 401 || response.status === 403) {
-            showError('You do not have permission to access this recording.');
-            return;
           } else {
-            showError(`Recording unavailable (${response.status}). Please try again later.`);
+            showError(`Recording unavailable (${audioResponse.status}). Please try again later.`);
             return;
           }
         }
         
-        if (contentType && !contentType.startsWith('audio/')) {
+        // Get the audio as blob
+        const audioBlob = await audioResponse.blob();
+        
+        // Check if blob is actually audio
+        if (!audioBlob.type.startsWith('audio/')) {
           showError('Recording format not supported. Expected audio format.');
           return;
         }
+        
+        // Create blob URL for audio element
+        audioBlobUrl = URL.createObjectURL(audioBlob);
       } catch (fetchError) {
-        // HEAD request may fail due to CORS or other issues
-        // This is okay - we'll proceed and let the audio element handle errors
-        console.warn('HEAD request failed (may be due to CORS), proceeding with audio playback:', fetchError);
-        // Don't return - continue to try playing the audio
+        console.error('Error fetching audio:', fetchError);
+        showError('Failed to load recording. Please try again.');
+        return;
+      }
+      
+      if (!audioBlobUrl) {
+        showError('Failed to create audio source.');
+        return;
       }
 
-      // Create and configure audio element
-      const audio = new Audio(audioUrl);
+      // Create and configure audio element with blob URL
+      const audio = new Audio(audioBlobUrl);
       
       // Set up event listeners before attempting to play
       audio.addEventListener('ended', () => {
+        // Clean up blob URL when done
+        if (audioBlobUrl) {
+          URL.revokeObjectURL(audioBlobUrl);
+        }
         setPlayingAudio(null);
         setPlayingCallSid(null);
       });
       
       audio.addEventListener('error', (e) => {
         console.error('Audio playback error:', e, audio.error);
+        // Clean up blob URL on error
+        if (audioBlobUrl) {
+          URL.revokeObjectURL(audioBlobUrl);
+        }
         let errorMessage = 'Failed to play recording.';
         
         if (audio.error) {
@@ -285,6 +311,10 @@ const TranscriptsComplaintsPage = () => {
         setPlayingAudio(audio);
         setPlayingCallSid(callSid);
       } catch (playError) {
+        // Clean up blob URL on play error
+        if (audioBlobUrl) {
+          URL.revokeObjectURL(audioBlobUrl);
+        }
         console.error('Error playing audio:', playError);
         // Handle browser autoplay restrictions
         if (playError.name === 'NotAllowedError') {
