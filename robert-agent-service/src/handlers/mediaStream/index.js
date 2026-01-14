@@ -177,6 +177,11 @@ export const handleMediaStreamConnection = (ws, req) => {
         
         // Setup Twilio WebSocket message handler for media
         let mediaEventCount = 0; // Track total media events received (for logging)
+        let outboundMessageCount = 0; // Track outbound messages sent
+        
+        // Remove wrapper logging - not needed for format testing
+        // Just pass through to original send
+        
         ws.on('message', async (data) => {
             if (stateManager.isClosed || !stateManager.accepting) {
                 return;
@@ -195,26 +200,12 @@ export const handleMediaStreamConnection = (ws, req) => {
                     mediaEventCount++;
                     const track = json.media.track;
                     
-                    // Log track info for debugging (first few and then periodically)
-                    if (mediaEventCount <= 5 || (mediaEventCount % 500 === 0)) {
-                        console.log(`🎤 [${stateManager.callSid}] Media event #${mediaEventCount} - track: ${track || 'undefined'}`);
-                    }
-                    
+                    // Remove media event logging - not needed for format testing
                     // CRITICAL: Only process inbound track to avoid feedback loop
-                    // Outbound track is the agent's own audio being sent back
                     if (track === 'inbound') {
-                        // Process incoming audio from caller
                         audioProcessor.processIncomingAudio(json.media.payload);
-                    } else if (track === 'outbound') {
-                        // Explicitly ignore outbound track - this is our own audio being echoed back
-                        // Log first few to verify we're filtering correctly
-                        if (mediaEventCount <= 10 || (mediaEventCount % 500 === 0)) {
-                            console.log(`🔇 [${stateManager.callSid}] Ignoring outbound track audio (feedback prevention) - event #${mediaEventCount}`);
-                        }
-                    } else {
-                        // Track is undefined or unexpected - log warning
-                        console.warn(`⚠️ [${stateManager.callSid}] Media event #${mediaEventCount} with unexpected track: ${track || 'undefined'}, ignoring`);
                     }
+                    // Silently ignore outbound track (feedback prevention)
                 }
                 
                 // Handle other Twilio events (mark, stop, etc.)

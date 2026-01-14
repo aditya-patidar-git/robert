@@ -704,9 +704,9 @@ ${config.instructions}`;
       try {
         const event = JSON.parse(data.toString());
         
-        // Minimal logging - only log important events
+        // Only log format info - essential for debugging
         if (event.type === 'session.updated') {
-          console.log(`✅ [${this.state.callSid}] Session updated - audio format: ${event.session?.output_audio_format || 'N/A'}, voice: ${event.session?.voice || 'N/A'}`);
+          console.log(`📋 [${this.state.callSid}] Session config - output_audio_format: ${event.session?.output_audio_format || 'N/A'}`);
         }
         
         // Handle error events

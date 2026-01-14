@@ -305,21 +305,31 @@ export const handleIncomingCall = async (req, res) => {
             incrementActiveCalls({ entry_path: entryPath });
         }
 
-<<<<<<< Updated upstream
+        // Set recording consent early for inbound calls
+        // This ensures consent is set before recording webhook arrives and before WebSocket connects
+        await setInboundCallConsent(CallSid, entryPath);
+
         // Generate Media Streams TwiML WITH Connect verb for bidirectional streaming
         // NOTE: <Start><Stream> is UNIDIRECTIONAL (receive only) - cannot send audio back!
         // <Connect><Stream> is BIDIRECTIONAL - required for sending agent audio to caller
         // Also: <Record> verb conflicts with Media Streams and causes audio silence
         // Recording should be handled via Twilio API (like outbound calls) instead of TwiML verb
-=======
-        // Set recording consent early for inbound calls
-        // This ensures consent is set before recording webhook arrives and before WebSocket connects
-        await setInboundCallConsent(CallSid, entryPath);
-
-        // Generate Media Streams TwiML with recording enabled
->>>>>>> Stashed changes
         const wsUrl = buildMediaStreamsWsUrl(CallSid);
+        
+        console.log(`\n📞 [${CallSid}] ========== GENERATING MEDIA STREAMS TWIML ==========`);
+        console.log(`   📊 Configuration:`);
+        console.log(`      - CallSid: ${CallSid}`);
+        console.log(`      - From: ${From}`);
+        console.log(`      - To: ${To}`);
+        console.log(`      - WebSocket URL: ${wsUrl}`);
+        console.log(`      - Use Connect verb: true (REQUIRED for bidirectional)`);
+        console.log(`      - Track: inbound_track (REQUIRED for <Connect> verb - Twilio Error 31941)`);
+        
         const twiml = generateMediaStreamsTwiML(wsUrl, { useConnect: true }); // CRITICAL: Use Connect for inbound calls
+        
+        console.log(`   📋 Generated TwiML:`);
+        console.log(`      ${twiml.replace(/\n/g, '\n      ')}`);
+        console.log(`   ✅ TwiML generated successfully\n`);
 
         span.setStatus({ code: SpanStatusCode.OK });
         span.end();

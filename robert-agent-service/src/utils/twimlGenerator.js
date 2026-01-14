@@ -29,21 +29,34 @@ export function generateSipRoutingTwiML(sipEndpoint, options = {}) {
  * Routes call to WebSocket Media Stream endpoint
  * @param {string} wsUrl - WebSocket URL for Media Stream
  * @param {Object} options - Additional options
- * @param {string} options.track - Track type: 'inbound', 'outbound', or 'both_tracks' (default: 'both_tracks')
+ * @param {string} options.track - Track type (only used with <Start> verb):
+ *   - 'inbound_track', 'outbound_track', or 'both_tracks' (default: 'both_tracks')
+ *   - When useConnect=true, track is automatically set to 'inbound_track' (Twilio requirement)
  * @param {number} options.pauseLength - Pause length in seconds (default: 3600)
  * @param {boolean} options.enableRecording - Enable call recording (default: false)
  * @param {string} options.recordingStatusCallback - URL for recording status callback
  * @param {boolean} options.useConnect - Use <Connect> verb for bidirectional streaming (default: false)
  *   - <Start><Stream>: UNIDIRECTIONAL - receive audio only, cannot send audio back
+ *     Supports: 'inbound_track', 'outbound_track', or 'both_tracks'
  *   - <Connect><Stream>: BIDIRECTIONAL - can send and receive audio (required for inbound calls)
+ *     REQUIRES: 'inbound_track' only (Twilio Error 31941 if other values used)
+ *     Note: You still send audio back by specifying track='outbound' in media messages
  * @returns {string} - TwiML XML string
  */
 export function generateMediaStreamsTwiML(wsUrl, options = {}) {
-  const track = options.track || 'both_tracks';
   const pauseLength = options.pauseLength || 3600;
   const enableRecording = options.enableRecording || false;
   const recordingStatusCallback = options.recordingStatusCallback;
   const useConnect = options.useConnect || false;
+  
+  // CRITICAL FIX: When using <Connect>, track must be "inbound_track" (not "both_tracks")
+  // According to Twilio Error 31941: <Connect> only accepts "inbound_track"
+  // However, <Connect> still allows bidirectional communication - you send audio back
+  // by specifying track="outbound" in your media messages to Twilio
+  // When using <Start>, you can use "inbound_track", "outbound_track", or "both_tracks"
+  const track = useConnect 
+    ? 'inbound_track'  // <Connect> requires "inbound_track" only
+    : (options.track || 'both_tracks');  // <Start> can use any track value
   
   // NOTE: <Record> verb conflicts with Media Streams and can cause audio silence
   // Recording should be handled via Twilio API (using record: true in call creation)
