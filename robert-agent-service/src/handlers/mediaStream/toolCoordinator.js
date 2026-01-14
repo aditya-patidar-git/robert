@@ -299,65 +299,17 @@ export class ToolCoordinator {
       return;
     }
     
-    // Minimal logging - only log important events
-    if (event.type === 'response.created') {
-      console.log(`📝 [${this.state.callSid}] Response created - ID: ${event.response?.id}, modalities: ${JSON.stringify(event.response?.modalities || [])}`);
-    }
-    
-    if (event.type === 'response.audio.delta' || event.type === 'response.output_audio.delta') {
-      const outboundCount = this.state.outboundAudioChunkCount || 0;
-      if (outboundCount < 5) {
-        console.log(`🔊 [${this.state.callSid}] Audio delta #${outboundCount + 1} received`);
-      }
-    }
-    
-    if (event.type === 'response.done') {
-      const audioTokens = event.response?.usage?.output_token_details?.audio_tokens || 0;
-      const textTokens = event.response?.usage?.output_token_details?.text_tokens || 0;
-      const totalTokens = event.response?.usage?.output_token_details?.total_tokens || 0;
-      
-      // Log the actual response items to see what was generated
-      const outputItems = event.response?.output || [];
-      let textContent = '';
-      if (outputItems && outputItems.length > 0) {
-        const textItems = outputItems.filter(item => item.type === 'message' && item.content);
-        if (textItems.length > 0) {
-          textContent = textItems.map(item => 
-            item.content.map(c => c.type === 'text' ? c.text : '').join('')
-          ).join(' ');
-        }
-      }
-      
-      console.log(`✅ [${this.state.callSid}] Response done - ID: ${event.response?.id}`);
-      console.log(`   📊 Tokens: audio=${audioTokens}, text=${textTokens}, total=${totalTokens}`);
-      if (textContent) {
-        console.log(`   📝 Text content: "${textContent.substring(0, 100)}${textContent.length > 100 ? '...' : ''}"`);
-      } else {
-        console.log(`   ⚠️ No text content found in response`);
-      }
-    }
+    // Remove verbose logging - not needed for format testing
     
     try {
       // Route based on event type
       switch (event.type) {
         case 'session.updated':
-          console.log(`📋 [${this.state.callSid}] Session updated event received`);
-          console.log(`   - Session ID: ${event.session?.id}`);
-          console.log(`   - Model: ${event.session?.model}`);
-          console.log(`   - Input audio format: ${event.session?.input_audio_format}`);
-          console.log(`   - Output audio format: ${event.session?.output_audio_format}`);
-          console.log(`   - Voice: ${event.session?.voice}`);
-          console.log(`   - Temperature: ${event.session?.temperature}`);
-          console.log(`   - Turn detection: ${event.session?.turn_detection?.type}`);
-          if (event.session?.turn_detection) {
-            console.log(`   - VAD threshold: ${event.session.turn_detection.threshold}`);
-            console.log(`   - Silence duration: ${event.session.turn_detection.silence_duration_ms}ms`);
-            console.log(`   - Prefix padding: ${event.session.turn_detection.prefix_padding_ms}ms`);
-          }
+          // Only log format info
+          console.log(`📋 [${this.state.callSid}] Session updated - output_audio_format: ${event.session?.output_audio_format || 'N/A'}`);
           
           // Resolve pending session update promise if waiting
           if (this.state.pendingSessionUpdatePromise) {
-            console.log(`✅ [${this.state.callSid}] Resolving pending session update promise`);
             this.state.pendingSessionUpdatePromise();
           }
           
@@ -386,9 +338,7 @@ export class ToolCoordinator {
           break;
           
         case 'response.text.done':
-          // Log the text content that was generated
-          const textContent = event.text || '';
-          console.log(`📝 [${this.state.callSid}] Response text done - length: ${textContent.length}, content: "${textContent.substring(0, 150)}${textContent.length > 150 ? '...' : ''}"`);
+          // Remove verbose logging
           break;
           
         case 'response.done':

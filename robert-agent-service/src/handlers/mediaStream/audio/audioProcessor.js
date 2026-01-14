@@ -91,8 +91,8 @@ export class AudioProcessor {
               event: 'media',
               streamSid: this.state.streamSid,
               media: { 
-                payload: frame.toString('base64')
-                // NO track field - Twilio automatically routes to outbound
+                payload: frame.toString('base64'),
+                track: 'outbound'  // Explicitly specify outbound track for reliable routing (especially for inbound calls)
               }
             }));
           } catch (err) {

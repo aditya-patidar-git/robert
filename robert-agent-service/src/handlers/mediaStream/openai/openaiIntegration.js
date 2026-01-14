@@ -355,9 +355,14 @@ export class OpenAIIntegration {
       const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
       const consentQuestion = "Do you consent to this call being recorded?";
       
+      // CRITICAL FIX: Check if consent was already set by handleIncomingCall
+      const existingConsent = conversations[this.state.callSid]?.recordingConsent;
+      const consentAlreadySet = existingConsent?.given === true;
+      
       // Modify instructions to include recording consent flow at the start
       let modifiedInstructions = config.instructions;
-      if (requireExplicitConsent) {
+      if (requireExplicitConsent && !consentAlreadySet) {
+        // Only modify instructions if explicit consent is required AND consent hasn't been set yet
         modifiedInstructions = `IMPORTANT: You must start every call with the following exact sequence:
 1. First, say: "${consentNotice}"
 2. Then immediately ask: "${consentQuestion}"
@@ -380,6 +385,20 @@ ${config.instructions}`;
         conversations[this.state.callSid].recordingConsent.requested = true;
         conversations[this.state.callSid].recordingConsent.requestedAt = new Date();
         console.log(`📋 [${this.state.callSid}] Recording consent will be requested - instructions modified to include consent flow`);
+      } else if (consentAlreadySet) {
+        // Consent was already set by handleIncomingCall - use it and skip consent question
+        this.state.recordingConsentState.requested = existingConsent.requested || false;
+        this.state.recordingConsentState.given = true;
+        this.state.recordingConsentState.respondedAt = existingConsent.respondedAt || new Date();
+        // Ensure conversation state is updated
+        if (!conversations[this.state.callSid].recordingConsent) {
+          conversations[this.state.callSid].recordingConsent = {};
+        }
+        conversations[this.state.callSid].recordingConsent.requested = existingConsent.requested || false;
+        conversations[this.state.callSid].recordingConsent.given = true;
+        conversations[this.state.callSid].recordingConsent.respondedAt = existingConsent.respondedAt || new Date();
+        conversations[this.state.callSid].recordingConsent.optOutReason = null;
+        console.log(`✅ [${this.state.callSid}] Recording consent already set (given: true) - skipping consent question`);
       } else {
         // Opt-in by default: automatically set consent to given
         this.state.recordingConsentState.requested = false;
@@ -685,9 +704,9 @@ ${config.instructions}`;
       try {
         const event = JSON.parse(data.toString());
         
-        // Minimal logging - only log important events
+        // Only log format info - essential for debugging
         if (event.type === 'session.updated') {
-          console.log(`✅ [${this.state.callSid}] Session updated - audio format: ${event.session?.output_audio_format || 'N/A'}, voice: ${event.session?.voice || 'N/A'}`);
+          console.log(`📋 [${this.state.callSid}] Session config - output_audio_format: ${event.session?.output_audio_format || 'N/A'}`);
         }
         
         // Handle error events

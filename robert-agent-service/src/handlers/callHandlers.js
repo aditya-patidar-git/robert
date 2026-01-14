@@ -19,6 +19,53 @@ dotenv.config();
 
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 
+/**
+ * Set recording consent for inbound calls based on privacy config
+ * This ensures consent is set before recording webhook arrives and before WebSocket connects
+ * @param {string} callSid - Call SID
+ * @param {string} callType - Call type ('SIP' or 'Twilio')
+ * @returns {Promise<void>}
+ */
+async function setInboundCallConsent(callSid, callType = 'Twilio') {
+    if (!conversations[callSid]) {
+        return;
+    }
+    
+    try {
+        const privacyConfig = await import('../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
+        let privacySettings = null;
+        if (privacyConfig) {
+            privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        }
+        
+        const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
+        
+        if (!requireExplicitConsent) {
+            // Opt-in by default: set consent immediately for inbound calls
+            if (!conversations[callSid].recordingConsent) {
+                conversations[callSid].recordingConsent = {
+                    requested: false,
+                    given: null,
+                    requestedAt: null,
+                    respondedAt: null
+                };
+            }
+            
+            conversations[callSid].recordingConsent.requested = false;
+            conversations[callSid].recordingConsent.given = true;
+            conversations[callSid].recordingConsent.respondedAt = new Date();
+            conversations[callSid].recordingConsent.optOutReason = null;
+            
+            console.log(`✅ [${callSid}] Recording consent set to opt-in by default for inbound ${callType} call (given: true)`);
+        } else {
+            console.log(`📋 [${callSid}] Recording consent will be requested explicitly for inbound ${callType} call`);
+        }
+    } catch (consentError) {
+        console.error(`⚠️ [${callSid}] Error setting consent for inbound ${callType} call:`, consentError);
+        // Continue even if consent setup fails - it will be handled in openaiIntegration
+    }
+}
+
 // Make outbound calls
 export const makeCall = async (req, res) => {
     const { toNumbers } = req.body;
@@ -220,6 +267,9 @@ export const handleIncomingCall = async (req, res) => {
                     incrementActiveCalls({ entry_path: entryPath });
                 }
                 
+                // Set recording consent early for inbound SIP calls
+                await setInboundCallConsent(CallSid, 'SIP');
+                
                 console.log(`📞 [${CallSid}] Inbound call routed via SIP to: ${sipEndpoint}`);
                 
                 // Return TwiML with SIP routing
@@ -255,14 +305,31 @@ export const handleIncomingCall = async (req, res) => {
             incrementActiveCalls({ entry_path: entryPath });
         }
 
-        // Generate Media Streams TwiML with recording enabled
+        // Set recording consent early for inbound calls
+        // This ensures consent is set before recording webhook arrives and before WebSocket connects
+        await setInboundCallConsent(CallSid, entryPath);
+
+        // Generate Media Streams TwiML WITH Connect verb for bidirectional streaming
+        // NOTE: <Start><Stream> is UNIDIRECTIONAL (receive only) - cannot send audio back!
+        // <Connect><Stream> is BIDIRECTIONAL - required for sending agent audio to caller
+        // Also: <Record> verb conflicts with Media Streams and causes audio silence
+        // Recording should be handled via Twilio API (like outbound calls) instead of TwiML verb
         const wsUrl = buildMediaStreamsWsUrl(CallSid);
-        const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
-        const recordingStatusCallback = `${baseUrl}/api/inbound/recording-status`;
-        const twiml = generateMediaStreamsTwiML(wsUrl, {
-            enableRecording: true,
-            recordingStatusCallback: recordingStatusCallback
-        });
+        
+        console.log(`\n📞 [${CallSid}] ========== GENERATING MEDIA STREAMS TWIML ==========`);
+        console.log(`   📊 Configuration:`);
+        console.log(`      - CallSid: ${CallSid}`);
+        console.log(`      - From: ${From}`);
+        console.log(`      - To: ${To}`);
+        console.log(`      - WebSocket URL: ${wsUrl}`);
+        console.log(`      - Use Connect verb: true (REQUIRED for bidirectional)`);
+        console.log(`      - Track: inbound_track (REQUIRED for <Connect> verb - Twilio Error 31941)`);
+        
+        const twiml = generateMediaStreamsTwiML(wsUrl, { useConnect: true }); // CRITICAL: Use Connect for inbound calls
+        
+        console.log(`   📋 Generated TwiML:`);
+        console.log(`      ${twiml.replace(/\n/g, '\n      ')}`);
+        console.log(`   ✅ TwiML generated successfully\n`);
 
         span.setStatus({ code: SpanStatusCode.OK });
         span.end();
