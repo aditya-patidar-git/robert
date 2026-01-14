@@ -368,14 +368,20 @@ export class OpenAIIntegration {
 2. Then immediately ask: "${consentQuestion}"
 3. WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
 4. If the caller's response is unclear, ambiguous, or you detect background noise/barge-in that prevents you from understanding their answer, IMMEDIATELY repeat the question: "${consentQuestion}" - DO NOT proceed until you receive a clear yes or no answer
-5. Only after they respond clearly, continue with: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
-6. If the language preference is unclear or you detect noise/barge-in, repeat: "What language would you like to use today?" until you get a clear answer
 
-CRITICAL: 
+5. CRITICAL: Only AFTER they respond clearly to consent, you MUST ask: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+6. WAIT for the caller's language preference response - DO NOT proceed until you get a clear answer
+7. If the language preference is unclear or you detect noise/barge-in, repeat: "What language would you like to use today?" until you get a clear answer
+
+8. ONLY AFTER language preference is confirmed, you may proceed to: "What would you like to do today?"
+
+CRITICAL RULES:
 - You MUST ask the consent question before proceeding with any other conversation
+- You MUST ask the language preference question IMMEDIATELY after consent is given
+- You MUST NOT ask "What would you like to do today?" until language preference is confirmed
 - If you cannot clearly understand the caller's response (due to noise, barge-in, or unclear speech), you MUST repeat the question
 - Do not assume or guess the answer - always wait for a clear response
-- The same applies to the language preference question - repeat if unclear
+- The language preference question is MANDATORY - it cannot be skipped
 
 ${config.instructions}`;
         
@@ -409,6 +415,23 @@ ${config.instructions}`;
         conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
         conversations[this.state.callSid].recordingConsent.optOutReason = null;
         console.log(`✅ [${this.state.callSid}] Recording consent set to opt-in by default (given: true)`);
+        
+        // CRITICAL: Even when consent is opt-in, we MUST still ask language preference
+        this.state.waitingForLanguage = true;
+        this.state.languagePreferenceState.asked = false;
+        if (conversations[this.state.callSid]) {
+          conversations[this.state.callSid].waitingForLanguage = true;
+          if (!conversations[this.state.callSid].languagePreferenceState) {
+            conversations[this.state.callSid].languagePreferenceState = {
+              asked: false,
+              selected: false,
+              language: null,
+              askedAt: null,
+              selectedAt: null
+            };
+          }
+        }
+        console.log(`🌐 [${this.state.callSid}] Consent opt-in - language preference MUST be asked`);
       }
       
       // Use model from database configuration, fallback to default if not available

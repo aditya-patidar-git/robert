@@ -238,10 +238,12 @@ class PrivateLessonBookingService extends BaseBookingService {
       }
       
       if (missingPreferences.length > 0) {
+        const { generateBikeTypeQuestion } = await import('./browser/preferenceValidator.js');
+        const bikeTypeQuestion = generateBikeTypeQuestion('Private Lesson', validBikeTypes);
         return {
           requiresPreferences: true,
           missingPreferences: missingPreferences,
-          message: `I need to know your bike type preference for the Private Lesson course. Which bike type would you prefer?`,
+          message: `I need to know your bike type preference for the Private Lesson course. ${bikeTypeQuestion}`,
           validOptions: validBikeTypes
         };
       }

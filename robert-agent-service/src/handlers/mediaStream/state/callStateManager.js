@@ -80,6 +80,16 @@ export class CallStateManager {
     };
     this.consentTimeout = null;
     
+    // Language preference tracking
+    this.waitingForLanguage = false;
+    this.languagePreferenceState = {
+      asked: false,
+      selected: false,
+      language: null,
+      askedAt: null,
+      selectedAt: null
+    };
+    
     // Tool execution tracking
     this.pendingToolCalls = new Map(); // call_id -> { name, arguments, startTime }
     this.recentToolCalls = new Map(); // callSid -> [{ name, parameters, timestamp }]

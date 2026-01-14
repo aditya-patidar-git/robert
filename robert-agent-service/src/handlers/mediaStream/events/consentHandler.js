@@ -123,6 +123,23 @@ export class ConsentHandler {
       }
       conversations[this.state.callSid].recordingConsent.needsRepeat = false;
       console.log(`✅ [${this.state.callSid}] Recording consent GIVEN by user: "${transcript}"`);
+      
+      // CRITICAL: After consent is given, we MUST ask language preference
+      this.state.waitingForLanguage = true;
+      this.state.languagePreferenceState.asked = false; // Will be set to true when question is asked
+      if (conversations[this.state.callSid]) {
+        conversations[this.state.callSid].waitingForLanguage = true;
+        if (!conversations[this.state.callSid].languagePreferenceState) {
+          conversations[this.state.callSid].languagePreferenceState = {
+            asked: false,
+            selected: false,
+            language: null,
+            askedAt: null,
+            selectedAt: null
+          };
+        }
+      }
+      console.log(`🌐 [${this.state.callSid}] Consent given - language preference MUST be asked next`);
     } else if (declineDetected) {
       // Clear timeout immediately
       if (this.state.consentTimeout) {

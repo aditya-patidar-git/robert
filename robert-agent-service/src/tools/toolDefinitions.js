@@ -429,7 +429,13 @@ export function getToolDefinitions() {
     {
       type: 'function',
       name: 'calendar',
-      description: 'Manage calendar events and availability',
+      description: `⚠️ LEGACY TOOL: Delegates to booking_step_check_availability for real-time availability checking.
+      
+For availability checking, this tool delegates to booking_step_check_availability which uses browser automation to check CRM availability pages.
+- check_availability: Requires courseType parameter (defaults to "CBT" if not provided). Returns real-time availability from CRM.
+- book_slot: Not supported - bookings must go through complete booking workflow using booking_step_* tools or crm_browser.
+
+RECOMMENDED: Use booking_step_check_availability directly for better control and features.`,
       parameters: {
         type: 'object',
         properties: {
@@ -438,13 +444,17 @@ export function getToolDefinitions() {
             enum: ['check_availability', 'book_slot'],
             description: 'Action to perform'
           },
+          courseType: {
+            type: 'string',
+            description: 'Course type for availability check (required for check_availability, defaults to "CBT" if not provided). Examples: "CBT", "ITM", "Private Lesson", "Gear Conversion"'
+          },
           date: {
             type: 'string',
-            description: 'Date for the action (optional)'
+            description: 'Preferred date for availability check (optional)'
           },
           time: {
             type: 'string',
-            description: 'Time for the action (optional)'
+            description: 'Preferred time for availability check (optional)'
           },
           duration: {
             type: 'number',
@@ -484,7 +494,14 @@ export function getToolDefinitions() {
     {
       type: 'function',
       name: 'crm',
-      description: 'Access CRM system for customer management',
+      description: `⚠️ LEGACY TOOL: Delegates to crm_browser tool for all CRM operations.
+      
+All CRM operations use browser automation (Playwright) with dry-run → diff → confirmation → commit flow.
+- get_customer: Delegates to crm_browser task "search_client". Requires customerId or data with searchType/searchValue.
+- update_customer: Delegates to crm_browser task "update_customer". Requires customerId and updateData.
+- create_booking: Delegates to crm_browser task "create_booking". Requires booking data.
+
+RECOMMENDED: Use crm_browser tool directly for better control, error handling, and access to all CRM features.`,
       parameters: {
         type: 'object',
         properties: {
@@ -495,11 +512,11 @@ export function getToolDefinitions() {
           },
           customerId: {
             type: 'string',
-            description: 'Customer ID (optional)'
+            description: 'Customer ID (required for update_customer, optional for get_customer)'
           },
           data: {
             type: 'object',
-            description: 'Data for the action (optional)'
+            description: 'Data for the action. For get_customer: {searchType: "mobile"|"email"|"id", searchValue: "..."}. For update_customer: updateData object. For create_booking: booking data object.'
           }
         },
         required: ['action']
@@ -694,7 +711,21 @@ This tool opens a browser and performs the actual CRM operations.`,
     {
       type: 'function',
       name: 'payments',
-      description: 'Process payments and refunds',
+      description: `⚠️ LEGACY TOOL: Provides guidance for payment processing. Direct payment processing is not supported in v1.
+      
+Per project requirements:
+- v1: Card payments in-agent are out-of-scope
+- v1.1: Will use Twilio <Pay> (PCI Mode) when enabled
+- Never collect card details directly
+
+For booking payments:
+- Use booking_step_process_payment (Twilio Pay during booking) OR
+- Use booking_step_send_payment_request (send payment link via email/SMS)
+
+For refunds:
+- Use crm_browser tool with task "issue_refund" (if permitted by policy) after identity verification
+
+This tool returns guidance messages directing to the appropriate tools.`,
       parameters: {
         type: 'object',
         properties: {
@@ -705,7 +736,7 @@ This tool opens a browser and performs the actual CRM operations.`,
           },
           amount: {
             type: 'number',
-            description: 'Amount to process'
+            description: 'Amount to process (optional, for informational purposes)'
           },
           currency: {
             type: 'string',
@@ -714,9 +745,13 @@ This tool opens a browser and performs the actual CRM operations.`,
           customerId: {
             type: 'string',
             description: 'Customer ID (optional)'
+          },
+          bookingId: {
+            type: 'string',
+            description: 'Booking ID if payment is for a specific booking (optional)'
           }
         },
-        required: ['action', 'amount']
+        required: ['action']
       }
     },
     {
