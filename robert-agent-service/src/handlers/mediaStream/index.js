@@ -163,7 +163,9 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Update tool coordinator with OpenAI WebSocket
             if (setupResult?.openaiWs) {
                 toolCoordinator.setOpenAIWebSocket(setupResult.openaiWs);
-                stateManager.setOpenAIReady(setupResult.openaiWs);
+                // Set OpenAI ready with connection manager reference for robust sending
+                const connectionManager = openaiIntegration?.connectionManager || null;
+                stateManager.setOpenAIReady(setupResult.openaiWs, connectionManager);
             }
             
             // Audio processing will start automatically when first audio arrives

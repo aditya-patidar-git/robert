@@ -70,16 +70,15 @@ export class TranscriptionHandler {
       
       // Cancel response and clear buffer
       try {
-        if (this.state.openaiWs && this.state.openaiWs.readyState === 1) {
-          if (responseIdToCancel) {
-            this.state.openaiWs.send(JSON.stringify({
-              type: 'response.cancel',
-              response_id: responseIdToCancel
-            }));
-          }
-          this.state.openaiWs.send(JSON.stringify({
-            type: 'input_audio_buffer.clear'
-          }));
+        if (responseIdToCancel) {
+          // Use robust send method with connection manager support
+          this.state.sendToOpenAI({
+            type: 'response.cancel',
+            response_id: responseIdToCancel
+          }, { priority: 'high' });
+        }
+        // Use robust send method
+        this.state.sendToOpenAI({ type: 'input_audio_buffer.clear' }, { priority: 'high' });
         }
       } catch (err) {
         console.warn(`⚠️ [${this.state.callSid}] Error cancelling response:`, err.message);

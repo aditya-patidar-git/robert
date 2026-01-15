@@ -31,6 +31,8 @@ class SipCallRouter {
     let lastError = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      let call = null; // Track if call was created successfully
+      
       try {
         console.log(`📞 [SIP] Attempt ${attempt + 1}/${maxRetries} to route call via SIP: ${to}`);
 
@@ -89,18 +91,24 @@ class SipCallRouter {
           ...options.twilioCallOptions
         };
 
-        // Create the call via Twilio
-        // Twilio will route this through the Elastic SIP Trunk
-        // The trunk configuration (in Twilio console) routes to OpenAI SIP endpoint
-        // OpenAI will then send call.accept webhook to /api/sip/call-accept
-        const call = await twilioClient.calls.create(callOptions);
+        // CRITICAL: Create the call via Twilio
+        // Once call is created successfully, we must return it even if tracking fails
+        // This prevents duplicate calls from being created
+        call = await twilioClient.calls.create(callOptions);
         
         console.log(`✅ [SIP] Call created via SIP: ${call.sid}`);
         console.log(`📞 [SIP] Call status: ${call.status}`);
         
-        // Track SIP call
-        sipService.trackStatus(call.sid, 'initiated', { from, to, method: 'SIP' });
+        // Track SIP call (non-critical - if this fails, we still return the call)
+        try {
+          sipService.trackStatus(call.sid, 'initiated', { from, to, method: 'SIP' });
+        } catch (trackError) {
+          console.warn(`⚠️ [SIP] Failed to track call status (non-critical):`, trackError.message);
+          // Don't throw - call was created successfully, return it
+        }
         
+        // CRITICAL FIX: Return immediately after successful call creation
+        // This prevents duplicate calls if tracking/logging fails
         return call;
 
       } catch (error) {
@@ -108,6 +116,13 @@ class SipCallRouter {
         const failureReason = this.getFailureReason(error);
         console.error(`❌ [SIP] Attempt ${attempt + 1} failed:`, error.message);
         console.log(`📊 [SIP] Fallback reason: ${failureReason}`);
+
+        // CRITICAL FIX: If call was already created, don't retry
+        // This prevents duplicate calls from being created
+        if (call) {
+          console.warn(`⚠️ [SIP] Call ${call.sid} was created but error occurred. Returning existing call to prevent duplicates.`);
+          return call;
+        }
 
         // Don't retry on last attempt
         if (attempt < maxRetries - 1) {

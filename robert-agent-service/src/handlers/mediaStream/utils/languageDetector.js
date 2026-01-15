@@ -56,14 +56,15 @@ export class LanguageDetector {
       const config = configManager.getConfigForNumber(this.state.phoneNumber, detectedLanguageCode);
       
       // Update OpenAI session with new language and voice (use config.voice to respect database settings)
-      this.state.openaiWs.send(JSON.stringify({
+      // Use robust send method with connection manager support
+      this.state.sendToOpenAI({
         type: 'session.update',
         session: {
           modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
           voice: config.voice.id,
           instructions: config.instructions
         }
-      }));
+      }, { priority: 'high' });
       
       console.log(`🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${config.voice.id}`);
       console.log(`✅ [${this.state.callSid}] Language preference marked as selected - can proceed to business questions`);

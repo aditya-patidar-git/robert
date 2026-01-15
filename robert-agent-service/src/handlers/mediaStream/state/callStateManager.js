@@ -13,6 +13,7 @@ export class CallStateManager {
     this.setupComplete = false;
     this.isClosed = false;
     this.accepting = true;
+    this.openaiConnectionManager = null; // Reference to WebSocketConnectionManager for robust sending
     
     // Constants
     this.MAX_CALL_DURATION_MS = 3600000; // 1 hour max
@@ -140,9 +141,39 @@ export class CallStateManager {
   /**
    * Mark OpenAI connection as ready
    */
-  setOpenAIReady(openaiWs) {
+  setOpenAIReady(openaiWs, connectionManager = null) {
     this.openaiWs = openaiWs;
     this.openaiReady = true;
+    this.openaiConnectionManager = connectionManager;
+  }
+
+  /**
+   * Send message to OpenAI WebSocket with connection manager support
+   * Provides robust sending with queuing, keep-alive, and quality monitoring
+   * @param {Object|string} message - Message to send
+   * @param {Object} options - Send options (priority, queueOnFailure)
+   * @returns {boolean} True if sent successfully
+   */
+  sendToOpenAI(message, options = {}) {
+    // Use connection manager if available (provides queuing, keep-alive, quality monitoring)
+    if (this.openaiConnectionManager) {
+      return this.openaiConnectionManager.send(message, options);
+    }
+    
+    // Fallback to direct send if connection manager not available
+    if (this.openaiWs && this.openaiWs.readyState === 1) { // 1 = OPEN
+      try {
+        const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+        this.openaiWs.send(messageStr);
+        return true;
+      } catch (error) {
+        console.error(`❌ [${this.callSid}] Error sending message:`, error.message);
+        return false;
+      }
+    }
+    
+    console.warn(`⚠️ [${this.callSid}] Cannot send message - WebSocket not ready (readyState: ${this.openaiWs?.readyState})`);
+    return false;
   }
 
   /**

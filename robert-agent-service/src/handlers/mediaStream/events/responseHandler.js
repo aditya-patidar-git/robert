@@ -84,14 +84,16 @@ export class ResponseHandler {
         console.log(`      - shouldBlockWaiting: ${shouldBlockWaiting}`);
         
         try {
-          if (this.state.openaiWs && this.state.openaiWs.readyState === 1) {
-            this.state.openaiWs.send(JSON.stringify({
-              type: 'response.cancel',
-              response_id: this.state.activeResponseId
-            }));
+          // Use robust send method with connection manager support
+          const sent = this.state.sendToOpenAI({
+            type: 'response.cancel',
+            response_id: this.state.activeResponseId
+          }, { priority: 'high' });
+          
+          if (sent) {
             console.log(`   ✅ Sent response.cancel to OpenAI for response ${this.state.activeResponseId}`);
           } else {
-            console.warn(`   ⚠️ Cannot cancel response - OpenAI WS readyState: ${this.state.openaiWs?.readyState}`);
+            console.warn(`   ⚠️ Cannot cancel response - message queued or connection not ready`);
           }
           this.state.activeResponseId = null;
           this.state.isResponding = false;
