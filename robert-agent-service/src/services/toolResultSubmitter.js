@@ -127,7 +127,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         }
         
         // Get contextual instructions for automatic continuation
-        const responseInstructions = promptService.getContextualInstructions({
+        let responseInstructions = promptService.getContextualInstructions({
           isInitialGreeting: false,
           workflowPhase,
           courseType,
@@ -136,7 +136,20 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           activeTool: null // Tool just completed
         });
         
+        // CRITICAL FIX: For client_verification specifically, ensure immediate response
+        const toolName = options?.toolName;
+        const isClientVerification = toolName === 'client_verification';
+        if (isClientVerification) {
+          // Add explicit instruction to speak immediately after verification
+          const immediateResponseInstruction = `CRITICAL: You MUST speak immediately without waiting. Start with: "Thank you, your identity has been verified successfully. Now let me continue with your booking." Then IMMEDIATELY call the next step tool (booking_step_select_session) in the SAME response. Do NOT wait for prompts or user input. Do NOT pause after saying "verified successfully" - continue immediately.`;
+          responseInstructions = responseInstructions 
+            ? `${immediateResponseInstruction}\n\n${responseInstructions}`
+            : immediateResponseInstruction;
+          console.log(`🎯 [${callId}] Client verification detected - adding immediate response instruction`);
+        }
+        
         // Step 1: Disable tools before creating response (prevents tool calls during response)
+        // CRITICAL FIX: Set flags BEFORE creating response to ensure immediate speech
         this.stateManager.isResponding = true;
         this.stateManager.explicitResponseRequested = true;
         
@@ -161,7 +174,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         // PHASE 1: Include contextual instructions to ensure automatic continuation
         if (responseInstructions) {
           responseCreatePayload.response.instructions = responseInstructions;
-          console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase})`);
+          console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''})`);
         }
         
         openaiWs.send(JSON.stringify(responseCreatePayload));

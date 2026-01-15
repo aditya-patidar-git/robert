@@ -43,7 +43,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
       page, searchType, searchValue, this.screenshotsDir,
       bookingArgs.customerEmail, null, callSid
     );
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
     
     if (!searchResult.found) {
       if (searchType === 'mobile' && bookingArgs.customerEmail) {
@@ -83,7 +82,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
     updatePhase('step6_select_session');
     checkCancellation();
     await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
 
     // STEP 7: Select booking options (course-specific)
     updatePhase('step7_booking_options');
@@ -121,7 +119,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
     updatePhase('step4_select_session');
     checkCancellation();
     await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-session-selected.png', this.screenshotsDir));
 
     // STEP 5: Select booking options (course-specific)
     updatePhase('step5_booking_options');
@@ -136,7 +133,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
     updatePhase('step6_new_contact');
     checkCancellation();
     await commonSteps.createNewContact(page, this.screenshotsDir);
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-new-contact-clicked.png', this.screenshotsDir));
 
     // STEP 7: Fill ALL contact details from scratch
     updatePhase('step7_fill_contact_details');
@@ -167,7 +163,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
         throw new Error('Client email is required for contact lookup');
       }
       await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
       console.log('✅ Step 8 completed: Contact details updated');
     } else {
       await super.step8FillContactDetails(page, bookingArgs, callContext, screenshots, workflowType);
@@ -191,7 +186,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
       };
     }
     
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-options-selected.png', this.screenshotsDir));
     console.log('✅ Step 7 completed: Booking options selected');
     return { success: true };
   }
@@ -212,7 +206,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
       };
     }
     
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-5-options-selected.png', this.screenshotsDir));
     console.log('✅ Step 5 completed: Booking options selected');
     return { success: true };
   }
@@ -339,7 +332,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
         console.log('⚠️ [STEP 7/5] Price header visibility check timed out, continuing...');
       });
       
-      await commonSteps.takeScreenshot(targetPage, 'price-page-loaded.png', this.screenshotsDir);
       
       // Find all booking option groups
       console.log('📋 [STEP 7/5] Finding all booking option groups...');
@@ -498,7 +490,6 @@ class FullLicenceAssessmentBookingService extends BaseBookingService {
       
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);
-      await commonSteps.takeScreenshot(page, 'booking-options-error.png', this.screenshotsDir);
       throw new Error(`Failed to select Full Licence Assessment booking options: ${error.message}`);
     }
   }

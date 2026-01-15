@@ -624,7 +624,6 @@ export class CourseBookingRouter {
 
     } catch (error) {
       console.error('❌ Course booking execution failed:', error);
-      await takeScreenshot(page, `${auditId}_course_booking_error.png`, './screenshots');
       
       // Return error gracefully with user-friendly message
       const errorContext = getErrorContext(error, 'create_booking');

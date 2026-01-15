@@ -44,7 +44,6 @@ class PrivateLessonBookingService extends BaseBookingService {
       page, searchType, searchValue, this.screenshotsDir,
       bookingArgs.customerEmail, null, callSid
     );
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
     
     if (searchResult.retryPrompt) {
       return {
@@ -110,7 +109,6 @@ class PrivateLessonBookingService extends BaseBookingService {
     updatePhase('step6_select_session');
     checkCancellation();
     await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
 
     // STEP 7: Select booking options (course-specific)
     updatePhase('step7_booking_options');
@@ -150,7 +148,6 @@ class PrivateLessonBookingService extends BaseBookingService {
         throw new Error('Client email is required for contact lookup');
       }
       await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
       console.log('✅ Step 8 completed: Contact details updated');
     } else {
       await super.step8FillContactDetails(page, bookingArgs, callContext, screenshots, workflowType);
@@ -174,7 +171,6 @@ class PrivateLessonBookingService extends BaseBookingService {
       };
     }
     
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-options-selected.png', this.screenshotsDir));
     console.log('✅ Step 7 completed: Booking options selected');
     return { success: true };
   }
@@ -195,7 +191,6 @@ class PrivateLessonBookingService extends BaseBookingService {
       };
     }
     
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-5-options-selected.png', this.screenshotsDir));
     console.log('✅ Step 5 completed: Booking options selected');
     return { success: true };
   }

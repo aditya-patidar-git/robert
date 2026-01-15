@@ -136,15 +136,16 @@ export class OpenAIIntegration {
             headers: headers
           });
           
-          // Set a connection timeout (increased for VPN scenarios which may have higher latency)
+          // OPTIMIZATION: Reduced timeout from 20s to 8s (removed VPN-specific increase)
+          // 8 seconds is sufficient for normal connections and allows faster failure detection
           const connectionTimeout = setTimeout(() => {
             if (ws.readyState !== WebSocket.OPEN) {
-              console.error(`⏱️ [${this.state.callSid}] Connection timeout after 20s (readyState: ${ws.readyState})`);
+              console.error(`⏱️ [${this.state.callSid}] Connection timeout after 8s (readyState: ${ws.readyState})`);
               ws.removeAllListeners();
               ws.terminate();
               reject(new Error('Connection timeout'));
             }
-          }, 20000); // 20 second timeout (increased from 10s for VPN stability)
+          }, 8000); // Reduced from 20s (VPN-specific) to 8s for faster startup
           
           ws.on('open', () => {
             clearTimeout(connectionTimeout);
@@ -270,59 +271,26 @@ export class OpenAIIntegration {
     try {
       console.log(`🚀 Setting up OpenAI connection for call: ${this.state.callSid}`);
       
-      // Detailed API key validation and debugging
+      // OPTIMIZATION: Reduced logging verbosity - only validate and log errors
       const rawApiKey = process.env.OPENAI_API_KEY;
-      console.log(`🔍 [${this.state.callSid}] API Key Check:`);
-      console.log(`   - Exists: ${rawApiKey !== undefined && rawApiKey !== null}`);
-      console.log(`   - Type: ${typeof rawApiKey}`);
-      console.log(`   - Length: ${rawApiKey?.length || 0}`);
-      console.log(`   - Is empty string: ${rawApiKey === ''}`);
-      console.log(`   - Is whitespace only: ${rawApiKey?.trim() === ''}`);
-      
-      if (!rawApiKey) {
-        console.error(`❌ [${this.state.callSid}] OPENAI_API_KEY is missing (undefined or null)`);
+      if (!rawApiKey || rawApiKey.trim() === '' || rawApiKey.trim().length < 20) {
+        console.error(`❌ [${this.state.callSid}] OPENAI_API_KEY is invalid or missing`);
         return { error: 'missing_api_key', retryable: false };
       }
       
       const apiKey = rawApiKey.trim();
-      if (apiKey === '') {
-        console.error(`❌ [${this.state.callSid}] OPENAI_API_KEY is empty or whitespace only`);
-        return { error: 'empty_api_key', retryable: false };
-      }
-      
-      if (apiKey.length < 20) {
-        console.error(`❌ [${this.state.callSid}] OPENAI_API_KEY appears invalid (too short: ${apiKey.length} chars)`);
-        return { error: 'invalid_api_key_length', retryable: false };
-      }
-      
-      // Mask API key for logging (show first 4 and last 4 chars)
       const maskedKey = apiKey.length > 8 
         ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` 
         : '***';
-      console.log(`   - Masked key: ${maskedKey}`);
-      console.log(`   - Starts with 'sk-': ${apiKey.startsWith('sk-')}`);
-      console.log(`   - Valid format: ${apiKey.startsWith('sk-') && apiKey.length >= 20}`);
       
       // Get dynamic config for this phone number (with current language)
       const currentLanguage = conversations[this.state.callSid]?.language || 'en';
       const config = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
       const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
       
-      // Detect flow type from conversation context (if available)
+      // OPTIMIZATION: Defer flow detection - it's not needed for initial setup
+      // Flow detection can happen after the greeting is sent
       let flowType = 'default';
-      try {
-        const flowDetectionService = (await import('../../../services/flowDetectionService.js')).default;
-        const conversation = conversations[this.state.callSid] || {};
-        const transcript = conversation.transcript || [];
-        const recentText = transcript.slice(-5).map(t => t.text || t.content || '').join(' ');
-        
-        flowType = flowDetectionService.detectFlow(recentText, transcript, {
-          callSid: this.state.callSid,
-          phoneNumber: this.state.phoneNumber
-        });
-      } catch (error) {
-        console.warn(`⚠️ [${this.state.callSid}] Flow detection failed, using default:`, error.message);
-      }
       
       // Get effective parameters (flow-specific or global)
       const aiConfig = configManager.getAIConfig();
@@ -380,6 +348,10 @@ export class OpenAIIntegration {
       let privacySettings = null;
       if (privacyConfig) {
         privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        // OPTIMIZATION: Cache privacy settings in conversation for reuse
+        if (privacySettings && conversations[this.state.callSid]) {
+          conversations[this.state.callSid]._cachedPrivacySettings = privacySettings;
+        }
       }
       
       const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
@@ -503,15 +475,7 @@ ${config.instructions}`;
         'OpenAI-Beta': 'realtime=v1'
       };
       
-      // Debug header creation
-      console.log(`🔍 [${this.state.callSid}] Header Validation:`);
-      console.log(`   - Authorization header exists: ${!!headers['Authorization']}`);
-      console.log(`   - Authorization header length: ${headers['Authorization']?.length || 0}`);
-      console.log(`   - Authorization starts with 'Bearer ': ${headers['Authorization']?.startsWith('Bearer ') || false}`);
-      console.log(`   - OpenAI-Beta header: ${headers['OpenAI-Beta']}`);
-      console.log(`   - Masked auth header: Bearer ${maskedKey}`);
-      
-      // Verify header format
+      // OPTIMIZATION: Reduced logging - only log if there's an issue
       if (!headers['Authorization'] || !headers['Authorization'].startsWith('Bearer ')) {
         console.error(`❌ [${this.state.callSid}] Invalid Authorization header format`);
         return { error: 'invalid_header_format', retryable: false };
@@ -525,7 +489,7 @@ ${config.instructions}`;
       
       let openaiWs;
       try {
-        console.log(`🔌 [${this.state.callSid}] Attempting WebSocket connection with headers...`);
+        console.log(`🔌 [${this.state.callSid}] Attempting WebSocket connection...`);
         openaiWs = await this.createWebSocketWithRetry(openaiUrl, headers, 3, 1000);
         console.log(`✅ [${this.state.callSid}] OpenAI WebSocket connected successfully`);
         

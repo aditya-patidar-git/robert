@@ -48,7 +48,6 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     await page.waitForLoadState('networkidle', { timeout: 60000 });
     
     // Take screenshot of availability page
-    await takeScreenshot(page, `availability-${courseType.toLowerCase().replace(/\s+/g, '-')}-loaded.png`, screenshotsDir);
     
     // Wait for the availability table to be visible
     await page.waitForSelector('#availabilityTable', { timeout: 10000 });

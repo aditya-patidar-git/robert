@@ -79,7 +79,6 @@ export class TranscriptionHandler {
         }
         // Use robust send method
         this.state.sendToOpenAI({ type: 'input_audio_buffer.clear' }, { priority: 'high' });
-        }
       } catch (err) {
         console.warn(`⚠️ [${this.state.callSid}] Error cancelling response:`, err.message);
       }

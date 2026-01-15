@@ -74,7 +74,6 @@ export class MemoryManager {
                 } catch (err) {
                   console.warn(`⚠️ [${this.state.callSid}] Could not inject memory consent instruction:`, err.message);
                 }
-              }
             }, 500);
           }
         }

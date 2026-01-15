@@ -44,7 +44,6 @@ class CBTExecutiveBookingService extends BaseBookingService {
       page, searchType, searchValue, this.screenshotsDir,
       bookingArgs.customerEmail, null, callSid
     );
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-4-5-client-found.png', this.screenshotsDir));
     
     if (searchResult.retryPrompt) {
       return {
@@ -110,7 +109,6 @@ class CBTExecutiveBookingService extends BaseBookingService {
     updatePhase('step6_select_session');
     checkCancellation();
     await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, this.screenshotsDir);
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-6-session-selected.png', this.screenshotsDir));
 
     // STEP 7: Select booking options (course-specific)
     updatePhase('step7_booking_options');
@@ -150,7 +148,6 @@ class CBTExecutiveBookingService extends BaseBookingService {
         throw new Error('Client email is required for contact lookup');
       }
       await commonSteps.lookupContactAndWait(page, clientEmail, this.screenshotsDir);
-      screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', this.screenshotsDir));
       console.log('✅ Step 8 completed: Contact details updated');
     } else {
       await super.step8FillContactDetails(page, bookingArgs, callContext, screenshots, workflowType);
@@ -174,7 +171,6 @@ class CBTExecutiveBookingService extends BaseBookingService {
       };
     }
     
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-7-options-selected.png', this.screenshotsDir));
     console.log('✅ Step 7 completed: Booking options selected');
     return { success: true };
   }
@@ -195,7 +191,6 @@ class CBTExecutiveBookingService extends BaseBookingService {
       };
     }
     
-    screenshots.push(await commonSteps.takeScreenshot(page, 'step-5-options-selected.png', this.screenshotsDir));
     console.log('✅ Step 5 completed: Booking options selected');
     return { success: true };
   }
@@ -314,7 +309,6 @@ class CBTExecutiveBookingService extends BaseBookingService {
       const priceHeader = searchContext.locator('text=1. Price, *:has-text("1. Price")').first();
       await priceHeader.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
       
-      await commonSteps.takeScreenshot(targetPage, 'price-page-loaded.png', this.screenshotsDir);
       
       // Find all booking option groups
       console.log('📋 [STEP 8] Finding all booking option groups...');
@@ -533,7 +527,6 @@ class CBTExecutiveBookingService extends BaseBookingService {
       
     } catch (error) {
       console.error('Error in selectBookingOptions:', error);
-      await commonSteps.takeScreenshot(page, 'booking-options-error.png', this.screenshotsDir);
       throw new Error(`Failed to select CBT Executive booking options: ${error.message}`);
     }
   }

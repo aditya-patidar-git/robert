@@ -155,6 +155,12 @@ export class CallStateManager {
    * @returns {boolean} True if sent successfully
    */
   sendToOpenAI(message, options = {}) {
+    // CRITICAL FIX: Don't send if call is closed
+    if (this.isClosed) {
+      console.warn(`⚠️ [${this.callSid}] Cannot send message - call is closed`);
+      return false;
+    }
+    
     // Use connection manager if available (provides queuing, keep-alive, quality monitoring)
     if (this.openaiConnectionManager) {
       return this.openaiConnectionManager.send(message, options);

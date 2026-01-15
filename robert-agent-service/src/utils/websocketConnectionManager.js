@@ -2,7 +2,6 @@
  * WebSocket Connection Manager
  * Provides robust WebSocket connection management with:
  * - Keep-alive/ping mechanism
- * - Message queuing for failed sends
  * - Connection quality monitoring
  * - Transient error detection
  */
@@ -11,9 +10,10 @@ export class WebSocketConnectionManager {
   constructor(ws, callSid, options = {}) {
     this.ws = ws;
     this.callSid = callSid;
-    this.messageQueue = [];
     this.pingInterval = null;
     this.pongTimeout = null;
+    this.isPermanentlyClosed = false; // Track permanent closure
+    this.warningLogged = false; // Track if warning has been logged to prevent log spam
     this.connectionQuality = {
       latency: [],
       packetLoss: 0,
@@ -26,13 +26,11 @@ export class WebSocketConnectionManager {
     this.config = {
       pingInterval: options.pingInterval || 30000, // 30 seconds
       pongTimeout: options.pongTimeout || 10000, // 10 seconds to receive pong
-      maxQueueSize: options.maxQueueSize || 100,
       maxLatencyHistory: options.maxLatencyHistory || 10,
       unhealthyThreshold: options.unhealthyThreshold || 3 // consecutive missed pongs
     };
     
     this.setupKeepAlive();
-    this.setupMessageQueue();
     this.setupConnectionQualityMonitoring();
   }
 
@@ -92,127 +90,48 @@ export class WebSocketConnectionManager {
   }
 
   /**
-   * Setup message queue for failed sends
-   */
-  setupMessageQueue() {
-    // Process queue when connection is restored
-    if (this.ws) {
-      this.ws.on('open', () => {
-        this.flushMessageQueue();
-      });
-    }
-  }
-
-  /**
-   * Send message with queuing support
+   * Send message through WebSocket
    * @param {string|Object} message - Message to send (string or object to stringify)
-   * @param {Object} options - Send options
-   * @returns {boolean} True if sent immediately, false if queued
+   * @param {Object} options - Send options (ignored, kept for API compatibility)
+   * @returns {boolean} True if sent successfully, false otherwise
    */
   send(message, options = {}) {
-    const { queueOnFailure = true, priority = 'normal' } = options;
+    // Don't send if connection is permanently closed
+    if (this.isPermanentlyClosed) {
+      // Only log warning once to prevent log spam from repeated send attempts
+      if (!this.warningLogged) {
+        console.warn(`⚠️ [${this.callSid}] Message not sent - connection permanently closed`);
+        this.warningLogged = true;
+      }
+      return false;
+    }
     
-    // Convert object to string if needed
-    const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+    // If WebSocket is CLOSED, mark as permanently closed
+    if (this.ws && this.ws.readyState === WebSocket.CLOSED) {
+      this.isPermanentlyClosed = true;
+      // Only log warning once to prevent log spam
+      if (!this.warningLogged) {
+        console.warn(`⚠️ [${this.callSid}] WebSocket is CLOSED - cannot send message`);
+        this.warningLogged = true;
+      }
+      return false;
+    }
     
-    // Check if connection is open
+    // Only send if connection is OPEN and healthy
     if (this.ws && this.ws.readyState === WebSocket.OPEN && this.connectionQuality.isHealthy) {
       try {
+        const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
         this.ws.send(messageStr);
         return true;
       } catch (error) {
         console.error(`❌ [${this.callSid}] Error sending message:`, error.message);
-        if (queueOnFailure) {
-          this.queueMessage(messageStr, priority);
-        }
         return false;
       }
-    } else {
-      // Connection not ready, queue message
-      if (queueOnFailure) {
-        this.queueMessage(messageStr, priority);
-        console.log(`📦 [${this.callSid}] Message queued (readyState: ${this.ws?.readyState}, healthy: ${this.connectionQuality.isHealthy})`);
-      } else {
-        console.warn(`⚠️ [${this.callSid}] Message not sent and not queued (readyState: ${this.ws?.readyState})`);
-      }
-      return false;
     }
-  }
-
-  /**
-   * Queue a message for later sending
-   * @param {string} message - Message to queue
-   * @param {string} priority - Priority: 'high', 'normal', 'low'
-   */
-  queueMessage(message, priority = 'normal') {
-    if (this.messageQueue.length >= this.config.maxQueueSize) {
-      // Remove lowest priority message if queue is full
-      const lowPriorityIndex = this.messageQueue.findIndex(m => m.priority === 'low');
-      if (lowPriorityIndex !== -1) {
-        this.messageQueue.splice(lowPriorityIndex, 1);
-        console.warn(`⚠️ [${this.callSid}] Queue full, removed low priority message`);
-      } else {
-        // Remove oldest normal priority message
-        const normalPriorityIndex = this.messageQueue.findIndex(m => m.priority === 'normal');
-        if (normalPriorityIndex !== -1) {
-          this.messageQueue.splice(normalPriorityIndex, 1);
-          console.warn(`⚠️ [${this.callSid}] Queue full, removed oldest normal priority message`);
-        } else {
-          // Queue is full of high priority, drop oldest
-          this.messageQueue.shift();
-          console.warn(`⚠️ [${this.callSid}] Queue full, dropped oldest high priority message`);
-        }
-      }
-    }
-
-    this.messageQueue.push({
-      message,
-      priority,
-      timestamp: Date.now(),
-      retryCount: 0
-    });
-  }
-
-  /**
-   * Flush queued messages when connection is restored
-   */
-  flushMessageQueue() {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    // Sort by priority: high -> normal -> low
-    const priorityOrder = { high: 0, normal: 1, low: 2 };
-    this.messageQueue.sort((a, b) => {
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
-      }
-      return a.timestamp - b.timestamp; // Older messages first within same priority
-    });
-
-    const failedMessages = [];
     
-    while (this.messageQueue.length > 0) {
-      const queued = this.messageQueue.shift();
-      
-      try {
-        this.ws.send(queued.message);
-        console.log(`✅ [${this.callSid}] Sent queued message (priority: ${queued.priority}, age: ${Date.now() - queued.timestamp}ms)`);
-      } catch (error) {
-        console.error(`❌ [${this.callSid}] Error sending queued message:`, error.message);
-        queued.retryCount++;
-        
-        // Retry up to 3 times, then drop
-        if (queued.retryCount < 3) {
-          failedMessages.push(queued);
-        } else {
-          console.warn(`⚠️ [${this.callSid}] Dropping message after ${queued.retryCount} retry attempts`);
-        }
-      }
-    }
-
-    // Re-queue failed messages
-    this.messageQueue.push(...failedMessages);
+    // Connection not ready
+    console.warn(`⚠️ [${this.callSid}] Message not sent - WebSocket not ready (readyState: ${this.ws?.readyState}, healthy: ${this.connectionQuality.isHealthy})`);
+    return false;
   }
 
   /**
@@ -222,8 +141,13 @@ export class WebSocketConnectionManager {
     // Monitor connection state changes
     if (this.ws) {
       this.ws.on('close', () => {
+        // Mark as permanently closed when close event fires
+        this.isPermanentlyClosed = true;
         this.connectionQuality.isHealthy = false;
         this.stopKeepAlive();
+        // Reset warning flag so we can log the close event
+        this.warningLogged = false;
+        console.log(`🔌 [${this.callSid}] WebSocket closed - marked as permanently closed`);
       });
 
       this.ws.on('error', () => {
@@ -247,8 +171,7 @@ export class WebSocketConnectionManager {
       maxLatency: this.connectionQuality.latency.length > 0 ? Math.max(...this.connectionQuality.latency) : null,
       minLatency: this.connectionQuality.latency.length > 0 ? Math.min(...this.connectionQuality.latency) : null,
       consecutivePongMisses: this.connectionQuality.consecutivePongMisses,
-      lastPongTime: this.connectionQuality.lastPongTime,
-      queuedMessages: this.messageQueue.length
+      lastPongTime: this.connectionQuality.lastPongTime
     };
   }
 
@@ -298,8 +221,11 @@ export class WebSocketConnectionManager {
    * Cleanup resources
    */
   cleanup() {
+    // Mark as permanently closed during cleanup
+    this.isPermanentlyClosed = true;
     this.stopKeepAlive();
-    this.messageQueue = [];
+    // Reset warning flag so cleanup can log if needed
+    this.warningLogged = false;
     this.connectionQuality = {
       latency: [],
       packetLoss: 0,

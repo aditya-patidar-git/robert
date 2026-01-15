@@ -6,10 +6,6 @@
 import { BaseStepTool } from './baseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
-import { 
-  getRealisticUserAgent, 
-  getStealthInitScript
-} from '../../utils/stealthUtils.js';
 
 export class CheckAvailabilityStep extends BaseStepTool {
   getStepName() {
@@ -41,26 +37,14 @@ export class CheckAvailabilityStep extends BaseStepTool {
       return page;
     }
 
-    // For availability check, we don't need authentication - use simple browser page
+    // For availability check, we don't need authentication - use public context
     console.log(`🌐 [${this.getStepName()}] Creating unauthenticated browser page for public availability check`);
     
-    // Get browser instance (reuse if available, or create new)
-    const browser = await this.browserManager.getBrowser();
+    // CRITICAL FIX: Use getPublicContext() instead of getBrowser() + newContext()
+    // This ensures we use the existing persistent context (with VPN) instead of creating a new one
+    const context = await this.browserManager.getPublicContext();
     
-    // Create a simple context without authentication
-    const context = await browser.newContext({
-      userAgent: getRealisticUserAgent(),
-      viewport: { width: 1280, height: 720 },
-      locale: 'en-GB',
-      timezoneId: 'Europe/London',
-      permissions: [],
-      colorScheme: 'light'
-    });
-    
-    // Add stealth script to avoid detection
-    await context.addInitScript(getStealthInitScript());
-    
-    // Create new page
+    // Create new page from the context (context already has VPN if using persistent context)
     page = await context.newPage();
     
     // Store page reference for reuse

@@ -79,12 +79,6 @@ export class StepExecutor {
     } catch (error) {
       console.error(`❌ [STEP_EXECUTOR] Error executing step ${stepName}:`, error);
       
-      // Take screenshot on error
-      try {
-        await takeScreenshot(page, `error_${stepName}_${Date.now()}.png`, this.screenshotsDir);
-      } catch (screenshotError) {
-        console.warn('⚠️ Failed to take error screenshot:', screenshotError.message);
-      }
 
       return {
         success: false,
@@ -578,13 +572,22 @@ export class StepExecutor {
                     if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
                       console.log(`📍 [STEP 8] Address 1 auto-populated: ${autoPopulatedAddress}`);
                       
-                      // Return for address confirmation before clicking Next
-                      return {
-                        success: true,
-                        requiresAddressConfirmation: true,
-                        autoPopulatedAddress: autoPopulatedAddress,
-                        message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`
-                      };
+                      // CRITICAL FIX: Only return requiresAddressConfirmation if we're on the Contact Details page
+                      // This prevents asking for confirmation on LookupContactPage where the house number field doesn't exist
+                      const eventBookingIframeStillExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+                      if (!eventBookingIframeStillExists) {
+                        // We're not on the Contact Details page anymore - don't ask for confirmation
+                        console.log('⚠️ [STEP 8] Not on Contact Details page anymore - skipping address confirmation');
+                        // Continue with the flow without confirmation
+                      } else {
+                        // Only return requiresAddressConfirmation if we're on the correct page
+                        return {
+                          success: true,
+                          requiresAddressConfirmation: true,
+                          autoPopulatedAddress: autoPopulatedAddress,
+                          message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`
+                        };
+                      }
                     }
                   }
                 } else {

@@ -91,8 +91,8 @@ export class ToolCallHandler {
         executionResult
       );
       
-      // Trigger response if needed
-      await this.resultSubmitter.triggerResponse(this.state.callSid);
+      // Trigger response if needed - pass tool name for special handling
+      await this.resultSubmitter.triggerResponse(this.state.callSid, { toolName: name });
       
       // Clean up
       this.state.pendingToolCalls.delete(call_id);
@@ -106,8 +106,8 @@ export class ToolCallHandler {
       executionResult
     );
     
-    // Trigger response
-    await this.resultSubmitter.triggerResponse(this.state.callSid);
+    // Trigger response - pass tool name for special handling (e.g., client_verification)
+    await this.resultSubmitter.triggerResponse(this.state.callSid, { toolName: name });
     
     // Clean up
     this.state.pendingToolCalls.delete(call_id);

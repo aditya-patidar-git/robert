@@ -86,8 +86,8 @@ export class ResponseHandler {
         try {
           // Use robust send method with connection manager support
           const sent = this.state.sendToOpenAI({
-            type: 'response.cancel',
-            response_id: this.state.activeResponseId
+              type: 'response.cancel',
+              response_id: this.state.activeResponseId
           }, { priority: 'high' });
           
           if (sent) {

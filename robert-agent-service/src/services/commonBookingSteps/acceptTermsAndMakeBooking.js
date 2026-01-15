@@ -121,14 +121,16 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
     // Find MAKE BOOKING button using multiple selectors (try in order, stop when found)
     console.log('🔍 [STEP 13] Looking for MAKE BOOKING button...');
     
+    // CRITICAL FIX: Button is a div element, not a button element
+    // Based on HTML structure: <div id="diaryNewCourseBookingWiz_OKBtn" role="button" aria-label="Make booking" class="dx-button-success jqx_wizardBtn">
     const makeBookingSelectors = [
-      '#diaryNewCourseBookingWiz_OKBtn', // ID from HTML
-      'button:has-text("Make booking")', // Text-based
-      '[aria-label="Make booking"]', // Aria-label
-      '.jqx_wizardBtn:has-text("Make booking")', // Class + text
-      'button.dx-button-success:has-text("Make booking")', // Class + text
-      'button:has-text("MAKE BOOKING")', // Uppercase variant
-      '[role="button"]:has-text("Make booking")' // Role + text
+      '#diaryNewCourseBookingWiz_OKBtn',                    // ID selector (most reliable - will match first)
+      '[aria-label="Make booking"]',                        // Aria-label
+      '.jqx_wizardBtn:has-text("Make booking")',           // Class + text
+      '[role="button"]:has-text("Make booking")',          // Role + text
+      'div.dx-button-success:has-text("Make booking")',    // Div with success class + text
+      '.dx-button-success[aria-label="Make booking"]',      // Success class + aria-label
+      '[id="diaryNewCourseBookingWiz_OKBtn"]'               // ID selector (alternative format)
     ];
     
     let makeBookingButton = null;

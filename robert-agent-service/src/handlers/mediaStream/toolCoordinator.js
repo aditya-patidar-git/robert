@@ -131,11 +131,20 @@ export class ToolCoordinator {
       if (isInitialGreeting) {
         console.log(`📤 [${this.state.callSid}] Preparing initial greeting with contextual instructions`);
         
-        // Get consent notice/question if needed
-        const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
-        let privacySettings = null;
-        if (privacyConfig) {
-          privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        // OPTIMIZATION: Cache privacy settings from setupOpenAI instead of querying again
+        // Get consent notice/question if needed (use cached value if available)
+        const conversation = conversations[this.state.callSid];
+        let privacySettings = conversation?._cachedPrivacySettings || null;
+        
+        if (!privacySettings) {
+          const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
+          if (privacyConfig) {
+            privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+            // Cache for reuse
+            if (conversation && privacySettings) {
+              conversation._cachedPrivacySettings = privacySettings;
+            }
+          }
         }
         
         const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
@@ -158,8 +167,9 @@ export class ToolCoordinator {
         
         console.log(`📋 [${this.state.callSid}] Using contextual instructions for initial greeting (length: ${responseInstructions?.length || 0})`);
         
-        // Small delay to ensure session is fully ready
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // OPTIMIZATION: Reduced delay from 300ms to 100ms
+        // Session should already be ready after session.update confirmation
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         // Verify WebSocket is still open
         if (!this.openaiWs || this.openaiWs.readyState !== 1) {
@@ -428,7 +438,9 @@ export class ToolCoordinator {
               'response.content_part.done',
               'response.output_item.added',
               'response.content_part.added',
-              'rate_limits.updated'
+              'rate_limits.updated',
+              'response.audio_transcript.delta',
+              'response.audio_transcript.done'
             ];
             
             if (!verboseEvents.includes(event.type)) {
@@ -467,11 +479,10 @@ export class ToolCoordinator {
     
     if (!this.state.hasInitialGreetingBeenSent && !this.state.isResponding && this.state.activeResponseId === null) {
       try {
-        // CRITICAL FIX: Wait longer for session to be fully ready for audio generation
-        // OpenAI Realtime API may need more time after session.update to enable audio output
-        // Increased delay to ensure audio pipeline is fully initialized
-        // This helps prevent 0 audio token responses
-        await new Promise(resolve => setTimeout(resolve, 800));
+        // OPTIMIZATION: Reduced delay from 800ms to 200ms
+        // OpenAI Realtime API typically needs minimal time after session.update
+        // The 200ms delay ensures the session is ready while minimizing latency
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         // Double-check WebSocket is still open after delay
         if (this.state.isClosed || !this.openaiWs || this.openaiWs.readyState !== 1) {

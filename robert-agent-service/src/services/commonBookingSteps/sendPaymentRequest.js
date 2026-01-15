@@ -287,15 +287,16 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     const MAX_WAIT_TIME = 300000; // 5 minutes
     const MAX_ATTEMPTS = 10; // 5 minutes / 30 seconds = 10 attempts
     
-    // Make booking button selectors (from acceptTermsAndMakeBooking.js)
+    // Make booking button selectors - CRITICAL FIX: Button is a div element, not a button element
+    // Based on HTML structure: <div id="diaryNewCourseBookingWiz_OKBtn" role="button" aria-label="Make booking" class="dx-button-success jqx_wizardBtn">
     const makeBookingSelectors = [
-      '#diaryNewCourseBookingWiz_OKBtn',
-      'button:has-text("Make booking")',
-      '[aria-label="Make booking"]',
-      '.jqx_wizardBtn:has-text("Make booking")',
-      'button.dx-button-success:has-text("Make booking")',
-      'button:has-text("MAKE BOOKING")',
-      '[role="button"]:has-text("Make booking")'
+      '#diaryNewCourseBookingWiz_OKBtn',                    // ID selector (most reliable - will match first)
+      '[aria-label="Make booking"]',                        // Aria-label
+      '.jqx_wizardBtn:has-text("Make booking")',           // Class + text
+      '[role="button"]:has-text("Make booking")',          // Role + text
+      'div.dx-button-success:has-text("Make booking")',    // Div with success class + text
+      '.dx-button-success[aria-label="Make booking"]',      // Success class + aria-label
+      '[id="diaryNewCourseBookingWiz_OKBtn"]'                // ID selector (alternative format)
     ];
     
     let attempt = 0;
