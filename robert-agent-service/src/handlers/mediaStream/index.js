@@ -316,16 +316,57 @@ export const handleMediaStreamConnection = (ws, req) => {
                 turnTakingStateMachine.reset(stateManager.callSid);
                 proactiveAssistanceService.clearCache(stateManager.callSid);
                 
-                // Update database with transcript
-                try {
-                    const sessionManagementService = (await import('../../services/sessionManagementService.js')).default;
-                    const duration = stateManager.callStartTime ? Math.floor((Date.now() - stateManager.callStartTime) / 1000) : null;
-                    const conversation = sessionManagementService.getSession(stateManager.callSid);
-                    
-                    const updateData = {
-                        callStatus: 'completed',
-                        ...(duration && { duration })
-                    };
+                    // Update database with transcript
+                    try {
+                        const sessionManagementService = (await import('../../services/sessionManagementService.js')).default;
+                        const duration = stateManager.callStartTime ? Math.floor((Date.now() - stateManager.callStartTime) / 1000) : null;
+                        const conversation = sessionManagementService.getSession(stateManager.callSid);
+                        
+                        const updateData = {
+                            callStatus: 'completed',
+                            ...(duration && { duration })
+                        };
+                        
+                        // Extract WebSocket connection quality metrics if available
+                        const connectionManager = openaiIntegration?.connectionManager || stateManager.openaiConnectionManager;
+                        if (connectionManager && connectionManager.connectionQuality) {
+                            const quality = connectionManager.connectionQuality;
+                            const latencyArray = quality.latency || [];
+                            
+                            if (latencyArray.length > 0) {
+                                const avgLatency = latencyArray.reduce((a, b) => a + b, 0) / latencyArray.length;
+                                const minLatency = Math.min(...latencyArray);
+                                const maxLatency = Math.max(...latencyArray);
+                                
+                                // Calculate variance (used for jitter estimation)
+                                const variance = latencyArray.reduce((sum, val) => {
+                                    return sum + Math.pow(val - avgLatency, 2);
+                                }, 0) / latencyArray.length;
+                                
+                                // Estimate packet loss from missed pongs
+                                const pingCount = connectionManager.config?.pingInterval 
+                                    ? Math.floor(duration * 1000 / connectionManager.config.pingInterval)
+                                    : 0;
+                                const packetLoss = pingCount > 0 
+                                    ? (quality.consecutivePongMisses / pingCount) * 100 
+                                    : null;
+                                
+                                updateData.websocketMetrics = {
+                                    avgLatency: Math.round(avgLatency * 100) / 100,
+                                    minLatency: Math.round(minLatency * 100) / 100,
+                                    maxLatency: Math.round(maxLatency * 100) / 100,
+                                    latencyVariance: Math.round(variance * 100) / 100,
+                                    packetLoss: packetLoss !== null ? Math.round(packetLoss * 100) / 100 : null,
+                                    consecutivePongMisses: quality.consecutivePongMisses || 0,
+                                    isHealthy: quality.isHealthy !== false,
+                                    pingCount: pingCount,
+                                    pongCount: latencyArray.length,
+                                    measuredAt: new Date()
+                                };
+                                
+                                console.log(`📊 [${stateManager.callSid}] WebSocket metrics saved: avgLatency=${updateData.websocketMetrics.avgLatency}ms, packetLoss=${updateData.websocketMetrics.packetLoss}%`);
+                            }
+                        }
                     
                     // Check recording consent before saving transcript (GDPR compliance)
                     const consent = conversation?.recordingConsent;

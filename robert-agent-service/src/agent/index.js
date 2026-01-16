@@ -287,6 +287,47 @@ app.get('/api/diagnostic/all', async (req, res) => {
   }
 });
 
+// API Route - Email Connection Test
+app.get('/api/test/email-connection', async (req, res) => {
+  try {
+    const emailService = (await import('../services/emailService.js')).default;
+    const result = await emailService.testConnection();
+    
+    // Mask sensitive information in config
+    const maskEmail = (email) => {
+      if (!email) return 'Not configured';
+      const [local, domain] = email.split('@');
+      return local ? `${local.substring(0, 3)}***@${domain}` : `***@${domain}`;
+    };
+    
+    res.json({
+      success: result.connected,
+      connected: result.connected,
+      message: result.connected 
+        ? 'SMTP connection test successful' 
+        : `SMTP connection test failed: ${result.error}`,
+      error: result.error || null,
+      config: {
+        host: process.env.SMTP_HOST || 'Not configured',
+        port: process.env.SMTP_PORT || 'Not configured',
+        user: maskEmail(process.env.SMTP_USER),
+        from: process.env.SMTP_FROM || 'robert@universalmct.co.uk',
+        secure: process.env.SMTP_SECURE === 'true'
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error testing email connection:', error);
+    res.status(500).json({
+      success: false,
+      connected: false,
+      message: 'Error testing email connection',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // API Routes - SIP (OpenAI Realtime SIP webhooks)
 // Add diagnostic logging middleware for ALL SIP webhook requests
 app.use('/api/sip', (req, res, next) => {
