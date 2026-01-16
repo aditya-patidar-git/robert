@@ -281,11 +281,11 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     await takeScreenshot(page, 'payment-request-sent.png', screenshotsDir);
     
     // CRITICAL: Polling logic - check every 30 seconds for "Make booking" button
-    console.log('⏳ [PAYMENT_REQUEST] Starting polling for payment completion (every 30 seconds, max 5 minutes)...');
+    console.log('⏳ [PAYMENT_REQUEST] Starting polling for payment completion (every 30 seconds, max 10 minutes)...');
     
     const POLL_INTERVAL = 30000; // 30 seconds
-    const MAX_WAIT_TIME = 300000; // 5 minutes
-    const MAX_ATTEMPTS = 10; // 5 minutes / 30 seconds = 10 attempts
+    const MAX_WAIT_TIME = 600000; // 10 minutes
+    const MAX_ATTEMPTS = 20; // 10 minutes / 30 seconds = 20 attempts
     
     // Make booking button selectors - CRITICAL FIX: Button is a div element, not a button element
     // Based on HTML structure: <div id="diaryNewCourseBookingWiz_OKBtn" role="button" aria-label="Make booking" class="dx-button-success jqx_wizardBtn">
@@ -672,14 +672,14 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
       console.log(`⏳ [PAYMENT_REQUEST] "Make booking" button not found yet (attempt ${attempt}/${MAX_ATTEMPTS})`);
     }
     
-    // If we reach here, 5 minutes elapsed without finding the button
-    console.error('❌ [PAYMENT_REQUEST] Payment not completed within 5 minutes - "Make booking" button not found');
+    // If we reach here, 10 minutes elapsed without finding the button
+    console.error('❌ [PAYMENT_REQUEST] Payment not completed within 10 minutes - "Make booking" button not found');
     await takeScreenshot(page, 'payment-request-timeout.png', screenshotsDir);
     
     return {
       success: false,
       paymentCompleted: false,
-      error: 'Payment not completed within 5 minutes. "Make booking" button did not appear.'
+      error: 'Payment not completed within 10 minutes. "Make booking" button did not appear.'
     };
     
   } catch (error) {
