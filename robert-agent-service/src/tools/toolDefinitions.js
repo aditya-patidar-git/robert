@@ -823,24 +823,24 @@ This tool returns guidance messages directing to the appropriate tools.`,
     {
       type: 'function',
       name: 'client_verification',
-      description: 'Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system. The caller must verbally confirm these three pieces of information match what is on file. Allow up to 7 attempts per field before offering to create a new profile. CRITICAL: After successful verification during a booking process, you MUST continue with the booking by calling crm_browser with task: "create_booking" using the same parameters as before. Verification is just one step in the booking process - the booking is NOT complete until you receive a success confirmation from the crm_browser tool.',
+      description: 'Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system. 🚨 MANDATORY INCREMENTAL COLLECTION: You MUST collect ALL THREE fields (full name, postcode, telephone number) INCREMENTALLY before verification can be completed. You CANNOT skip any field. The verification process REQUIRES all three pieces of information. Start by asking for full name first, then postcode, then telephone number. You MUST call this tool multiple times as you collect each field - do NOT wait for the caller to provide all three at once. After receiving each field, immediately call this tool again with the new field added. The tool will tell you which field to ask for next. Do NOT pause or wait for prompts like "are you done" - continue asking for the next field immediately. Verification will only succeed when ALL THREE fields are provided AND match. Allow up to 7 attempts per field before offering to create a new profile. CRITICAL: After successful verification during a booking process, you MUST continue with the booking by calling crm_browser with task: "create_booking" using the same parameters as before. Verification is just one step in the booking process - the booking is NOT complete until you receive a success confirmation from the crm_browser tool.',
       parameters: {
         type: 'object',
         properties: {
           fullName: {
             type: 'string',
-            description: 'Full name as spoken by the caller (including title if provided, e.g., "Mr John Smith")'
+            description: 'Full name as spoken by the caller (including title if provided, e.g., "Mr John Smith"). MANDATORY: You MUST collect this field first. Provide this field when asking for name verification.'
           },
           postcode: {
             type: 'string',
-            description: 'Postcode as spoken by the caller (UK format, e.g., "HA8 6AG")'
+            description: 'Postcode as spoken by the caller (UK format, e.g., "HA8 6AG"). MANDATORY: You MUST collect this field second (after full name). Provide this field when asking for postcode verification.'
           },
           telephoneNumber: {
             type: 'string',
-            description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07)'
+            description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07). MANDATORY: You MUST collect this field third (after full name and postcode). Provide this field when asking for telephone verification.'
           }
         },
-        required: ['fullName', 'postcode', 'telephoneNumber']
+        required: [] // All fields optional to allow incremental calls, but agent MUST collect all three
       }
     },
     {

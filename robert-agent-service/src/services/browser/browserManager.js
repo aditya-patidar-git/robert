@@ -45,6 +45,18 @@ export class BrowserManager {
       const contexts = browser.contexts();
       console.log(`📊 Found ${contexts.length} existing context(s)`);
       
+      // NEW: Log all pages across all contexts to debug Issue 2
+      for (let i = 0; i < contexts.length; i++) {
+        const context = contexts[i];
+        const pages = context.pages();
+        console.log(`📄 Context ${i + 1} has ${pages.length} page(s)`);
+        for (let j = 0; j < pages.length; j++) {
+          const page = pages[j];
+          const url = page.url();
+          console.log(`   Page ${j + 1}: ${url}`);
+        }
+      }
+      
       if (contexts.length > 0) {
         // Use the first existing context (should have extensions)
         this.persistentContext = contexts[0];

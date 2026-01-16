@@ -1,6 +1,7 @@
 import browserAgentService from '../services/browser/index.js';
 import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
 import { conversations } from '../shared/state.js';
+import sessionStateManager from '../services/browser/sessionStateManager.js';
 
 class CRMBrowserTool {
   async execute(parameters, callContext = {}, progressCallback = null) {
@@ -10,6 +11,29 @@ class CRMBrowserTool {
     
     console.log(`🌐 [${callSid}] CRM Browser Tool: Executing ${task}`);
     console.log(`🌐 [${callSid}] Arguments:`, JSON.stringify(args, null, 2));
+    
+    // CRITICAL: Check if a booking session is already in progress (step-based tools)
+    if (task === 'create_booking') {
+      const currentStep = sessionStateManager.getCurrentStep(callSid);
+      if (currentStep !== null) {
+        const session = sessionStateManager.getSession(callSid);
+        const courseType = session?.courseType || args?.courseType || 'unknown';
+        const workflowType = session?.workflowType || args?.workflowType || 'unknown';
+        
+        console.log(`🚫 [${callSid}] BLOCKING: Booking session already in progress (current step: ${currentStep}). Use step-based tools (booking_step_*) instead of crm_browser.`);
+        
+        return {
+          success: false,
+          error: 'A booking process is already in progress for this call. Please continue using the step-based booking tools (booking_step_*) instead of starting a new booking with crm_browser.',
+          message: `A booking session is already in progress (currently at step ${currentStep}). Please continue with the booking using the step-based tools. After client verification, call booking_step_select_session to continue.`,
+          bookingInProgress: true,
+          currentStep: currentStep,
+          courseType: courseType,
+          workflowType: workflowType,
+          nextStepTool: currentStep < 4 ? 'booking_step_select_session' : `Continue with step ${currentStep + 1}`
+        };
+      }
+    }
     
     try {
       // Ensure callSid is in callContext

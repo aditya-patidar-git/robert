@@ -112,12 +112,21 @@ const kbaVerificationSchema = z.object({
   otpCode: z.string().optional()
 });
 
-// Client Verification Schema
+// Client Verification Schema - All fields optional for incremental collection
+// CRITICAL: The agent MUST collect all three fields incrementally before verification can succeed
 const clientVerificationSchema = z.object({
-  fullName: z.string().min(1, 'Full name is required'),
-  postcode: z.string().min(1, 'Postcode is required'),
-  telephoneNumber: z.string().min(1, 'Telephone number is required')
-});
+  fullName: z.string().min(1, 'Full name is required').optional(),
+  postcode: z.string().min(1, 'Postcode is required').optional(),
+  telephoneNumber: z.string().min(1, 'Telephone number is required').optional()
+}).refine(
+  (data) => {
+    // At least one field must be provided
+    return data.fullName || data.postcode || data.telephoneNumber;
+  },
+  {
+    message: 'At least one verification field (fullName, postcode, or telephoneNumber) must be provided'
+  }
+);
 
 // Complaint Submission Schema
 const complaintSubmissionSchema = z.object({

@@ -11,7 +11,7 @@ import path from 'path';
  */
 export async function takeScreenshot(page, filename, screenshotsDir) {
   // No-op: Screenshots disabled to prevent blocking operations
-  return null;
+    return null;
 }
 
 /**

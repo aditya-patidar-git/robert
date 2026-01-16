@@ -136,16 +136,36 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           activeTool: null // Tool just completed
         });
         
-        // CRITICAL FIX: For client_verification specifically, ensure immediate response
+        // CRITICAL FIX: For client_verification specifically, handle both success and incomplete cases
         const toolName = options?.toolName;
+        const toolResult = options?.toolResult;
         const isClientVerification = toolName === 'client_verification';
         if (isClientVerification) {
-          // Add explicit instruction to speak immediately after verification
-          const immediateResponseInstruction = `CRITICAL: You MUST speak immediately without waiting. Start with: "Thank you, your identity has been verified successfully. Now let me continue with your booking." Then IMMEDIATELY call the next step tool (booking_step_select_session) in the SAME response. Do NOT wait for prompts or user input. Do NOT pause after saying "verified successfully" - continue immediately.`;
-          responseInstructions = responseInstructions 
-            ? `${immediateResponseInstruction}\n\n${responseInstructions}`
-            : immediateResponseInstruction;
-          console.log(`🎯 [${callId}] Client verification detected - adding immediate response instruction`);
+          if (toolResult && !toolResult.verified && toolResult.nextFieldToAsk) {
+            // Verification incomplete - agent must continue asking for next field immediately
+            // Use instruction from tool result if available (it's more detailed), otherwise generate one
+            const continueInstruction = toolResult.instruction || (() => {
+              const nextFieldName = {
+                fullName: 'full name',
+                postcode: 'postcode',
+                telephoneNumber: 'telephone number'
+              }[toolResult.nextFieldToAsk] || toolResult.nextFieldToAsk;
+              
+              return `CRITICAL: Client verification is INCOMPLETE. You have collected: ${toolResult.verifiedFields?.join(', ') || 'none'}. You MUST immediately ask for the next field: ${nextFieldName}. Use the exact prompt: "${toolResult.message}". Then IMMEDIATELY call client_verification tool again with the ${toolResult.nextFieldToAsk} field filled in. Do NOT wait for the user to ask "are you still there" or any other prompt. Continue the verification flow immediately without pausing.`;
+            })();
+            
+            responseInstructions = responseInstructions 
+              ? `${continueInstruction}\n\n${responseInstructions}`
+              : continueInstruction;
+            console.log(`🎯 [${callId}] Client verification incomplete - instructing to ask for ${toolResult.nextFieldToAsk}${toolResult.requiresImmediateContinuation ? ' (requires immediate continuation)' : ''}`);
+          } else if (toolResult && toolResult.verified) {
+            // Verification successful - continue with booking
+            const immediateResponseInstruction = `CRITICAL: You MUST speak immediately without waiting. Start with: "Thank you, your identity has been verified successfully. Now let me continue with your booking." Then IMMEDIATELY call the next step tool (booking_step_select_session) in the SAME response. Do NOT wait for prompts or user input. Do NOT pause after saying "verified successfully" - continue immediately.`;
+            responseInstructions = responseInstructions 
+              ? `${immediateResponseInstruction}\n\n${responseInstructions}`
+              : immediateResponseInstruction;
+            console.log(`🎯 [${callId}] Client verification successful - adding immediate response instruction`);
+          }
         }
         
         // Step 1: Disable tools before creating response (prevents tool calls during response)
