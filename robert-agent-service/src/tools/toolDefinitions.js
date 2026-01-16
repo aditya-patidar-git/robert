@@ -823,24 +823,24 @@ This tool returns guidance messages directing to the appropriate tools.`,
     {
       type: 'function',
       name: 'client_verification',
-      description: 'Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system. 🚨 MANDATORY INCREMENTAL COLLECTION: You MUST collect ALL THREE fields (full name, postcode, telephone number) INCREMENTALLY before verification can be completed. You CANNOT skip any field. The verification process REQUIRES all three pieces of information. Start by asking for full name first, then postcode, then telephone number. You MUST call this tool multiple times as you collect each field - do NOT wait for the caller to provide all three at once. After receiving each field, immediately call this tool again with the new field added. The tool will tell you which field to ask for next. Do NOT pause or wait for prompts like "are you done" - continue asking for the next field immediately. Verification will only succeed when ALL THREE fields are provided AND match. Allow up to 7 attempts per field before offering to create a new profile. CRITICAL: After successful verification during a booking process, you MUST continue with the booking by calling crm_browser with task: "create_booking" using the same parameters as before. Verification is just one step in the booking process - the booking is NOT complete until you receive a success confirmation from the crm_browser tool.',
+      description: 'Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system. 🚨 MANDATORY COLLECTION: You MUST collect ALL THREE fields (full name, postcode, telephone number) before verification can be completed. You CANNOT skip any field. The verification process REQUIRES all three pieces of information. 🚨 ASK ALL THREE IN ONE QUESTION: On the FIRST call, ask for all three fields together in a single question: "Could you please confirm your full name, postcode, and telephone number?" The caller may provide all three at once, or may provide them partially across multiple turns. Extract whatever fields they provide and call this tool again with the provided fields. If any fields are still missing after the caller responds, ask for ALL remaining missing fields in the next turn (not just one). Continue until all three fields are collected. Verification will only succeed when ALL THREE fields are provided AND match. Allow up to 7 attempts per field before offering to create a new profile. CRITICAL: After successful verification, you MUST immediately say "You are successfully verified" and then automatically continue with the next booking step without waiting for user response. The verification is complete - proceed automatically to the next step.',
       parameters: {
         type: 'object',
         properties: {
           fullName: {
             type: 'string',
-            description: 'Full name as spoken by the caller (including title if provided, e.g., "Mr John Smith"). MANDATORY: You MUST collect this field first. Provide this field when asking for name verification.'
+            description: 'Full name as spoken by the caller (including title if provided, e.g., "Mr John Smith"). MANDATORY: Must be collected. Extract from caller response.'
           },
           postcode: {
             type: 'string',
-            description: 'Postcode as spoken by the caller (UK format, e.g., "HA8 6AG"). MANDATORY: You MUST collect this field second (after full name). Provide this field when asking for postcode verification.'
+            description: 'Postcode as spoken by the caller (UK format, e.g., "HA8 6AG"). MANDATORY: Must be collected. Extract from caller response.'
           },
           telephoneNumber: {
             type: 'string',
-            description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07). MANDATORY: You MUST collect this field third (after full name and postcode). Provide this field when asking for telephone verification.'
+            description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07). MANDATORY: Must be collected. Extract from caller response.'
           }
         },
-        required: [] // All fields optional to allow incremental calls, but agent MUST collect all three
+        required: [] // All fields optional to allow partial calls, but agent MUST collect all three eventually
       }
     },
     {

@@ -14,6 +14,16 @@ export class FillContactDetailsStep extends BaseStepTool {
   getRequiredPreferences() {
     return []; // Contact details come from args
   }
+
+  /**
+   * Get timeout for fill contact details - browser automation needs more time
+   * Fill contact details involves: navigating to contact page, filling multiple fields,
+   * handling address confirmation, checking for missing fields, clicking Next button
+   * @returns {number} Timeout in milliseconds (90 seconds)
+   */
+  getTimeout() {
+    return 90000; // 90 seconds for browser automation (navigation, form filling, validation, navigation)
+  }
 }
 
 export default new FillContactDetailsStep();

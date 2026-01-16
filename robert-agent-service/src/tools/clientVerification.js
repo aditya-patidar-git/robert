@@ -8,7 +8,9 @@ import {
   markClientVerified,
   getVerificationPrompt,
   getPostcodePrompt,
-  getTelephonePrompt
+  getTelephonePrompt,
+  getCombinedVerificationPrompt,
+  getMissingFieldsPrompt
 } from '../services/verificationService.js';
 import sessionStateManager from '../services/browser/sessionStateManager.js';
 
@@ -95,7 +97,7 @@ class ClientVerificationTool {
       if (!normalizedPostcode) missingFields.push('postcode');
       if (!normalizedTelephoneNumber) missingFields.push('telephoneNumber');
 
-      // CRITICAL FIX: If any fields are missing, return immediately asking for them
+      // CRITICAL FIX: If any fields are missing, return immediately asking for ALL missing fields
       if (missingFields.length > 0) {
         const fieldNames = {
           fullName: 'full name',
@@ -106,19 +108,14 @@ class ClientVerificationTool {
         const missingFieldNames = missingFields.map(f => fieldNames[f]).join(', ');
         const verifiedFields = ['fullName', 'postcode', 'telephoneNumber'].filter(f => !missingFields.includes(f));
         
-        // Get the next field to ask for based on what's already verified
-        let nextFieldToAsk = null;
-        let nextPrompt = null;
-        
-        if (!normalizedFullName) {
-          nextFieldToAsk = 'fullName';
-          nextPrompt = getVerificationPrompt();
-        } else if (!normalizedPostcode) {
-          nextFieldToAsk = 'postcode';
-          nextPrompt = getPostcodePrompt();
-        } else if (!normalizedTelephoneNumber) {
-          nextFieldToAsk = 'telephoneNumber';
-          nextPrompt = getTelephonePrompt();
+        // Determine the prompt based on how many fields are missing
+        let promptMessage;
+        if (missingFields.length === 3) {
+          // First call - ask for all three at once
+          promptMessage = getCombinedVerificationPrompt();
+        } else {
+          // Subsequent call - ask for remaining missing fields
+          promptMessage = getMissingFieldsPrompt(missingFields);
         }
         
         return {
@@ -126,11 +123,25 @@ class ClientVerificationTool {
           verified: false,
           missingFields: missingFields,
           verifiedFields: verifiedFields,
-          nextFieldToAsk: nextFieldToAsk,
-          message: nextPrompt || `I still need to verify your ${missingFieldNames}. ${nextPrompt || 'Please provide the missing information.'}`,
-          instruction: `CRITICAL: Client verification is INCOMPLETE. You have collected: ${verifiedFields.join(', ') || 'none'}. You MUST immediately ask for the next field: ${nextFieldToAsk}. Use the exact prompt: "${nextPrompt}". Then IMMEDIATELY call client_verification tool again with the ${nextFieldToAsk} field filled in. Do NOT wait for the user to ask "are you still there" or any other prompt. Continue the verification flow immediately without pausing.`,
+          message: promptMessage,
+          instruction: `CRITICAL: Client verification is INCOMPLETE. You have collected: ${verifiedFields.length > 0 ? verifiedFields.map(f => fieldNames[f]).join(', ') : 'none'}. You MUST immediately ask for ALL missing fields: ${missingFieldNames}. Use the exact prompt: "${promptMessage}". Then IMMEDIATELY call client_verification tool again with ALL missing fields filled in. The caller may provide all missing fields in one response, or may provide them partially - extract whatever they provide and call the tool again. Do NOT wait for the user to ask "are you still there" or any other prompt. Continue the verification flow immediately without pausing.`,
           requiresImmediateContinuation: true // Flag to indicate agent must continue immediately
         };
+      }
+
+      // CRITICAL: Also check that stored client details have all three required fields
+      // If stored details are incomplete, we still require all three fields from the caller
+      const storedHasAllFields = !!(storedClientDetails.fullName && 
+                                     storedClientDetails.postcode && 
+                                     storedClientDetails.telephoneNumber);
+      
+      if (!storedHasAllFields) {
+        const missingStoredFields = [];
+        if (!storedClientDetails.fullName) missingStoredFields.push('full name');
+        if (!storedClientDetails.postcode) missingStoredFields.push('postcode');
+        if (!storedClientDetails.telephoneNumber) missingStoredFields.push('telephone number');
+        
+        console.log(`⚠️ [${callSid}] Stored client details incomplete - missing: ${missingStoredFields.join(', ')}. Still requiring all three fields for verification.`);
       }
 
       // Normalize strings for comparison (trim, lowercase, remove extra spaces)
@@ -152,8 +163,13 @@ class ClientVerificationTool {
       const verifiedFields = [];
       let verifiedCount = 0;
 
+      // CRITICAL: All three fields MUST be provided AND verified, regardless of what's stored
       // Verify full name (allow for minor variations, ignore reference numbers/symbols)
-      if (storedName && providedName) {
+      if (!providedName) {
+        // Full name not provided - this is already caught by missingFields check, but double-check
+        mismatches.push('fullName');
+        console.log(`❌ [${callSid}] Full name not provided but required`);
+      } else if (storedName && providedName) {
         // Remove common prefixes/suffixes and reference numbers for comparison
         const cleanStoredName = storedName.replace(/^(mr|mrs|miss|ms|dr|prof)\s+/i, '').replace(/[#\d]+/g, '').trim();
         const cleanProvidedName = providedName.replace(/^(mr|mrs|miss|ms|dr|prof)\s+/i, '').replace(/[#\d]+/g, '').trim();
@@ -173,10 +189,19 @@ class ClientVerificationTool {
         mismatches.push('fullName');
         incrementVerificationAttempt(conversation, 'fullName');
         console.log(`❌ [${callSid}] Full name not provided but required`);
+      } else {
+        // Stored name missing but provided - still count as verified if provided
+        verifiedCount++;
+        verifiedFields.push('fullName');
+        console.log(`✅ [${callSid}] Full name provided (stored name missing)`);
       }
 
       // Verify postcode (normalize format)
-      if (storedPostcode && providedPostcode) {
+      if (!providedPostcode) {
+        // Postcode not provided - this is already caught by missingFields check, but double-check
+        mismatches.push('postcode');
+        console.log(`❌ [${callSid}] Postcode not provided but required`);
+      } else if (storedPostcode && providedPostcode) {
         // Remove spaces and compare
         const cleanStoredPostcode = storedPostcode.replace(/\s+/g, '').toUpperCase();
         const cleanProvidedPostcode = providedPostcode.replace(/\s+/g, '').toUpperCase();
@@ -194,10 +219,19 @@ class ClientVerificationTool {
         mismatches.push('postcode');
         incrementVerificationAttempt(conversation, 'postcode');
         console.log(`❌ [${callSid}] Postcode not provided but required`);
+      } else {
+        // Stored postcode missing but provided - still count as verified if provided
+        verifiedCount++;
+        verifiedFields.push('postcode');
+        console.log(`✅ [${callSid}] Postcode provided (stored postcode missing)`);
       }
 
       // Verify telephone number (normalize format - remove spaces, dashes, etc.)
-      if (storedTelephone && providedTelephone) {
+      if (!providedTelephone) {
+        // Telephone not provided - this is already caught by missingFields check, but double-check
+        mismatches.push('telephoneNumber');
+        console.log(`❌ [${callSid}] Telephone number not provided but required`);
+      } else if (storedTelephone && providedTelephone) {
         // Remove all non-digit characters except + for comparison
         const cleanStoredTelephone = storedTelephone.replace(/[^\d+]/g, '').replace(/^\+44/, '0');
         const cleanProvidedTelephone = providedTelephone.replace(/[^\d+]/g, '').replace(/^\+44/, '0');
@@ -219,10 +253,48 @@ class ClientVerificationTool {
         mismatches.push('telephoneNumber');
         incrementVerificationAttempt(conversation, 'telephoneNumber');
         console.log(`❌ [${callSid}] Telephone number not provided but required`);
+      } else {
+        // Stored telephone missing but provided - still count as verified if provided
+        verifiedCount++;
+        verifiedFields.push('telephoneNumber');
+        console.log(`✅ [${callSid}] Telephone number provided (stored telephone missing)`);
       }
 
-      // CRITICAL FIX: Require ALL THREE fields to be verified (not just 2 out of 3)
-      const allVerified = mismatches.length === 0 && verifiedCount === 3;
+      // CRITICAL FIX: Require ALL THREE fields to be provided AND verified
+      // verifiedCount must be exactly 3 (all three fields provided)
+      // mismatches must be empty (no mismatches)
+      // AND all three normalized fields must be non-empty (double-check)
+      const allThreeProvided = normalizedFullName && normalizedPostcode && normalizedTelephoneNumber;
+      const allVerified = mismatches.length === 0 && verifiedCount === 3 && allThreeProvided;
+
+      if (!allVerified) {
+        // If not all verified, check what's missing
+        const stillMissing = [];
+        if (!normalizedFullName) stillMissing.push('fullName');
+        if (!normalizedPostcode) stillMissing.push('postcode');
+        if (!normalizedTelephoneNumber) stillMissing.push('telephoneNumber');
+        
+        if (stillMissing.length > 0) {
+          // Some fields still missing - ask for them
+          const fieldNames = {
+            fullName: 'full name',
+            postcode: 'postcode',
+            telephoneNumber: 'telephone number'
+          };
+          const missingFieldNames = stillMissing.map(f => fieldNames[f]).join(', ');
+          const promptMessage = getMissingFieldsPrompt(stillMissing);
+          
+          return {
+            success: false,
+            verified: false,
+            missingFields: stillMissing,
+            verifiedFields: verifiedFields,
+            message: promptMessage,
+            instruction: `CRITICAL: Client verification is INCOMPLETE. You have collected: ${verifiedFields.length > 0 ? verifiedFields.map(f => fieldNames[f]).join(', ') : 'none'}. You MUST immediately ask for ALL missing fields: ${missingFieldNames}. Use the exact prompt: "${promptMessage}". Then IMMEDIATELY call client_verification tool again with ALL missing fields filled in. Do NOT wait for the user to ask "are you still there" or any other prompt. Continue the verification flow immediately without pausing.`,
+            requiresImmediateContinuation: true
+          };
+        }
+      }
 
       if (allVerified) {
         // Mark client as verified using verification service
@@ -257,24 +329,19 @@ class ClientVerificationTool {
           }
         }
         
-        let baseMessage;
-        if (isBookingContext && bookingSessionInProgress) {
-          // Booking session already in progress - use step-based tools
-          baseMessage = `Identity verified successfully. All details match our records. You have been verified successfully. You must now continue with the booking by calling ${nextStepTool || 'booking_step_select_session'}. Verification is a step in the booking process, not the end. Do NOT say "Booking is confirmed" - the booking workflow continues after verification.`;
-        } else if (isBookingContext) {
-          // Booking context but no step-based session - fallback to crm_browser (legacy)
-          baseMessage = 'Identity verified successfully. All details match our records. You have been verified successfully. You must now continue with the booking by calling crm_browser with task: "create_booking" using the same parameters as before. Verification is a step in the booking process, not the end. Do NOT say "Booking is confirmed" - the booking workflow continues after verification.';
-        } else {
-          baseMessage = 'Identity verified successfully. All details match our records.';
+        // Default to select_session if no specific next step determined
+        if (!nextStepTool && isBookingContext) {
+          nextStepTool = 'booking_step_select_session';
         }
         
         return {
           success: true,
           verified: true,
-          message: baseMessage,
+          message: 'You are successfully verified.',
           verifiedFields: verifiedFields,
           requiresBookingContinuation: isBookingContext || undefined,
-          nextStepTool: bookingSessionInProgress ? (nextStepTool || 'booking_step_select_session') : undefined
+          nextStepTool: nextStepTool || undefined,
+          requiresImmediateNextStep: true // Flag to indicate agent must immediately call next step
         };
       } else {
         // Check if we've exceeded max attempts (7 per field)

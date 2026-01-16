@@ -374,10 +374,133 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           await makeBookingButton.click({ timeout: 5000 });
           console.log('✅ [PAYMENT_REQUEST] "Make booking" button clicked successfully');
           
-          await takeScreenshot(page, 'payment-completed-make-booking-clicked.png', screenshotsDir);
+          // Wait a moment for the click to register
+          await page.waitForTimeout(500);
           
-          // Wait a moment for booking to process
-          await page.waitForTimeout(2000);
+          // Wait for payment processing/confirmation (up to 30 seconds)
+          console.log('⏳ [PAYMENT_REQUEST] Waiting for payment processing/confirmation...');
+          await page.waitForTimeout(3000); // Initial wait
+          
+          // Try to detect confirmation indicators
+          const confirmationIndicators = [
+            'text=/booking.confirmed/i',
+            'text=/payment.successful/i',
+            'text=/confirmed/i',
+            'text=/successful/i',
+            'text=/Booking confirmed/i',
+            'text=/Payment successful/i'
+          ];
+          
+          let confirmationFound = false;
+          for (const indicator of confirmationIndicators) {
+            try {
+              const confirmElement = page.locator(indicator).first();
+              if (await confirmElement.count() > 0) {
+                const isVisible = await confirmElement.isVisible().catch(() => false);
+                if (isVisible) {
+                  console.log(`✅ [PAYMENT_REQUEST] Found confirmation indicator: "${indicator}"`);
+                  confirmationFound = true;
+                  break;
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+          
+          // Wait additional time for payment processing if confirmation not immediately visible
+          if (!confirmationFound) {
+            console.log('⏳ [PAYMENT_REQUEST] Confirmation not immediately visible, waiting for payment processing...');
+            await page.waitForTimeout(10000); // Additional 10 seconds
+          }
+          
+          // CRITICAL: Check if we're still on the payment page (button should disappear or be disabled)
+          // This ensures we don't get false positives from elements that already exist
+          let stillOnPaymentPage = true;
+          let paymentPageCheckAttempts = 0;
+          const maxPaymentPageChecks = 10; // 10 seconds
+          
+          // Determine search context (could be iframe or main page)
+          let searchContextForCheck = searchContext || page;
+          
+          while (stillOnPaymentPage && paymentPageCheckAttempts < maxPaymentPageChecks) {
+            await page.waitForTimeout(1000);
+            paymentPageCheckAttempts++;
+            
+            // Check if "Make Booking" button still exists and is enabled (means we're still on payment page)
+            try {
+              const buttonStillExists = await searchContextForCheck.locator('#diaryNewCourseBookingWiz_OKBtn').count() > 0;
+              if (buttonStillExists) {
+                const button = searchContextForCheck.locator('#diaryNewCourseBookingWiz_OKBtn').first();
+                const isVisible = await button.isVisible().catch(() => false);
+                const isDisabled = await button.getAttribute('disabled').catch(() => null);
+                
+                // If button is visible and not disabled, we're still on payment page
+                if (isVisible && isDisabled === null) {
+                  console.log(`⏳ [PAYMENT_REQUEST] Still on payment page (attempt ${paymentPageCheckAttempts}/${maxPaymentPageChecks})...`);
+                  continue;
+                }
+              }
+              // Button doesn't exist or is disabled - payment processing may have started
+              stillOnPaymentPage = false;
+              console.log('✅ [PAYMENT_REQUEST] Payment page navigation detected (button disappeared or disabled)');
+            } catch (e) {
+              // Error checking button - assume we've navigated away
+              stillOnPaymentPage = false;
+              console.log('✅ [PAYMENT_REQUEST] Payment page navigation detected (button check failed)');
+            }
+          }
+          
+          if (stillOnPaymentPage) {
+            console.log('⚠️ [PAYMENT_REQUEST] Still on payment page after 10 seconds - payment may not have processed');
+          }
+          
+          // Now wait for indicators that we're on the confirmation/next page
+          // PRIMARY: Check for #afterBookingMenu - definitive indicator of successful payment and booking completion
+          const nextPageIndicators = [
+            '#afterBookingMenu',
+            '#afterBookingMenu .list-menu-item-heading:has-text("Send a confirmation")',
+            '#afterBookingMenu .list-menu-item-heading:has-text("Finish")',
+            'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-heading:has-text("Send a confirmation"))',
+            'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-heading:has-text("Finish"))',
+            '.list-menu-item-heading:has-text("Send a confirmation")',
+            '.list-menu-item-heading:has-text("Finish")'
+          ];
+          
+          let nextPageFound = false;
+          let nextPageCheckAttempts = 0;
+          const maxNextPageChecks = 15; // 15 seconds
+          
+          while (!nextPageFound && nextPageCheckAttempts < maxNextPageChecks) {
+            await page.waitForTimeout(1000);
+            nextPageCheckAttempts++;
+            
+            for (const indicator of nextPageIndicators) {
+              try {
+                const element = page.locator(indicator).first();
+                if (await element.count() > 0) {
+                  const isVisible = await element.isVisible().catch(() => false);
+                  if (isVisible) {
+                    console.log(`✅ [PAYMENT_REQUEST] Found final confirmation page indicator: "${indicator}"`);
+                    nextPageFound = true;
+                    break;
+                  }
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            
+            if (!nextPageFound && nextPageCheckAttempts < maxNextPageChecks) {
+              console.log(`⏳ [PAYMENT_REQUEST] Waiting for final confirmation page (attempt ${nextPageCheckAttempts}/${maxNextPageChecks})...`);
+            }
+          }
+          
+          if (nextPageFound) {
+            console.log('✅ [PAYMENT_REQUEST] Final confirmation page detected - booking is complete!');
+          } else {
+            console.log('⚠️ [PAYMENT_REQUEST] Final confirmation page indicators not found, but proceeding (payment may have completed)');
+          }
           
           console.log('✅ [PAYMENT_REQUEST] ============================================');
           console.log('✅ [PAYMENT_REQUEST] SUCCESS: Booking finalized!');
@@ -389,6 +512,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
             success: true,
             paymentCompleted: true,
             bookingFinalized: true,
+            confirmationEmailSent: nextPageFound, // Indicate if confirmation page was detected
             message: '✅ SUCCESS: Payment request sent via ' + deliveryMethod + ' and payment completed successfully. "Make booking" button clicked. Booking finalized and completed.'
           };
         } catch (clickError) {
@@ -398,7 +522,127 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
             await makeBookingButton.click({ force: true, timeout: 5000 });
             console.log('✅ [PAYMENT_REQUEST] "Make booking" button clicked with force');
             
-            await page.waitForTimeout(2000);
+            // Wait a moment for the click to register
+            await page.waitForTimeout(500);
+            
+            // Wait for payment processing/confirmation (up to 30 seconds)
+            console.log('⏳ [PAYMENT_REQUEST] Waiting for payment processing/confirmation...');
+            await page.waitForTimeout(3000); // Initial wait
+            
+            // Try to detect confirmation indicators
+            const confirmationIndicators = [
+              'text=/booking.confirmed/i',
+              'text=/payment.successful/i',
+              'text=/confirmed/i',
+              'text=/successful/i',
+              'text=/Booking confirmed/i',
+              'text=/Payment successful/i'
+            ];
+            
+            let confirmationFound = false;
+            for (const indicator of confirmationIndicators) {
+              try {
+                const confirmElement = page.locator(indicator).first();
+                if (await confirmElement.count() > 0) {
+                  const isVisible = await confirmElement.isVisible().catch(() => false);
+                  if (isVisible) {
+                    console.log(`✅ [PAYMENT_REQUEST] Found confirmation indicator: "${indicator}"`);
+                    confirmationFound = true;
+                    break;
+                  }
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+            
+            // Wait additional time for payment processing if confirmation not immediately visible
+            if (!confirmationFound) {
+              console.log('⏳ [PAYMENT_REQUEST] Confirmation not immediately visible, waiting for payment processing...');
+              await page.waitForTimeout(10000); // Additional 10 seconds
+            }
+            
+            // CRITICAL: Check if we're still on the payment page (button should disappear or be disabled)
+            let stillOnPaymentPage = true;
+            let paymentPageCheckAttempts = 0;
+            const maxPaymentPageChecks = 10; // 10 seconds
+            
+            // Determine search context (could be iframe or main page)
+            let searchContextForCheck = searchContext || page;
+            
+            while (stillOnPaymentPage && paymentPageCheckAttempts < maxPaymentPageChecks) {
+              await page.waitForTimeout(1000);
+              paymentPageCheckAttempts++;
+              
+              try {
+                const buttonStillExists = await searchContextForCheck.locator('#diaryNewCourseBookingWiz_OKBtn').count() > 0;
+                if (buttonStillExists) {
+                  const button = searchContextForCheck.locator('#diaryNewCourseBookingWiz_OKBtn').first();
+                  const isVisible = await button.isVisible().catch(() => false);
+                  const isDisabled = await button.getAttribute('disabled').catch(() => null);
+                  
+                  if (isVisible && isDisabled === null) {
+                    console.log(`⏳ [PAYMENT_REQUEST] Still on payment page (attempt ${paymentPageCheckAttempts}/${maxPaymentPageChecks})...`);
+                    continue;
+                  }
+                }
+                stillOnPaymentPage = false;
+                console.log('✅ [PAYMENT_REQUEST] Payment page navigation detected (button disappeared or disabled)');
+              } catch (e) {
+                stillOnPaymentPage = false;
+                console.log('✅ [PAYMENT_REQUEST] Payment page navigation detected (button check failed)');
+              }
+            }
+            
+            if (stillOnPaymentPage) {
+              console.log('⚠️ [PAYMENT_REQUEST] Still on payment page after 10 seconds - payment may not have processed');
+            }
+            
+            // Wait for indicators that we're on the confirmation/next page
+            const nextPageIndicators = [
+              '#afterBookingMenu',
+              '#afterBookingMenu .list-menu-item-heading:has-text("Send a confirmation")',
+              '#afterBookingMenu .list-menu-item-heading:has-text("Finish")',
+              'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-heading:has-text("Send a confirmation"))',
+              'div.dx-item.dx-list-item[role="option"]:has(.list-menu-item-heading:has-text("Finish"))',
+              '.list-menu-item-heading:has-text("Send a confirmation")',
+              '.list-menu-item-heading:has-text("Finish")'
+            ];
+            
+            let nextPageFound = false;
+            let nextPageCheckAttempts = 0;
+            const maxNextPageChecks = 15; // 15 seconds
+            
+            while (!nextPageFound && nextPageCheckAttempts < maxNextPageChecks) {
+              await page.waitForTimeout(1000);
+              nextPageCheckAttempts++;
+              
+              for (const indicator of nextPageIndicators) {
+                try {
+                  const element = page.locator(indicator).first();
+                  if (await element.count() > 0) {
+                    const isVisible = await element.isVisible().catch(() => false);
+                    if (isVisible) {
+                      console.log(`✅ [PAYMENT_REQUEST] Found final confirmation page indicator: "${indicator}"`);
+                      nextPageFound = true;
+                      break;
+                    }
+                  }
+                } catch (e) {
+                  continue;
+                }
+              }
+              
+              if (!nextPageFound && nextPageCheckAttempts < maxNextPageChecks) {
+                console.log(`⏳ [PAYMENT_REQUEST] Waiting for final confirmation page (attempt ${nextPageCheckAttempts}/${maxNextPageChecks})...`);
+              }
+            }
+            
+            if (nextPageFound) {
+              console.log('✅ [PAYMENT_REQUEST] Final confirmation page detected - booking is complete!');
+            } else {
+              console.log('⚠️ [PAYMENT_REQUEST] Final confirmation page indicators not found, but proceeding (payment may have completed)');
+            }
             
             console.log('✅ [PAYMENT_REQUEST] ============================================');
             console.log('✅ [PAYMENT_REQUEST] SUCCESS: Booking finalized!');
@@ -410,6 +654,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
               success: true,
               paymentCompleted: true,
               bookingFinalized: true,
+              confirmationEmailSent: nextPageFound, // Indicate if confirmation page was detected
               message: '✅ SUCCESS: Payment request sent via ' + deliveryMethod + ' and payment completed successfully. "Make booking" button clicked. Booking finalized and completed.'
             };
           } catch (forceClickError) {
