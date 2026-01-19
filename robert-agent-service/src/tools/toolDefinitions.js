@@ -527,6 +527,10 @@ RECOMMENDED: Use crm_browser tool directly for better control, error handling, a
       name: 'crm_browser',
       description: `Perform CRM tasks using browser automation (bookings, reschedules, cancellations, customer updates, availability checks).
 
+⚠️ DEPRECATION NOTICE: The "create_booking" task is DEPRECATED. Use booking_step_* tools instead for all new bookings.
+These step-based tools provide better state management, resumable workflows, and improved error handling.
+The create_booking task will be removed in a future version.
+
 CRITICAL ITM (Introduction to Motorcycling) BOOKING FLOW - MUST FOLLOW THIS ORDER:
 1. FIRST: Call with task: "check_availability" and args: {courseType: "Introduction to Motorcycling"} to get available slots
 2. Present all available slots to the caller and ask for preferences (date, time, location, instructor)

@@ -58,21 +58,6 @@ class ToolRegistry {
   getAvailableTools() {
     return Array.from(this.tools.keys());
   }
-
-  /**
-   * Get all registered tools
-   * @returns {Map} Map of tool name -> implementation
-   */
-  getAll() {
-    return this.tools;
-  }
-
-  /**
-   * Clear all registered tools
-   */
-  clear() {
-    this.tools.clear();
-  }
 }
 
 export default ToolRegistry;

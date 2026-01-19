@@ -5,7 +5,7 @@
  */
 
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
-import { StepExecutor } from '../../services/browser/stepExecutor.js';
+import { StepExecutor } from '../../services/browser/stepExecutor/index.js';
 import { getStepNumber, getStepName, STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import { validatePreferences, generatePreferenceErrorMessage } from '../../services/browser/preferenceValidator.js';
 import { BrowserManager } from '../../services/browser/browserManager.js';

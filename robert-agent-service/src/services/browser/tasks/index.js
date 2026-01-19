@@ -1,5 +1,5 @@
 // Export all task handlers
-export { createBooking, dryRunCreateBooking } from './createBooking.js';
+// DEPRECATED: createBooking removed - use booking_step_* tools instead
 export { rescheduleBooking, dryRunRescheduleBooking } from './rescheduleBooking.js';
 export { cancelBooking, dryRunCancelBooking } from './cancelBooking.js';
 export { updateCustomer, dryRunUpdateCustomer } from './updateCustomer.js';

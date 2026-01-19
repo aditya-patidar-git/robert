@@ -325,18 +325,8 @@ export function validateToolParameters(toolName, parameters) {
   }
 }
 
-/**
- * Check if a tool has a schema defined
- * @param {string} toolName - Name of the tool
- * @returns {boolean} True if schema exists
- */
-export function hasSchema(toolName) {
-  return toolName in toolSchemas;
-}
-
 export default {
   validateToolParameters,
-  hasSchema,
   toolSchemas
 };
 

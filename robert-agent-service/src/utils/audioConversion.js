@@ -1,26 +1,4 @@
-// μ-law to PCM16 conversion (optimized lookup table)
-const MULAW_TO_LINEAR = new Int16Array(256);
-for (let i = 0; i < 256; i++) {
-    let uval = ~i;
-    let sign = (uval & 0x80) ? -1 : 1;
-    let exponent = (uval & 0x70) >> 4;
-    let mantissa = uval & 0x0F;
-    let step = 4 << (exponent + 1);
-    let linear = ((mantissa << 1) + 33) << exponent;
-    linear = sign * (linear - 33);
-    MULAW_TO_LINEAR[i] = Math.max(-32768, Math.min(32767, linear));
-}
-
-export function convertMulawToPcm16(mulawBase64) {
-    const mulaw = Buffer.from(mulawBase64, 'base64');
-    const pcm16 = Buffer.alloc(mulaw.length * 2);
-    for (let i = 0; i < mulaw.length; i++) {
-        pcm16.writeInt16LE(MULAW_TO_LINEAR[mulaw[i]], i * 2);
-    }
-    return pcm16.toString('base64');
-}
-
-// PCM16 to μ-law conversion (reverse of above)
+// PCM16 to μ-law conversion
 const LINEAR_TO_MULAW = new Uint8Array(65536);
 for (let i = 0; i < 65536; i++) {
     let sample = i - 32768; // Convert unsigned to signed

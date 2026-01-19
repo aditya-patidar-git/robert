@@ -42,34 +42,6 @@ export function formatTime(date) {
 }
 
 /**
- * Format number with British conventions
- * @param {number} number - Number to format
- * @param {object} options - Formatting options
- * @returns {string} Formatted number
- */
-export function formatNumber(number, options = {}) {
-  const {
-    decimals = 2,
-    useCommas = true
-  } = options;
-
-  if (typeof number !== 'number' || isNaN(number)) {
-    return 'Invalid number';
-  }
-
-  let formatted = number.toFixed(decimals);
-  
-  if (useCommas) {
-    // Add thousand separators
-    const parts = formatted.split('.');
-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    formatted = parts.join('.');
-  }
-
-  return formatted;
-}
-
-/**
  * Format currency in GBP
  * @param {number} amount - Amount to format
  * @returns {string} Formatted currency (£X.XX)
@@ -103,27 +75,6 @@ export function formatPostcode(postcode) {
 }
 
 /**
- * Format UK address
- * @param {object} address - Address object
- * @returns {string} Formatted address
- */
-export function formatAddress(address) {
-  if (!address || typeof address !== 'object') {
-    return '';
-  }
-
-  const parts = [];
-  
-  if (address.line1) parts.push(address.line1);
-  if (address.line2) parts.push(address.line2);
-  if (address.city) parts.push(address.city);
-  if (address.county) parts.push(address.county);
-  if (address.postcode) parts.push(formatPostcode(address.postcode));
-
-  return parts.join(', ');
-}
-
-/**
  * Format phone number in UK format
  * @param {string} phoneNumber - Phone number to format
  * @returns {string} Formatted phone number
@@ -147,10 +98,8 @@ export function formatPhoneNumber(phoneNumber) {
 export default {
   formatDate,
   formatTime,
-  formatNumber,
   formatCurrency,
   formatPostcode,
-  formatAddress,
   formatPhoneNumber
 };
 

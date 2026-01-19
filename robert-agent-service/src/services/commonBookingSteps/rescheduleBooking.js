@@ -1,5 +1,5 @@
 import { takeScreenshot } from './utils.js';
-import { navigateToDiariesAndSelectSession } from './navigateToDiaries.js';
+import { navigateToDiariesAndSelectSession } from './navigateToDiaries/index.js';
 
 /**
  * Reschedule an existing booking
