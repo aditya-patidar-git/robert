@@ -60,10 +60,22 @@ class ProgressIndicatorService {
       return false;
     }
 
+    // CRITICAL: Don't send acknowledgment if user has interrupted
+    if (execution.stateManager && execution.stateManager.isInterrupted) {
+      console.log(`🛑 [${callSid}] Skipping acknowledgment - user has interrupted`);
+      return false;
+    }
+
     const elapsed = Date.now() - execution.startTime;
     const threshold = config.progressIndicators.acknowledgmentThresholdMs || 2000;
 
     if (!execution.acknowledgmentSent && elapsed >= threshold) {
+      // Double-check interruption state before sending
+      if (execution.stateManager && execution.stateManager.isInterrupted) {
+        console.log(`🛑 [${callSid}] Skipping acknowledgment - user interrupted before send`);
+        return false;
+      }
+
       const messages = config.progressIndicators.acknowledgmentMessages || [
         "Let me check that for you.",
         "I'm looking into that now.",
@@ -151,9 +163,16 @@ class ProgressIndicatorService {
         return;
       }
 
-      // CRITICAL: Check if response is already active before sending periodic update
-      // This prevents race conditions where tool completion creates response while periodic update fires
+      // CRITICAL: Check if user has interrupted before sending periodic update
       if (execution.stateManager) {
+        // Check for interruption first (highest priority)
+        if (execution.stateManager.isInterrupted) {
+          console.log(`🛑 [${callSid}] Skipping periodic update - user has interrupted`);
+          this.stopPeriodicUpdates(callSid);
+          return;
+        }
+        
+        // Check if response is already active
         if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
           // Skip this update - response already active (prevents "conversation already has active response" error)
           console.log(`⏭️ [${callSid}] Skipping periodic update - response already active (isResponding: ${execution.stateManager.isResponding}, activeResponseId: ${execution.stateManager.activeResponseId})`);
@@ -166,8 +185,13 @@ class ProgressIndicatorService {
       updateCount++;
 
       try {
-        // Only send if no response is active (double-check for race conditions)
+        // Double-check interruption and response state before sending
         if (execution.stateManager) {
+          if (execution.stateManager.isInterrupted) {
+            console.log(`🛑 [${callSid}] Skipping periodic update - user interrupted before send`);
+            this.stopPeriodicUpdates(callSid);
+            return;
+          }
           if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
             return; // Response became active between check and send
           }

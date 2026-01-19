@@ -115,8 +115,24 @@ export class ResponseHandler {
 
   /**
    * Handle response.audio.delta event
+   * CRITICAL: Checks interruption/cancellation FIRST to stop current response immediately
    */
   handleAudioDelta(event) {
+    // CRITICAL: Check interruption and cancellation FIRST before any processing
+    // This ensures cancelled audio deltas are completely ignored (no metrics, no buffering)
+    const currentResponseId = event.response_id || this.state.activeResponseId;
+    const isCancelledResponse = currentResponseId && this.state.cancelledResponseIds.has(currentResponseId);
+    const cancellationTimestamp = currentResponseId ? this.state.cancellationTime.get(currentResponseId) : null;
+    const timeSinceCancellation = cancellationTimestamp ? Date.now() - cancellationTimestamp : Infinity;
+    const withinGracePeriod = cancellationTimestamp && timeSinceCancellation < this.state.AUDIO_CANCELLATION_GRACE_PERIOD;
+    
+    // IMMEDIATELY block audio if interrupted or cancelled - don't process, track, or buffer anything
+    if (this.state.isInterrupted || isCancelledResponse || (cancellationTimestamp && withinGracePeriod)) {
+      // Silently ignore cancelled audio deltas - don't even log to reduce noise
+      return false;
+    }
+    
+    // Only process audio if not interrupted/cancelled
     // Track outbound audio separately
     this.state.outboundAudioChunkCount++;
     
@@ -129,19 +145,6 @@ export class ResponseHandler {
     const responseTime = Date.now();
     this.state.audioMetrics.responseTimestamps.push(responseTime);
     this.state.audioMetrics.lastResponseTime = responseTime;
-    
-    // Get response ID from event if available
-    const currentResponseId = event.response_id || this.state.activeResponseId;
-    
-    // Block audio if response was cancelled
-    const isCancelledResponse = currentResponseId && this.state.cancelledResponseIds.has(currentResponseId);
-    const cancellationTimestamp = currentResponseId ? this.state.cancellationTime.get(currentResponseId) : null;
-    const timeSinceCancellation = cancellationTimestamp ? Date.now() - cancellationTimestamp : Infinity;
-    const withinGracePeriod = cancellationTimestamp && timeSinceCancellation < this.state.AUDIO_CANCELLATION_GRACE_PERIOD;
-    
-    if (this.state.isInterrupted || isCancelledResponse || (cancellationTimestamp && withinGracePeriod)) {
-      return false; // Don't send audio chunks
-    }
     
     // Verify audio payload format
     if (!event.delta) {
@@ -205,8 +208,14 @@ export class ResponseHandler {
 
   /**
    * Send a single audio frame to Twilio
+   * CRITICAL: Checks for interruption before sending to enable immediate barge-in response
    */
   sendAudioFrame(frameSize, shouldLog = false) {
+    // CRITICAL: Check for interruption first - prevents sending audio during barge-in
+    if (this.state.isInterrupted) {
+      return false; // Don't send audio frames when interrupted
+    }
+    
     if (!this.state.outboundAudioBuffer || this.state.outboundAudioBuffer.length < frameSize) {
       return false;
     }
@@ -245,6 +254,7 @@ export class ResponseHandler {
    * Start audio pacer to send frames at correct rate
    * FIXED: More resilient to temporary WebSocket unavailability
    * Prevents audio gaps by keeping pacer running during temporary connection issues
+   * CRITICAL: Checks for interruption to enable immediate barge-in response
    */
   startAudioPacer(frameSize, frameIntervalMs, shouldLog = false) {
     if (this.state.outboundAudioPacer) {
@@ -252,6 +262,12 @@ export class ResponseHandler {
     }
     
     this.state.outboundAudioPacer = setInterval(() => {
+      // CRITICAL: Check for interruption first - stop immediately if barge-in detected
+      if (this.state.isInterrupted) {
+        this.stopAudioPacer();
+        return;
+      }
+      
       // Only stop if call is closed or WebSocket is permanently closed
       if (this.state.isClosed || !this.state.streamSid) {
         this.stopAudioPacer();
@@ -288,6 +304,69 @@ export class ResponseHandler {
     if (this.state.outboundAudioPacer) {
       clearInterval(this.state.outboundAudioPacer);
       this.state.outboundAudioPacer = null;
+    }
+  }
+
+  /**
+   * Immediately stop audio at Twilio level (for barge-in)
+   * Stops audio pacer and clears buffer immediately to achieve <50ms response time
+   * CRITICAL: Sends silence frames to Twilio to immediately cut off audio playback
+   * Thread-safe: Uses isolated state per callSid
+   */
+  immediatelyStopAudio() {
+    const stopStartTime = Date.now();
+    
+    // Stop audio pacer immediately
+    this.stopAudioPacer();
+    
+    // Clear audio buffer immediately to prevent any buffered audio from being sent
+    if (this.state.outboundAudioBuffer) {
+      const bufferSize = this.state.outboundAudioBuffer.length;
+      this.state.outboundAudioBuffer = null;
+      this.state.lastOutboundSendTime = 0;
+      
+      if (bufferSize > 0) {
+        console.log(`🛑 [${this.state.callSid}] Cleared ${bufferSize} bytes of buffered audio during barge-in`);
+      }
+    }
+    
+    // CRITICAL: Send silence frames to Twilio to immediately stop audio playback
+    // For g711_ulaw, silence is represented by 0x7F bytes (μ-law zero crossing point)
+    // Sending 3-5 frames (60-100ms) ensures Twilio stops playback immediately
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.state.streamSid && !this.state.isClosed) {
+      try {
+        const FRAME_SIZE = 160; // 20ms of g711_ulaw at 8kHz
+        // μ-law silence: 0x7F is the zero crossing point (actual silence)
+        const SILENCE_FRAME = Buffer.alloc(FRAME_SIZE, 0x7F);
+        
+        // Send 5 silence frames (100ms) to ensure Twilio stops playback immediately
+        // This immediately cuts off any audio that Twilio is currently playing
+        for (let i = 0; i < 5; i++) {
+          const mediaMessage = {
+            event: 'media',
+            streamSid: this.state.streamSid,
+            media: { 
+              payload: SILENCE_FRAME.toString('base64'),
+              track: 'outbound'
+            }
+          };
+          
+          this.ws.send(JSON.stringify(mediaMessage));
+        }
+        
+        console.log(`🔇 [${this.state.callSid}] Sent 5 silence frames (100ms) to Twilio to cut off audio playback`);
+      } catch (err) {
+        console.error(`❌ [${this.state.callSid}] Error sending silence frames to Twilio:`, err.message);
+      }
+    }
+    
+    const stopTime = Date.now() - stopStartTime;
+    console.log(`⚡ [${this.state.callSid}] Audio stopped at Twilio level in ${stopTime}ms`);
+    
+    // Track barge-in response time for metrics
+    if (this.state.interruptionStartTime > 0) {
+      const bargeInResponseTime = Date.now() - this.state.interruptionStartTime;
+      conversationQualityService.trackBargeInResponseTime(this.state.callSid, bargeInResponseTime);
     }
   }
 

@@ -104,10 +104,8 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       return;
     }
 
-    // Only trigger if not already responding
-    if (this.stateManager && 
-        !this.stateManager.isResponding && 
-        this.stateManager.activeResponseId === null) {
+    // CRITICAL: Use atomic lock to prevent concurrent response creation
+    if (this.stateManager && this.stateManager.tryAcquireResponseLock()) {
       
       try {
         // PHASE 1: Get contextual instructions for automatic continuation after tool execution
@@ -171,10 +169,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         }
         
         // Step 1: Disable tools before creating response (prevents tool calls during response)
-        // CRITICAL FIX: Set flags BEFORE creating response to ensure immediate speech
-        this.stateManager.isResponding = true;
-        this.stateManager.explicitResponseRequested = true;
-        
+        // Lock already acquired by tryAcquireResponseLock()
         openaiWs.send(JSON.stringify({
           type: 'session.update',
           session: {
@@ -216,10 +211,9 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         
       } catch (error) {
         console.error(`❌ [${callId}] Error triggering response:`, error);
-        // Reset state on error
+        // Release lock on error
         if (this.stateManager) {
-          this.stateManager.isResponding = false;
-          this.stateManager.explicitResponseRequested = false;
+          this.stateManager.releaseResponseLock();
         }
       }
     }

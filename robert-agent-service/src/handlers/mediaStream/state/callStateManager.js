@@ -67,6 +67,7 @@ export class CallStateManager {
     this.agentFinishedSpeakingTime = 0;
     this.userSpeakingWindowMs = 6000;
     this.userSpeechStartedTime = 0;
+    this.pendingBargeInCheck = false; // Flag to track when user is speaking but we're waiting for transcription to check for "stop"
     
     // Initial greeting tracking
     this.hasInitialGreetingBeenSent = false;
@@ -244,6 +245,29 @@ export class CallStateManager {
       errorCount: this.errorCount,
       audioChunkCount: this.audioChunkCount
     };
+  }
+
+  /**
+   * Atomically acquire response creation lock
+   * Returns true if lock was acquired, false if already locked
+   * This prevents concurrent response creation from multiple handlers
+   */
+  tryAcquireResponseLock() {
+    if (this.isResponding || this.activeResponseId !== null) {
+      return false; // Already responding
+    }
+    // Atomically set the lock
+    this.isResponding = true;
+    this.explicitResponseRequested = true;
+    return true;
+  }
+
+  /**
+   * Release response creation lock (call on error)
+   */
+  releaseResponseLock() {
+    this.isResponding = false;
+    this.explicitResponseRequested = false;
   }
 }
 

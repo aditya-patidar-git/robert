@@ -19,10 +19,15 @@ export class ToolCoordinator {
     const languageDetector = new LanguageDetector(stateManager);
     const consentHandler = new ConsentHandler(stateManager, memoryManager);
     
-    this.bargeInHandler = new BargeInHandler(stateManager, openaiWs);
-    this.consentHandler = consentHandler;
+    // Initialize ResponseHandler first (needed by BargeInHandler for immediate audio stopping)
     this.responseHandler = new ResponseHandler(stateManager, ws);
-    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs);
+    
+    // Initialize BargeInHandler with ResponseHandler reference for immediate Twilio-level audio stopping
+    this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler);
+    
+    this.consentHandler = consentHandler;
+    // Pass BargeInHandler reference to TranscriptionHandler so it can trigger barge-in when "stop" is detected
+    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler);
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs);
   }
 
@@ -115,8 +120,8 @@ export class ToolCoordinator {
       return;
     }
     
-    // 🚨 CRITICAL: Prevent concurrent calls
-    if (this.state.isResponding || this.state.activeResponseId !== null) {
+    // 🚨 CRITICAL: Use atomic lock to prevent concurrent calls
+    if (!this.state.tryAcquireResponseLock()) {
       console.warn(`⚠️ [${this.state.callSid}] Already responding (responseId: ${this.state.activeResponseId}), skipping duplicate createAudioResponse call`);
       return;
     }
@@ -266,10 +271,7 @@ export class ToolCoordinator {
       
       console.log(`📤 [${this.state.callSid}] Sending response.create, WebSocket state: ${this.openaiWs.readyState}`);
       
-      // Set state BEFORE sending to prevent duplicate calls
-      this.state.isResponding = true;
-      this.state.explicitResponseRequested = true;
-      
+      // Lock already acquired by tryAcquireResponseLock()
       this.openaiWs.send(JSON.stringify(responseCreatePayload));
       
       // Step 4: Re-enable tools after delay
@@ -288,7 +290,7 @@ export class ToolCoordinator {
       console.error(`❌ [${this.state.callSid}] Error creating audio response:`, err);
       // Reset state on error
       this.state.hasInitialGreetingBeenSent = false;
-      this.state.isResponding = false;
+      this.state.releaseResponseLock();
       this.state.pendingSessionUpdatePromise = null;
       this.state.pendingItemCreatePromise = null;
     }
@@ -372,10 +374,26 @@ export class ToolCoordinator {
           break;
           
         case 'conversation.item.input_audio_transcription.completed':
-          await this.transcriptionHandler.handleTranscriptionCompleted(event);
-          // Check if agent is waiting and should respond immediately
-          if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
-            // Create response immediately when user speaks and agent is waiting
+          const transcriptionResult = await this.transcriptionHandler.handleTranscriptionCompleted(event);
+          
+          // Check if transcription was processed and if we should create a response
+          const shouldCreateResponse = transcriptionResult?.processed && transcriptionResult?.shouldCreateResponse !== false;
+          
+          // CRITICAL: Robust audio playing check (same logic as in TranscriptionHandler)
+          const hasActiveResponse = this.state.activeResponseId !== null;
+          const hasAudioPacer = this.state.outboundAudioPacer !== null;
+          const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
+          const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 5000;
+          const isAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio;
+          
+          // Create response only if:
+          // 1. Transcription was processed successfully
+          // 2. shouldCreateResponse flag is true (from TranscriptionHandler)
+          // 3. Agent is waiting for user
+          // 4. Audio is NOT currently playing (CRITICAL: prevent responses during audio playback)
+          // 5. No active response exists
+          // 6. Initial greeting has completed
+          if (shouldCreateResponse && this.state.waitingForUser && !isAudioPlaying && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
             try {
               this.state.explicitResponseRequested = true;
               
@@ -385,6 +403,8 @@ export class ToolCoordinator {
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
             }
+          } else if (isAudioPlaying && shouldCreateResponse) {
+            console.log(`🔇 [${this.state.callSid}] Skipping response creation - audio is currently playing`);
           }
           break;
           
@@ -393,9 +413,17 @@ export class ToolCoordinator {
           // Handle process_transcriptions return value
           if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
             const transcriptions = speechStoppedResult.transcriptions || [];
-            if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+            // CRITICAL: Don't create response if interrupted
+            if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
               // Create response immediately when transcriptions are ready and agent is waiting
               try {
+                // Double-check interruption state after acquiring lock
+                if (this.state.isInterrupted) {
+                  console.log(`🛑 [${this.state.callSid}] Skipping response creation - user interrupted after lock acquisition`);
+                  this.state.releaseResponseLock();
+                  return;
+                }
+                
                 this.state.explicitResponseRequested = true;
                 
                 // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
@@ -403,14 +431,22 @@ export class ToolCoordinator {
                 console.log(`🎯 [${this.state.callSid}] Created response after processing ${transcriptions.length} transcriptions`);
               } catch (err) {
                 console.error(`❌ [${this.state.callSid}] Error creating response after processing transcriptions:`, err);
+                this.state.releaseResponseLock();
               }
             }
           }
           // Handle acknowledge_interruption return value
           if (speechStoppedResult && speechStoppedResult.type === 'acknowledge_interruption') {
-            // Create response to acknowledge interruption
-            if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null) {
+            // CRITICAL: Don't create acknowledgment if interrupted (user said stop)
+            if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
               try {
+                // Double-check interruption state after acquiring lock
+                if (this.state.isInterrupted) {
+                  console.log(`🛑 [${this.state.callSid}] Skipping acknowledgment response - user interrupted after lock acquisition`);
+                  this.state.releaseResponseLock();
+                  return;
+                }
+                
                 this.state.explicitResponseRequested = true;
                 
                 // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
@@ -418,6 +454,7 @@ export class ToolCoordinator {
                 console.log(`🎯 [${this.state.callSid}] Created response to acknowledge interruption`);
               } catch (err) {
                 console.error(`❌ [${this.state.callSid}] Error creating response for interruption:`, err);
+                this.state.releaseResponseLock();
               }
             }
           }

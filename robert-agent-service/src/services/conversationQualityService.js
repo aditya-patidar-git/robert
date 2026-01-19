@@ -62,8 +62,10 @@ class ConversationQualityService {
       conversations[callSid].qualityMetrics = {
         responseLatencies: [],
         interruptions: [],
+        bargeInResponseTimes: [],
         toolExecutions: [],
         averageLatency: null,
+        averageBargeInResponseTime: null,
         interruptionCount: 0,
         toolSuccessRate: null
       };
@@ -82,6 +84,47 @@ class ConversationQualityService {
     }
 
     console.log(`📊 [${callSid}] Interruption tracked (total: ${metrics.interruptionCount})`);
+  }
+
+  /**
+   * Track barge-in response time (time from barge-in detection to audio stopping)
+   * @param {string} callSid - Call SID
+   * @param {number} responseTimeMs - Barge-in response time in milliseconds
+   */
+  trackBargeInResponseTime(callSid, responseTimeMs) {
+    if (!conversations[callSid]) {
+      return;
+    }
+
+    if (!conversations[callSid].qualityMetrics) {
+      conversations[callSid].qualityMetrics = {
+        responseLatencies: [],
+        interruptions: [],
+        bargeInResponseTimes: [],
+        toolExecutions: [],
+        averageLatency: null,
+        averageBargeInResponseTime: null,
+        interruptionCount: 0,
+        toolSuccessRate: null
+      };
+    }
+
+    const metrics = conversations[callSid].qualityMetrics;
+    metrics.bargeInResponseTimes.push({
+      responseTime: responseTimeMs,
+      timestamp: Date.now()
+    });
+
+    // Keep only last 50 barge-in response times
+    if (metrics.bargeInResponseTimes.length > 50) {
+      metrics.bargeInResponseTimes.shift();
+    }
+
+    // Update average barge-in response time
+    const sum = metrics.bargeInResponseTimes.reduce((acc, r) => acc + r.responseTime, 0);
+    metrics.averageBargeInResponseTime = Math.round(sum / metrics.bargeInResponseTimes.length);
+
+    console.log(`📊 [${callSid}] Barge-in response time: ${responseTimeMs}ms (avg: ${metrics.averageBargeInResponseTime}ms)`);
   }
 
   /**
