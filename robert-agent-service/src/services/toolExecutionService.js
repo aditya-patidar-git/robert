@@ -13,6 +13,7 @@ import progressIndicatorService from '../services/progressIndicatorService.js';
 import turnTakingStateMachine, { STATES } from '../services/turnTakingStateMachine.js';
 import { conversations } from '../shared/state.js';
 import uncertaintyGateService from './uncertaintyGateService.js';
+import unansweredQuestionService from './unansweredQuestionService.js';
 
 /**
  * Unified Tool Execution Service
@@ -118,6 +119,66 @@ class ToolExecutionService {
           sessionDetails: executionResult.result.selectedSlot || executionResult.result.sessionDetails
         };
       }
+    }
+  }
+
+  /**
+   * Determine UK domains to search based on query context
+   * @param {string} query - Search query
+   * @returns {string[]} Array of UK domain names
+   */
+  determineUKDomains(query) {
+    if (!query) return [];
+    
+    const queryLower = query.toLowerCase();
+    const ukDomains = [];
+    
+    // Include takeabyte.co.uk for policy/service queries
+    if (queryLower.includes('policy') || 
+        queryLower.includes('gdpr') || 
+        queryLower.includes('privacy') ||
+        queryLower.includes('service') ||
+        queryLower.includes('terms') ||
+        queryLower.includes('booking') ||
+        queryLower.includes('training')) {
+      ukDomains.push('takeabyte.co.uk');
+    }
+    
+    return ukDomains;
+  }
+
+  /**
+   * Execute fallback search tool with low latency optimizations
+   * @param {string} fallbackToolName - Tool name to execute ('web_search' or 'file_search')
+   * @param {object} parameters - Tool parameters
+   * @param {object} callContext - Call context
+   * @param {Function} progressCallback - Progress callback
+   * @param {string} callSid - Call SID for logging
+   * @returns {Promise<object>} Fallback search result
+   */
+  async executeFallbackSearch(fallbackToolName, parameters, callContext, progressCallback, callSid) {
+    const fallbackStartTime = Date.now();
+    
+    try {
+      const fallbackResult = await toolExecutor.execute(
+        fallbackToolName,
+        parameters,
+        callContext,
+        progressCallback
+      );
+
+      const fallbackTime = fallbackResult.executionTime || (Date.now() - fallbackStartTime);
+      
+      // Save usage asynchronously (don't wait for latency)
+      this.saveToolUsageToCallRecord(callSid, fallbackToolName, fallbackTime, fallbackResult.success !== false)
+        .catch(err => {
+          console.warn(`⚠️ [${callSid}] Failed to save ${fallbackToolName} usage:`, err.message);
+        });
+
+      return fallbackResult;
+    } catch (error) {
+      console.error(`❌ [${callSid}] Fallback ${fallbackToolName} execution failed:`, error.message);
+      throw error;
     }
   }
 
@@ -237,7 +298,8 @@ class ToolExecutionService {
     if (stateManager) {
       const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
       if (conversationBehaviorConfig?.progressIndicators?.enabled) {
-        progressIndicatorService.startToolExecution(callSid || callId, toolName);
+        // Pass stateManager for thread-safe response state checks
+        progressIndicatorService.startToolExecution(callSid || callId, toolName, stateManager);
       }
     }
 
@@ -270,15 +332,18 @@ class ToolExecutionService {
       // Calculate execution time (use result's time if available, otherwise calculate)
       executionTime = executionResult.executionTime || (Date.now() - executionStartTime);
 
-      // Check uncertainty gate for file_search results
-      if (toolName === 'file_search' && executionResult && executionResult.validationFailed === true) {
+      // Extract actual tool result (toolExecutor wraps it in { success, result, executionTime })
+      const toolResult = executionResult.result || executionResult;
+
+      // ========== FILE_SEARCH FAILURE → WEB_SEARCH FALLBACK ==========
+      if (toolName === 'file_search' && toolResult && toolResult.validationFailed === true) {
         console.log(`⚠️ [${callSid || callId}] File search failed uncertainty gate validation`);
         
         // Generate uncertainty response
         const uncertaintyResponse = uncertaintyGateService.generateUncertaintyResponse({
-          confidence: executionResult.confidence || 0,
-          recommendations: executionResult.validationDetails?.recommendations || [],
-          fallbackAction: executionResult.validationDetails?.fallbackAction || 'transfer'
+          confidence: toolResult.confidence || 0,
+          recommendations: toolResult.validationDetails?.recommendations || [],
+          fallbackAction: toolResult.validationDetails?.fallbackAction || 'transfer'
         });
 
         // Store uncertainty event in conversation state
@@ -289,25 +354,281 @@ class ToolExecutionService {
           conversations[callSid || callId].uncertaintyEvents = [];
         }
         conversations[callSid || callId].uncertaintyEvents.push({
-          query: executionResult.query,
-          confidence: executionResult.confidence,
-          fallbackAction: executionResult.validationDetails?.fallbackAction,
+          query: toolResult.query,
+          confidence: toolResult.confidence,
+          fallbackAction: toolResult.validationDetails?.fallbackAction,
           timestamp: new Date()
         });
 
-        // Return result with uncertainty response
-        return {
-          success: false,
-          validationFailed: true,
-          error: 'UNCERTAINTY_GATE_FAILED',
-          message: uncertaintyResponse.message,
-          confidence: executionResult.confidence,
-          fallbackAction: uncertaintyResponse.action,
-          validationDetails: executionResult.validationDetails,
-          query: executionResult.query,
-          results: [],
-          totalResults: 0
-        };
+        // Automatic fallback to web_search when file_search fails
+        const query = toolResult.query || parameters.query || '';
+        console.log(`🔄 [${callSid || callId}] Automatically triggering web_search fallback for: "${query}"`);
+        
+        // CRITICAL: Stop periodic updates atomically before fallback to prevent multiple responses
+        // This must happen synchronously before fallback execution starts
+        if (stateManager) {
+          progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+          console.log(`🛑 [${callSid || callId}] Stopped periodic updates before fallback execution`);
+        }
+        
+        // Save unanswered question asynchronously (don't wait - low latency)
+        // This captures the initial failure before fallback attempt
+        unansweredQuestionService.saveUnansweredQuestion({
+          callSid: callSid || callId,
+          callId: callId,
+          callerId: phoneNumber || 'unknown',
+          question: query,
+          context: `File search failed uncertainty gate validation (confidence: ${toolResult.confidence})`,
+          confidence: toolResult.confidence,
+          failureReason: 'uncertainty_gate_failed',
+          searchResults: {
+            fileSearchResults: toolResult.results?.length || 0,
+            webSearchResults: 0,
+            fileSearchConfidence: toolResult.confidence,
+            webSearchConfidence: 0
+          }
+        }).catch(err => {
+          console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+        });
+        
+        try {
+          const ukDomains = this.determineUKDomains(query);
+          
+          // Execute web_search fallback
+          const webSearchResult = await this.executeFallbackSearch(
+            'web_search',
+            {
+              query: query,
+              domains: ukDomains.length > 0 ? ukDomains : undefined,
+              maxResults: 5
+            },
+            callContext,
+            progressCallback,
+            callSid || callId
+          );
+
+          // Extract web search result (may be wrapped by toolExecutor)
+          const webSearchToolResult = webSearchResult.result || webSearchResult;
+          
+          // Check if web_search succeeded
+          if (webSearchToolResult && webSearchToolResult.success !== false && webSearchToolResult.results && webSearchToolResult.results.length > 0) {
+            console.log(`✅ [${callSid || callId}] Web search fallback successful, found ${webSearchToolResult.results.length} results`);
+            
+            return {
+              success: true,
+              validationFailed: false,
+              query: query,
+              results: webSearchToolResult.results,
+              totalResults: webSearchToolResult.totalResults || webSearchToolResult.results.length,
+              source: 'web_search',
+              fallbackUsed: true,
+              fileSearchConfidence: toolResult.confidence,
+              message: `Found ${webSearchToolResult.results.length} result(s) via web search. ${uncertaintyResponse.message || ''}`
+            };
+          } else {
+            // Web search also failed or returned no results
+            console.log(`⚠️ [${callSid || callId}] Web search fallback also returned no results`);
+            
+            // Save unanswered question asynchronously (don't wait - low latency)
+            unansweredQuestionService.saveUnansweredQuestion({
+              callSid: callSid || callId,
+              callId: callId,
+              callerId: phoneNumber || 'unknown',
+              question: query,
+              context: `File search failed (confidence: ${toolResult.confidence}), web search fallback also returned no results`,
+              confidence: toolResult.confidence,
+              failureReason: 'both_searches_failed',
+              searchResults: {
+                fileSearchResults: 0,
+                webSearchResults: webSearchToolResult?.results?.length || 0,
+                fileSearchConfidence: toolResult.confidence,
+                webSearchConfidence: 0
+              }
+            }).catch(err => {
+              console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+            });
+            
+            return {
+              success: false,
+              validationFailed: true,
+              error: 'BOTH_SEARCHES_FAILED',
+              message: uncertaintyResponse.message,
+              confidence: toolResult.confidence,
+              fallbackAction: uncertaintyResponse.action,
+              validationDetails: toolResult.validationDetails,
+              query: query,
+              results: [],
+              totalResults: 0,
+              fallbackUsed: true
+            };
+          }
+        } catch (webSearchError) {
+          console.error(`❌ [${callSid || callId}] Web search fallback failed:`, webSearchError.message);
+          
+          // Save unanswered question asynchronously (don't wait - low latency)
+          unansweredQuestionService.saveUnansweredQuestion({
+            callSid: callSid || callId,
+            callId: callId,
+            callerId: phoneNumber || 'unknown',
+            question: query,
+            context: `File search failed (confidence: ${toolResult.confidence}), web search fallback threw error: ${webSearchError.message}`,
+            confidence: toolResult.confidence,
+            failureReason: 'both_searches_failed',
+            searchResults: {
+              fileSearchResults: 0,
+              webSearchResults: 0,
+              fileSearchConfidence: toolResult.confidence,
+              webSearchConfidence: 0
+            }
+          }).catch(err => {
+            console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+          });
+          
+          // Return original file_search failure if web_search also fails
+          return {
+            success: false,
+            validationFailed: true,
+            error: 'UNCERTAINTY_GATE_FAILED',
+            message: uncertaintyResponse.message,
+            confidence: toolResult.confidence,
+            fallbackAction: uncertaintyResponse.action,
+            validationDetails: toolResult.validationDetails,
+            query: query,
+            results: [],
+            totalResults: 0,
+            fallbackError: webSearchError.message
+          };
+        }
+      }
+
+      // ========== WEB_SEARCH FAILURE → FILE_SEARCH FALLBACK ==========
+      if (toolName === 'web_search' && toolResult) {
+        // Extract web search result (may be wrapped by toolExecutor)
+        const webSearchResult = toolResult;
+        
+        // Check if web_search returned empty results or failed
+        const hasNoResults = !webSearchResult.results || 
+                            webSearchResult.results.length === 0 || 
+                            (webSearchResult.totalResults !== undefined && webSearchResult.totalResults === 0);
+        
+        const hasError = executionResult.success === false || webSearchResult.error;
+        
+        if (hasNoResults || hasError) {
+          console.log(`⚠️ [${callSid || callId}] Web search returned ${hasNoResults ? 'no results' : 'an error'}, triggering file_search fallback`);
+          
+          // CRITICAL: Stop periodic updates atomically before fallback to prevent multiple responses
+          // This must happen synchronously before fallback execution starts
+          if (stateManager) {
+            progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+            console.log(`🛑 [${callSid || callId}] Stopped periodic updates before fallback execution`);
+          }
+          
+          try {
+            const query = webSearchResult.query || parameters.query || '';
+            
+            // Execute file_search fallback
+            const fileSearchFallbackResult = await this.executeFallbackSearch(
+              'file_search',
+              {
+                query: query
+              },
+              callContext,
+              progressCallback,
+              callSid || callId
+            );
+
+            // Extract file search result (may be wrapped by toolExecutor)
+            const fileSearchToolResult = fileSearchFallbackResult.result || fileSearchFallbackResult;
+
+            // Check if file_search succeeded and passed uncertainty gate
+            if (fileSearchToolResult && 
+                fileSearchFallbackResult.success !== false && 
+                !fileSearchToolResult.validationFailed && 
+                fileSearchToolResult.results && 
+                fileSearchToolResult.results.length > 0) {
+              console.log(`✅ [${callSid || callId}] File search fallback successful, found ${fileSearchToolResult.results.length} results`);
+              
+              return {
+                success: true,
+                validationFailed: false,
+                query: query,
+                results: fileSearchToolResult.results,
+                totalResults: fileSearchToolResult.totalResults || fileSearchToolResult.results.length,
+                source: 'file_search',
+                fallbackUsed: true,
+                webSearchFailed: true,
+                message: `Found ${fileSearchToolResult.results.length} result(s) via file search fallback.`
+              };
+            } else {
+              // File search also failed or returned no results
+              console.log(`⚠️ [${callSid || callId}] File search fallback also returned no results or failed validation`);
+              
+              // Save unanswered question asynchronously (don't wait - low latency)
+              unansweredQuestionService.saveUnansweredQuestion({
+                callSid: callSid || callId,
+                callId: callId,
+                callerId: phoneNumber || 'unknown',
+                question: query,
+                context: `Web search returned no results, file search fallback also failed (validation: ${fileSearchToolResult?.validationFailed || false})`,
+                confidence: fileSearchToolResult?.confidence || 0,
+                failureReason: 'both_searches_failed',
+                searchResults: {
+                  fileSearchResults: fileSearchToolResult?.results?.length || 0,
+                  webSearchResults: 0,
+                  fileSearchConfidence: fileSearchToolResult?.confidence || 0,
+                  webSearchConfidence: 0
+                }
+              }).catch(err => {
+                console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+              });
+              
+              return {
+                success: false,
+                validationFailed: fileSearchToolResult?.validationFailed || false,
+                error: 'BOTH_SEARCHES_FAILED',
+                message: `Both web search and file search failed to find results for: "${query}"`,
+                query: query,
+                results: [],
+                totalResults: 0,
+                fallbackUsed: true,
+                webSearchError: hasError ? webSearchResult.error : 'No results',
+                fileSearchError: fileSearchToolResult?.error || (fileSearchToolResult?.validationFailed ? 'Uncertainty gate failed' : 'No results')
+              };
+            }
+          } catch (fileSearchError) {
+            console.error(`❌ [${callSid || callId}] File search fallback failed:`, fileSearchError.message);
+            
+            // Save unanswered question asynchronously (don't wait - low latency)
+            unansweredQuestionService.saveUnansweredQuestion({
+              callSid: callSid || callId,
+              callId: callId,
+              callerId: phoneNumber || 'unknown',
+              question: webSearchResult.query || parameters.query || '',
+              context: `Web search returned no results, file search fallback threw error: ${fileSearchError.message}`,
+              confidence: 0,
+              failureReason: 'both_searches_failed',
+              searchResults: {
+                fileSearchResults: 0,
+                webSearchResults: 0,
+                fileSearchConfidence: 0,
+                webSearchConfidence: 0
+              }
+            }).catch(err => {
+              console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+            });
+            
+            // Return original web_search failure if file_search also fails
+            return {
+              success: false,
+              error: hasError ? webSearchResult.error : 'NO_RESULTS',
+              message: `Web search failed and file search fallback also failed: ${fileSearchError.message}`,
+              query: webSearchResult.query || parameters.query || '',
+              results: [],
+              totalResults: 0,
+              fallbackError: fileSearchError.message
+            };
+          }
+        }
       }
 
       // Store conversation state

@@ -44,7 +44,8 @@ export class ToolCallHandler {
     const isStepBasedTool = name && name.startsWith('booking_step_');
     
     if (conversationBehaviorConfig?.progressIndicators?.enabled && !isStepBasedTool) {
-      progressIndicatorService.startToolExecution(this.state.callSid, name);
+      // Pass stateManager for thread-safe response state checks
+      progressIndicatorService.startToolExecution(this.state.callSid, name, this.state);
       
       setTimeout(() => {
         if (!this.state.isClosed && this.openaiWs && this.openaiWs.readyState === 1) {

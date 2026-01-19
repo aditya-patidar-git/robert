@@ -66,8 +66,10 @@ class UnifiedToolExecutor {
     
     this.toolRegistry.registerTools(tools);
     
-    // Log registered tools
-    console.log('📋 [TOOL EXECUTOR] Registered tools:', this.toolRegistry.getAvailableTools().join(', '));
+    // Log registered tools (excluding booking workflow tools)
+    const allTools = this.toolRegistry.getAvailableTools();
+    const publicTools = allTools.filter(toolName => !toolName.startsWith('booking_step_'));
+    console.log('📋 [TOOL EXECUTOR] Registered tools:', publicTools.join(', '));
   }
 
   /**

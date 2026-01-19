@@ -22,8 +22,9 @@ class ProgressIndicatorService {
    * Start tracking a tool execution
    * @param {string} callSid - Call SID
    * @param {string} toolName - Name of the tool being executed
+   * @param {CallStateManager|null} stateManager - Optional state manager for response state checks
    */
-  startToolExecution(callSid, toolName) {
+  startToolExecution(callSid, toolName, stateManager = null) {
     // Skip progress tracking for step-based tools
     if (this.isStepBasedTool(toolName)) {
       console.log(`📊 [${callSid}] Skipping progress tracking for step-based tool: ${toolName}`);
@@ -35,7 +36,8 @@ class ProgressIndicatorService {
       startTime: Date.now(),
       acknowledgmentSent: false,
       lastUpdateTime: Date.now(),
-      updateInterval: null
+      updateInterval: null,
+      stateManager: stateManager // Store reference for thread-safe checks
     });
     console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}`);
   }
@@ -142,10 +144,21 @@ class ProgressIndicatorService {
 
     let updateCount = 0;
     execution.updateInterval = setInterval(() => {
+      // Atomic check: get execution atomically (thread-safe per callSid)
       const execution = this.activeExecutions.get(callSid);
       if (!execution || !openaiWs || openaiWs.readyState !== 1) {
         this.stopPeriodicUpdates(callSid);
         return;
+      }
+
+      // CRITICAL: Check if response is already active before sending periodic update
+      // This prevents race conditions where tool completion creates response while periodic update fires
+      if (execution.stateManager) {
+        if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
+          // Skip this update - response already active (prevents "conversation already has active response" error)
+          console.log(`⏭️ [${callSid}] Skipping periodic update - response already active (isResponding: ${execution.stateManager.isResponding}, activeResponseId: ${execution.stateManager.activeResponseId})`);
+          return;
+        }
       }
 
       const elapsed = Date.now() - execution.startTime;
@@ -153,6 +166,13 @@ class ProgressIndicatorService {
       updateCount++;
 
       try {
+        // Only send if no response is active (double-check for race conditions)
+        if (execution.stateManager) {
+          if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
+            return; // Response became active between check and send
+          }
+        }
+
         openaiWs.send(JSON.stringify({
           type: 'response.create',
           response: {
@@ -190,8 +210,30 @@ class ProgressIndicatorService {
   stopPeriodicUpdates(callSid) {
     const execution = this.activeExecutions.get(callSid);
     if (execution && execution.updateInterval) {
-      clearInterval(execution.updateInterval);
-      execution.updateInterval = null;
+      try {
+        clearInterval(execution.updateInterval);
+        execution.updateInterval = null;
+      } catch (err) {
+        console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
+      }
+    }
+  }
+
+  /**
+   * Stop periodic updates without ending tool execution tracking
+   * Used during fallback to prevent multiple responses while keeping execution metrics
+   * @param {string} callSid - Call SID
+   */
+  stopPeriodicUpdatesOnly(callSid) {
+    const execution = this.activeExecutions.get(callSid);
+    if (execution && execution.updateInterval) {
+      try {
+        clearInterval(execution.updateInterval);
+        execution.updateInterval = null;
+        console.log(`🛑 [${callSid}] Stopped periodic updates (execution still tracked for metrics)`);
+      } catch (err) {
+        console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
+      }
     }
   }
 
