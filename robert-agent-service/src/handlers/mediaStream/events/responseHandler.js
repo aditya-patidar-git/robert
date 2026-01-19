@@ -243,6 +243,8 @@ export class ResponseHandler {
 
   /**
    * Start audio pacer to send frames at correct rate
+   * FIXED: More resilient to temporary WebSocket unavailability
+   * Prevents audio gaps by keeping pacer running during temporary connection issues
    */
   startAudioPacer(frameSize, frameIntervalMs, shouldLog = false) {
     if (this.state.outboundAudioPacer) {
@@ -250,15 +252,31 @@ export class ResponseHandler {
     }
     
     this.state.outboundAudioPacer = setInterval(() => {
-      if (this.state.isClosed || !this.state.streamSid || this.ws.readyState !== WebSocket.OPEN) {
+      // Only stop if call is closed or WebSocket is permanently closed
+      if (this.state.isClosed || !this.state.streamSid) {
         this.stopAudioPacer();
         return;
       }
       
-      if (this.state.outboundAudioBuffer && this.state.outboundAudioBuffer.length >= frameSize) {
-        this.sendAudioFrame(frameSize, false);
-      } else {
+      // Only stop if WebSocket is permanently closed (CLOSED=3), not just temporarily unavailable
+      if (this.ws.readyState === WebSocket.CLOSED) {
         this.stopAudioPacer();
+        return;
+      }
+      
+      // Try to send frame if WebSocket is ready and buffer has data
+      if (this.ws.readyState === WebSocket.OPEN && this.state.outboundAudioBuffer && this.state.outboundAudioBuffer.length >= frameSize) {
+        this.sendAudioFrame(frameSize, false);
+      }
+      
+      // Only stop pacer if buffer is empty AND we're not responding (no more audio expected)
+      // Keep running if we're still responding, as more audio might arrive
+      if (!this.state.outboundAudioBuffer || this.state.outboundAudioBuffer.length < frameSize) {
+        // Only stop if we're not responding (no more audio expected)
+        if (!this.state.isResponding) {
+          this.stopAudioPacer();
+        }
+        // Otherwise, keep pacer running - more audio might arrive soon
       }
     }, frameIntervalMs);
   }

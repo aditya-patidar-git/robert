@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import ComplaintRecord from '../database/models/ComplaintRecord.js';
 import emailService from './emailService.js';
+import generateReferenceIdTool from '../tools/generateReferenceId.js';
 
 dotenv.config();
 
@@ -22,13 +23,17 @@ class ComplaintEmailService {
       complaintText,
       complaintType,
       priority,
-      context
+      context,
+      referenceId
     } = complaintData;
 
-    const subject = `[${priority.toUpperCase()}] Complaint - ${complaintType} - Call ${callSid}`;
+    const subject = `[${priority.toUpperCase()}] Complaint - ${complaintType}${referenceId ? ` - ${referenceId}` : ''} - Call ${callSid}`;
 
     let body = `A complaint has been received during a phone call.\n\n`;
     body += `Call Details:\n`;
+    if (referenceId) {
+      body += `- Reference ID: ${referenceId}\n`;
+    }
     body += `- Call SID: ${callSid}\n`;
     body += `- Caller ID: ${this.maskPII(callerId)}\n`;
     body += `- Complaint Type: ${complaintType}\n`;
@@ -122,6 +127,10 @@ class ComplaintEmailService {
         context
       } = complaintData;
 
+      // Generate reference ID for complaint (prefix: "COMP")
+      const referenceIdResult = generateReferenceIdTool.generateReferenceId('COMP');
+      console.log(`✅ [${callSid}] Generated complaint reference ID: ${referenceIdResult}`);
+
       // Create complaint record
       const complaintRecord = new ComplaintRecord({
         callId: callSid,
@@ -131,6 +140,7 @@ class ComplaintEmailService {
         complaintType,
         priority,
         status: 'open',
+        referenceId: referenceIdResult,
         assignedTo: this.managerEmail,
         complaintEmail: this.complaintsEmail,
         submittedAt: new Date(),
@@ -138,7 +148,7 @@ class ComplaintEmailService {
       });
 
       await complaintRecord.save();
-      console.log(`✅ Complaint record created: ${complaintRecord._id}`);
+      console.log(`✅ Complaint record created: ${complaintRecord._id}, Reference ID: ${referenceIdResult}`);
 
       // Send email
       const emailResult = await this.sendComplaintEmail({
@@ -147,7 +157,8 @@ class ComplaintEmailService {
         complaintText,
         complaintType,
         priority,
-        context
+        context,
+        referenceId: referenceIdResult
       });
 
       if (!emailResult.success) {
@@ -161,7 +172,8 @@ class ComplaintEmailService {
           callSid,
           complaintType,
           priority,
-          status: complaintRecord.status
+          status: complaintRecord.status,
+          referenceId: referenceIdResult
         },
         emailSent: emailResult.success,
         messageId: emailResult.messageId

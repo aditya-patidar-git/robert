@@ -57,14 +57,15 @@ class ComplaintSubmissionTool {
         };
       }
 
-      // Generate complaint reference
-      const complaintRef = result.complaintRecord.id.substring(0, 8).toUpperCase();
+      // Use proper reference ID from complaint record
+      const complaintRef = result.complaintRecord.referenceId || result.complaintRecord.id.substring(0, 8).toUpperCase();
 
       console.log(`✅ [${callSid}] Complaint submitted: ${complaintRef}`);
 
       return {
         success: true,
         complaintReference: complaintRef,
+        referenceId: complaintRef,
         complaintType: detectedType,
         priority,
         message: `Your complaint has been submitted successfully. Reference: ${complaintRef}. We will investigate and get back to you.`,

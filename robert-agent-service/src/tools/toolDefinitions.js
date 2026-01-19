@@ -493,6 +493,44 @@ RECOMMENDED: Use booking_step_check_availability directly for better control and
     },
     {
       type: 'function',
+      name: 'send_sms',
+      description: 'Send SMS messages independently (for complaints, summaries, confirmations, etc.). This is a standalone tool separate from booking workflow. Use this for sending SMS outside of booking confirmations.',
+      parameters: {
+        type: 'object',
+        properties: {
+          to: {
+            type: 'string',
+            description: 'Recipient mobile number (UK format: 11 digits starting with 07, e.g., 07123456789)'
+          },
+          message: {
+            type: 'string',
+            description: 'SMS message body (required, max 1600 characters, best practice is 160 characters)'
+          }
+        },
+        required: ['to', 'message']
+      }
+    },
+    {
+      type: 'function',
+      name: 'generate_reference_id',
+      description: 'Generate a tracking/reference ID for complaints, bookings, or general tracking. Use this whenever a caller needs a reference number to track their request or conversation. Returns a short, easy-to-share reference ID (e.g., REF-ABC123).',
+      parameters: {
+        type: 'object',
+        properties: {
+          prefix: {
+            type: 'string',
+            description: 'Optional prefix for the reference ID (default: "REF"). Examples: "REF", "TRACK", "COMP", "BOOK". Max 10 characters, alphanumeric only.'
+          },
+          purpose: {
+            type: 'string',
+            description: 'Optional purpose/context for the reference (e.g., "complaint", "booking", "tracking", "general"). Used for logging and caller messaging.'
+          }
+        },
+        required: []
+      }
+    },
+    {
+      type: 'function',
       name: 'crm',
       description: `⚠️ LEGACY TOOL: Delegates to crm_browser tool for all CRM operations.
       
