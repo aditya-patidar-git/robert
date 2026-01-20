@@ -10,6 +10,8 @@ import { getStepNumber, getStepName, STEP_NAMES } from '../../services/browser/s
 import { validatePreferences, generatePreferenceErrorMessage } from '../../services/browser/preferenceValidator.js';
 import { BrowserManager } from '../../services/browser/browserManager.js';
 import configManager from '../../agent/configManager.js';
+import { conversations } from '../../shared/state.js';
+import { storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from '../../services/commonBookingSteps/slotStorageUtils.js';
 
 /**
  * Helper function to map step numbers to tool names
@@ -212,6 +214,17 @@ export class BaseStepTool {
         };
       }
 
+      // CRITICAL: Store preferences BEFORE Step 1 if they're provided
+      // This ensures preferences are available when opening the availability table
+      if (stepNumber === 1 && (stepArgs.preferredDate || stepArgs.preferredTime || stepArgs.location || stepArgs.instructor)) {
+        storePreferencesBeforeAvailabilityCheck(callSid, {
+          preferredDate: stepArgs.preferredDate,
+          preferredTime: stepArgs.preferredTime,
+          location: stepArgs.location,
+          instructor: stepArgs.instructor
+        });
+      }
+
       // Merge known preferences from session with provided args
       const knownPreferences = sessionStateManager.getKnownPreferences(callSid);
       const mergedArgs = {
@@ -248,6 +261,29 @@ export class BaseStepTool {
         // Update session details if provided
         if (result.sessionDetails) {
           sessionStateManager.setSessionDetails(callSid, result.sessionDetails);
+        }
+
+        // CRITICAL FIX: Store availability data in conversation for Step 1 (check_availability)
+        // This ensures Step 6 (select_session) can retrieve sessionDetails even if no slot was initially selected
+        if (stepNumber === 1 && (result.allSlots || result.selectedSlot || result.sessionDetails)) {
+          if (!conversations[callSid]) {
+            conversations[callSid] = {};
+          }
+          conversations[callSid].lastAvailabilityCheck = {
+            allSlots: result.allSlots || null,
+            selectedSlot: result.selectedSlot || result.sessionDetails || null,
+            sessionDetails: result.sessionDetails || result.selectedSlot || null,
+            monthYear: result.monthYear || null
+          };
+          console.log(`✅ [${callSid}] Stored availability data in conversation.lastAvailabilityCheck (allSlots: ${result.allSlots?.length || 0}, selectedSlot: ${!!result.selectedSlot}, sessionDetails: ${!!result.sessionDetails})`);
+        }
+
+        // CRITICAL FIX: Store selected slot when user picks one (via agreedSlot/selectedSlot parameter)
+        // This handles the case where user verbally selects a slot after Step 1
+        if (stepArgs.agreedSlot || stepArgs.selectedSlot) {
+          const selectedSlot = stepArgs.agreedSlot || stepArgs.selectedSlot;
+          const allSlots = conversations[callSid]?.lastAvailabilityCheck?.allSlots || null;
+          storeSelectedSlot(callSid, selectedSlot, allSlots);
         }
 
         // Store page reference

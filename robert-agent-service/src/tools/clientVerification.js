@@ -78,8 +78,7 @@ class ClientVerificationTool {
       // Initialize verification attempts tracking
       initializeVerificationAttempts(conversation);
 
-      // CRITICAL FIX: Handle "undefined" string case and normalize empty values
-      // Sometimes the agent passes the string "undefined" instead of actually omitting the field
+      // Normalize field values (handle "undefined" string case)
       const normalizeField = (value) => {
         if (!value || value === 'undefined' || value === 'null' || (typeof value === 'string' && value.trim() === '')) {
           return null;
@@ -91,303 +90,275 @@ class ClientVerificationTool {
       const normalizedPostcode = normalizeField(postcode);
       const normalizedTelephoneNumber = normalizeField(telephoneNumber);
 
-      // CRITICAL FIX: Track which fields are missing (not provided or "undefined")
-      const missingFields = [];
-      if (!normalizedFullName) missingFields.push('fullName');
-      if (!normalizedPostcode) missingFields.push('postcode');
-      if (!normalizedTelephoneNumber) missingFields.push('telephoneNumber');
-
-      // CRITICAL FIX: If any fields are missing, return immediately asking for ALL missing fields
-      if (missingFields.length > 0) {
-        const fieldNames = {
-          fullName: 'full name',
-          postcode: 'postcode',
-          telephoneNumber: 'telephone number'
-        };
-        
-        const missingFieldNames = missingFields.map(f => fieldNames[f]).join(', ');
-        const verifiedFields = ['fullName', 'postcode', 'telephoneNumber'].filter(f => !missingFields.includes(f));
-        
-        // Determine the prompt based on how many fields are missing
-        let promptMessage;
-        if (missingFields.length === 3) {
-          // First call - ask for all three at once
-          promptMessage = getCombinedVerificationPrompt();
-        } else {
-          // Subsequent call - ask for remaining missing fields
-          promptMessage = getMissingFieldsPrompt(missingFields);
-        }
-        
-        return {
-          success: false,
-          verified: false,
-          missingFields: missingFields,
-          verifiedFields: verifiedFields,
-          message: promptMessage,
-          instruction: `CRITICAL: Client verification is INCOMPLETE. You have collected: ${verifiedFields.length > 0 ? verifiedFields.map(f => fieldNames[f]).join(', ') : 'none'}. You MUST immediately ask for ALL missing fields: ${missingFieldNames}. Use the exact prompt: "${promptMessage}". Then IMMEDIATELY call client_verification tool again with ALL missing fields filled in. The caller may provide all missing fields in one response, or may provide them partially - extract whatever they provide and call the tool again. Do NOT wait for the user to ask "are you still there" or any other prompt. Continue the verification flow immediately without pausing.`,
-          requiresImmediateContinuation: true // Flag to indicate agent must continue immediately
+      // CRITICAL: Initialize sequential verification state
+      // Track which field we're currently asking for and which have been verified
+      if (!conversation.verificationState) {
+        conversation.verificationState = {
+          currentField: 'fullName', // Start with fullName
+          verifiedFields: {
+            fullName: false,
+            postcode: false,
+            telephoneNumber: false
+          },
+          verifiedValues: {
+            fullName: null,
+            postcode: null,
+            telephoneNumber: null
+          }
         };
       }
 
-      // CRITICAL: Also check that stored client details have all three required fields
-      // If stored details are incomplete, we still require all three fields from the caller
-      const storedHasAllFields = !!(storedClientDetails.fullName && 
-                                     storedClientDetails.postcode && 
-                                     storedClientDetails.telephoneNumber);
-      
-      if (!storedHasAllFields) {
-        const missingStoredFields = [];
-        if (!storedClientDetails.fullName) missingStoredFields.push('full name');
-        if (!storedClientDetails.postcode) missingStoredFields.push('postcode');
-        if (!storedClientDetails.telephoneNumber) missingStoredFields.push('telephone number');
-        
-        console.log(`⚠️ [${callSid}] Stored client details incomplete - missing: ${missingStoredFields.join(', ')}. Still requiring all three fields for verification.`);
-      }
+      const verificationState = conversation.verificationState;
+      const currentField = verificationState.currentField;
+      const verifiedFields = verificationState.verifiedFields;
 
-      // Normalize strings for comparison (trim, lowercase, remove extra spaces)
-      const normalize = (str) => {
-        if (!str || str === 'Not found' || str === 'undefined' || str === 'null') return '';
-        return str.toString().toLowerCase().trim().replace(/\s+/g, ' ');
+      // Helper functions for validation (extracted for reusability)
+      const normalizeForComparison = (str) => {
+        if (!str) return '';
+        return str.toString().trim().toLowerCase().replace(/\s+/g, '');
       };
 
-      const storedName = normalize(storedClientDetails.fullName);
-      const storedPostcode = normalize(storedClientDetails.postcode);
-      const storedTelephone = normalize(storedClientDetails.telephoneNumber);
+      const normalizeForNameComparison = (str) => {
+        if (!str || str === 'Not found' || str === 'undefined' || str === 'null') return '';
+        const normalized = str.toString().toLowerCase().trim().replace(/\s+/g, ' ');
+        // Remove common prefixes/suffixes and reference numbers
+        return normalized.replace(/^(mr|mrs|miss|ms|dr|prof)\s+/i, '').replace(/[#\d]+/g, '').trim();
+      };
 
-      const providedName = normalize(normalizedFullName || '');
-      const providedPostcode = normalize(normalizedPostcode || '');
-      const providedTelephone = normalize(normalizedTelephoneNumber || '');
+      const normalizeForPostcodeComparison = (str) => {
+        if (!str) return '';
+        return str.toString().replace(/\s+/g, '').toUpperCase();
+      };
 
-      // Track mismatches and verified fields
-      const mismatches = [];
-      const verifiedFields = [];
-      let verifiedCount = 0;
+      const normalizeForTelephoneComparison = (str) => {
+        if (!str) return '';
+        const cleaned = str.toString().replace(/[^\d+]/g, '').replace(/^\+44/, '0');
+        return cleaned.slice(-11); // Last 11 digits (UK mobile format)
+      };
 
-      // CRITICAL: All three fields MUST be provided AND verified, regardless of what's stored
-      // Verify full name (allow for minor variations, ignore reference numbers/symbols)
-      if (!providedName) {
-        // Full name not provided - this is already caught by missingFields check, but double-check
-        mismatches.push('fullName');
-        console.log(`❌ [${callSid}] Full name not provided but required`);
-      } else if (storedName && providedName) {
-        // Remove common prefixes/suffixes and reference numbers for comparison
-        const cleanStoredName = storedName.replace(/^(mr|mrs|miss|ms|dr|prof)\s+/i, '').replace(/[#\d]+/g, '').trim();
-        const cleanProvidedName = providedName.replace(/^(mr|mrs|miss|ms|dr|prof)\s+/i, '').replace(/[#\d]+/g, '').trim();
-        
-        if (cleanStoredName === cleanProvidedName || 
-            cleanStoredName.includes(cleanProvidedName) || 
-            cleanProvidedName.includes(cleanStoredName)) {
-          verifiedCount++;
-          verifiedFields.push('fullName');
-          console.log(`✅ [${callSid}] Full name verified`);
-        } else {
-          mismatches.push('fullName');
-          incrementVerificationAttempt(conversation, 'fullName');
-          console.log(`❌ [${callSid}] Full name mismatch: stored="${cleanStoredName}", provided="${cleanProvidedName}"`);
-        }
-      } else if (storedName) {
-        mismatches.push('fullName');
-        incrementVerificationAttempt(conversation, 'fullName');
-        console.log(`❌ [${callSid}] Full name not provided but required`);
-      } else {
-        // Stored name missing but provided - still count as verified if provided
-        verifiedCount++;
-        verifiedFields.push('fullName');
-        console.log(`✅ [${callSid}] Full name provided (stored name missing)`);
-      }
-
-      // Verify postcode (normalize format)
-      if (!providedPostcode) {
-        // Postcode not provided - this is already caught by missingFields check, but double-check
-        mismatches.push('postcode');
-        console.log(`❌ [${callSid}] Postcode not provided but required`);
-      } else if (storedPostcode && providedPostcode) {
-        // Remove spaces and compare
-        const cleanStoredPostcode = storedPostcode.replace(/\s+/g, '').toUpperCase();
-        const cleanProvidedPostcode = providedPostcode.replace(/\s+/g, '').toUpperCase();
-        
-        if (cleanStoredPostcode === cleanProvidedPostcode) {
-          verifiedCount++;
-          verifiedFields.push('postcode');
-          console.log(`✅ [${callSid}] Postcode verified`);
-        } else {
-          mismatches.push('postcode');
-          incrementVerificationAttempt(conversation, 'postcode');
-          console.log(`❌ [${callSid}] Postcode mismatch: stored="${cleanStoredPostcode}", provided="${cleanProvidedPostcode}"`);
-        }
-      } else if (storedPostcode) {
-        mismatches.push('postcode');
-        incrementVerificationAttempt(conversation, 'postcode');
-        console.log(`❌ [${callSid}] Postcode not provided but required`);
-      } else {
-        // Stored postcode missing but provided - still count as verified if provided
-        verifiedCount++;
-        verifiedFields.push('postcode');
-        console.log(`✅ [${callSid}] Postcode provided (stored postcode missing)`);
-      }
-
-      // Verify telephone number (normalize format - remove spaces, dashes, etc.)
-      if (!providedTelephone) {
-        // Telephone not provided - this is already caught by missingFields check, but double-check
-        mismatches.push('telephoneNumber');
-        console.log(`❌ [${callSid}] Telephone number not provided but required`);
-      } else if (storedTelephone && providedTelephone) {
-        // Remove all non-digit characters except + for comparison
-        const cleanStoredTelephone = storedTelephone.replace(/[^\d+]/g, '').replace(/^\+44/, '0');
-        const cleanProvidedTelephone = providedTelephone.replace(/[^\d+]/g, '').replace(/^\+44/, '0');
-        
-        // Compare last 11 digits (UK mobile format)
-        const storedLast11 = cleanStoredTelephone.slice(-11);
-        const providedLast11 = cleanProvidedTelephone.slice(-11);
-        
-        if (storedLast11 === providedLast11 || cleanStoredTelephone === cleanProvidedTelephone) {
-          verifiedCount++;
-          verifiedFields.push('telephoneNumber');
-          console.log(`✅ [${callSid}] Telephone number verified`);
-        } else {
-          mismatches.push('telephoneNumber');
-          incrementVerificationAttempt(conversation, 'telephoneNumber');
-          console.log(`❌ [${callSid}] Telephone number mismatch: stored="${storedLast11}", provided="${providedLast11}"`);
-        }
-      } else if (storedTelephone) {
-        mismatches.push('telephoneNumber');
-        incrementVerificationAttempt(conversation, 'telephoneNumber');
-        console.log(`❌ [${callSid}] Telephone number not provided but required`);
-      } else {
-        // Stored telephone missing but provided - still count as verified if provided
-        verifiedCount++;
-        verifiedFields.push('telephoneNumber');
-        console.log(`✅ [${callSid}] Telephone number provided (stored telephone missing)`);
-      }
-
-      // CRITICAL FIX: Require ALL THREE fields to be provided AND verified
-      // verifiedCount must be exactly 3 (all three fields provided)
-      // mismatches must be empty (no mismatches)
-      // AND all three normalized fields must be non-empty (double-check)
-      const allThreeProvided = normalizedFullName && normalizedPostcode && normalizedTelephoneNumber;
-      const allVerified = mismatches.length === 0 && verifiedCount === 3 && allThreeProvided;
-
-      if (!allVerified) {
-        // If not all verified, check what's missing
-        const stillMissing = [];
-        if (!normalizedFullName) stillMissing.push('fullName');
-        if (!normalizedPostcode) stillMissing.push('postcode');
-        if (!normalizedTelephoneNumber) stillMissing.push('telephoneNumber');
-        
-        if (stillMissing.length > 0) {
-          // Some fields still missing - ask for them
-          const fieldNames = {
-            fullName: 'full name',
-            postcode: 'postcode',
-            telephoneNumber: 'telephone number'
+      // SEQUENTIAL VALIDATION: Validate fields one by one in order
+      // 1. Validate fullName first (if not already verified)
+      if (!verifiedFields.fullName) {
+        if (!normalizedFullName) {
+          // FullName not provided - ask for it
+          return {
+            success: false,
+            verified: false,
+            missingFields: ['fullName'],
+            verifiedFields: [],
+            currentField: 'fullName',
+            message: getVerificationPrompt(),
+            instruction: `CRITICAL: Start verification by asking for full name. Use the exact prompt: "${getVerificationPrompt()}". Then call client_verification with ONLY the fullName parameter when the caller provides it.`,
+            requiresImmediateContinuation: true
           };
-          const missingFieldNames = stillMissing.map(f => fieldNames[f]).join(', ');
-          const promptMessage = getMissingFieldsPrompt(stillMissing);
+        }
+
+        // Validate fullName against stored
+        const storedName = normalizeForNameComparison(storedClientDetails.fullName || '');
+        const providedName = normalizeForNameComparison(normalizedFullName);
+        
+        if (storedName === providedName || 
+            storedName.includes(providedName) || 
+            providedName.includes(storedName)) {
+          // FullName verified - mark as verified and move to postcode
+          verifiedFields.fullName = true;
+          verificationState.verifiedValues.fullName = normalizedFullName;
+          verificationState.currentField = 'postcode';
+          console.log(`✅ [${callSid}] Full name verified: "${normalizedFullName}"`);
+        } else {
+          // FullName mismatch - increment attempts and ask again
+          incrementVerificationAttempt(conversation, 'fullName');
+          console.log(`❌ [${callSid}] Full name mismatch: stored="${storedName}", provided="${providedName}"`);
+          
+          if (isMaxAttemptsExceeded(conversation)) {
+            return {
+              success: false,
+              verified: false,
+              maxAttemptsExceeded: true,
+              message: getMaxAttemptsExceededMessage(),
+              attempts: conversation.verificationAttempts
+            };
+          }
           
           return {
             success: false,
             verified: false,
-            missingFields: stillMissing,
-            verifiedFields: verifiedFields,
-            message: promptMessage,
-            instruction: `CRITICAL: Client verification is INCOMPLETE. You have collected: ${verifiedFields.length > 0 ? verifiedFields.map(f => fieldNames[f]).join(', ') : 'none'}. You MUST immediately ask for ALL missing fields: ${missingFieldNames}. Use the exact prompt: "${promptMessage}". Then IMMEDIATELY call client_verification tool again with ALL missing fields filled in. Do NOT wait for the user to ask "are you still there" or any other prompt. Continue the verification flow immediately without pausing.`,
+            missingFields: ['fullName'],
+            verifiedFields: [],
+            currentField: 'fullName',
+            mismatches: ['fullName'],
+            message: getFieldMismatchMessage('fullName'),
+            instruction: `Full name does not match. Use the exact message: "${getFieldMismatchMessage('fullName')}". Then ask again: "${getVerificationPrompt()}". Call client_verification again with the fullName parameter when caller provides it.`,
+            attempts: conversation.verificationAttempts,
             requiresImmediateContinuation: true
           };
         }
       }
 
-      if (allVerified) {
-        // Mark client as verified using verification service
-        markClientVerified(conversation);
-        
-        console.log(`✅ [${callSid}] Client verification successful - all three fields verified`);
-        
-        // Check if we're in a booking context
-        const isBookingContext = !!conversation?.clientDetails;
-        
-        // CRITICAL: Check if a booking session is already in progress (step-based tools)
-        let bookingSessionInProgress = false;
-        let nextStepTool = null;
-        if (isBookingContext) {
-          try {
-            const currentStep = sessionStateManager.getCurrentStep(callSid);
-            if (currentStep !== null) {
-              bookingSessionInProgress = true;
-              // Determine next step based on current step
-              // After verification, typically continue with Step 4 (select_session)
-              if (currentStep < 4) {
-                nextStepTool = 'booking_step_select_session';
-              } else {
-                // If already past Step 4, continue with the next step in sequence
-                const nextStepNumber = currentStep + 1;
-                const stepName = getStepName(nextStepNumber);
-                nextStepTool = `booking_step_${stepName}`;
-              }
-            }
-          } catch (error) {
-            console.warn(`⚠️ [${callSid}] Could not check booking session state:`, error.message);
-          }
-        }
-        
-        // Default to select_session if no specific next step determined
-        if (!nextStepTool && isBookingContext) {
-          nextStepTool = 'booking_step_select_session';
-        }
-        
-        return {
-          success: true,
-          verified: true,
-          message: 'You are successfully verified.',
-          verifiedFields: verifiedFields,
-          requiresBookingContinuation: isBookingContext || undefined,
-          nextStepTool: nextStepTool || undefined,
-          requiresImmediateNextStep: true // Flag to indicate agent must immediately call next step
-        };
-      } else {
-        // Check if we've exceeded max attempts (7 per field)
-        if (isMaxAttemptsExceeded(conversation)) {
-          console.log(`❌ [${callSid}] Maximum verification attempts exceeded`);
+      // 2. Validate postcode (if fullName is verified and postcode not yet verified)
+      if (verifiedFields.fullName && !verifiedFields.postcode) {
+        if (!normalizedPostcode) {
+          // Postcode not provided - ask for it
           return {
             success: false,
             verified: false,
-            maxAttemptsExceeded: true,
-            mismatches,
-            message: getMaxAttemptsExceededMessage(),
-            attempts: conversation.verificationAttempts
+            missingFields: ['postcode'],
+            verifiedFields: ['fullName'],
+            currentField: 'postcode',
+            message: getPostcodePrompt(),
+            instruction: `Full name verified. Now ask for postcode. Use the exact prompt: "${getPostcodePrompt()}". Then call client_verification with fullName="${verificationState.verifiedValues.fullName}" and postcode parameter when caller provides it.`,
+            requiresImmediateContinuation: true
           };
         }
 
-        // Provide specific feedback for mismatches using verification service
-        const messages = mismatches.map(field => getFieldMismatchMessage(field));
-
-        console.log(`⚠️ [${callSid}] Client verification incomplete. Verified: ${verifiedFields.join(', ') || 'none'}. Mismatches: ${mismatches.join(', ') || 'none'}`);
-
-        // Determine what to ask next
-        let nextFieldToAsk = null;
-        let nextPrompt = null;
+        // Validate postcode against stored
+        const storedPostcode = normalizeForPostcodeComparison(storedClientDetails.postcode || '');
+        const providedPostcode = normalizeForPostcodeComparison(normalizedPostcode);
         
-        if (mismatches.includes('fullName') || !verifiedFields.includes('fullName')) {
-          nextFieldToAsk = 'fullName';
-          nextPrompt = getVerificationPrompt();
-        } else if (mismatches.includes('postcode') || !verifiedFields.includes('postcode')) {
-          nextFieldToAsk = 'postcode';
-          nextPrompt = getPostcodePrompt();
-        } else if (mismatches.includes('telephoneNumber') || !verifiedFields.includes('telephoneNumber')) {
-          nextFieldToAsk = 'telephoneNumber';
-          nextPrompt = getTelephonePrompt();
+        if (storedPostcode === providedPostcode) {
+          // Postcode verified - mark as verified and move to telephoneNumber
+          verifiedFields.postcode = true;
+          verificationState.verifiedValues.postcode = normalizedPostcode;
+          verificationState.currentField = 'telephoneNumber';
+          console.log(`✅ [${callSid}] Postcode verified: "${normalizedPostcode}"`);
+        } else {
+          // Postcode mismatch - increment attempts and ask again
+          incrementVerificationAttempt(conversation, 'postcode');
+          console.log(`❌ [${callSid}] Postcode mismatch: stored="${storedPostcode}", provided="${providedPostcode}"`);
+          
+          if (isMaxAttemptsExceeded(conversation)) {
+            return {
+              success: false,
+              verified: false,
+              maxAttemptsExceeded: true,
+              message: getMaxAttemptsExceededMessage(),
+              attempts: conversation.verificationAttempts
+            };
+          }
+          
+          return {
+            success: false,
+            verified: false,
+            missingFields: ['postcode'],
+            verifiedFields: ['fullName'],
+            currentField: 'postcode',
+            mismatches: ['postcode'],
+            message: getFieldMismatchMessage('postcode'),
+            instruction: `Postcode does not match. Use the exact message: "${getFieldMismatchMessage('postcode')}". Then ask again: "${getPostcodePrompt()}". Call client_verification again with fullName="${verificationState.verifiedValues.fullName}" and postcode parameter when caller provides it.`,
+            attempts: conversation.verificationAttempts,
+            requiresImmediateContinuation: true
+          };
+        }
+      }
+
+      // 3. Validate telephoneNumber (if fullName and postcode are verified)
+      if (verifiedFields.fullName && verifiedFields.postcode && !verifiedFields.telephoneNumber) {
+        if (!normalizedTelephoneNumber) {
+          // TelephoneNumber not provided - ask for it
+          return {
+            success: false,
+            verified: false,
+            missingFields: ['telephoneNumber'],
+            verifiedFields: ['fullName', 'postcode'],
+            currentField: 'telephoneNumber',
+            message: getTelephonePrompt(),
+            instruction: `Full name and postcode verified. Now ask for telephone number. Use the exact prompt: "${getTelephonePrompt()}". Then call client_verification with fullName="${verificationState.verifiedValues.fullName}", postcode="${verificationState.verifiedValues.postcode}", and telephoneNumber parameter when caller provides it.`,
+            requiresImmediateContinuation: true
+          };
         }
 
+        // Validate telephoneNumber against stored
+        const storedTelephone = normalizeForTelephoneComparison(storedClientDetails.telephoneNumber || '');
+        const providedTelephone = normalizeForTelephoneComparison(normalizedTelephoneNumber);
+        
+        if (storedTelephone === providedTelephone && storedTelephone.length >= 10) {
+          // TelephoneNumber verified - all three fields verified!
+          verifiedFields.telephoneNumber = true;
+          verificationState.verifiedValues.telephoneNumber = normalizedTelephoneNumber;
+          console.log(`✅ [${callSid}] Telephone number verified: "${normalizedTelephoneNumber}"`);
+          
+          // Mark client as verified
+          markClientVerified(conversation);
+          
+          console.log(`✅ [${callSid}] Client verification successful - all three fields verified sequentially`);
+          
+          // Check if we're in a booking context
+          const isBookingContext = !!conversation?.clientDetails;
+          let nextStepTool = null;
+          if (isBookingContext) {
+            try {
+              const currentStep = sessionStateManager.getCurrentStep(callSid);
+              if (currentStep !== null && currentStep < 4) {
+                nextStepTool = 'booking_step_select_session';
+              }
+            } catch (error) {
+              console.warn(`⚠️ [${callSid}] Could not check booking session state:`, error.message);
+            }
+          }
+          
+          if (!nextStepTool && isBookingContext) {
+            nextStepTool = 'booking_step_select_session';
+          }
+          
+          return {
+            success: true,
+            verified: true,
+            message: 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.',
+            verifiedFields: ['fullName', 'postcode', 'telephoneNumber'],
+            requiresBookingContinuation: isBookingContext || undefined,
+            nextStepTool: nextStepTool || undefined,
+            requiresExplicitConfirmation: true,
+            requiresImmediateNextStep: false
+          };
+        } else {
+          // TelephoneNumber mismatch - increment attempts and ask again
+          incrementVerificationAttempt(conversation, 'telephoneNumber');
+          console.log(`❌ [${callSid}] Telephone number mismatch: stored="${storedTelephone}", provided="${providedTelephone}"`);
+          
+          if (isMaxAttemptsExceeded(conversation)) {
+            return {
+              success: false,
+              verified: false,
+              maxAttemptsExceeded: true,
+              message: getMaxAttemptsExceededMessage(),
+              attempts: conversation.verificationAttempts
+            };
+          }
+          
+          return {
+            success: false,
+            verified: false,
+            missingFields: ['telephoneNumber'],
+            verifiedFields: ['fullName', 'postcode'],
+            currentField: 'telephoneNumber',
+            mismatches: ['telephoneNumber'],
+            message: getFieldMismatchMessage('telephoneNumber'),
+            instruction: `Telephone number does not match. Use the exact message: "${getFieldMismatchMessage('telephoneNumber')}". Then ask again: "${getTelephonePrompt()}". Call client_verification again with fullName="${verificationState.verifiedValues.fullName}", postcode="${verificationState.verifiedValues.postcode}", and telephoneNumber parameter when caller provides it.`,
+            attempts: conversation.verificationAttempts,
+            requiresImmediateContinuation: true
+          };
+        }
+      }
+
+      // If we reach here, all fields should be verified
+      if (verifiedFields.fullName && verifiedFields.postcode && verifiedFields.telephoneNumber) {
+        markClientVerified(conversation);
         return {
-          success: false,
-          verified: false,
-          mismatches,
-          verifiedFields: verifiedFields,
-          nextFieldToAsk: nextFieldToAsk,
-          message: messages.length > 0 ? messages.join(' ') : (nextPrompt || 'Please provide the missing verification information.'),
-          instruction: `Verification incomplete. Verified fields: ${verifiedFields.join(', ') || 'none'}. Mismatches: ${mismatches.join(', ') || 'none'}. ${nextFieldToAsk ? `Ask for ${nextFieldToAsk} next.` : 'Continue collecting verification information.'}`,
-          attempts: conversation.verificationAttempts
+          success: true,
+          verified: true,
+          message: 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.',
+          verifiedFields: ['fullName', 'postcode', 'telephoneNumber'],
+          requiresExplicitConfirmation: true
         };
       }
+
+      // Fallback - should not reach here
+      return {
+        success: false,
+        verified: false,
+        error: 'Unexpected verification state',
+        message: 'Please provide your verification details.'
+      };
     } catch (error) {
       console.error(`❌ [${callSid}] Client verification error:`, error);
       return {

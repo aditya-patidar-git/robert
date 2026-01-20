@@ -52,7 +52,7 @@ export async function executeCheckAvailability(page, args, sessionState, screens
     nextStep: 'booking_step_authenticate', // Explicitly state next step tool to call
     nextStepNumber: 2, // Explicitly state next step number (authenticate is Step 2 for all courses)
     doNotRetry: true, // Explicitly prevent retry
-    message: `✅ STEP 1 COMPLETE: booking_step_check_availability has been successfully completed. Availability checked and slots retrieved. DO NOT RETRY THIS STEP. IMMEDIATELY proceed to STEP 2 by calling booking_step_authenticate tool.`,
+    message: `✅ STEP 1 COMPLETE: booking_step_check_availability has been successfully completed. Availability checked and slots retrieved. DO NOT RETRY THIS STEP. Present the available slots to the caller and confirm their selection. Once a slot is agreed upon, proceed to STEP 2 by calling booking_step_authenticate tool.`,
     allSlots: result.allSlots,
     selectedSlot: result.selectedSlot,
     monthYear: result.monthYear,

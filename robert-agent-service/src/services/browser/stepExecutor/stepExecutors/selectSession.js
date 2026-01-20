@@ -5,6 +5,8 @@
  */
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
+import sessionStateManager from '../../sessionStateManager.js';
+import { conversations } from '../../../../shared/state.js';
 
 /**
  * Execute selectSession step
@@ -15,10 +17,28 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
  * @returns {Promise<Object>} Step execution result
  */
 export async function executeSelectSession(page, args, sessionState, screenshotsDir) {
-  const sessionDetails = args.sessionDetails || sessionState.sessionDetails;
+  // CRITICAL FIX: Try multiple sources for sessionDetails
+  let sessionDetails = args.sessionDetails || sessionState?.sessionDetails;
+  
+  // If still not found, try retrieving from sessionStateManager
+  if (!sessionDetails && args.callSid) {
+    sessionDetails = sessionStateManager.getSessionDetails(args.callSid);
+  }
+  
+  // If still not found, check conversations for lastAvailabilityCheck
+  if (!sessionDetails && args.callSid) {
+    const conversation = conversations[args.callSid];
+    if (conversation?.lastAvailabilityCheck?.sessionDetails) {
+      sessionDetails = conversation.lastAvailabilityCheck.sessionDetails;
+      console.log(`✅ [selectSession] Retrieved sessionDetails from conversation.lastAvailabilityCheck`);
+    } else if (conversation?.lastAvailabilityCheck?.selectedSlot) {
+      sessionDetails = conversation.lastAvailabilityCheck.selectedSlot;
+      console.log(`✅ [selectSession] Retrieved sessionDetails from conversation.lastAvailabilityCheck.selectedSlot`);
+    }
+  }
   
   if (!sessionDetails) {
-    throw new Error('Session details are required to select a session');
+    throw new Error('Session details are required to select a session. Please ensure a slot was agreed upon in Step 1 (check_availability) before proceeding to Step 6 (select_session).');
   }
 
   // CRITICAL FIX: Ensure course and instructor are included in sessionDetails

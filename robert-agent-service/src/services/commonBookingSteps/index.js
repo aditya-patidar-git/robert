@@ -20,4 +20,5 @@ export { checkAvailabilityAndNoteDetails, getAvailabilityUrl, selectBestMatching
 export { rescheduleBooking } from './rescheduleBooking.js';
 export { cancelBooking } from './cancelBooking.js';
 export { updateCustomer } from './updateCustomer.js';
+export { matchSlotToAvailableSlots, storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from './slotStorageUtils.js';
 

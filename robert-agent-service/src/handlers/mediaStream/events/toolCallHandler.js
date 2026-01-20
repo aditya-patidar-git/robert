@@ -93,9 +93,13 @@ export class ToolCallHandler {
       );
       
       // Trigger response if needed - pass tool name and result for special handling
+      // CRITICAL FIX: Extract the actual tool result (same as success path) so client_verification
+      // missingFields can be detected properly. Some tools like client_verification return
+      // {success: false, verified: false, missingFields: [...]} which needs special handling
+      // to trigger automatic continuation asking for missing fields.
       await this.resultSubmitter.triggerResponse(this.state.callSid, { 
         toolName: name,
-        toolResult: executionResult // Pass error result for potential handling
+        toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
       });
       
       // Clean up

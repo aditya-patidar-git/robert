@@ -16,7 +16,20 @@ function getStepBookingToolDefinitions() {
     {
       type: 'function',
       name: 'booking_step_check_availability',
-      description: `Step 1: Check availability for a course type. Returns all available slots with date, time, location, and instructor information. Use this FIRST before starting any booking flow.`,
+      description: `Step 1: Check availability for a course type. CRITICAL WORKFLOW:
+      
+1. BEFORE calling this tool: Ask the caller about their preferences:
+   - "Do you have any preference for date or time?"
+   - "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon)
+   - "Do you have any instructor preference?"
+   
+2. Call this tool with preferences (or omit if no preferences). The tool will use preferences to filter and prioritize slots when opening the availability table.
+
+3. AFTER this tool returns: Present available slots to the caller
+
+4. WHEN caller selects a slot: Extract the slot details (date, time, location) from their response and call the NEXT step (booking_step_authenticate) with agreedSlot parameter containing the selected slot object matching one of the returned slots.
+
+The tool will use preferences to filter and prioritize slots, but will return all available slots for the caller to choose from.`,
       parameters: {
         type: 'object',
         properties: {
@@ -27,19 +40,19 @@ function getStepBookingToolDefinitions() {
           },
           preferredDate: {
             type: 'string',
-            description: 'Preferred date (optional, for slot matching)'
+            description: 'Preferred date (optional, for slot matching/filtering)'
           },
           preferredTime: {
             type: 'string',
-            description: 'Preferred time (optional, for slot matching)'
+            description: 'Preferred time (optional, for slot matching/filtering)'
           },
           location: {
             type: 'string',
-            description: 'Preferred location (optional, for slot matching)'
+            description: 'Preferred location (optional, for slot matching/filtering)'
           },
           instructor: {
             type: 'string',
-            description: 'Preferred instructor (optional, for slot matching)'
+            description: 'Preferred instructor (optional, for slot matching/filtering)'
           }
         },
         required: ['courseType']
@@ -48,7 +61,9 @@ function getStepBookingToolDefinitions() {
     {
       type: 'function',
       name: 'booking_step_authenticate',
-      description: `Step 2: Authenticate/login to CRM system. Reuses existing session if available. This step is typically automatic and doesn't require user input.`,
+      description: `Step 2: Authenticate/login to CRM system. Reuses existing session if available. This step is typically automatic and doesn't require user input.
+
+CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot parameter with the selected slot details (date, time, location, instructor if available). This ensures the slot is stored for later steps.`,
       parameters: {
         type: 'object',
         properties: {
@@ -56,6 +71,17 @@ function getStepBookingToolDefinitions() {
             type: 'string',
             description: 'Course type (required for session initialization)',
             enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          agreedSlot: {
+            type: 'object',
+            description: 'The slot that was selected by the caller in Step 1. Should match one of the slots returned by booking_step_check_availability.',
+            properties: {
+              date: { type: 'string', description: 'Date of the slot' },
+              time: { type: 'string', description: 'Time of the slot' },
+              location: { type: 'string', description: 'Location of the slot' },
+              instructor: { type: 'string', description: 'Instructor name (optional)' },
+              startDate: { type: 'string', description: 'ISO date string (optional)' }
+            }
           }
         },
         required: ['courseType']
@@ -865,24 +891,52 @@ This tool returns guidance messages directing to the appropriate tools.`,
     {
       type: 'function',
       name: 'client_verification',
-      description: 'Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system. 🚨 MANDATORY COLLECTION: You MUST collect ALL THREE fields (full name, postcode, telephone number) before verification can be completed. You CANNOT skip any field. The verification process REQUIRES all three pieces of information. 🚨 ASK ALL THREE IN ONE QUESTION: On the FIRST call, ask for all three fields together in a single question: "Could you please confirm your full name, postcode, and telephone number?" The caller may provide all three at once, or may provide them partially across multiple turns. Extract whatever fields they provide and call this tool again with the provided fields. If any fields are still missing after the caller responds, ask for ALL remaining missing fields in the next turn (not just one). Continue until all three fields are collected. Verification will only succeed when ALL THREE fields are provided AND match. Allow up to 7 attempts per field before offering to create a new profile. CRITICAL: After successful verification, you MUST immediately say "You are successfully verified" and then automatically continue with the next booking step without waiting for user response. The verification is complete - proceed automatically to the next step.',
+      description: `Verify caller identity by comparing their spoken details (full name, postcode, telephone number) against stored CRM client details. Use this after finding a client in the CRM system.
+
+🚨 SEQUENTIAL VERIFICATION WORKFLOW:
+1. FIRST: Ask for full name using: "Thanks for this; I believe that I have found your profile with us; However, for data protection purposes, could you please confirm your full name?"
+   - Call this tool with ONLY fullName parameter
+   - Wait for verification result
+   - If verified, proceed to step 2
+   - If mismatch, use the exact error message provided and ask again (up to 7 attempts)
+
+2. SECOND: After full name is verified, ask for postcode using: "Thank you. Now, could you please confirm your post code?"
+   - Call this tool with fullName (already verified) AND postcode parameter
+   - Wait for verification result
+   - If verified, proceed to step 3
+   - If mismatch, use the exact error message provided and ask again (up to 7 attempts)
+
+3. THIRD: After postcode is verified, ask for telephone number using: "Thank you. Finally, could you please confirm your telephone number?"
+   - Call this tool with fullName, postcode (already verified) AND telephoneNumber parameter
+   - Wait for verification result
+   - If verified, verification is complete
+   - If mismatch, use the exact error message provided and ask again (up to 7 attempts)
+
+🚨 CRITICAL SECURITY RULE: You MUST ONLY use values that the caller ACTUALLY SPOKE in this conversation. DO NOT use values from stored client details, CRM data, or conversation context. Extract ONLY what the caller says.
+
+🚨 FIELD-SPECIFIC ERROR MESSAGES: When a field doesn't match, use the EXACT error message provided by the tool:
+- Full name mismatch: "Unfortunately, the full name that you have provided does not match the one that we hold on file for you; have you changed your name, or have you perhaps previously provided a different spelling of your name to us?"
+- Postcode mismatch: "Unfortunately, the post code that you have provided does not match the one that we hold on file for you; have you changed your address, or have you perhaps previously provided a different postcode to us?"
+- Telephone mismatch: "Unfortunately, the telephone number that you have provided does not match the one that we hold on file for you; have you changed your telephone number or have you ever provided us with an alternative telephone number?"
+
+After successful verification of all three fields, say: "You are successfully verified. Would you like to proceed with your booking? Please say yes or no." and wait for confirmation.`,
       parameters: {
         type: 'object',
         properties: {
           fullName: {
             type: 'string',
-            description: 'Full name as spoken by the caller (including title if provided, e.g., "Mr John Smith"). MANDATORY: Must be collected. Extract from caller response.'
+            description: 'Full name as spoken by the caller (including title if provided, e.g., "Mr John Smith"). Required for first verification step. Extract ONLY from caller\'s spoken response. DO NOT use stored client details or CRM data. If caller did not speak their full name, omit this parameter.'
           },
           postcode: {
             type: 'string',
-            description: 'Postcode as spoken by the caller (UK format, e.g., "HA8 6AG"). MANDATORY: Must be collected. Extract from caller response.'
+            description: 'Postcode as spoken by the caller (UK format, e.g., "HA8 6AG"). Required for second verification step (after fullName is verified). Extract ONLY from caller\'s spoken response. DO NOT use stored client details or CRM data. If caller did not speak their postcode, omit this parameter.'
           },
           telephoneNumber: {
             type: 'string',
-            description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07). MANDATORY: Must be collected. Extract from caller response.'
+            description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07). Required for third verification step (after fullName and postcode are verified). Extract ONLY from caller\'s spoken response. DO NOT use stored client details or CRM data. If caller did not speak their telephone number, omit this parameter.'
           }
         },
-        required: [] // All fields optional to allow partial calls, but agent MUST collect all three eventually
+        required: [] // Fields are required sequentially, not all at once
       }
     },
     {

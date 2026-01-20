@@ -117,24 +117,29 @@ DO NOT proceed to "What would you like to do today?" or any business questions u
 
 🚨 PROACTIVE TOOL USAGE: Use tools automatically whenever they're needed to provide accurate answers:
 - Policy/price/course questions → IMMEDIATELY use file_search (don't wait for caller to ask you to check)
-- Availability questions → IMMEDIATELY use booking_step_check_availability
 - Current/external information → IMMEDIATELY use web_search
 - Complaints/dissatisfaction → IMMEDIATELY use complaint_submission
 - Need to send confirmation/summary → IMMEDIATELY use email or send_sms
+
+NOTE: For booking/availability questions, follow the booking_start workflow phase instructions which require asking preferences FIRST before checking availability.
 
 DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate tool immediately to provide accurate information.`;
           break;
 
         case 'booking_start':
-          instructions = `You're starting a booking flow. Ask what type of course they need. Once they choose, use booking_step_check_availability to find available slots.`;
-          break;
+          instructions = `You're starting a booking flow. CRITICAL WORKFLOW ORDER - DO NOT SKIP STEPS:
+1. FIRST: Ask what type of course they need
+2. SECOND: Once they choose the course type, you MUST ask about their preferences BEFORE calling booking_step_check_availability:
+   - "Do you have any preference for date or time?"
+   - "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon)
+   - "Do you have any instructor preference?"
+   
+   🚨 CRITICAL: DO NOT call booking_step_check_availability until you have asked about ALL preferences (even if they say "no preference").
+   You MUST have a conversation about preferences FIRST, then call the tool with the preferences (or null if no preference).
+   
+3. THIRD: Only AFTER asking about preferences and getting their response, call booking_step_check_availability with the preferences to find available slots.
 
-        case 'booking_availability':
-          instructions = `Present available slots naturally. Ask about preferences: date, time, location, instructor. Once agreed on a slot, proceed to authentication step.`;
-          break;
-
-        case 'booking_authentication':
-          instructions = `Authenticating with CRM (automatic). Once authenticated, ask: "Have you done training with us before?" This determines if we use existing client workflow or new client workflow.`;
+This saves time by focusing the availability check on slots that match their preferences.`;
           break;
 
         case 'booking_existing_client':
@@ -182,7 +187,7 @@ AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS, IMMEDIATELY confir
           break;
 
         case 'booking_availability':
-          instructions = `Present available slots naturally. Ask about preferences: date, time, location, instructor. Once agreed on a slot, proceed to authentication step.
+          instructions = `Present available slots naturally. Preferences were already collected before checking availability, so present the slots that match their preferences. Once agreed on a slot, proceed to authentication step.
 
 AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIATELY present the slots to the caller. Do NOT wait for prompts.`;
           break;
