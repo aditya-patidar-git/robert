@@ -27,6 +27,11 @@ export async function executeAuthenticate(page, args, sessionState, screenshotsD
 
   return {
     success: true,
-    authenticated: true
+    authenticated: true,
+    stepCompleted: 2, // Explicitly state which step is complete
+    stepName: 'authenticate', // Explicit step name
+    // Note: Step 3 is conversational (no tool) - AI must ask "Have you done training with us before?"
+    // After getting the answer, proceed with workflowType: "existing" or "new" in subsequent steps
+    message: `✅ STEP 2 COMPLETE: booking_step_authenticate has been successfully completed. CRM authentication successful. DO NOT RETRY THIS STEP. Now you MUST ask the caller conversationally: "Have you done training with us before?" Wait for their response, then proceed with the appropriate workflow type (existing or new) in the next step.`
   };
 }
