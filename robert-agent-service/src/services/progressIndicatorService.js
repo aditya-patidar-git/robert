@@ -76,6 +76,12 @@ class ProgressIndicatorService {
         return false;
       }
 
+      // CRITICAL: Don't send acknowledgment if a tool is already executing (prevents duplicate tool calls)
+      if (execution.stateManager && execution.stateManager.activeToolExecutions && execution.stateManager.activeToolExecutions.size > 0) {
+        console.log(`🚫 [${callSid}] Skipping acknowledgment - tool already executing (active tools: ${Array.from(execution.stateManager.activeToolExecutions.keys()).join(', ')})`);
+        return false;
+      }
+
       const messages = config.progressIndicators.acknowledgmentMessages || [
         "Let me check that for you.",
         "I'm looking into that now.",
@@ -178,6 +184,12 @@ class ProgressIndicatorService {
           console.log(`⏭️ [${callSid}] Skipping periodic update - response already active (isResponding: ${execution.stateManager.isResponding}, activeResponseId: ${execution.stateManager.activeResponseId})`);
           return;
         }
+        
+        // CRITICAL: Don't send periodic update if a tool is already executing (prevents duplicate tool calls)
+        if (execution.stateManager.activeToolExecutions && execution.stateManager.activeToolExecutions.size > 0) {
+          console.log(`🚫 [${callSid}] Skipping periodic update - tool already executing (active tools: ${Array.from(execution.stateManager.activeToolExecutions.keys()).join(', ')})`);
+          return;
+        }
       }
 
       const elapsed = Date.now() - execution.startTime;
@@ -194,6 +206,11 @@ class ProgressIndicatorService {
           }
           if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
             return; // Response became active between check and send
+          }
+          // CRITICAL: Double-check if tool is executing before sending (prevents duplicate tool calls)
+          if (execution.stateManager.activeToolExecutions && execution.stateManager.activeToolExecutions.size > 0) {
+            console.log(`🚫 [${callSid}] Skipping periodic update - tool already executing before send (active tools: ${Array.from(execution.stateManager.activeToolExecutions.keys()).join(', ')})`);
+            return;
           }
         }
 

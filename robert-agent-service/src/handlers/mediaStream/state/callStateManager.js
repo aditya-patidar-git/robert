@@ -68,6 +68,7 @@ export class CallStateManager {
     this.userSpeakingWindowMs = 6000;
     this.userSpeechStartedTime = 0;
     this.pendingBargeInCheck = false; // Flag to track when user is speaking but we're waiting for transcription to check for "stop"
+    this.interruptionTimeout = null; // Timeout to clear isInterrupted if transcriptions don't arrive
     
     // Initial greeting tracking
     this.hasInitialGreetingBeenSent = false;
@@ -123,6 +124,10 @@ export class CallStateManager {
       lastOutgoingTime: null,
       lastResponseTime: null
     };
+    
+    // Background noise filtering - track pending audio segments
+    this.pendingAudioSegments = new Map(); // itemId → { timestamp, committedAt, transcriptionReceived, transcriptionQuality }
+    this.segmentTranscriptionMap = new Map(); // itemId → { transcript, confidence, quality, timestamp }
     
     // Event waiting promises for race condition fixes
     this.pendingSessionUpdatePromise = null;
@@ -268,6 +273,24 @@ export class CallStateManager {
   releaseResponseLock() {
     this.isResponding = false;
     this.explicitResponseRequested = false;
+  }
+
+  /**
+   * Cleanup old audio segments to prevent memory leaks
+   * Removes segments older than 30 seconds
+   */
+  cleanupOldSegments() {
+    const now = Date.now();
+    const MAX_SEGMENT_AGE_MS = 30000; // 30 seconds
+    
+    // Clean up pending segments
+    for (const [itemId, segment] of this.pendingAudioSegments.entries()) {
+      const age = now - segment.timestamp;
+      if (age > MAX_SEGMENT_AGE_MS) {
+        this.pendingAudioSegments.delete(itemId);
+        this.segmentTranscriptionMap.delete(itemId);
+      }
+    }
   }
 }
 

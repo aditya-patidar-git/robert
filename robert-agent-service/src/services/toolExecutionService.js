@@ -369,6 +369,12 @@ class ToolExecutionService {
         if (stateManager) {
           progressIndicatorService.stopPeriodicUpdates(callSid || callId);
           console.log(`🛑 [${callSid || callId}] Stopped periodic updates before fallback execution`);
+          // CRITICAL: Clear original tool from activeToolExecutions before executing fallback
+          // This prevents blocking subsequent tool calls with the same tool name
+          if (stateManager.activeToolExecutions && stateManager.activeToolExecutions.has(toolName)) {
+            stateManager.activeToolExecutions.delete(toolName);
+            console.log(`🧹 [${callSid || callId}] Cleared ${toolName} from activeToolExecutions before fallback execution`);
+          }
         }
         
         // Save unanswered question asynchronously (don't wait - low latency)
@@ -521,6 +527,12 @@ class ToolExecutionService {
           if (stateManager) {
             progressIndicatorService.stopPeriodicUpdates(callSid || callId);
             console.log(`🛑 [${callSid || callId}] Stopped periodic updates before fallback execution`);
+            // CRITICAL: Clear original tool from activeToolExecutions before executing fallback
+            // This prevents blocking subsequent tool calls with the same tool name
+            if (stateManager.activeToolExecutions && stateManager.activeToolExecutions.has(toolName)) {
+              stateManager.activeToolExecutions.delete(toolName);
+              console.log(`🧹 [${callSid || callId}] Cleared ${toolName} from activeToolExecutions before fallback execution`);
+            }
           }
           
           try {

@@ -323,6 +323,12 @@ export class ToolCoordinator {
       return;
     }
     
+    // Periodic cleanup of old audio segments (prevent memory leaks)
+    // Clean up every 10th event to avoid overhead
+    if (Math.random() < 0.1) {
+      this.state.cleanupOldSegments();
+    }
+    
     // Remove verbose logging - not needed for format testing
     
     try {
@@ -373,11 +379,58 @@ export class ToolCoordinator {
           await this.bargeInHandler.handleSpeechStarted(event);
           break;
           
+        case 'conversation.item.input_audio_transcription.delta':
+          // INDUSTRY STANDARD: Handle partial transcription deltas for faster "stop" detection
+          // This enables barge-in detection in 150-300ms vs 300-800ms for completed events
+          await this.transcriptionHandler.handleTranscriptionDelta(event);
+          break;
+          
         case 'conversation.item.input_audio_transcription.completed':
+          // CRITICAL DIAGNOSTIC: Log ALL transcription events to diagnose why "stop" isn't detected
+          console.log(`📝 [${this.state.callSid}] Transcription.completed event received:`);
+          console.log(`   - item_id: ${event.item_id || 'N/A'}`);
+          console.log(`   - transcript: "${event.transcript || 'N/A'}"`);
+          console.log(`   - confidence: ${event.confidence || 'N/A'}`);
+          console.log(`   - Barge-in already triggered: ${this.state.isInterrupted}`);
+          console.log(`   - Audio playing: isResponding=${this.state.isResponding}, activeResponseId=${this.state.activeResponseId}`);
+          
           const transcriptionResult = await this.transcriptionHandler.handleTranscriptionCompleted(event);
+          const transcriptionItemId = event.item_id; // Link to committed segment
+          
+          // CRITICAL DIAGNOSTIC: Log transcription processing result
+          console.log(`📝 [${this.state.callSid}] Transcription processing result:`);
+          console.log(`   - processed: ${transcriptionResult?.processed}`);
+          console.log(`   - shouldCreateResponse: ${transcriptionResult?.shouldCreateResponse}`);
+          console.log(`   - isBackgroundNoise: ${transcriptionResult?.isBackgroundNoise}`);
+          console.log(`   - qualityScore: ${transcriptionResult?.qualityScore}`);
+          console.log(`   - reason: ${transcriptionResult?.reason || 'N/A'}`);
+          
+          // CRITICAL: Check if this is background noise - if so, DO NOT create response
+          // This breaks the feedback loop where agent keeps responding to noise
+          if (transcriptionResult?.isBackgroundNoise) {
+            console.log(`🔇 [${this.state.callSid}] BLOCKED response - background noise detected (reason: ${transcriptionResult.reason}, quality: ${transcriptionResult.qualityScore})`);
+            
+            // CRITICAL: Ensure agent stays in listening mode when noise is detected
+            // This prevents the feedback loop
+            this.state.waitingForUser = true;
+            
+            // Clean up segment tracking
+            if (transcriptionItemId && this.state.pendingAudioSegments.has(transcriptionItemId)) {
+              // Keep segment data for potential future reference, but mark as noise
+              const segment = this.state.pendingAudioSegments.get(transcriptionItemId);
+              segment.isBackgroundNoise = true;
+            }
+            
+            // DO NOT create response - break the loop
+            break;
+          }
           
           // Check if transcription was processed and if we should create a response
-          const shouldCreateResponse = transcriptionResult?.processed && transcriptionResult?.shouldCreateResponse !== false;
+          const shouldCreateResponse = 
+            transcriptionResult?.processed && 
+            transcriptionResult?.shouldCreateResponse !== false &&
+            transcriptionResult?.qualityScore >= 0.7 && // Additional quality gate
+            !transcriptionResult?.isBackgroundNoise; // Explicitly check background noise flag
           
           // CRITICAL: Robust audio playing check (same logic as in TranscriptionHandler)
           const hasActiveResponse = this.state.activeResponseId !== null;
@@ -387,24 +440,30 @@ export class ToolCoordinator {
           const isAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio;
           
           // Create response only if:
-          // 1. Transcription was processed successfully
+          // 1. Transcription was processed successfully AND is high quality
           // 2. shouldCreateResponse flag is true (from TranscriptionHandler)
-          // 3. Agent is waiting for user
-          // 4. Audio is NOT currently playing (CRITICAL: prevent responses during audio playback)
-          // 5. No active response exists
-          // 6. Initial greeting has completed
+          // 3. Quality score meets threshold (>= 0.7)
+          // 4. NOT background noise
+          // 5. Agent is waiting for user
+          // 6. Audio is NOT currently playing (CRITICAL: prevent responses during audio playback)
+          // 7. No active response exists
+          // 8. Initial greeting has completed
           if (shouldCreateResponse && this.state.waitingForUser && !isAudioPlaying && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
             try {
               this.state.explicitResponseRequested = true;
               
               // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
               await this.createAudioResponse();
-              console.log(`🎯 [${this.state.callSid}] Created response after transcription`);
+              console.log(`🎯 [${this.state.callSid}] Created response after high-quality transcription (quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
             }
           } else if (isAudioPlaying && shouldCreateResponse) {
             console.log(`🔇 [${this.state.callSid}] Skipping response creation - audio is currently playing`);
+          } else if (!shouldCreateResponse && transcriptionResult?.processed === false) {
+            console.log(`🔇 [${this.state.callSid}] Blocked response - transcription filtered (reason: ${transcriptionResult.reason}, quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
+          } else if (transcriptionResult?.qualityScore < 0.7) {
+            console.log(`🔇 [${this.state.callSid}] Blocked response - quality score too low (${transcriptionResult.qualityScore?.toFixed(2)} < 0.7)`);
           }
           break;
           
@@ -463,6 +522,30 @@ export class ToolCoordinator {
         case 'response.output_item.done':
           if (event.item?.type === 'function_call') {
             await this.toolCallHandler.handleToolCall(event);
+          }
+          break;
+          
+        case 'input_audio_buffer.committed':
+          // CRITICAL: Track committed audio segments to prevent automatic responses from background noise
+          // OpenAI may auto-create responses when buffer is committed, but we need to verify transcription quality first
+          const itemId = event.item_id;
+          const committedAt = Date.now();
+          
+          if (itemId) {
+            // Track this segment - transcription will arrive later via transcription.completed event
+            this.state.pendingAudioSegments.set(itemId, {
+              timestamp: committedAt,
+              committedAt,
+              transcriptionReceived: false,
+              transcriptionQuality: null,
+              isBackgroundNoise: null
+            });
+            
+            console.log(`📦 [${this.state.callSid}] Audio buffer committed (item: ${itemId}) - waiting for transcription to verify quality`);
+            
+            // CRITICAL: DO NOT create response here - wait for transcription.completed event
+            // This prevents responses from being created for background noise
+            // Response will only be created if transcription passes quality checks
           }
           break;
           

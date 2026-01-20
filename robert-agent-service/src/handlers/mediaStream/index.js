@@ -211,6 +211,24 @@ export const handleMediaStreamConnection = (ws, req) => {
                 }
                 
                 // Handle other Twilio events (mark, stop, etc.)
+                if (json.event === 'mark') {
+                    // Twilio sends mark events when audio finishes playing or is cleared
+                    // This helps track when barge-in clears were acknowledged
+                    const markName = json.mark?.name || 'unknown';
+                    const timestamp = json.timestamp || Date.now();
+                    
+                    // ENHANCED LOGGING: Track mark events to confirm clear message was processed
+                    console.log(`📌 [${stateManager.callSid}] Mark event received from Twilio: "${markName}" (audio finished or cleared)`);
+                    console.log(`   - Timestamp: ${timestamp}`);
+                    console.log(`   - Is interrupted: ${stateManager.isInterrupted}`);
+                    console.log(`   - Active response ID: ${stateManager.activeResponseId || 'none'}`);
+                    
+                    // If we're in an interrupted state, this mark likely confirms audio was cleared
+                    if (stateManager.isInterrupted) {
+                        console.log(`✅ [${stateManager.callSid}] Mark event received during interruption - likely confirms audio was cleared by "clear" message`);
+                    }
+                }
+                
                 if (json.event === 'stop') {
                     console.log(`🛑 [${stateManager.callSid}] Stop event received from Twilio`);
                     cleanup('twilio_stop');
