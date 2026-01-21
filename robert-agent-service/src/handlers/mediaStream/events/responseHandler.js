@@ -3,6 +3,7 @@ import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
 import audioDiagnosticService from '../../../services/audioDiagnosticService.js';
 import { MemoryManager } from '../utils/index.js';
+import { conversations } from '../../../shared/state.js';
 // Audio conversion removed - OpenAI is configured for g711_ulaw, we trust the configuration
 
 /**
@@ -53,6 +54,27 @@ export class ResponseHandler {
     // Track in diagnostic service (non-intrusive, optional)
     audioDiagnosticService.trackResponseCreated(this.state.callSid, event);
     
+    // CRITICAL: Check if this response was triggered by a low-quality segment (background noise)
+    // OpenAI may auto-create responses even if we don't explicitly call response.create
+    const responseItemId = event.response?.output_item?.id;
+    let isLowQualitySegment = false;
+    
+    if (responseItemId && this.state.pendingAudioSegments.has(responseItemId)) {
+      const segment = this.state.pendingAudioSegments.get(responseItemId);
+      
+      // If transcription was received and marked as background noise, cancel this response
+      if (segment.transcriptionReceived && segment.isBackgroundNoise) {
+        isLowQualitySegment = true;
+        console.log(`🛑 [${this.state.callSid}] Cancelling response from low-quality/background noise segment (item: ${responseItemId}, quality: ${segment.transcriptionQuality})`);
+      } else if (this.state.segmentTranscriptionMap.has(responseItemId)) {
+        const transcription = this.state.segmentTranscriptionMap.get(responseItemId);
+        if (transcription.quality < 0.7 || transcription.isHighQuality === false) {
+          isLowQualitySegment = true;
+          console.log(`🛑 [${this.state.callSid}] Cancelling response from low-quality transcription (item: ${responseItemId}, quality: ${transcription.quality})`);
+        }
+      }
+    }
+    
     // Block automatic responses that we didn't explicitly request
     if (!this.state.explicitResponseRequested) {
       const currentTime = Date.now();
@@ -66,7 +88,7 @@ export class ResponseHandler {
       const isRespondingToDifferentResponse = this.state.isResponding && this.state.activeResponseId !== event.response?.id;
       const shouldBlockWaiting = this.state.waitingForUser && !isRecentTranscription && !isWithinUserSpeakingWindow && !userSpokeBeforeResponse;
       
-      const shouldBlock = isInterrupted || isRespondingToDifferentResponse || shouldBlockWaiting;
+      const shouldBlock = isInterrupted || isRespondingToDifferentResponse || shouldBlockWaiting || isLowQualitySegment;
       
       if (shouldBlock) {
         // Detailed logging for why response is being blocked
@@ -83,14 +105,16 @@ export class ResponseHandler {
         console.log(`      - shouldBlockWaiting: ${shouldBlockWaiting}`);
         
         try {
-          if (this.state.openaiWs && this.state.openaiWs.readyState === 1) {
-            this.state.openaiWs.send(JSON.stringify({
+          // Use robust send method with connection manager support
+          const sent = this.state.sendToOpenAI({
               type: 'response.cancel',
               response_id: this.state.activeResponseId
-            }));
+          }, { priority: 'high' });
+          
+          if (sent) {
             console.log(`   ✅ Sent response.cancel to OpenAI for response ${this.state.activeResponseId}`);
           } else {
-            console.warn(`   ⚠️ Cannot cancel response - OpenAI WS readyState: ${this.state.openaiWs?.readyState}`);
+            console.warn(`   ⚠️ Cannot cancel response - message queued or connection not ready`);
           }
           this.state.activeResponseId = null;
           this.state.isResponding = false;
@@ -112,8 +136,24 @@ export class ResponseHandler {
 
   /**
    * Handle response.audio.delta event
+   * CRITICAL: Checks interruption/cancellation FIRST to stop current response immediately
    */
   handleAudioDelta(event) {
+    // CRITICAL: Check interruption and cancellation FIRST before any processing
+    // This ensures cancelled audio deltas are completely ignored (no metrics, no buffering)
+    const currentResponseId = event.response_id || this.state.activeResponseId;
+    const isCancelledResponse = currentResponseId && this.state.cancelledResponseIds.has(currentResponseId);
+    const cancellationTimestamp = currentResponseId ? this.state.cancellationTime.get(currentResponseId) : null;
+    const timeSinceCancellation = cancellationTimestamp ? Date.now() - cancellationTimestamp : Infinity;
+    const withinGracePeriod = cancellationTimestamp && timeSinceCancellation < this.state.AUDIO_CANCELLATION_GRACE_PERIOD;
+    
+    // IMMEDIATELY block audio if interrupted or cancelled - don't process, track, or buffer anything
+    if (this.state.isInterrupted || isCancelledResponse || (cancellationTimestamp && withinGracePeriod)) {
+      // Silently ignore cancelled audio deltas - don't even log to reduce noise
+      return false;
+    }
+    
+    // Only process audio if not interrupted/cancelled
     // Track outbound audio separately
     this.state.outboundAudioChunkCount++;
     
@@ -126,19 +166,6 @@ export class ResponseHandler {
     const responseTime = Date.now();
     this.state.audioMetrics.responseTimestamps.push(responseTime);
     this.state.audioMetrics.lastResponseTime = responseTime;
-    
-    // Get response ID from event if available
-    const currentResponseId = event.response_id || this.state.activeResponseId;
-    
-    // Block audio if response was cancelled
-    const isCancelledResponse = currentResponseId && this.state.cancelledResponseIds.has(currentResponseId);
-    const cancellationTimestamp = currentResponseId ? this.state.cancellationTime.get(currentResponseId) : null;
-    const timeSinceCancellation = cancellationTimestamp ? Date.now() - cancellationTimestamp : Infinity;
-    const withinGracePeriod = cancellationTimestamp && timeSinceCancellation < this.state.AUDIO_CANCELLATION_GRACE_PERIOD;
-    
-    if (this.state.isInterrupted || isCancelledResponse || (cancellationTimestamp && withinGracePeriod)) {
-      return false; // Don't send audio chunks
-    }
     
     // Verify audio payload format
     if (!event.delta) {
@@ -202,8 +229,14 @@ export class ResponseHandler {
 
   /**
    * Send a single audio frame to Twilio
+   * CRITICAL: Checks for interruption before sending to enable immediate barge-in response
    */
   sendAudioFrame(frameSize, shouldLog = false) {
+    // CRITICAL: Check for interruption first - prevents sending audio during barge-in
+    if (this.state.isInterrupted) {
+      return false; // Don't send audio frames when interrupted
+    }
+    
     if (!this.state.outboundAudioBuffer || this.state.outboundAudioBuffer.length < frameSize) {
       return false;
     }
@@ -240,6 +273,9 @@ export class ResponseHandler {
 
   /**
    * Start audio pacer to send frames at correct rate
+   * FIXED: More resilient to temporary WebSocket unavailability
+   * Prevents audio gaps by keeping pacer running during temporary connection issues
+   * CRITICAL: Checks for interruption to enable immediate barge-in response
    */
   startAudioPacer(frameSize, frameIntervalMs, shouldLog = false) {
     if (this.state.outboundAudioPacer) {
@@ -247,15 +283,37 @@ export class ResponseHandler {
     }
     
     this.state.outboundAudioPacer = setInterval(() => {
-      if (this.state.isClosed || !this.state.streamSid || this.ws.readyState !== WebSocket.OPEN) {
+      // CRITICAL: Check for interruption first - stop immediately if barge-in detected
+      if (this.state.isInterrupted) {
         this.stopAudioPacer();
         return;
       }
       
-      if (this.state.outboundAudioBuffer && this.state.outboundAudioBuffer.length >= frameSize) {
-        this.sendAudioFrame(frameSize, false);
-      } else {
+      // Only stop if call is closed or WebSocket is permanently closed
+      if (this.state.isClosed || !this.state.streamSid) {
         this.stopAudioPacer();
+        return;
+      }
+      
+      // Only stop if WebSocket is permanently closed (CLOSED=3), not just temporarily unavailable
+      if (this.ws.readyState === WebSocket.CLOSED) {
+        this.stopAudioPacer();
+        return;
+      }
+      
+      // Try to send frame if WebSocket is ready and buffer has data
+      if (this.ws.readyState === WebSocket.OPEN && this.state.outboundAudioBuffer && this.state.outboundAudioBuffer.length >= frameSize) {
+        this.sendAudioFrame(frameSize, false);
+      }
+      
+      // Only stop pacer if buffer is empty AND we're not responding (no more audio expected)
+      // Keep running if we're still responding, as more audio might arrive
+      if (!this.state.outboundAudioBuffer || this.state.outboundAudioBuffer.length < frameSize) {
+        // Only stop if we're not responding (no more audio expected)
+        if (!this.state.isResponding) {
+          this.stopAudioPacer();
+        }
+        // Otherwise, keep pacer running - more audio might arrive soon
       }
     }, frameIntervalMs);
   }
@@ -267,6 +325,98 @@ export class ResponseHandler {
     if (this.state.outboundAudioPacer) {
       clearInterval(this.state.outboundAudioPacer);
       this.state.outboundAudioPacer = null;
+    }
+  }
+
+  /**
+   * Immediately stop audio at Twilio level (for barge-in)
+   * Stops audio pacer and clears buffer immediately to achieve <50ms response time
+   * CRITICAL: Uses Twilio's native "clear" message for immediate barge-in support
+   * This is more reliable than silence frames and provides instant buffer clearing
+   * Thread-safe: Uses isolated state per callSid
+   */
+  immediatelyStopAudio() {
+    const stopStartTime = Date.now();
+    
+    console.log(`🛑 [${this.state.callSid}] immediatelyStopAudio() called - starting barge-in process`);
+    
+    // Stop audio pacer immediately
+    this.stopAudioPacer();
+    console.log(`🛑 [${this.state.callSid}] Audio pacer stopped`);
+    
+    // Clear audio buffer immediately to prevent any buffered audio from being sent
+    if (this.state.outboundAudioBuffer) {
+      const bufferSize = this.state.outboundAudioBuffer.length;
+      this.state.outboundAudioBuffer = null;
+      this.state.lastOutboundSendTime = 0;
+      
+      if (bufferSize > 0) {
+        console.log(`🛑 [${this.state.callSid}] Cleared ${bufferSize} bytes of buffered audio during barge-in`);
+      } else {
+        console.log(`🛑 [${this.state.callSid}] Audio buffer was already empty`);
+      }
+    } else {
+      console.log(`🛑 [${this.state.callSid}] No audio buffer to clear`);
+    }
+    
+    // CRITICAL: Use Twilio's native "clear" message for immediate barge-in
+    // This clears all buffered audio in Twilio's queue instantly, providing
+    // more reliable interruption than silence frames
+    // Format: {"event": "clear", "streamSid": "MZ..."}
+    
+    // ENHANCED LOGGING: Log all conditions before attempting to send clear message
+    const wsExists = !!this.ws;
+    const wsReadyState = this.ws ? this.ws.readyState : null;
+    const wsIsOpen = wsReadyState === WebSocket.OPEN;
+    const streamSidExists = !!this.state.streamSid;
+    const callIsOpen = !this.state.isClosed;
+    
+    console.log(`🔍 [${this.state.callSid}] Clear message pre-flight check:`);
+    console.log(`   - WebSocket exists: ${wsExists}`);
+    console.log(`   - WebSocket readyState: ${wsReadyState} (1=OPEN, 2=CLOSING, 3=CLOSED)`);
+    console.log(`   - WebSocket is OPEN: ${wsIsOpen}`);
+    console.log(`   - streamSid exists: ${streamSidExists} (value: ${this.state.streamSid || 'null'})`);
+    console.log(`   - Call is open: ${callIsOpen}`);
+    console.log(`   - All conditions met: ${wsExists && wsIsOpen && streamSidExists && callIsOpen}`);
+    
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.state.streamSid && !this.state.isClosed) {
+      try {
+        const clearMessage = {
+          event: 'clear',
+          streamSid: this.state.streamSid
+        };
+        
+        const messageJson = JSON.stringify(clearMessage);
+        console.log(`📤 [${this.state.callSid}] Sending Twilio "clear" message: ${messageJson}`);
+        
+        this.ws.send(messageJson);
+        console.log(`✅ [${this.state.callSid}] Successfully sent Twilio "clear" message to stop audio playback (streamSid: ${this.state.streamSid})`);
+      } catch (err) {
+        console.error(`❌ [${this.state.callSid}] Error sending Twilio clear message:`, err.message);
+        console.error(`❌ [${this.state.callSid}] Error stack:`, err.stack);
+        // Fallback: Log error but don't throw - barge-in should still work via state management
+      }
+    } else {
+      // ENHANCED LOGGING: Detailed diagnostic information
+      const wsState = this.ws ? this.ws.readyState : 'null';
+      const streamSidStatus = this.state.streamSid ? `present (${this.state.streamSid})` : 'missing';
+      const isClosedStatus = this.state.isClosed ? 'closed' : 'open';
+      
+      console.warn(`⚠️ [${this.state.callSid}] Cannot send Twilio clear message - conditions not met:`);
+      console.warn(`   - WebSocket state: ${wsState} (expected: 1=OPEN)`);
+      console.warn(`   - streamSid: ${streamSidStatus}`);
+      console.warn(`   - Call closed: ${isClosedStatus}`);
+      console.warn(`⚠️ [${this.state.callSid}] Barge-in will rely on state-based audio blocking only`);
+    }
+    
+    const stopTime = Date.now() - stopStartTime;
+    console.log(`⚡ [${this.state.callSid}] Audio stopped at Twilio level in ${stopTime}ms`);
+    
+    // Track barge-in response time for metrics
+    if (this.state.interruptionStartTime > 0) {
+      const bargeInResponseTime = Date.now() - this.state.interruptionStartTime;
+      conversationQualityService.trackBargeInResponseTime(this.state.callSid, bargeInResponseTime);
+      console.log(`📊 [${this.state.callSid}] Barge-in response time: ${bargeInResponseTime}ms`);
     }
   }
 
@@ -322,15 +472,29 @@ export class ResponseHandler {
       const hasAudioModality = event.response?.modalities?.includes('audio') || false;
       const isRefusalResponse = audioTokens === 0 && hasAudioModality && textTokens > 0;
       
-      // Extract response text to check for refusal patterns
+      // Extract response text to check for refusal patterns AND add to transcript
       const outputItems = event.response?.output || [];
       let responseText = '';
+      let fullResponseText = ''; // Full text for transcript (not lowercased)
       if (outputItems && outputItems.length > 0) {
         const textItems = outputItems.filter(item => item.type === 'message' && item.content);
         if (textItems.length > 0) {
-          responseText = textItems.map(item => 
+          fullResponseText = textItems.map(item => 
             item.content.map(c => c.type === 'text' ? c.text : '').join('')
-          ).join(' ').toLowerCase();
+          ).join(' ').trim();
+          responseText = fullResponseText.toLowerCase();
+        }
+      }
+      
+      // Add agent response to conversation transcript
+      if (fullResponseText && status === 'completed') {
+        if (conversations[this.state.callSid]) {
+          conversations[this.state.callSid].transcript.push({
+            role: 'agent',
+            text: fullResponseText,
+            timestamp: new Date()
+          });
+          console.log(`📝 [${this.state.callSid}] Added agent response to transcript: "${fullResponseText.substring(0, 50)}${fullResponseText.length > 50 ? '...' : ''}"`);
         }
       }
       
@@ -393,6 +557,13 @@ export class ResponseHandler {
       // Clear interruption state if response completed successfully
       if (status === 'completed' && this.state.isInterrupted) {
         console.log(`✅ [${this.state.callSid}] Response completed - clearing interruption state`);
+        
+        // Clear interruption timeout if set
+        if (this.state.interruptionTimeout) {
+          clearTimeout(this.state.interruptionTimeout);
+          this.state.interruptionTimeout = null;
+        }
+        
         this.state.isInterrupted = false;
         this.state.interruptionStartTime = 0;
         this.state.pendingTranscriptions = [];

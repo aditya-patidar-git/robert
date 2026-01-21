@@ -9,9 +9,8 @@ const tracer = trace.getTracer('robert-agent-service', '1.0.0');
  * Orchestrates task execution with locking, dry-run, and error handling
  */
 export class TaskExecutor {
-  constructor(browserManager, courseBookingRouter, updateExecutionPhase, activeExecutions, executionLockTimeout, executionHeartbeatInterval, crmCredentials, screenshotsDir) {
+  constructor(browserManager, updateExecutionPhase, activeExecutions, executionLockTimeout, executionHeartbeatInterval, crmCredentials, screenshotsDir) {
     this.browserManager = browserManager;
-    this.courseBookingRouter = courseBookingRouter;
     this.updateExecutionPhase = updateExecutionPhase;
     this.activeExecutions = activeExecutions;
     this.executionLockTimeout = executionLockTimeout;
@@ -233,16 +232,7 @@ export class TaskExecutor {
       }, this.executionHeartbeatInterval);
       
       try {
-        // Route to course-specific service for create_booking
-        if (task === 'create_booking' && args.courseType) {
-          // Get cancelToken from execution lock for cancellation support
-          const execution = this.activeExecutions.get(executionKey);
-          const cancelToken = execution ? execution.cancelToken : null;
-          
-          return await this.courseBookingRouter.executeCourseBooking(page, args, callContext, auditId, progressCallback, cancelToken, executionKey);
-        }
-        
-        // Always start with dry-run for other tasks
+        // Always start with dry-run for tasks
         const dryRunResult = await this.executeDryRun(page, task, args, auditId);
         
         if (!dryRunResult.success) {
@@ -358,8 +348,6 @@ export class TaskExecutor {
       }
       
       switch (task) {
-        case 'create_booking':
-          return await taskHandlers.dryRunCreateBooking(page, args, auditId, this.screenshotsDir);
         case 'reschedule_booking':
           return await taskHandlers.dryRunRescheduleBooking(page, args, auditId, this.screenshotsDir);
         case 'cancel_booking':
@@ -382,8 +370,6 @@ export class TaskExecutor {
   async executeActualTask(page, task, args, auditId) {
     try {
       switch (task) {
-        case 'create_booking':
-          return await taskHandlers.createBooking(page, args, auditId);
         case 'reschedule_booking':
           return await taskHandlers.rescheduleBooking(page, args, auditId, this.screenshotsDir);
         case 'cancel_booking':

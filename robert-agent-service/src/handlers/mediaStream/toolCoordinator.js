@@ -19,10 +19,15 @@ export class ToolCoordinator {
     const languageDetector = new LanguageDetector(stateManager);
     const consentHandler = new ConsentHandler(stateManager, memoryManager);
     
-    this.bargeInHandler = new BargeInHandler(stateManager, openaiWs);
-    this.consentHandler = consentHandler;
+    // Initialize ResponseHandler first (needed by BargeInHandler for immediate audio stopping)
     this.responseHandler = new ResponseHandler(stateManager, ws);
-    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs);
+    
+    // Initialize BargeInHandler with ResponseHandler reference for immediate Twilio-level audio stopping
+    this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler);
+    
+    this.consentHandler = consentHandler;
+    // Pass BargeInHandler reference to TranscriptionHandler so it can trigger barge-in when "stop" is detected
+    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler);
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs);
   }
 
@@ -115,8 +120,8 @@ export class ToolCoordinator {
       return;
     }
     
-    // 🚨 CRITICAL: Prevent concurrent calls
-    if (this.state.isResponding || this.state.activeResponseId !== null) {
+    // 🚨 CRITICAL: Use atomic lock to prevent concurrent calls
+    if (!this.state.tryAcquireResponseLock()) {
       console.warn(`⚠️ [${this.state.callSid}] Already responding (responseId: ${this.state.activeResponseId}), skipping duplicate createAudioResponse call`);
       return;
     }
@@ -131,11 +136,20 @@ export class ToolCoordinator {
       if (isInitialGreeting) {
         console.log(`📤 [${this.state.callSid}] Preparing initial greeting with contextual instructions`);
         
-        // Get consent notice/question if needed
-        const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
-        let privacySettings = null;
-        if (privacyConfig) {
-          privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        // OPTIMIZATION: Cache privacy settings from setupOpenAI instead of querying again
+        // Get consent notice/question if needed (use cached value if available)
+        const conversation = conversations[this.state.callSid];
+        let privacySettings = conversation?._cachedPrivacySettings || null;
+        
+        if (!privacySettings) {
+          const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
+          if (privacyConfig) {
+            privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+            // Cache for reuse
+            if (conversation && privacySettings) {
+              conversation._cachedPrivacySettings = privacySettings;
+            }
+          }
         }
         
         const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
@@ -158,8 +172,9 @@ export class ToolCoordinator {
         
         console.log(`📋 [${this.state.callSid}] Using contextual instructions for initial greeting (length: ${responseInstructions?.length || 0})`);
         
-        // Small delay to ensure session is fully ready
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // OPTIMIZATION: Reduced delay from 300ms to 100ms
+        // Session should already be ready after session.update confirmation
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         // Verify WebSocket is still open
         if (!this.openaiWs || this.openaiWs.readyState !== 1) {
@@ -256,10 +271,7 @@ export class ToolCoordinator {
       
       console.log(`📤 [${this.state.callSid}] Sending response.create, WebSocket state: ${this.openaiWs.readyState}`);
       
-      // Set state BEFORE sending to prevent duplicate calls
-      this.state.isResponding = true;
-      this.state.explicitResponseRequested = true;
-      
+      // Lock already acquired by tryAcquireResponseLock()
       this.openaiWs.send(JSON.stringify(responseCreatePayload));
       
       // Step 4: Re-enable tools after delay
@@ -278,7 +290,7 @@ export class ToolCoordinator {
       console.error(`❌ [${this.state.callSid}] Error creating audio response:`, err);
       // Reset state on error
       this.state.hasInitialGreetingBeenSent = false;
-      this.state.isResponding = false;
+      this.state.releaseResponseLock();
       this.state.pendingSessionUpdatePromise = null;
       this.state.pendingItemCreatePromise = null;
     }
@@ -309,6 +321,12 @@ export class ToolCoordinator {
   async routeEvent(event) {
     if (!event || !event.type) {
       return;
+    }
+    
+    // Periodic cleanup of old audio segments (prevent memory leaks)
+    // Clean up every 10th event to avoid overhead
+    if (Math.random() < 0.1) {
+      this.state.cleanupOldSegments();
     }
     
     // Remove verbose logging - not needed for format testing
@@ -361,20 +379,91 @@ export class ToolCoordinator {
           await this.bargeInHandler.handleSpeechStarted(event);
           break;
           
+        case 'conversation.item.input_audio_transcription.delta':
+          // INDUSTRY STANDARD: Handle partial transcription deltas for faster "stop" detection
+          // This enables barge-in detection in 150-300ms vs 300-800ms for completed events
+          await this.transcriptionHandler.handleTranscriptionDelta(event);
+          break;
+          
         case 'conversation.item.input_audio_transcription.completed':
-          await this.transcriptionHandler.handleTranscriptionCompleted(event);
-          // Check if agent is waiting and should respond immediately
-          if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
-            // Create response immediately when user speaks and agent is waiting
+          // CRITICAL DIAGNOSTIC: Log ALL transcription events to diagnose why "stop" isn't detected
+          console.log(`📝 [${this.state.callSid}] Transcription.completed event received:`);
+          console.log(`   - item_id: ${event.item_id || 'N/A'}`);
+          console.log(`   - transcript: "${event.transcript || 'N/A'}"`);
+          console.log(`   - confidence: ${event.confidence || 'N/A'}`);
+          console.log(`   - Barge-in already triggered: ${this.state.isInterrupted}`);
+          console.log(`   - Audio playing: isResponding=${this.state.isResponding}, activeResponseId=${this.state.activeResponseId}`);
+          
+          const transcriptionResult = await this.transcriptionHandler.handleTranscriptionCompleted(event);
+          const transcriptionItemId = event.item_id; // Link to committed segment
+          
+          // CRITICAL DIAGNOSTIC: Log transcription processing result
+          console.log(`📝 [${this.state.callSid}] Transcription processing result:`);
+          console.log(`   - processed: ${transcriptionResult?.processed}`);
+          console.log(`   - shouldCreateResponse: ${transcriptionResult?.shouldCreateResponse}`);
+          console.log(`   - isBackgroundNoise: ${transcriptionResult?.isBackgroundNoise}`);
+          console.log(`   - qualityScore: ${transcriptionResult?.qualityScore}`);
+          console.log(`   - reason: ${transcriptionResult?.reason || 'N/A'}`);
+          
+          // CRITICAL: Check if this is background noise - if so, DO NOT create response
+          // This breaks the feedback loop where agent keeps responding to noise
+          if (transcriptionResult?.isBackgroundNoise) {
+            console.log(`🔇 [${this.state.callSid}] BLOCKED response - background noise detected (reason: ${transcriptionResult.reason}, quality: ${transcriptionResult.qualityScore})`);
+            
+            // CRITICAL: Ensure agent stays in listening mode when noise is detected
+            // This prevents the feedback loop
+            this.state.waitingForUser = true;
+            
+            // Clean up segment tracking
+            if (transcriptionItemId && this.state.pendingAudioSegments.has(transcriptionItemId)) {
+              // Keep segment data for potential future reference, but mark as noise
+              const segment = this.state.pendingAudioSegments.get(transcriptionItemId);
+              segment.isBackgroundNoise = true;
+            }
+            
+            // DO NOT create response - break the loop
+            break;
+          }
+          
+          // Check if transcription was processed and if we should create a response
+          const shouldCreateResponse = 
+            transcriptionResult?.processed && 
+            transcriptionResult?.shouldCreateResponse !== false &&
+            transcriptionResult?.qualityScore >= 0.7 && // Additional quality gate
+            !transcriptionResult?.isBackgroundNoise; // Explicitly check background noise flag
+          
+          // CRITICAL: Robust audio playing check (same logic as in TranscriptionHandler)
+          const hasActiveResponse = this.state.activeResponseId !== null;
+          const hasAudioPacer = this.state.outboundAudioPacer !== null;
+          const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
+          const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 5000;
+          const isAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio;
+          
+          // Create response only if:
+          // 1. Transcription was processed successfully AND is high quality
+          // 2. shouldCreateResponse flag is true (from TranscriptionHandler)
+          // 3. Quality score meets threshold (>= 0.7)
+          // 4. NOT background noise
+          // 5. Agent is waiting for user
+          // 6. Audio is NOT currently playing (CRITICAL: prevent responses during audio playback)
+          // 7. No active response exists
+          // 8. Initial greeting has completed
+          if (shouldCreateResponse && this.state.waitingForUser && !isAudioPlaying && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
             try {
               this.state.explicitResponseRequested = true;
               
               // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
               await this.createAudioResponse();
-              console.log(`🎯 [${this.state.callSid}] Created response after transcription`);
+              console.log(`🎯 [${this.state.callSid}] Created response after high-quality transcription (quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
             }
+          } else if (isAudioPlaying && shouldCreateResponse) {
+            console.log(`🔇 [${this.state.callSid}] Skipping response creation - audio is currently playing`);
+          } else if (!shouldCreateResponse && transcriptionResult?.processed === false) {
+            console.log(`🔇 [${this.state.callSid}] Blocked response - transcription filtered (reason: ${transcriptionResult.reason}, quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
+          } else if (transcriptionResult?.qualityScore < 0.7) {
+            console.log(`🔇 [${this.state.callSid}] Blocked response - quality score too low (${transcriptionResult.qualityScore?.toFixed(2)} < 0.7)`);
           }
           break;
           
@@ -383,9 +472,17 @@ export class ToolCoordinator {
           // Handle process_transcriptions return value
           if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
             const transcriptions = speechStoppedResult.transcriptions || [];
-            if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+            // CRITICAL: Don't create response if interrupted
+            if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
               // Create response immediately when transcriptions are ready and agent is waiting
               try {
+                // Double-check interruption state after acquiring lock
+                if (this.state.isInterrupted) {
+                  console.log(`🛑 [${this.state.callSid}] Skipping response creation - user interrupted after lock acquisition`);
+                  this.state.releaseResponseLock();
+                  return;
+                }
+                
                 this.state.explicitResponseRequested = true;
                 
                 // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
@@ -393,14 +490,22 @@ export class ToolCoordinator {
                 console.log(`🎯 [${this.state.callSid}] Created response after processing ${transcriptions.length} transcriptions`);
               } catch (err) {
                 console.error(`❌ [${this.state.callSid}] Error creating response after processing transcriptions:`, err);
+                this.state.releaseResponseLock();
               }
             }
           }
           // Handle acknowledge_interruption return value
           if (speechStoppedResult && speechStoppedResult.type === 'acknowledge_interruption') {
-            // Create response to acknowledge interruption
-            if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null) {
+            // CRITICAL: Don't create acknowledgment if interrupted (user said stop)
+            if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
               try {
+                // Double-check interruption state after acquiring lock
+                if (this.state.isInterrupted) {
+                  console.log(`🛑 [${this.state.callSid}] Skipping acknowledgment response - user interrupted after lock acquisition`);
+                  this.state.releaseResponseLock();
+                  return;
+                }
+                
                 this.state.explicitResponseRequested = true;
                 
                 // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
@@ -408,6 +513,7 @@ export class ToolCoordinator {
                 console.log(`🎯 [${this.state.callSid}] Created response to acknowledge interruption`);
               } catch (err) {
                 console.error(`❌ [${this.state.callSid}] Error creating response for interruption:`, err);
+                this.state.releaseResponseLock();
               }
             }
           }
@@ -416,6 +522,30 @@ export class ToolCoordinator {
         case 'response.output_item.done':
           if (event.item?.type === 'function_call') {
             await this.toolCallHandler.handleToolCall(event);
+          }
+          break;
+          
+        case 'input_audio_buffer.committed':
+          // CRITICAL: Track committed audio segments to prevent automatic responses from background noise
+          // OpenAI may auto-create responses when buffer is committed, but we need to verify transcription quality first
+          const itemId = event.item_id;
+          const committedAt = Date.now();
+          
+          if (itemId) {
+            // Track this segment - transcription will arrive later via transcription.completed event
+            this.state.pendingAudioSegments.set(itemId, {
+              timestamp: committedAt,
+              committedAt,
+              transcriptionReceived: false,
+              transcriptionQuality: null,
+              isBackgroundNoise: null
+            });
+            
+            console.log(`📦 [${this.state.callSid}] Audio buffer committed (item: ${itemId}) - waiting for transcription to verify quality`);
+            
+            // CRITICAL: DO NOT create response here - wait for transcription.completed event
+            // This prevents responses from being created for background noise
+            // Response will only be created if transcription passes quality checks
           }
           break;
           
@@ -428,7 +558,9 @@ export class ToolCoordinator {
               'response.content_part.done',
               'response.output_item.added',
               'response.content_part.added',
-              'rate_limits.updated'
+              'rate_limits.updated',
+              'response.audio_transcript.delta',
+              'response.audio_transcript.done'
             ];
             
             if (!verboseEvents.includes(event.type)) {
@@ -467,11 +599,10 @@ export class ToolCoordinator {
     
     if (!this.state.hasInitialGreetingBeenSent && !this.state.isResponding && this.state.activeResponseId === null) {
       try {
-        // CRITICAL FIX: Wait longer for session to be fully ready for audio generation
-        // OpenAI Realtime API may need more time after session.update to enable audio output
-        // Increased delay to ensure audio pipeline is fully initialized
-        // This helps prevent 0 audio token responses
-        await new Promise(resolve => setTimeout(resolve, 800));
+        // OPTIMIZATION: Reduced delay from 800ms to 200ms
+        // OpenAI Realtime API typically needs minimal time after session.update
+        // The 200ms delay ensures the session is ready while minimizing latency
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         // Double-check WebSocket is still open after delay
         if (this.state.isClosed || !this.openaiWs || this.openaiWs.readyState !== 1) {

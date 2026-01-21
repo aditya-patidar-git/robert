@@ -38,44 +38,42 @@ export class MemoryManager {
           // CRITICAL: Do NOT assume user intent from previous calls - wait for explicit request
           const memoryConsentInstruction = `\n\nIMPORTANT: You have previous interaction history with this caller. DO NOT assume they want to continue or book anything from previous calls. You should ONLY ask for their consent to reference previous interactions, saying something like: "I see we've spoken before. Would you like me to reference our previous conversation, or is this a new inquiry?" ONLY reference previous interactions if they explicitly consent AND explicitly state their current intent. Do NOT call booking tools or assume booking intent unless the user explicitly requests it in THIS call.`;
           
-          // Wait for OpenAI WebSocket to be ready before sending session update
-          // This prevents errors if called too early
-          if (this.state.openaiWs && this.state.openaiWs.readyState === 1) {
-            // Get current instructions and append memory consent instruction
-            const currentLanguage = conversations[this.state.callSid]?.language || 'en';
-            const currentConfig = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
-            const updatedInstructions = currentConfig.instructions + memoryConsentInstruction;
-            
-            this.state.openaiWs.send(JSON.stringify({
-              type: 'session.update',
-              session: {
-                modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
-                instructions: updatedInstructions
-              }
-            }));
-            
+          // Get current instructions and append memory consent instruction
+          const currentLanguage = conversations[this.state.callSid]?.language || 'en';
+          const currentConfig = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
+          const updatedInstructions = currentConfig.instructions + memoryConsentInstruction;
+          
+          // Use robust send method with connection manager support (queues if not ready)
+          const sent = this.state.sendToOpenAI({
+            type: 'session.update',
+            session: {
+              modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
+              instructions: updatedInstructions
+            }
+          }, { priority: 'high' });
+          
+          if (sent) {
             console.log(`📚 [${this.state.callSid}] Memory consent prompt instruction injected for caller ${this.state.phoneNumber}`);
           } else {
             // If WebSocket not ready yet, wait a bit and retry (non-blocking)
             setTimeout(() => {
-              if (this.state.openaiWs && this.state.openaiWs.readyState === 1) {
-                const currentLanguage = conversations[this.state.callSid]?.language || 'en';
-                const currentConfig = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
+              const currentLanguage = conversations[this.state.callSid]?.language || 'en';
+              const currentConfig = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
                 const updatedInstructions = currentConfig.instructions + memoryConsentInstruction;
                 
                 try {
-                  this.state.openaiWs.send(JSON.stringify({
+                  // Use robust send method
+                  this.state.sendToOpenAI({
                     type: 'session.update',
                     session: {
                       modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
                       instructions: updatedInstructions
                     }
-                  }));
+                  }, { priority: 'high' });
                   console.log(`📚 [${this.state.callSid}] Memory consent prompt instruction injected (delayed) for caller ${this.state.phoneNumber}`);
                 } catch (err) {
                   console.warn(`⚠️ [${this.state.callSid}] Could not inject memory consent instruction:`, err.message);
                 }
-              }
             }, 500);
           }
         }
@@ -95,19 +93,20 @@ export class MemoryManager {
       
       const memorySummary = await crossCallMemoryService.getMemorySummary(this.state.phoneNumber);
       
-      if (memorySummary && this.state.openaiWs && this.state.openaiWs.readyState === 1) {
+      if (memorySummary) {
         const memoryContext = `\n\nPREVIOUS INTERACTION CONTEXT (user has consented to use this): ${memorySummary}\nYou may now reference this context naturally in the conversation.`;
         
         const currentConfig = configManager.getConfigForNumber(this.state.phoneNumber);
         const updatedInstructions = currentConfig.instructions + memoryContext;
         
-        this.state.openaiWs.send(JSON.stringify({
+        // Use robust send method with connection manager support
+        this.state.sendToOpenAI({
           type: 'session.update',
           session: {
             modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
             instructions: updatedInstructions
           }
-        }));
+        }, { priority: 'high' });
         
         console.log(`📚 [${this.state.callSid}] Full memory context injected after consent for caller ${this.state.phoneNumber}`);
       }

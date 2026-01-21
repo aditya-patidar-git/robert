@@ -13,6 +13,7 @@ import progressIndicatorService from '../services/progressIndicatorService.js';
 import turnTakingStateMachine, { STATES } from '../services/turnTakingStateMachine.js';
 import { conversations } from '../shared/state.js';
 import uncertaintyGateService from './uncertaintyGateService.js';
+import unansweredQuestionService from './unansweredQuestionService.js';
 
 /**
  * Unified Tool Execution Service
@@ -118,6 +119,66 @@ class ToolExecutionService {
           sessionDetails: executionResult.result.selectedSlot || executionResult.result.sessionDetails
         };
       }
+    }
+  }
+
+  /**
+   * Determine UK domains to search based on query context
+   * @param {string} query - Search query
+   * @returns {string[]} Array of UK domain names
+   */
+  determineUKDomains(query) {
+    if (!query) return [];
+    
+    const queryLower = query.toLowerCase();
+    const ukDomains = [];
+    
+    // Include takeabyte.co.uk for policy/service queries
+    if (queryLower.includes('policy') || 
+        queryLower.includes('gdpr') || 
+        queryLower.includes('privacy') ||
+        queryLower.includes('service') ||
+        queryLower.includes('terms') ||
+        queryLower.includes('booking') ||
+        queryLower.includes('training')) {
+      ukDomains.push('takeabyte.co.uk');
+    }
+    
+    return ukDomains;
+  }
+
+  /**
+   * Execute fallback search tool with low latency optimizations
+   * @param {string} fallbackToolName - Tool name to execute ('web_search' or 'file_search')
+   * @param {object} parameters - Tool parameters
+   * @param {object} callContext - Call context
+   * @param {Function} progressCallback - Progress callback
+   * @param {string} callSid - Call SID for logging
+   * @returns {Promise<object>} Fallback search result
+   */
+  async executeFallbackSearch(fallbackToolName, parameters, callContext, progressCallback, callSid) {
+    const fallbackStartTime = Date.now();
+    
+    try {
+      const fallbackResult = await toolExecutor.execute(
+        fallbackToolName,
+        parameters,
+        callContext,
+        progressCallback
+      );
+
+      const fallbackTime = fallbackResult.executionTime || (Date.now() - fallbackStartTime);
+      
+      // Save usage asynchronously (don't wait for latency)
+      this.saveToolUsageToCallRecord(callSid, fallbackToolName, fallbackTime, fallbackResult.success !== false)
+        .catch(err => {
+          console.warn(`⚠️ [${callSid}] Failed to save ${fallbackToolName} usage:`, err.message);
+        });
+
+      return fallbackResult;
+    } catch (error) {
+      console.error(`❌ [${callSid}] Fallback ${fallbackToolName} execution failed:`, error.message);
+      throw error;
     }
   }
 
@@ -237,12 +298,17 @@ class ToolExecutionService {
     if (stateManager) {
       const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
       if (conversationBehaviorConfig?.progressIndicators?.enabled) {
-        progressIndicatorService.startToolExecution(callSid || callId, toolName);
+        // Pass stateManager for thread-safe response state checks
+        progressIndicatorService.startToolExecution(callSid || callId, toolName, stateManager);
       }
     }
 
     console.log(`🔧 [${callSid || callId}] Starting tool execution: ${toolName}`);
     console.log(`🔧 [${callSid || callId}] ========================================\n`);
+
+    // Track execution start time for metrics (declare outside try/catch for scope)
+    let executionStartTime = Date.now();
+    let executionTime = 0;
 
     // Prepare call context
     const conversation = conversations[callSid || callId] || {};
@@ -255,22 +321,29 @@ class ToolExecutionService {
 
     // Execute tool
     try {
+      executionStartTime = Date.now();
       const executionResult = await toolExecutor.execute(
         toolName,
         parameters,
         callContext,
         progressCallback
       );
+      
+      // Calculate execution time (use result's time if available, otherwise calculate)
+      executionTime = executionResult.executionTime || (Date.now() - executionStartTime);
 
-      // Check uncertainty gate for file_search results
-      if (toolName === 'file_search' && executionResult && executionResult.validationFailed === true) {
+      // Extract actual tool result (toolExecutor wraps it in { success, result, executionTime })
+      const toolResult = executionResult.result || executionResult;
+
+      // ========== FILE_SEARCH FAILURE → WEB_SEARCH FALLBACK ==========
+      if (toolName === 'file_search' && toolResult && toolResult.validationFailed === true) {
         console.log(`⚠️ [${callSid || callId}] File search failed uncertainty gate validation`);
         
         // Generate uncertainty response
         const uncertaintyResponse = uncertaintyGateService.generateUncertaintyResponse({
-          confidence: executionResult.confidence || 0,
-          recommendations: executionResult.validationDetails?.recommendations || [],
-          fallbackAction: executionResult.validationDetails?.fallbackAction || 'transfer'
+          confidence: toolResult.confidence || 0,
+          recommendations: toolResult.validationDetails?.recommendations || [],
+          fallbackAction: toolResult.validationDetails?.fallbackAction || 'transfer'
         });
 
         // Store uncertainty event in conversation state
@@ -281,34 +354,333 @@ class ToolExecutionService {
           conversations[callSid || callId].uncertaintyEvents = [];
         }
         conversations[callSid || callId].uncertaintyEvents.push({
-          query: executionResult.query,
-          confidence: executionResult.confidence,
-          fallbackAction: executionResult.validationDetails?.fallbackAction,
+          query: toolResult.query,
+          confidence: toolResult.confidence,
+          fallbackAction: toolResult.validationDetails?.fallbackAction,
           timestamp: new Date()
         });
 
-        // Return result with uncertainty response
-        return {
-          success: false,
-          validationFailed: true,
-          error: 'UNCERTAINTY_GATE_FAILED',
-          message: uncertaintyResponse.message,
-          confidence: executionResult.confidence,
-          fallbackAction: uncertaintyResponse.action,
-          validationDetails: executionResult.validationDetails,
-          query: executionResult.query,
-          results: [],
-          totalResults: 0
-        };
+        // Automatic fallback to web_search when file_search fails
+        const query = toolResult.query || parameters.query || '';
+        console.log(`🔄 [${callSid || callId}] Automatically triggering web_search fallback for: "${query}"`);
+        
+        // CRITICAL: Stop periodic updates atomically before fallback to prevent multiple responses
+        // This must happen synchronously before fallback execution starts
+        if (stateManager) {
+          progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+          console.log(`🛑 [${callSid || callId}] Stopped periodic updates before fallback execution`);
+          // CRITICAL: Clear original tool from activeToolExecutions before executing fallback
+          // This prevents blocking subsequent tool calls with the same tool name
+          if (stateManager.activeToolExecutions && stateManager.activeToolExecutions.has(toolName)) {
+            stateManager.activeToolExecutions.delete(toolName);
+            console.log(`🧹 [${callSid || callId}] Cleared ${toolName} from activeToolExecutions before fallback execution`);
+          }
+        }
+        
+        // Save unanswered question asynchronously (don't wait - low latency)
+        // This captures the initial failure before fallback attempt
+        unansweredQuestionService.saveUnansweredQuestion({
+          callSid: callSid || callId,
+          callId: callId,
+          callerId: phoneNumber || 'unknown',
+          question: query,
+          context: `File search failed uncertainty gate validation (confidence: ${toolResult.confidence})`,
+          confidence: toolResult.confidence,
+          failureReason: 'uncertainty_gate_failed',
+          searchResults: {
+            fileSearchResults: toolResult.results?.length || 0,
+            webSearchResults: 0,
+            fileSearchConfidence: toolResult.confidence,
+            webSearchConfidence: 0
+          }
+        }).catch(err => {
+          console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+        });
+        
+        try {
+          const ukDomains = this.determineUKDomains(query);
+          
+          // Execute web_search fallback
+          const webSearchResult = await this.executeFallbackSearch(
+            'web_search',
+            {
+              query: query,
+              domains: ukDomains.length > 0 ? ukDomains : undefined,
+              maxResults: 5
+            },
+            callContext,
+            progressCallback,
+            callSid || callId
+          );
+
+          // Extract web search result (may be wrapped by toolExecutor)
+          const webSearchToolResult = webSearchResult.result || webSearchResult;
+          
+          // Check if web_search succeeded
+          if (webSearchToolResult && webSearchToolResult.success !== false && webSearchToolResult.results && webSearchToolResult.results.length > 0) {
+            console.log(`✅ [${callSid || callId}] Web search fallback successful, found ${webSearchToolResult.results.length} results`);
+            
+            return {
+              success: true,
+              validationFailed: false,
+              query: query,
+              results: webSearchToolResult.results,
+              totalResults: webSearchToolResult.totalResults || webSearchToolResult.results.length,
+              source: 'web_search',
+              fallbackUsed: true,
+              fileSearchConfidence: toolResult.confidence,
+              message: `Found ${webSearchToolResult.results.length} result(s) via web search. ${uncertaintyResponse.message || ''}`
+            };
+          } else {
+            // Web search also failed or returned no results
+            console.log(`⚠️ [${callSid || callId}] Web search fallback also returned no results`);
+            
+            // Save unanswered question asynchronously (don't wait - low latency)
+            unansweredQuestionService.saveUnansweredQuestion({
+              callSid: callSid || callId,
+              callId: callId,
+              callerId: phoneNumber || 'unknown',
+              question: query,
+              context: `File search failed (confidence: ${toolResult.confidence}), web search fallback also returned no results`,
+              confidence: toolResult.confidence,
+              failureReason: 'both_searches_failed',
+              searchResults: {
+                fileSearchResults: 0,
+                webSearchResults: webSearchToolResult?.results?.length || 0,
+                fileSearchConfidence: toolResult.confidence,
+                webSearchConfidence: 0
+              }
+            }).catch(err => {
+              console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+            });
+            
+            return {
+              success: false,
+              validationFailed: true,
+              error: 'BOTH_SEARCHES_FAILED',
+              message: uncertaintyResponse.message,
+              confidence: toolResult.confidence,
+              fallbackAction: uncertaintyResponse.action,
+              validationDetails: toolResult.validationDetails,
+              query: query,
+              results: [],
+              totalResults: 0,
+              fallbackUsed: true
+            };
+          }
+        } catch (webSearchError) {
+          console.error(`❌ [${callSid || callId}] Web search fallback failed:`, webSearchError.message);
+          
+          // Save unanswered question asynchronously (don't wait - low latency)
+          unansweredQuestionService.saveUnansweredQuestion({
+            callSid: callSid || callId,
+            callId: callId,
+            callerId: phoneNumber || 'unknown',
+            question: query,
+            context: `File search failed (confidence: ${toolResult.confidence}), web search fallback threw error: ${webSearchError.message}`,
+            confidence: toolResult.confidence,
+            failureReason: 'both_searches_failed',
+            searchResults: {
+              fileSearchResults: 0,
+              webSearchResults: 0,
+              fileSearchConfidence: toolResult.confidence,
+              webSearchConfidence: 0
+            }
+          }).catch(err => {
+            console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+          });
+          
+          // Return original file_search failure if web_search also fails
+          return {
+            success: false,
+            validationFailed: true,
+            error: 'UNCERTAINTY_GATE_FAILED',
+            message: uncertaintyResponse.message,
+            confidence: toolResult.confidence,
+            fallbackAction: uncertaintyResponse.action,
+            validationDetails: toolResult.validationDetails,
+            query: query,
+            results: [],
+            totalResults: 0,
+            fallbackError: webSearchError.message
+          };
+        }
+      }
+
+      // ========== WEB_SEARCH FAILURE → FILE_SEARCH FALLBACK ==========
+      if (toolName === 'web_search' && toolResult) {
+        // Extract web search result (may be wrapped by toolExecutor)
+        const webSearchResult = toolResult;
+        
+        // Check if web_search returned empty results or failed
+        const hasNoResults = !webSearchResult.results || 
+                            webSearchResult.results.length === 0 || 
+                            (webSearchResult.totalResults !== undefined && webSearchResult.totalResults === 0);
+        
+        const hasError = executionResult.success === false || webSearchResult.error;
+        
+        if (hasNoResults || hasError) {
+          console.log(`⚠️ [${callSid || callId}] Web search returned ${hasNoResults ? 'no results' : 'an error'}, triggering file_search fallback`);
+          
+          // CRITICAL: Stop periodic updates atomically before fallback to prevent multiple responses
+          // This must happen synchronously before fallback execution starts
+          if (stateManager) {
+            progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+            console.log(`🛑 [${callSid || callId}] Stopped periodic updates before fallback execution`);
+            // CRITICAL: Clear original tool from activeToolExecutions before executing fallback
+            // This prevents blocking subsequent tool calls with the same tool name
+            if (stateManager.activeToolExecutions && stateManager.activeToolExecutions.has(toolName)) {
+              stateManager.activeToolExecutions.delete(toolName);
+              console.log(`🧹 [${callSid || callId}] Cleared ${toolName} from activeToolExecutions before fallback execution`);
+            }
+          }
+          
+          try {
+            const query = webSearchResult.query || parameters.query || '';
+            
+            // Execute file_search fallback
+            const fileSearchFallbackResult = await this.executeFallbackSearch(
+              'file_search',
+              {
+                query: query
+              },
+              callContext,
+              progressCallback,
+              callSid || callId
+            );
+
+            // Extract file search result (may be wrapped by toolExecutor)
+            const fileSearchToolResult = fileSearchFallbackResult.result || fileSearchFallbackResult;
+
+            // Check if file_search succeeded and passed uncertainty gate
+            if (fileSearchToolResult && 
+                fileSearchFallbackResult.success !== false && 
+                !fileSearchToolResult.validationFailed && 
+                fileSearchToolResult.results && 
+                fileSearchToolResult.results.length > 0) {
+              console.log(`✅ [${callSid || callId}] File search fallback successful, found ${fileSearchToolResult.results.length} results`);
+              
+              return {
+                success: true,
+                validationFailed: false,
+                query: query,
+                results: fileSearchToolResult.results,
+                totalResults: fileSearchToolResult.totalResults || fileSearchToolResult.results.length,
+                source: 'file_search',
+                fallbackUsed: true,
+                webSearchFailed: true,
+                message: `Found ${fileSearchToolResult.results.length} result(s) via file search fallback.`
+              };
+            } else {
+              // File search also failed or returned no results
+              console.log(`⚠️ [${callSid || callId}] File search fallback also returned no results or failed validation`);
+              
+              // Save unanswered question asynchronously (don't wait - low latency)
+              unansweredQuestionService.saveUnansweredQuestion({
+                callSid: callSid || callId,
+                callId: callId,
+                callerId: phoneNumber || 'unknown',
+                question: query,
+                context: `Web search returned no results, file search fallback also failed (validation: ${fileSearchToolResult?.validationFailed || false})`,
+                confidence: fileSearchToolResult?.confidence || 0,
+                failureReason: 'both_searches_failed',
+                searchResults: {
+                  fileSearchResults: fileSearchToolResult?.results?.length || 0,
+                  webSearchResults: 0,
+                  fileSearchConfidence: fileSearchToolResult?.confidence || 0,
+                  webSearchConfidence: 0
+                }
+              }).catch(err => {
+                console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+              });
+              
+              return {
+                success: false,
+                validationFailed: fileSearchToolResult?.validationFailed || false,
+                error: 'BOTH_SEARCHES_FAILED',
+                message: `Both web search and file search failed to find results for: "${query}"`,
+                query: query,
+                results: [],
+                totalResults: 0,
+                fallbackUsed: true,
+                webSearchError: hasError ? webSearchResult.error : 'No results',
+                fileSearchError: fileSearchToolResult?.error || (fileSearchToolResult?.validationFailed ? 'Uncertainty gate failed' : 'No results')
+              };
+            }
+          } catch (fileSearchError) {
+            console.error(`❌ [${callSid || callId}] File search fallback failed:`, fileSearchError.message);
+            
+            // Save unanswered question asynchronously (don't wait - low latency)
+            unansweredQuestionService.saveUnansweredQuestion({
+              callSid: callSid || callId,
+              callId: callId,
+              callerId: phoneNumber || 'unknown',
+              question: webSearchResult.query || parameters.query || '',
+              context: `Web search returned no results, file search fallback threw error: ${fileSearchError.message}`,
+              confidence: 0,
+              failureReason: 'both_searches_failed',
+              searchResults: {
+                fileSearchResults: 0,
+                webSearchResults: 0,
+                fileSearchConfidence: 0,
+                webSearchConfidence: 0
+              }
+            }).catch(err => {
+              console.warn(`⚠️ [${callSid || callId}] Failed to save unanswered question:`, err.message);
+            });
+            
+            // Return original web_search failure if file_search also fails
+            return {
+              success: false,
+              error: hasError ? webSearchResult.error : 'NO_RESULTS',
+              message: `Web search failed and file search fallback also failed: ${fileSearchError.message}`,
+              query: webSearchResult.query || parameters.query || '',
+              results: [],
+              totalResults: 0,
+              fallbackError: fileSearchError.message
+            };
+          }
+        }
       }
 
       // Store conversation state
       this.storeConversationState(callSid || callId, toolName, executionResult);
 
+      // Save tool usage to CallRecord (async, don't wait)
+      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, true)
+        .catch(err => {
+          console.warn(`⚠️ [${callSid || callId}] Failed to save tool usage to CallRecord:`, err.message);
+        });
+
       // Clean up active execution tracking (only for Media Streams)
       if (stateManager) {
+        // CRITICAL RACE CONDITION FIX: Set completion flag BEFORE stopping updates
+        // This prevents periodic updates from firing during tool completion
+        stateManager.toolExecutionCompleting = true;
+        console.log(`🔒 [${callSid || callId}] Set toolExecutionCompleting flag to prevent periodic update race condition`);
+        
+        // Safety timeout: Auto-clear flag after 30 seconds if not cleared normally
+        // This prevents the flag from getting stuck if submitResult/triggerResponse fail silently
+        if (stateManager.toolExecutionCompletingTimeout) {
+          clearTimeout(stateManager.toolExecutionCompletingTimeout);
+        }
+        stateManager.toolExecutionCompletingTimeout = setTimeout(() => {
+          if (stateManager.toolExecutionCompleting) {
+            console.warn(`⚠️ [${callSid || callId}] Safety timeout: Auto-clearing stuck toolExecutionCompleting flag`);
+            stateManager.clearToolExecutionCompleting();
+          }
+        }, 30000); // 30 seconds safety net
+        
+        // Stop periodic updates immediately (before tool result submission)
+        progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+        
+        // Clear active tool execution
         stateManager.activeToolExecutions.delete(toolName);
+        
+        // End tool execution tracking
         progressIndicatorService.endToolExecution(callSid || callId);
+        
+        // Transition state
         turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
       }
 
@@ -319,10 +691,44 @@ class ToolExecutionService {
     } catch (error) {
       console.error(`❌ [${callSid || callId}] Tool ${toolName} execution error:`, error);
 
+      // Calculate execution time for failed execution
+      const executionTime = Date.now() - executionStartTime;
+
+      // Save failed tool usage to CallRecord (async, don't wait)
+      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, false)
+        .catch(err => {
+          console.warn(`⚠️ [${callSid || callId}] Failed to save failed tool usage to CallRecord:`, err.message);
+        });
+
       // Clean up active execution tracking (only for Media Streams)
       if (stateManager) {
+        // CRITICAL RACE CONDITION FIX: Set completion flag BEFORE stopping updates
+        // This prevents periodic updates from firing during tool completion (even on error)
+        stateManager.toolExecutionCompleting = true;
+        console.log(`🔒 [${callSid || callId}] Set toolExecutionCompleting flag to prevent periodic update race condition (error path)`);
+        
+        // Safety timeout: Auto-clear flag after 30 seconds if not cleared normally
+        // This prevents the flag from getting stuck if submitResult/triggerResponse fail silently
+        if (stateManager.toolExecutionCompletingTimeout) {
+          clearTimeout(stateManager.toolExecutionCompletingTimeout);
+        }
+        stateManager.toolExecutionCompletingTimeout = setTimeout(() => {
+          if (stateManager.toolExecutionCompleting) {
+            console.warn(`⚠️ [${callSid || callId}] Safety timeout: Auto-clearing stuck toolExecutionCompleting flag (error path)`);
+            stateManager.clearToolExecutionCompleting();
+          }
+        }, 30000); // 30 seconds safety net
+        
+        // Stop periodic updates immediately
+        progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+        
+        // Clear active tool execution
         stateManager.activeToolExecutions.delete(toolName);
+        
+        // End tool execution tracking
         progressIndicatorService.endToolExecution(callSid || callId);
+        
+        // Transition state
         turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
       }
 
@@ -331,6 +737,41 @@ class ToolExecutionService {
         error: error.message || 'Tool execution failed',
         details: error.toString()
       };
+    }
+  }
+
+  /**
+   * Save tool usage to CallRecord database
+   * @param {string} callSid - Call SID
+   * @param {string} toolName - Tool name
+   * @param {number} executionTime - Execution time in milliseconds
+   * @param {boolean} success - Whether tool execution succeeded
+   * @returns {Promise<void>}
+   */
+  async saveToolUsageToCallRecord(callSid, toolName, executionTime, success) {
+    try {
+      const CallRecord = (await import('../database/models/CallRecord.js')).default;
+      
+      await CallRecord.findOneAndUpdate(
+        { callSid: callSid },
+        {
+          $push: {
+            toolsUsed: {
+              toolName: toolName,
+              executionTime: executionTime,
+              success: success,
+              timestamp: new Date()
+            }
+          }
+        },
+        { upsert: false } // Don't create if doesn't exist (should already exist)
+      );
+      
+      console.log(`📝 [${callSid}] Saved tool usage to CallRecord: ${toolName} (${executionTime}ms, success: ${success})`);
+    } catch (error) {
+      // Log but don't throw - tool execution shouldn't fail if DB update fails
+      console.error(`❌ [${callSid}] Error saving tool usage to CallRecord:`, error.message);
+      throw error; // Re-throw so caller can handle if needed
     }
   }
 

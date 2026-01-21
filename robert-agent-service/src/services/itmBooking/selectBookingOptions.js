@@ -17,57 +17,9 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
       allKeys: Object.keys(bookingArgs)
     });
     
-    // Step 1: Validate provided preferences (if any)
-    const invalidPreferences = [];
-    
-    if (bookingArgs.bikeType) {
-      console.log(`🔍 [STEP 8] bikeType provided: "${bookingArgs.bikeType}", validating...`);
-      const normalizedBikeType = bookingArgs.bikeType.trim().toLowerCase();
-      const isValid = validBikeTypes.some(valid => valid.toLowerCase() === normalizedBikeType);
-      if (!isValid) {
-        console.log(`❌ [STEP 8] Invalid bikeType: "${bookingArgs.bikeType}"`);
-        invalidPreferences.push({
-          preference: 'bikeType',
-          providedValue: bookingArgs.bikeType,
-          validOptions: validBikeTypes
-        });
-      } else {
-        console.log(`✅ [STEP 8] Valid bikeType: "${bookingArgs.bikeType}"`);
-      }
-    } else {
-      console.log(`⚠️ [STEP 8] bikeType NOT provided in bookingArgs`);
-    }
-    
-    if (invalidPreferences.length > 0) {
-      const invalidPref = invalidPreferences[0];
-      console.log(`🔄 [STEP 8] Returning requiresPreferences due to invalid preferences:`, invalidPreferences);
-      return {
-        requiresPreferences: true,
-        invalidPreferences: invalidPreferences.map(p => p.preference),
-        message: `I'm sorry, but "${invalidPref.providedValue}" is not a valid bike type for the ITM course. Please choose one of: "${validBikeTypes.join('", "')}".`,
-        validOptions: validBikeTypes
-      };
-    }
-    
-    // Step 2: Check for missing required preferences
-    console.log(`🔍 [STEP 8] Checking for missing required preferences...`);
-    const missingPreferences = [];
-    if (!bookingArgs.bikeType) {
-      console.log(`⚠️ [STEP 8] bikeType is missing - adding to missingPreferences`);
-      missingPreferences.push('bikeType');
-    }
-    
-    if (missingPreferences.length > 0) {
-      console.log(`🔄 [STEP 8] Returning requiresPreferences due to missing preferences:`, missingPreferences);
-      return {
-        requiresPreferences: true,
-        missingPreferences: missingPreferences,
-        message: `I need to know your bike type preference for the ITM course. Would you like to do the course on a "125cc automatic (scooter)", a "50cc automatic", or a "125cc manual (geared)"?`,
-        validOptions: validBikeTypes
-      };
-    }
-    
-    console.log(`✅ [STEP 8] All preferences provided, proceeding to page interaction...`);
+    // CRITICAL FIX: Navigate to booking options page FIRST
+    // Then check preferences AFTER navigation to ensure agent is on correct page when asking
+    console.log(`✅ [STEP 8] Navigating to booking options page first...`);
     
     // WAIT FOR PRICE PAGE TO LOAD - 5 seconds (increased for iframe/popup loading)
     console.log('⏳ [STEP 8] Waiting for price page to load...');
@@ -473,6 +425,68 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
     // WAIT FOR OPTIONS TO BE VISIBLE - 2 seconds
     console.log('⏳ [STEP 8] Waiting for booking options to be visible...');
     await page.waitForTimeout(2000);
+    
+    // CRITICAL FIX: NOW check preferences AFTER navigation to booking options page
+    // This ensures the agent is on the correct page when asking for preferences
+    console.log(`🔍 [STEP 8] Checking preferences now that we're on the booking options page...`);
+    
+    // Step 1: Validate provided preferences (if any)
+    const invalidPreferences = [];
+    
+    if (bookingArgs.bikeType) {
+      console.log(`🔍 [STEP 8] bikeType provided: "${bookingArgs.bikeType}", validating...`);
+      const normalizedBikeType = bookingArgs.bikeType.trim().toLowerCase();
+      const isValid = validBikeTypes.some(valid => valid.toLowerCase() === normalizedBikeType);
+      if (!isValid) {
+        console.log(`❌ [STEP 8] Invalid bikeType: "${bookingArgs.bikeType}"`);
+        invalidPreferences.push({
+          preference: 'bikeType',
+          providedValue: bookingArgs.bikeType,
+          validOptions: validBikeTypes
+        });
+      } else {
+        console.log(`✅ [STEP 8] Valid bikeType: "${bookingArgs.bikeType}"`);
+      }
+    } else {
+      console.log(`⚠️ [STEP 8] bikeType NOT provided in bookingArgs`);
+    }
+    
+    if (invalidPreferences.length > 0) {
+      const invalidPref = invalidPreferences[0];
+      console.log(`🔄 [STEP 8] Returning requiresPreferences due to invalid preferences:`, invalidPreferences);
+      return {
+        success: false,
+        requiresPreferences: true,
+        invalidPreferences: invalidPreferences.map(p => p.preference),
+        message: `I'm sorry, but "${invalidPref.providedValue}" is not a valid bike type for the ITM course. Please choose one of: "${validBikeTypes.join('", "')}".`,
+        validOptions: validBikeTypes,
+        onBookingOptionsPage: true,
+        instruction: 'You are now on the booking options page. Ask the client about their bike type preference: "Would you like 125cc automatic (scooter), 50cc automatic, or 125cc manual (geared)?"'
+      };
+    }
+    
+    // Step 2: Check for missing required preferences
+    console.log(`🔍 [STEP 8] Checking for missing required preferences...`);
+    const missingPreferences = [];
+    if (!bookingArgs.bikeType) {
+      console.log(`⚠️ [STEP 8] bikeType is missing - adding to missingPreferences`);
+      missingPreferences.push('bikeType');
+    }
+    
+    if (missingPreferences.length > 0) {
+      console.log(`🔄 [STEP 8] Returning requiresPreferences due to missing preferences:`, missingPreferences);
+      return {
+        success: false,
+        requiresPreferences: true,
+        missingPreferences: missingPreferences,
+        message: `I need to know your bike type preference for the ITM course. Would you like to do the course on a "125cc automatic (scooter)", a "50cc automatic", or a "125cc manual (geared)"?`,
+        validOptions: validBikeTypes,
+        onBookingOptionsPage: true,
+        instruction: 'You are now on the booking options page. Ask the client about their bike type preference: "Would you like 125cc automatic (scooter), 50cc automatic, or 125cc manual (geared)?"'
+      };
+    }
+    
+    console.log(`✅ [STEP 8] All preferences provided, proceeding with bike type selection...`);
     
     // NOTE: Scroll to booking options is already handled at line 467 above
     // Removed redundant scroll that was causing timeout errors

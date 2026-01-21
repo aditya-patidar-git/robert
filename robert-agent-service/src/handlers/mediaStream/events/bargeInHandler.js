@@ -1,19 +1,25 @@
 import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
 import adaptiveTimingService from '../../../services/adaptiveTimingService.js';
+import progressIndicatorService from '../../../services/progressIndicatorService.js';
 
 /**
  * Barge-in Handler
  * Handles user interruptions during agent responses
+ * Production-ready: Supports concurrent calls, immediate Twilio-level audio stopping
  */
 export class BargeInHandler {
-  constructor(stateManager, openaiWs) {
+  constructor(stateManager, openaiWs, responseHandler = null) {
     this.state = stateManager;
     this.openaiWs = openaiWs;
+    this.responseHandler = responseHandler; // Reference to ResponseHandler for immediate audio stopping
   }
 
   /**
-   * Handle speech_started event (barge-in detection)
+   * Handle speech_started event (user speaking detection)
+   * INDUSTRY STANDARD: Trigger IMMEDIATE barge-in when audio is playing (<200ms response time)
+   * Based on research: OpenAI emits speech_started immediately, transcription arrives 300-800ms later
+   * Best practice: Stop audio immediately on speech detection, verify "stop" command via transcription
    */
   async handleSpeechStarted(event) {
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
@@ -57,24 +63,114 @@ export class BargeInHandler {
       }
     }
     
-    // CRITICAL: Barge-in ONLY occurs when agent is actively speaking (isResponding = true)
-    if (this.state.activeResponseId && this.state.isResponding) {
-      // Check if user speech started before this response was created
+    // INDUSTRY STANDARD: Trigger IMMEDIATE barge-in when user speaks during agent response
+    // This achieves <200ms interruptible latency (industry best practice)
+    // We'll verify "stop" command via transcription.delta/completed events
+    
+    // CRITICAL FIX: Prioritize checking if audio is ACTUALLY playing right now
+    // Only use recent timestamps as fallback when we have an active response
+    const hasActiveResponse = this.state.activeResponseId !== null;
+    const hasAudioPacer = this.state.outboundAudioPacer !== null;
+    const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
+    
+    // PRIMARY: Check if audio is actively playing right now
+    const isAudioActivelyPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio;
+    
+    // FALLBACK: Check recent audio timestamps (audio might still be buffered even after response.done clears activeResponseId)
+    // Use shorter windows (2-3 seconds) to avoid false positives after agent finishes speaking
+    // CRITICAL: Remove hasActiveResponse requirement - response.done clears activeResponseId but audio may still be playing
+    const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 3000; // 3 seconds window
+    const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 2000; // 2 seconds window
+    
+    const isAudioPlaying = isAudioActivelyPlaying || hasRecentAudio || hasRecentResponseCompletion;
+    
+    if (isAudioPlaying) {
+      // Check if user speech started BEFORE this response was created (not based on elapsed time)
+      // Only exclude barge-in if user actually spoke before response creation
       const timeSinceResponseCreated = this.state.responseStartTime > 0 ? Date.now() - this.state.responseStartTime : Infinity;
-      const userSpokeBeforeResponse = this.state.userSpeechStartedTime < this.state.responseStartTime || timeSinceResponseCreated > 2000;
+      const userSpokeBeforeResponse = this.state.responseStartTime > 0 && this.state.userSpeechStartedTime < this.state.responseStartTime;
       
       if (userSpokeBeforeResponse) {
         console.log(`👤 [${this.state.callSid}] User speech started before response was created (normal input, not barge-in) - response created ${timeSinceResponseCreated}ms ago`);
         return; // Don't treat as barge-in
       }
+      
+      // INDUSTRY STANDARD: Trigger immediate barge-in when user speaks during agent response
+      // This achieves <200ms response time (vs 300-800ms if waiting for transcription)
+      console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered on speech_started (industry standard: <200ms) - response ${this.state.activeResponseId || 'N/A'}`);
+      console.log(`   - Time since response created: ${timeSinceResponseCreated}ms`);
+      console.log(`   - Audio is playing: isResponding=${this.state.isResponding}, activeResponseId=${this.state.activeResponseId}`);
+      console.log(`   - Audio indicators: hasActiveResponse=${hasActiveResponse}, hasAudioPacer=${hasAudioPacer}, hasBufferedAudio=${hasBufferedAudio}, isAudioActivelyPlaying=${isAudioActivelyPlaying}, hasRecentAudio=${hasRecentAudio}, hasRecentResponseCompletion=${hasRecentResponseCompletion}`);
+      
+      // Trigger immediate barge-in (will verify "stop" command via transcription later)
+      this.triggerImmediateBargeIn('speech_started');
+      
+      // Set flag to verify "stop" command when transcription arrives
+      this.state.pendingBargeInCheck = true;
+      return;
     } else {
       // Normal user input - agent is waiting, not responding
+      console.log(`👤 [${this.state.callSid}] User speech started but no audio playing - normal input (not barge-in)`);
       return; // Exit early if barge-in conditions not met
     }
-    
-    // CRITICAL: User is interrupting an active response
+  }
+
+  /**
+   * Trigger immediate barge-in (industry standard: <200ms response time)
+   * Called when speech_started is detected during agent response
+   * Transcription verification happens separately via transcription.delta/completed events
+   * @param {string} source - Source of barge-in trigger ('speech_started' or 'transcription')
+   */
+  triggerImmediateBargeIn(source = 'speech_started') {
+    const bargeInDetectionTime = Date.now();
     const isMultipleInterruption = this.state.isInterrupted;
-    console.log(`🛑 [${this.state.callSid}] Barge-in detected! User is interrupting agent response ${this.state.activeResponseId} (agent was actively speaking)${isMultipleInterruption ? ' - multiple interruption' : ''}`);
+    
+    console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered from ${source} - stopping audio IMMEDIATELY (<200ms target)`);
+    
+    // Save IDs before clearing
+    const responseIdToCancel = this.state.activeResponseId;
+    
+    // STEP 1: Cancel response at OpenAI level FIRST (stops future audio generation)
+    // This must happen BEFORE clearing Twilio buffer to prevent new audio from being generated
+    try {
+      if (responseIdToCancel) {
+        const sent = this.state.sendToOpenAI({
+          type: 'response.cancel',
+          response_id: responseIdToCancel
+        }, { priority: 'high' });
+        
+        if (sent) {
+          console.log(`🛑 [${this.state.callSid}] STEP 1: Sent response.cancel to OpenAI for ${responseIdToCancel} (stops audio generation)`);
+        } else {
+          console.warn(`⚠️ [${this.state.callSid}] STEP 1: response.cancel queued or connection not ready`);
+        }
+      } else {
+        console.warn(`⚠️ [${this.state.callSid}] STEP 1: No active response ID to cancel`);
+      }
+      
+      // Clear the input audio buffer using robust send method
+      const bufferCleared = this.state.sendToOpenAI({
+        type: 'input_audio_buffer.clear'
+      }, { priority: 'high' });
+      
+      if (bufferCleared) {
+        console.log(`🛑 [${this.state.callSid}] STEP 1: Cleared input audio buffer to prevent processing old audio`);
+      } else {
+        console.warn(`⚠️ [${this.state.callSid}] STEP 1: input_audio_buffer.clear queued or connection not ready`);
+      }
+    } catch (err) {
+      console.warn(`⚠️ [${this.state.callSid}] STEP 1: Error sending response.cancel:`, err.message);
+    }
+    
+    // STEP 2: IMMEDIATELY stop audio at Twilio level using native "clear" message (<50ms response time)
+    // This sends Twilio's "clear" WebSocket message to flush all buffered audio instantly
+    if (this.responseHandler) {
+      this.responseHandler.immediatelyStopAudio();
+    } else {
+      console.warn(`⚠️ [${this.state.callSid}] STEP 2: ResponseHandler not available - falling back to state-based audio blocking`);
+    }
+    
+    const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
     
     // Track interruption for quality metrics
     if (conversationBehaviorConfig?.qualityMetrics?.trackInterruptions) {
@@ -82,60 +178,75 @@ export class BargeInHandler {
     }
     
     // Track interruption for adaptive timing
-    adaptiveTimingService.trackCallerBehavior(this.state.callSid, 'interruption', Date.now());
+    adaptiveTimingService.trackCallerBehavior(this.state.callSid, 'interruption', bargeInDetectionTime);
     
-    // Set interruption flags
+    // STEP 3: Set interruption flags and transition state back to listening
     this.state.isInterrupted = true;
-    this.state.interruptionStartTime = Date.now();
+    this.state.interruptionStartTime = bargeInDetectionTime;
     this.state.pendingTranscriptions = [];
+    this.state.pendingBargeInCheck = false; // Clear the pending check flag
+    
+    // CRITICAL: Stop periodic updates immediately when user interrupts
+    progressIndicatorService.stopPeriodicUpdates(this.state.callSid);
+    console.log(`🛑 [${this.state.callSid}] STEP 3: Stopped periodic updates due to barge-in`);
     
     // Cancel grace period if active
     if (this.state.speechContinuationGraceTimer) {
       clearTimeout(this.state.speechContinuationGraceTimer);
       this.state.speechContinuationGraceTimer = null;
-      console.log(`🛑 [${this.state.callSid}] Cancelled grace period due to interruption`);
+      console.log(`🛑 [${this.state.callSid}] STEP 3: Cancelled grace period due to interruption`);
     }
     this.state.speechStoppedTime = 0;
     this.state.speechResumedDuringGrace = false;
     this.state.gracePeriodExtensionCount = 0;
     this.state.pendingTranscriptionsAfterGrace = [];
     
-    // Save IDs before clearing
-    const responseIdToCancel = this.state.activeResponseId;
-    
-    // Mark this response as cancelled
+    // STEP 4: Mark response as cancelled and clear response tracking
     if (responseIdToCancel) {
       this.state.cancelledResponseIds.add(responseIdToCancel);
-      this.state.cancellationTime.set(responseIdToCancel, Date.now());
-      console.log(`🚫 [${this.state.callSid}] Marked response ${responseIdToCancel} as cancelled - will block all audio chunks from this response`);
+      this.state.cancellationTime.set(responseIdToCancel, bargeInDetectionTime);
+      console.log(`🚫 [${this.state.callSid}] STEP 4: Marked response ${responseIdToCancel} as cancelled - will block all audio chunks from this response`);
     }
     
-    // Clear response tracking immediately
+    // STEP 5: Transition state back to listening mode
     this.state.activeResponseId = null;
     this.state.responseItemId = null;
     this.state.responseStartTime = null;
     this.state.isResponding = false;
-    this.state.waitingForUser = true;
-    this.state.lastCancellationTime = Date.now();
+    this.state.waitingForUser = true; // CRITICAL: Return to listening mode
+    this.state.lastCancellationTime = bargeInDetectionTime;
     
-    try {
-      // Cancel the active response
-      if (responseIdToCancel) {
-        this.openaiWs.send(JSON.stringify({
-          type: 'response.cancel',
-          response_id: responseIdToCancel
-        }));
-        console.log(`🛑 [${this.state.callSid}] Sent response.cancel for ${responseIdToCancel}${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
-      }
-      
-      // Clear the input audio buffer
-      this.openaiWs.send(JSON.stringify({
-        type: 'input_audio_buffer.clear'
-      }));
-      console.log(`🛑 [${this.state.callSid}] Cleared input audio buffer to prevent processing old audio${isMultipleInterruption ? ' (multiple interruption)' : ''}`);
-    } catch (err) {
-      console.warn(`⚠️ [${this.state.callSid}] Error sending response.cancel (non-critical):`, err.message);
+    // STEP 6: Log barge-in completion - system is now listening for user input
+    const totalBargeInTime = Date.now() - bargeInDetectionTime;
+    console.log(`✅ [${this.state.callSid}] IMMEDIATE Barge-in complete in ${totalBargeInTime}ms (target: <200ms) - system now listening for user input`);
+    
+    // Track barge-in response time for metrics
+    if (this.state.interruptionStartTime > 0) {
+      const bargeInResponseTime = Date.now() - this.state.interruptionStartTime;
+      conversationQualityService.trackBargeInResponseTime(this.state.callSid, bargeInResponseTime);
+      console.log(`📊 [${this.state.callSid}] Barge-in response time: ${bargeInResponseTime}ms`);
     }
   }
-}
 
+  /**
+   * Trigger barge-in when "stop" is detected in transcription
+   * This is a fallback/verification method - immediate barge-in already triggered on speech_started
+   * Used to verify "stop" command and ensure audio is fully stopped
+   * @param {string} transcript - The transcription text that contains "stop"
+   */
+  triggerBargeInFromTranscription(transcript) {
+    // If barge-in already triggered on speech_started, just verify and ensure cleanup
+    if (this.state.isInterrupted) {
+      console.log(`✅ [${this.state.callSid}] Barge-in already triggered on speech_started - transcription confirms: "${transcript}"`);
+      // Ensure audio is stopped (may have been missed)
+      if (this.responseHandler) {
+        this.responseHandler.immediatelyStopAudio();
+      }
+      return;
+    }
+    
+    // Fallback: If barge-in wasn't triggered on speech_started (edge case), trigger now
+    console.log(`🛑 [${this.state.callSid}] Barge-in triggered from transcription (fallback): "${transcript}" - stopping audio IMMEDIATELY`);
+    this.triggerImmediateBargeIn('transcription');
+  }
+}

@@ -113,15 +113,42 @@ export class ConsentHandler {
         this.state.consentTimeout = null;
       }
       
+      const consentData = {
+        requested: conversations[this.state.callSid].recordingConsent?.requested || false,
+        given: true,
+        requestedAt: conversations[this.state.callSid].recordingConsent?.requestedAt || null,
+        respondedAt: new Date(),
+        optOutReason: null
+      };
+      
       this.state.recordingConsentState.given = true;
-      this.state.recordingConsentState.respondedAt = new Date();
+      this.state.recordingConsentState.respondedAt = consentData.respondedAt;
       conversations[this.state.callSid].recordingConsent.given = true;
-      conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
+      conversations[this.state.callSid].recordingConsent.respondedAt = consentData.respondedAt;
       // Clear any unclear count when consent is given
       if (conversations[this.state.callSid].recordingConsent.unclearCount) {
         conversations[this.state.callSid].recordingConsent.unclearCount = 0;
       }
       conversations[this.state.callSid].recordingConsent.needsRepeat = false;
+      
+      // CRITICAL: Save consent to CallRecord immediately so it's available when recording webhook arrives
+      try {
+        const CallRecord = (await import('../../../database/models/CallRecord.js')).default;
+        await CallRecord.findOneAndUpdate(
+          { callSid: this.state.callSid },
+          {
+            $set: {
+              recordingConsent: consentData
+            }
+          },
+          { upsert: true }
+        );
+        console.log(`✅ [${this.state.callSid}] Recording consent saved to CallRecord (user gave consent)`);
+      } catch (dbError) {
+        console.error(`⚠️ [${this.state.callSid}] Error saving consent to CallRecord:`, dbError);
+        // Continue even if DB save fails - consent is still in memory
+      }
+      
       console.log(`✅ [${this.state.callSid}] Recording consent GIVEN by user: "${transcript}"`);
       
       // CRITICAL: After consent is given, we MUST ask language preference

@@ -5,8 +5,7 @@
  */
 
 import circuitBreakerManager from '../utils/circuitBreaker.js';
-import retryHandler from '../utils/retryHandler.js';
-import { isRetryableError } from '../utils/retryHandler.js';
+import { isRetryableError } from '../utils/isRetryableError.js';
 
 class ErrorRecoveryService {
   constructor() {

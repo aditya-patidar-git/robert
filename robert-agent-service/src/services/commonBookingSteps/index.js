@@ -1,8 +1,8 @@
 // Re-export all common booking steps for easy importing
 export { loginToCRM } from './loginToCRM.js';
 export { findAndVerifyClient } from './clientSearch/index.js';
-export { navigateToDiariesAndSelectSession } from './navigateToDiaries.js';
-export { lookupContactAndWait } from './lookupContact.js';
+export { navigateToDiariesAndSelectSession } from './navigateToDiaries/index.js';
+export { lookupContactAndWait } from './lookupContact/index.js';
 export { createNewContact } from './createNewContact.js';
 export { fillContactDetails } from './fillContactDetails.js';
 export { selectPaymentOption } from './selectPaymentOption.js';
@@ -20,4 +20,5 @@ export { checkAvailabilityAndNoteDetails, getAvailabilityUrl, selectBestMatching
 export { rescheduleBooking } from './rescheduleBooking.js';
 export { cancelBooking } from './cancelBooking.js';
 export { updateCustomer } from './updateCustomer.js';
+export { matchSlotToAvailableSlots, storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from './slotStorageUtils.js';
 

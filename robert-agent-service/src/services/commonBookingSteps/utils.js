@@ -3,30 +3,15 @@ import path from 'path';
 
 /**
  * Take a screenshot of the current page
- * @param {Page} page - Playwright page object
- * @param {string} filename - Screenshot filename
- * @param {string} screenshotsDir - Directory to save screenshots
- * @returns {Promise<string|null>} Path to screenshot or null on error
+ * REMOVED: Screenshots have been disabled to prevent blocking operations and call disconnections
+ * @param {Page} page - Playwright page object (unused)
+ * @param {string} filename - Screenshot filename (unused)
+ * @param {string} screenshotsDir - Directory to save screenshots (unused)
+ * @returns {Promise<null>} Always returns null (no-op)
  */
 export async function takeScreenshot(page, filename, screenshotsDir) {
-  try {
-    // Ensure directory exists
-    if (!fs.existsSync(screenshotsDir)) {
-      fs.mkdirSync(screenshotsDir, { recursive: true });
-    }
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const screenshotPath = path.join(screenshotsDir, `${timestamp}_${filename}`);
-    await page.screenshot({ 
-      path: screenshotPath, 
-      fullPage: true 
-    });
-    console.log(`📸 Screenshot saved: ${filename}`);
-    return screenshotPath;
-  } catch (error) {
-    console.error('Screenshot error:', error);
+  // No-op: Screenshots disabled to prevent blocking operations
     return null;
-  }
 }
 
 /**
@@ -175,7 +160,7 @@ export function extractPriceFromBooking(booking) {
  * @param {string} action - Action performed
  * @param {Object} result - Result object
  * @param {string} auditDir - Directory to save audit logs
- * @param {string} screenshotsDir - Directory containing screenshots
+ * @param {string} screenshotsDir - Directory containing screenshots (unused, kept for API compatibility)
  * @returns {Promise<void>}
  */
 export async function saveAuditLog(auditId, action, result, auditDir, screenshotsDir) {
@@ -189,11 +174,7 @@ export async function saveAuditLog(auditId, action, result, auditDir, screenshot
       auditId,
       timestamp: new Date().toISOString(),
       action,
-      result,
-      screenshots: fs.existsSync(screenshotsDir)
-        ? fs.readdirSync(screenshotsDir)
-            .filter(file => file.startsWith(auditId))
-        : []
+      result
     };
     
     const logPath = path.join(auditDir, `${auditId}.json`);

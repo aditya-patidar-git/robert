@@ -22,22 +22,28 @@ class ProgressIndicatorService {
    * Start tracking a tool execution
    * @param {string} callSid - Call SID
    * @param {string} toolName - Name of the tool being executed
+   * @param {CallStateManager|null} stateManager - Optional state manager for response state checks
    */
-  startToolExecution(callSid, toolName) {
-    // Skip progress tracking for step-based tools
-    if (this.isStepBasedTool(toolName)) {
-      console.log(`📊 [${callSid}] Skipping progress tracking for step-based tool: ${toolName}`);
-      return;
+  startToolExecution(callSid, toolName, stateManager = null) {
+    // CRITICAL RACE CONDITION FIX: Clear any existing completion flag when starting new tool
+    // This ensures we don't carry over a stuck flag from a previous tool execution
+    if (stateManager && stateManager.toolExecutionCompleting) {
+      console.log(`🔓 [${callSid}] Clearing toolExecutionCompleting flag at start of new tool: ${toolName}`);
+      stateManager.clearToolExecutionCompleting();
     }
-
+    
+    // Enable progress tracking for all tools, including step-based tools
+    // Step-based tools will use longer thresholds to avoid redundant messages for quick steps
     this.activeExecutions.set(callSid, {
       toolName,
       startTime: Date.now(),
       acknowledgmentSent: false,
       lastUpdateTime: Date.now(),
-      updateInterval: null
+      updateInterval: null,
+      stateManager: stateManager, // Store reference for thread-safe checks
+      isStepBasedTool: this.isStepBasedTool(toolName) // Track if this is a step-based tool for threshold adjustment
     });
-    console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}`);
+    console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${this.isStepBasedTool(toolName) ? ' (step-based, using longer threshold)' : ''}`);
   }
 
   /**
@@ -53,15 +59,38 @@ class ProgressIndicatorService {
       return false;
     }
 
-    // Skip acknowledgment for step-based tools
-    if (this.isStepBasedTool(execution.toolName)) {
+    // CRITICAL RACE CONDITION FIX: Check completion flag FIRST (highest priority)
+    if (execution.stateManager && execution.stateManager.toolExecutionCompleting) {
+      console.log(`🛑 [${callSid}] Skipping acknowledgment - tool execution completing (race condition prevention)`);
+      return false;
+    }
+
+    // CRITICAL: Don't send acknowledgment if user has interrupted
+    if (execution.stateManager && execution.stateManager.isInterrupted) {
+      console.log(`🛑 [${callSid}] Skipping acknowledgment - user has interrupted`);
       return false;
     }
 
     const elapsed = Date.now() - execution.startTime;
-    const threshold = config.progressIndicators.acknowledgmentThresholdMs || 2000;
+    // Use longer threshold for step-based tools (5-8 seconds) to avoid redundant messages for quick steps
+    // Regular tools use 2 seconds, step-based tools use 5 seconds
+    const baseThreshold = config.progressIndicators.acknowledgmentThresholdMs || 2000;
+    const threshold = execution.isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold;
 
     if (!execution.acknowledgmentSent && elapsed >= threshold) {
+      // Double-check completion flag and interruption state before sending
+      if (execution.stateManager && execution.stateManager.toolExecutionCompleting) {
+        console.log(`🛑 [${callSid}] Skipping acknowledgment - tool execution completing before send (race condition prevention)`);
+        return false;
+      }
+      if (execution.stateManager && execution.stateManager.isInterrupted) {
+        console.log(`🛑 [${callSid}] Skipping acknowledgment - user interrupted before send`);
+        return false;
+      }
+
+      // Note: We intentionally allow acknowledgments during tool execution - they are meant to reassure callers
+      // The toolExecutionCompleting, isInterrupted, and isResponding flags provide sufficient safeguards
+
       const messages = config.progressIndicators.acknowledgmentMessages || [
         "Let me check that for you.",
         "I'm looking into that now.",
@@ -122,18 +151,15 @@ class ProgressIndicatorService {
       return;
     }
 
-    // Skip periodic updates for step-based tools
-    if (this.isStepBasedTool(execution.toolName)) {
-      console.log(`📊 [${callSid}] Skipping periodic updates for step-based tool: ${execution.toolName}`);
-      return;
-    }
+    // Enable periodic updates for all tools, including step-based tools
+    // Step-based tools will use longer intervals to avoid redundant messages
 
     // Clear any existing interval
     if (execution.updateInterval) {
       clearInterval(execution.updateInterval);
     }
 
-    const updateInterval = config.progressIndicators.updateIntervalMs || 5000;
+    const updateInterval = config.progressIndicators.updateIntervalMs || 8000;
     const messages = config.progressIndicators.updateMessages || [
       "This is taking a bit longer than usual, please hold on.",
       "I'm still working on that, just a moment.",
@@ -142,10 +168,39 @@ class ProgressIndicatorService {
 
     let updateCount = 0;
     execution.updateInterval = setInterval(() => {
+      // Atomic check: get execution atomically (thread-safe per callSid)
       const execution = this.activeExecutions.get(callSid);
       if (!execution || !openaiWs || openaiWs.readyState !== 1) {
         this.stopPeriodicUpdates(callSid);
         return;
+      }
+
+      // CRITICAL: Check if user has interrupted before sending periodic update
+      if (execution.stateManager) {
+        // CRITICAL RACE CONDITION FIX: Check completion flag FIRST (highest priority)
+        // This prevents periodic updates from firing when tool is completing
+        if (execution.stateManager.toolExecutionCompleting) {
+          console.log(`🛑 [${callSid}] Skipping periodic update - tool execution completing (race condition prevention)`);
+          this.stopPeriodicUpdates(callSid);
+          return;
+        }
+        
+        // Check for interruption (second priority)
+        if (execution.stateManager.isInterrupted) {
+          console.log(`🛑 [${callSid}] Skipping periodic update - user has interrupted`);
+          this.stopPeriodicUpdates(callSid);
+          return;
+        }
+        
+        // Check if response is already active
+        if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
+          // Skip this update - response already active (prevents "conversation already has active response" error)
+          console.log(`⏭️ [${callSid}] Skipping periodic update - response already active (isResponding: ${execution.stateManager.isResponding}, activeResponseId: ${execution.stateManager.activeResponseId})`);
+          return;
+        }
+        
+        // Note: We intentionally allow periodic updates during tool execution - they are meant to reassure callers
+        // The toolExecutionCompleting, isInterrupted, and isResponding flags provide sufficient safeguards
       }
 
       const elapsed = Date.now() - execution.startTime;
@@ -153,6 +208,26 @@ class ProgressIndicatorService {
       updateCount++;
 
       try {
+        // Double-check interruption and response state before sending
+        if (execution.stateManager) {
+          // CRITICAL RACE CONDITION FIX: Double-check completion flag before sending
+          if (execution.stateManager.toolExecutionCompleting) {
+            console.log(`🛑 [${callSid}] Skipping periodic update - tool execution completing before send (race condition prevention)`);
+            this.stopPeriodicUpdates(callSid);
+            return;
+          }
+          if (execution.stateManager.isInterrupted) {
+            console.log(`🛑 [${callSid}] Skipping periodic update - user interrupted before send`);
+            this.stopPeriodicUpdates(callSid);
+            return;
+          }
+          if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
+            return; // Response became active between check and send
+          }
+          // Note: We intentionally allow periodic updates during tool execution - they are meant to reassure callers
+          // The toolExecutionCompleting, isInterrupted, and isResponding flags provide sufficient safeguards
+        }
+
         openaiWs.send(JSON.stringify({
           type: 'response.create',
           response: {
@@ -190,8 +265,30 @@ class ProgressIndicatorService {
   stopPeriodicUpdates(callSid) {
     const execution = this.activeExecutions.get(callSid);
     if (execution && execution.updateInterval) {
-      clearInterval(execution.updateInterval);
-      execution.updateInterval = null;
+      try {
+        clearInterval(execution.updateInterval);
+        execution.updateInterval = null;
+      } catch (err) {
+        console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
+      }
+    }
+  }
+
+  /**
+   * Stop periodic updates without ending tool execution tracking
+   * Used during fallback to prevent multiple responses while keeping execution metrics
+   * @param {string} callSid - Call SID
+   */
+  stopPeriodicUpdatesOnly(callSid) {
+    const execution = this.activeExecutions.get(callSid);
+    if (execution && execution.updateInterval) {
+      try {
+        clearInterval(execution.updateInterval);
+        execution.updateInterval = null;
+        console.log(`🛑 [${callSid}] Stopped periodic updates (execution still tracked for metrics)`);
+      } catch (err) {
+        console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
+      }
     }
   }
 
@@ -206,9 +303,6 @@ class ProgressIndicatorService {
       const duration = Date.now() - execution.startTime;
       console.log(`📊 [${callSid}] Tool execution completed: ${execution.toolName} (duration: ${duration}ms)`);
       this.activeExecutions.delete(callSid);
-    } else {
-      // Execution might not exist if it was a step-based tool (skipped tracking)
-      // This is expected and not an error
     }
   }
 
@@ -262,4 +356,3 @@ class ProgressIndicatorService {
 }
 
 export default new ProgressIndicatorService();
-

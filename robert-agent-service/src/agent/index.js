@@ -89,6 +89,9 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
+// In-memory lock to prevent duplicate calls (simple debouncing)
+const pendingCalls = new Map(); // phoneNumber -> timestamp
+
 // Add error handler to WebSocket server
 wss.on('error', (error) => {
   console.error('❌ [DEBUG] WebSocket server error:', error);
@@ -190,7 +193,9 @@ server.on('upgrade', (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, ws => {
         console.log('✅ [DEBUG] WebSocket upgrade completed, emitting connection event');
         console.log('✅ [DEBUG] WebSocket readyState:', ws.readyState, '(OPEN=1)');
-        wss.emit('connection', ws);
+        // CRITICAL FIX: Attach request object to WebSocket so it can be passed to handler
+        ws._req = req;
+        wss.emit('connection', ws, req); // Pass req as second parameter
       });
     } catch (error) {
       console.error('❌ [DEBUG] Error during WebSocket upgrade:', error);
@@ -204,13 +209,16 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
-wss.on('connection', twilioWs => {
+wss.on('connection', (twilioWs, req) => {
   console.log('Twilio WebSocket connected');
   try {
+    // CRITICAL FIX: Use request object from parameter or attached to WebSocket
+    const requestObj = req || twilioWs._req || {};
     console.log('📞 [DEBUG] About to call handleMediaStreamConnection');
+    console.log('📞 [DEBUG] Request URL:', requestObj.url);
     console.log('📞 [DEBUG] WebSocket readyState:', twilioWs?.readyState);
     console.log('📞 [DEBUG] WebSocket type:', typeof twilioWs);
-    handleMediaStreamConnection(twilioWs, {});
+    handleMediaStreamConnection(twilioWs, requestObj); // Pass actual request object
     console.log('✅ [DEBUG] handleMediaStreamConnection called successfully');
   } catch (error) {
     console.error('❌ [DEBUG] Error calling handleMediaStreamConnection:', error);
@@ -284,6 +292,47 @@ app.get('/api/diagnostic/all', async (req, res) => {
   } catch (error) {
     console.error('Error getting all diagnostics:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// API Route - Email Connection Test
+app.get('/api/test/email-connection', async (req, res) => {
+  try {
+    const emailService = (await import('../services/emailService.js')).default;
+    const result = await emailService.testConnection();
+    
+    // Mask sensitive information in config
+    const maskEmail = (email) => {
+      if (!email) return 'Not configured';
+      const [local, domain] = email.split('@');
+      return local ? `${local.substring(0, 3)}***@${domain}` : `***@${domain}`;
+    };
+    
+    res.json({
+      success: result.connected,
+      connected: result.connected,
+      message: result.connected 
+        ? 'SMTP connection test successful' 
+        : `SMTP connection test failed: ${result.error}`,
+      error: result.error || null,
+      config: {
+        host: process.env.SMTP_HOST || 'Not configured',
+        port: process.env.SMTP_PORT || 'Not configured',
+        user: maskEmail(process.env.SMTP_USER),
+        from: process.env.SMTP_FROM || 'robert@universalmct.co.uk',
+        secure: process.env.SMTP_SECURE === 'true'
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error testing email connection:', error);
+    res.status(500).json({
+      success: false,
+      connected: false,
+      message: 'Error testing email connection',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -381,12 +430,32 @@ app.get('/call', async (req, res) => {
   if (!to) return res.status(400).send('Add ?to=+918120523400');
 
   try {
+    // CRITICAL: Prevent duplicate calls within 3 seconds
+    const now = Date.now();
+    const lastCallTime = pendingCalls.get(to);
+    if (lastCallTime && (now - lastCallTime) < 3000) {
+      console.warn(`⚠️ [DEBUG] Duplicate call request prevented for ${to} (last call ${now - lastCallTime}ms ago)`);
+      return res.status(429).send(`Call already in progress. Please wait.`);
+    }
+    
+    // Mark call as pending
+    pendingCalls.set(to, now);
+    
+    // Clean up old entries (older than 10 seconds)
+    for (const [phone, timestamp] of pendingCalls.entries()) {
+      if (now - timestamp > 10000) {
+        pendingCalls.delete(phone);
+      }
+    }
+    
     console.log(`📞 [DEBUG] Call request received for: ${to}`);
     const client = twilio(TWILIO_SID, TWILIO_AUTH_TOKEN);
     const baseUrl = TUNNEL_DOMAIN ? `https://${TUNNEL_DOMAIN}` : `http://localhost:${PORT}`;
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const wsUrl = `${wsProtocol}://${wsHost}/media-stream`;
+    
+    console.log(`🔗 [DEBUG] WebSocket URL for Media Stream: ${wsUrl}`);
     
     // Build status callback URL
     const statusCallbackUrl = TUNNEL_DOMAIN 
@@ -421,13 +490,22 @@ app.get('/call', async (req, res) => {
 
     if (!call) {
       console.error('❌ [DEBUG] Failed to create call');
+      // Remove from pending on failure
+      pendingCalls.delete(to);
       return res.status(500).send('Failed to create call');
     }
 
     console.log(`✅ [DEBUG] Twilio call created - SID: ${call.sid}, Status: ${call.status}, Method: ${method}`);
+    console.log(`📋 [DEBUG] Media Stream WebSocket will connect to: ${wsUrl}?callSid=${call.sid}`);
+    
+    // Remove from pending after successful creation (call will be tracked by callSid)
+    pendingCalls.delete(to);
+    
     res.send(`Call ${method} created: ${call.sid}`);
   } catch (err) {
     console.error('❌ [DEBUG] Error creating call:', err);
+    // Remove from pending on error
+    pendingCalls.delete(to);
     res.status(500).send(`Error: ${err.message}`);
   }
 });

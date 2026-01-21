@@ -12,7 +12,7 @@ import { useToast } from '../../../components/common/ToastProvider';
 export const useObservabilityState = () => {
   const queryClient = useQueryClient();
   const { showSuccess, showError } = useToast();
-  const [timeRange, setTimeRange] = useState('1h');
+  const [timeRange, setTimeRange] = useState('24h');
   const [logFilter, setLogFilter] = useState('all');
   const [activeTab, setActiveTab] = useState(0);
   const [selectedCallSid, setSelectedCallSid] = useState(null);

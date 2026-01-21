@@ -52,6 +52,10 @@ const complaintRecordSchema = new mongoose.Schema({
     type: String, 
     default: 'complaints@universalmct.co.uk'
   },
+  referenceId: {
+    type: String,
+    index: true
+  },
   submittedAt: { 
     type: Date, 
     default: Date.now 
@@ -97,6 +101,7 @@ complaintRecordSchema.index({ status: 1, priority: 1 });
 complaintRecordSchema.index({ submittedAt: -1 });
 complaintRecordSchema.index({ callerId: 1 });
 complaintRecordSchema.index({ complaintType: 1 });
+complaintRecordSchema.index({ referenceId: 1 }); // Index for fast lookup by reference ID
 
 export default mongoose.model("ComplaintRecord", complaintRecordSchema);
 

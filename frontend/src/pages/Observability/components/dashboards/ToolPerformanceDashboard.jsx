@@ -53,8 +53,35 @@ const ToolPerformanceDashboard = ({ timeRange = '24h' }) => {
 
   const statMetrics = [
     {
+      id: 'total-calls',
+      title: 'Total Calls',
+      value: metrics?.totalCalls || 0,
+      unit: '',
+      color: 'primary',
+      icon: Build,
+      subtitle: 'All calls in time range'
+    },
+    {
+      id: 'calls-with-tools',
+      title: 'Calls with Tools',
+      value: metrics?.callsWithTools || 0,
+      unit: '',
+      color: 'success',
+      icon: CheckCircle,
+      subtitle: 'Calls that used tools'
+    },
+    {
+      id: 'calls-without-tools',
+      title: 'Calls without Tools',
+      value: metrics?.callsWithoutTools || 0,
+      unit: '',
+      color: 'info',
+      icon: Build,
+      subtitle: 'Calls that did not use tools'
+    },
+    {
       id: 'total-invocations',
-      title: 'Total Invocations',
+      title: 'Total Tool Invocations',
       value: metrics?.totalInvocations || 0,
       unit: '',
       color: 'primary',

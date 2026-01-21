@@ -160,7 +160,7 @@ export class AudioProcessor {
    * Perform VAD calibration after capturing initial audio samples
    */
   performCalibration(onCalibrationComplete) {
-    if (this.state.calibrationComplete || !this.state.openaiWs || this.state.openaiWs.readyState !== 1) {
+    if (this.state.calibrationComplete) {
       return;
     }
     
@@ -177,8 +177,8 @@ export class AudioProcessor {
       this.state.calibratedThreshold = calibrated;
       this.state.calibrationComplete = true;
       
-      // Update session with calibrated threshold
-      this.state.openaiWs.send(JSON.stringify({
+      // Update session with calibrated threshold using robust send method
+      this.state.sendToOpenAI({
         type: 'session.update',
         session: {
           modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
@@ -189,7 +189,7 @@ export class AudioProcessor {
             silence_duration_ms: configManager.getConfigForNumber(this.state.phoneNumber).endPadding || 500
           }
         }
-      }));
+      }, { priority: 'high' });
       
       console.log(`✅ [${this.state.callSid}] VAD calibration complete - threshold updated to ${calibrated.toFixed(3)}s`);
       
@@ -221,14 +221,11 @@ export class AudioProcessor {
       if (this.state.isClosed || !this.state.accepting) return;
       
       const base64Pcm24k = chunk.toString('base64');
-      if (this.state.openaiWs && this.state.openaiWs.readyState === 1) {
-        try {
-          this.state.openaiWs.send(JSON.stringify({
-            type: 'input_audio_buffer.append',
-            audio: base64Pcm24k
-          }));
-        } catch (_) {}
-      }
+      // Use robust send method with connection manager support
+      this.state.sendToOpenAI({
+        type: 'input_audio_buffer.append',
+        audio: base64Pcm24k
+      }, { priority: 'high' });
     });
     
     this.upFfmpeg.on('close', () => { this.upFfmpeg = null; });
@@ -240,7 +237,7 @@ export class AudioProcessor {
    * Sends μ-law directly to OpenAI (matching original implementation)
    */
   processIncomingAudio(mulawBase64) {
-    if (this.state.isClosed || !this.state.accepting || !this.state.openaiWs || this.state.openaiWs.readyState !== 1) {
+    if (this.state.isClosed || !this.state.accepting) {
       return;
     }
     
@@ -252,11 +249,16 @@ export class AudioProcessor {
       this.state.audioMetrics.incomingTimestamps.push(now);
       this.state.audioMetrics.receivedChunks++;
       
-      // Send μ-law directly to OpenAI (matching original implementation)
-      this.state.openaiWs.send(JSON.stringify({
+      // Use robust send method with connection manager support (queuing, keep-alive, quality monitoring)
+      const sent = this.state.sendToOpenAI({
         type: 'input_audio_buffer.append',
         audio: mulawBase64
-      }));
+      }, { priority: 'high' });
+      
+      if (!sent) {
+        // Message queued or connection not ready - this is expected during transient failures
+        // Don't increment error count as connection manager will retry
+      }
     } catch (err) {
       console.error(`❌ [${this.state.callSid}] Error sending audio to OpenAI:`, err);
       this.state.incrementErrorCount();

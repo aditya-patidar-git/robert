@@ -3,18 +3,68 @@ import adaptiveTimingService from '../../../services/adaptiveTimingService.js';
 import silenceDetectionService from '../../../services/silenceDetectionService.js';
 import complaintDetectionService from '../../../services/complaintDetectionService.js';
 import promptService from '../../../services/promptService.js';
+import noiseFilterService from '../../../services/noiseFilterService.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
 
 /**
  * Transcription Handler
  * Handles user transcriptions and speech stopped events
+ * Supports partial transcription deltas for faster "stop" detection
  */
 export class TranscriptionHandler {
-  constructor(stateManager, languageDetector, consentHandler, openaiWs) {
+  constructor(stateManager, languageDetector, consentHandler, openaiWs, bargeInHandler = null) {
     this.state = stateManager;
     this.languageDetector = languageDetector;
     this.consentHandler = consentHandler;
     this.openaiWs = openaiWs;
+    this.bargeInHandler = bargeInHandler; // Reference to BargeInHandler for conditional barge-in
+  }
+
+  /**
+   * Handle transcription.delta event (partial transcription)
+   * INDUSTRY STANDARD: Check for "stop" in partial transcripts for faster detection
+   * This provides incremental transcripts before completion, enabling faster barge-in
+   */
+  async handleTranscriptionDelta(event) {
+    const partialTranscript = event.delta || '';
+    const itemId = event.item_id || null;
+    
+    // CRITICAL: Check for "stop" in partial transcript immediately
+    // This enables faster barge-in detection (150-300ms vs 300-800ms for completed)
+    const stopPattern = /\bstop\b/i;
+    const containsStop = stopPattern.test(partialTranscript);
+    
+    if (containsStop) {
+      console.log(`🚨 [${this.state.callSid}] "stop" detected in PARTIAL transcription: "${partialTranscript}"`);
+      
+      // Check if audio might be playing (use extended window for safety)
+      const hasActiveResponse = this.state.activeResponseId !== null;
+      const hasAudioPacer = this.state.outboundAudioPacer !== null;
+      const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
+      const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 15000;
+      const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 10000;
+      const mightHaveAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio || hasRecentResponseCompletion;
+      
+      console.log(`   - Audio might be playing: ${mightHaveAudioPlaying}`);
+      console.log(`   - isResponding: ${this.state.isResponding}, activeResponseId: ${this.state.activeResponseId}`);
+      console.log(`   - Barge-in already triggered: ${this.state.isInterrupted}`);
+      
+      // If barge-in already triggered on speech_started, verify "stop" command
+      if (this.state.isInterrupted) {
+        console.log(`✅ [${this.state.callSid}] Barge-in already triggered - partial transcription confirms "stop" command`);
+        // Ensure audio is fully stopped
+        if (this.bargeInHandler && this.bargeInHandler.responseHandler) {
+          this.bargeInHandler.responseHandler.immediatelyStopAudio();
+        }
+      } else if (mightHaveAudioPlaying && this.bargeInHandler) {
+        // Barge-in not yet triggered - trigger now (fallback case)
+        console.log(`🛑 [${this.state.callSid}] Triggering barge-in from partial transcription (fallback)`);
+        this.bargeInHandler.triggerBargeInFromTranscription(partialTranscript);
+      }
+    }
+    
+    // Return null - delta events don't trigger response creation
+    return null;
   }
 
   /**
@@ -23,8 +73,110 @@ export class TranscriptionHandler {
   async handleTranscriptionCompleted(event) {
     const transcript = event.transcript || '';
     const confidence = event.confidence || 1.0;
+    const itemId = event.item_id || null; // Link to committed audio segment
     const transcriptionTime = Date.now();
-    console.log(`👤 User said: "${transcript}" (confidence: ${confidence})`);
+    
+    // CRITICAL: Industry-standard multi-factor background noise filtering
+    // Uses confidence, pattern matching, length, and character composition
+    const qualityAssessment = noiseFilterService.assessTranscriptionQuality(
+      transcript,
+      confidence,
+      itemId
+    );
+    
+    // CRITICAL: Check for "stop" command BEFORE filtering - even filtered transcriptions might contain "stop"
+    // Use word boundary regex to match "stop" as a word (not substring like "stopped")
+    const stopPattern = /\bstop\b/i;
+    const containsStop = stopPattern.test(transcript);
+    
+    // Check for response loop prevention (recent response + noise = prevent loop)
+    const timeSinceLastResponse = this.state.agentFinishedSpeakingTime > 0 
+      ? Date.now() - this.state.agentFinishedSpeakingTime 
+      : Infinity;
+    const shouldPreventLoop = noiseFilterService.shouldPreventResponseLoop(transcript, timeSinceLastResponse);
+    
+    // CRITICAL FIX: Log ALL transcriptions containing "stop" (even filtered ones) for debugging
+    // This helps diagnose why barge-in isn't triggering
+    if (containsStop) {
+      console.log(`🚨 [${this.state.callSid}] "stop" detected in transcription (BEFORE filtering): "${transcript}"`);
+      console.log(`   - Confidence: ${confidence}, Quality: ${qualityAssessment.qualityScore}`);
+      console.log(`   - Will be filtered: ${!qualityAssessment.isHighQuality || shouldPreventLoop}`);
+      console.log(`   - Filter reason: ${shouldPreventLoop ? 'response_loop_prevention' : qualityAssessment.reason || 'none'}`);
+    }
+    
+    // Log ALL transcriptions (even filtered ones) for debugging
+    if (!qualityAssessment.isHighQuality || shouldPreventLoop) {
+      const reason = shouldPreventLoop ? 'response_loop_prevention' : qualityAssessment.reason;
+      console.log(`🔇 [${this.state.callSid}] Filtered background noise: "${transcript}" (confidence: ${qualityAssessment.confidenceScore}, quality: ${qualityAssessment.qualityScore}, reason: ${reason})`);
+      
+      // CRITICAL FIX: Even if transcription is filtered, check if it contains "stop" and audio might be playing
+      // This prevents "stop" commands from being ignored due to quality filtering
+      if (containsStop) {
+        // Check if audio might still be playing (use extended window for safety)
+        const hasActiveResponse = this.state.activeResponseId !== null;
+        const hasAudioPacer = this.state.outboundAudioPacer !== null;
+        const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
+        // EXTENDED: Use 15 seconds instead of 5 to catch audio that's still playing in Twilio's buffer
+        const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 15000;
+        const mightHaveAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio;
+        
+        console.log(`⚠️ [${this.state.callSid}] "stop" detected in FILTERED transcription - checking if audio might be playing`);
+        console.log(`   - isResponding: ${this.state.isResponding}`);
+        console.log(`   - activeResponseId: ${this.state.activeResponseId}`);
+        console.log(`   - hasAudioPacer: ${hasAudioPacer}`);
+        console.log(`   - hasBufferedAudio: ${hasBufferedAudio} (buffer length: ${this.state.outboundAudioBuffer?.length || 0})`);
+        console.log(`   - hasRecentAudio: ${hasRecentAudio} (lastAudioChunkTime: ${this.state.lastAudioChunkTime}, age: ${this.state.lastAudioChunkTime > 0 ? Date.now() - this.state.lastAudioChunkTime : 'N/A'}ms)`);
+        console.log(`   - mightHaveAudioPlaying: ${mightHaveAudioPlaying}`);
+        
+        // SAFETY FIX: If "stop" is detected and audio might be playing, trigger barge-in anyway
+        // This ensures "stop" commands are never ignored, even if transcription quality is low
+        if (mightHaveAudioPlaying && this.bargeInHandler) {
+          console.log(`🛑 [${this.state.callSid}] SAFETY TRIGGER: Barge-in triggered for "stop" in filtered transcription (audio might be playing)`);
+          this.bargeInHandler.triggerBargeInFromTranscription(transcript);
+          // Don't return here - continue to mark as filtered but barge-in is already triggered
+        }
+      }
+      
+      // Mark segment as having received transcription (even if filtered)
+      if (itemId && this.state.pendingAudioSegments.has(itemId)) {
+        const segment = this.state.pendingAudioSegments.get(itemId);
+        segment.transcriptionReceived = true;
+        segment.transcriptionQuality = qualityAssessment.qualityScore;
+        segment.isBackgroundNoise = true;
+      }
+      
+      // CRITICAL: Ensure agent stays in listening mode when noise is detected
+      // This prevents the feedback loop where agent keeps responding to noise
+      this.state.waitingForUser = true;
+      
+      return { 
+        processed: false, 
+        shouldCreateResponse: false,
+        isBackgroundNoise: true,
+        reason,
+        qualityScore: qualityAssessment.qualityScore
+      };
+    }
+    
+    // High-quality transcription - proceed normally
+    console.log(`👤 User said: "${transcript}" (confidence: ${qualityAssessment.confidenceScore}, quality: ${qualityAssessment.qualityScore})`);
+    
+    // Mark segment as having received high-quality transcription
+    if (itemId && this.state.pendingAudioSegments.has(itemId)) {
+      const segment = this.state.pendingAudioSegments.get(itemId);
+      segment.transcriptionReceived = true;
+      segment.transcriptionQuality = qualityAssessment.qualityScore;
+      segment.isBackgroundNoise = false;
+      
+      // Store transcription result for response creation checks
+      this.state.segmentTranscriptionMap.set(itemId, {
+        transcript,
+        confidence,
+        quality: qualityAssessment.qualityScore,
+        timestamp: transcriptionTime,
+        isHighQuality: true
+      });
+    }
     
     const { conversations } = await import('../../../shared/state.js');
     
@@ -37,52 +189,55 @@ export class TranscriptionHandler {
     // Track when we received this transcription
     this.state.lastTranscriptionReceivedTime = Date.now();
     
-    // Check if transcription arrived during agent response (barge-in via transcription)
-    if (this.state.isResponding && this.state.activeResponseId) {
-      const isNewInterruption = !this.state.isInterrupted;
+    // CRITICAL: Check for "stop" command FIRST - if audio is playing and transcript contains "stop", trigger barge-in IMMEDIATELY
+    // Note: containsStop was already checked above (before filtering) - reuse that value
+    // stopPattern and containsStop are already declared at the top of the function
+    
+    // IMPROVED: Check if audio is currently playing (multiple indicators to catch all cases)
+    // Audio might still be playing even if isResponding is false (buffered audio)
+    // EXTENDED WINDOW: Increased from 5 seconds to 15 seconds to catch audio still playing in Twilio's buffer
+    const hasActiveResponse = this.state.activeResponseId !== null;
+    const hasAudioPacer = this.state.outboundAudioPacer !== null;
+    const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
+    const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 15000; // EXTENDED: Audio sent within last 15 seconds (was 5)
+    // Also check if response was recently completed (audio might still be playing)
+    const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 10000; // Within last 10 seconds
+    const isAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio || hasRecentResponseCompletion;
+    
+    // Log detection details for debugging when "stop" is detected
+    if (containsStop) {
+      console.log(`🔍 [${this.state.callSid}] "stop" detected in completed transcript: "${transcript}"`);
+      console.log(`   - isResponding: ${this.state.isResponding}`);
+      console.log(`   - activeResponseId: ${this.state.activeResponseId}`);
+      console.log(`   - hasAudioPacer: ${hasAudioPacer}`);
+      console.log(`   - hasBufferedAudio: ${hasBufferedAudio} (buffer length: ${this.state.outboundAudioBuffer?.length || 0})`);
+      console.log(`   - hasRecentAudio: ${hasRecentAudio} (lastAudioChunkTime: ${this.state.lastAudioChunkTime}, age: ${this.state.lastAudioChunkTime > 0 ? Date.now() - this.state.lastAudioChunkTime : 'N/A'}ms)`);
+      console.log(`   - isAudioPlaying: ${isAudioPlaying}`);
+      console.log(`   - Barge-in already triggered: ${this.state.isInterrupted}`);
+      console.log(`   - Note: Barge-in should have triggered on speech_started (<200ms), this is verification`);
+    }
+    
+    // EDGE CASE 1: Handle transcription that arrives while audio is playing and contains "stop"
+    // Note: Barge-in should already be triggered on speech_started, but verify here
+    if (isAudioPlaying && containsStop) {
+      console.log(`🛑 [${this.state.callSid}] "stop" detected in completed transcription while audio is playing`);
+      console.log(`   - Barge-in already triggered: ${this.state.isInterrupted}`);
       
-      if (isNewInterruption) {
-        console.log(`🛑 [${this.state.callSid}] Barge-in detected via transcription! User interrupted agent response ${this.state.activeResponseId}`);
-      }
-      
-      // Set interruption flags
-      this.state.isInterrupted = true;
-      this.state.interruptionStartTime = Date.now();
-      this.state.pendingTranscriptions = [];
-      
-      // Save IDs before clearing
-      const responseIdToCancel = this.state.activeResponseId;
-      
-      // Mark response as cancelled
-      if (responseIdToCancel) {
-        this.state.cancelledResponseIds.add(responseIdToCancel);
-        this.state.cancellationTime.set(responseIdToCancel, Date.now());
-        console.log(`🚫 [${this.state.callSid}] Marked response ${responseIdToCancel} as cancelled (via transcription)`);
-      }
-      
-      // Clear response tracking
-      this.state.activeResponseId = null;
-      this.state.responseItemId = null;
-      this.state.responseStartTime = null;
-      this.state.isResponding = false;
-      this.state.waitingForUser = true;
-      this.state.lastCancellationTime = Date.now();
-      
-      // Cancel response and clear buffer
-      try {
-        if (this.state.openaiWs && this.state.openaiWs.readyState === 1) {
-          if (responseIdToCancel) {
-            this.state.openaiWs.send(JSON.stringify({
-              type: 'response.cancel',
-              response_id: responseIdToCancel
-            }));
-          }
-          this.state.openaiWs.send(JSON.stringify({
-            type: 'input_audio_buffer.clear'
-          }));
+      // If barge-in already triggered on speech_started, just verify
+      if (this.state.isInterrupted) {
+        console.log(`✅ [${this.state.callSid}] Barge-in already triggered on speech_started - transcription confirms "stop" command`);
+        // Ensure audio is fully stopped
+        if (this.bargeInHandler && this.bargeInHandler.responseHandler) {
+          this.bargeInHandler.responseHandler.immediatelyStopAudio();
         }
-      } catch (err) {
-        console.warn(`⚠️ [${this.state.callSid}] Error cancelling response:`, err.message);
+      } else {
+        // Fallback: Trigger barge-in if it wasn't triggered on speech_started
+        console.log(`🛑 [${this.state.callSid}] Triggering barge-in from completed transcription (fallback - should have triggered on speech_started)`);
+        if (this.bargeInHandler) {
+          this.bargeInHandler.triggerBargeInFromTranscription(transcript);
+        } else {
+          console.warn(`⚠️ [${this.state.callSid}] BargeInHandler not available - cannot trigger barge-in for "stop" command`);
+        }
       }
       
       // Queue transcription for processing after speech ends
@@ -91,24 +246,90 @@ export class TranscriptionHandler {
         confidence,
         time: transcriptionTime
       });
-      return; // Don't process yet
+      return { processed: true, shouldCreateResponse: false }; // Don't process yet - wait for speech_stopped
     }
     
-    // If we're in an interruption window, queue this transcription
+    // EDGE CASE 2: Transcription arrives but audio is playing and transcript does NOT contain "stop"
+    // Let audio continue normally - this is a normal interruption, not a stop command
+    // CRITICAL: Don't create responses when audio is playing (unless "stop" was detected)
+    if (isAudioPlaying && !containsStop) {
+      // Clear pendingBargeInCheck flag since we've processed the transcription
+      if (this.state.pendingBargeInCheck) {
+        this.state.pendingBargeInCheck = false;
+        console.log(`👂 [${this.state.callSid}] Transcription received during audio playback but does not contain "stop" - audio continues, NO response created: "${transcript}"`);
+      }
+      // Return early - don't create responses when audio is playing
+      return { processed: true, shouldCreateResponse: false };
+    }
+    
+    // EDGE CASE 3: Transcription arrives but audio is NOT playing
+    // SAFETY FIX: Even if audio detection says it's not playing, send "clear" as a safety measure
+    // This handles edge cases where Twilio might still have buffered audio
+    if (!isAudioPlaying && containsStop) {
+      console.log(`📝 [${this.state.callSid}] Transcription contains "stop" but audio detection says not playing`);
+      console.log(`   - Sending "clear" as safety measure to ensure any buffered audio is stopped`);
+      
+      // SAFETY: Send clear message anyway - better to be safe than miss a "stop" command
+      if (this.bargeInHandler && this.bargeInHandler.responseHandler) {
+        console.log(`🛑 [${this.state.callSid}] SAFETY CLEAR: Sending Twilio "clear" message even though audio detection says not playing`);
+        this.bargeInHandler.responseHandler.immediatelyStopAudio();
+      }
+      
+      // Continue normal processing
+    }
+    
+    // CRITICAL FIX: Handle transcriptions after barge-in
+    // After barge-in, transcriptions may arrive after speech_stopped fires
+    // We need to clear isInterrupted flag to resume normal conversation flow
     if (this.state.isInterrupted) {
-      console.log(`⏸️ [${this.state.callSid}] Transcription received during interruption - queuing: "${transcript}"`);
-      this.state.pendingTranscriptions.push({
-        transcript,
-        confidence,
-        time: transcriptionTime
-      });
-      return;
+      // Check if speech has already stopped (transcription arrived after speech_stopped event)
+      const speechHasStopped = this.state.speechStoppedTime > 0 && 
+                               this.state.speechStoppedTime <= transcriptionTime;
+      
+      // Check if this is a stop command
+      const isStopCommand = stopPattern.test(transcript);
+      
+      if (isStopCommand) {
+        // Stop command: queue it and keep interruption flag set
+        console.log(`🛑 [${this.state.callSid}] Stop command transcription received during interruption - queuing: "${transcript}"`);
+        this.state.pendingTranscriptions.push({
+          transcript,
+          confidence,
+          time: transcriptionTime
+        });
+        return { processed: true, shouldCreateResponse: false };
+      } else if (speechHasStopped) {
+        // CRITICAL FIX: Transcription arrived AFTER speech_stopped fired
+        // Clear interruption flag and process transcription normally to resume conversation
+        console.log(`✅ [${this.state.callSid}] Transcription received after barge-in and speech_stopped - clearing interruption flag and resuming normal flow: "${transcript}"`);
+        
+        // Clear the interruption timeout since transcriptions arrived
+        if (this.state.interruptionTimeout) {
+          clearTimeout(this.state.interruptionTimeout);
+          this.state.interruptionTimeout = null;
+          console.log(`⏱️ [${this.state.callSid}] Cleared interruption timeout - transcriptions arrived`);
+        }
+        
+        this.state.isInterrupted = false;
+        this.state.interruptionStartTime = 0;
+        this.state.pendingBargeInCheck = false;
+        // Continue with normal processing below (don't return early)
+      } else {
+        // Speech still ongoing: queue transcription and wait for speech_stopped
+        console.log(`⏸️ [${this.state.callSid}] Transcription received during interruption (speech ongoing) - queuing: "${transcript}"`);
+        this.state.pendingTranscriptions.push({
+          transcript,
+          confidence,
+          time: transcriptionTime
+        });
+        return { processed: true, shouldCreateResponse: false };
+      }
     }
     
     // Check if this transcription is stale (from before interruption)
     if (transcriptionTime < this.state.interruptionStartTime && this.state.interruptionStartTime > 0) {
       console.log(`🗑️ [${this.state.callSid}] Ignoring stale transcription from before interruption: "${transcript}"`);
-      return;
+      return { processed: false, shouldCreateResponse: false, reason: 'stale' };
     }
     
     // Check for stop commands
@@ -119,17 +340,24 @@ export class TranscriptionHandler {
     
     if (isRecentCancellation && isStopCommand) {
       console.log(`🛑 [${this.state.callSid}] Stop command detected: "${transcript}" - entering listening mode`);
+      
+      // Clear interruption timeout if set
+      if (this.state.interruptionTimeout) {
+        clearTimeout(this.state.interruptionTimeout);
+        this.state.interruptionTimeout = null;
+      }
+      
       this.state.waitingForUser = true;
       this.state.lastCancellationTime = 0;
       this.state.isInterrupted = false;
       this.state.interruptionStartTime = 0;
-      return;
+      return { processed: true, shouldCreateResponse: false };
     }
     
     // Prevent user responses until initial greeting completes
     if (!this.state.hasInitialGreetingCompleted && !isRecentCancellation) {
       console.log(`⏳ [${this.state.callSid}] Waiting for initial greeting to complete before responding to: "${transcript}"`);
-      return;
+      return { processed: true, shouldCreateResponse: false };
     }
     
     // Add user transcription to conversation transcript
@@ -195,6 +423,16 @@ export class TranscriptionHandler {
     
     // Update last processed transcription time
     this.state.lastProcessedTranscriptionTime = transcriptionTime;
+    
+    // Return flag indicating transcription was processed and response can be created (if audio is not playing)
+    // Include quality information for response creation checks
+    return { 
+      processed: true, 
+      shouldCreateResponse: !isAudioPlaying,
+      qualityScore: qualityAssessment.qualityScore,
+      isBackgroundNoise: false,
+      isHighQuality: true
+    };
   }
 
   /**
@@ -214,14 +452,21 @@ export class TranscriptionHandler {
         const latestTranscription = this.state.pendingTranscriptions[this.state.pendingTranscriptions.length - 1];
         console.log(`✅ [${this.state.callSid}] Speech ended after interruption - acknowledging interruption first`);
         
+        // Clear the interruption timeout since transcriptions are available
+        if (this.state.interruptionTimeout) {
+          clearTimeout(this.state.interruptionTimeout);
+          this.state.interruptionTimeout = null;
+          console.log(`⏱️ [${this.state.callSid}] Cleared interruption timeout - transcriptions available`);
+        }
+        
         // Clear interruption flag
         this.state.isInterrupted = false;
         this.state.interruptionStartTime = 0;
         
-        // Check if it's a stop command
+        // Check if it's a stop command (only "stop" word)
         const transcript = latestTranscription.transcript;
-        const stopCommands = /\b(stop|wait|hold on|pause|shut up|be quiet|enough|that's enough)\b/i;
-        const isStopCommand = stopCommands.test(transcript);
+        const stopPattern = /\bstop\b/i; // Only match "stop" as a word (not substring like "stopped")
+        const isStopCommand = stopPattern.test(transcript);
         
         if (isStopCommand) {
           console.log(`🛑 [${this.state.callSid}] Stop command detected: "${transcript}" - entering listening mode`);
@@ -237,12 +482,41 @@ export class TranscriptionHandler {
         return { type: 'acknowledge_interruption' };
       } else {
         // Barge-in detected via speech_started but no transcriptions yet
-        // Clear interruption flag and wait for transcriptions to arrive
-        console.log(`✅ [${this.state.callSid}] Speech ended after interruption (no transcriptions yet) - clearing interruption flag, will process transcriptions when they arrive`);
-        this.state.isInterrupted = false;
-        this.state.interruptionStartTime = 0;
-        // Don't return - continue to normal flow to process transcriptions when they arrive
+        // CRITICAL FIX: Set a timeout to clear interruption flag if transcriptions don't arrive
+        // This prevents the system from getting stuck forever if transcriptions are filtered/lost
+        console.log(`⏸️ [${this.state.callSid}] Speech ended after interruption (no transcriptions yet) - KEEPING interruption flag set, waiting for transcriptions to arrive`);
+        
+        // Clear any existing timeout
+        if (this.state.interruptionTimeout) {
+          clearTimeout(this.state.interruptionTimeout);
+        }
+        
+        // Set timeout to clear interruption flag after 2.5 seconds if transcriptions don't arrive
+        // This ensures the system doesn't get stuck forever
+        const INTERRUPTION_TIMEOUT_MS = 2500; // 2.5 seconds - enough time for transcriptions to arrive
+        this.state.interruptionTimeout = setTimeout(() => {
+          // Timeout expired - transcriptions didn't arrive, clear interruption flag to resume conversation
+          if (this.state.isInterrupted && this.state.pendingTranscriptions.length === 0) {
+            console.log(`⏰ [${this.state.callSid}] Interruption timeout expired (${INTERRUPTION_TIMEOUT_MS}ms) - no transcriptions arrived, clearing interruption flag to resume conversation`);
+            this.state.isInterrupted = false;
+            this.state.interruptionStartTime = 0;
+            this.state.pendingBargeInCheck = false;
+            this.state.interruptionTimeout = null;
+          }
+        }, INTERRUPTION_TIMEOUT_MS);
+        
+        console.log(`⏱️ [${this.state.callSid}] Set interruption timeout (${INTERRUPTION_TIMEOUT_MS}ms) - will clear flag if transcriptions don't arrive`);
+        
+        // DON'T clear interruption flag - keep it set to prevent new responses
+        // Return early to prevent normal flow from creating responses
+        return null; // Wait for transcriptions to arrive
       }
+    }
+    
+    // CRITICAL: Don't process pending transcriptions if interrupted
+    if (this.state.isInterrupted) {
+      console.log(`🛑 [${this.state.callSid}] Skipping transcription processing - user has interrupted`);
+      return null;
     }
     
     // Handle normal speech continuation grace period
@@ -261,9 +535,18 @@ export class TranscriptionHandler {
           console.log(`✅ [${this.state.callSid}] Grace period expired - processing ${transcriptionsToProcess.length} transcriptions`);
           
           // Create response immediately if agent is waiting
-          if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+          // CRITICAL: Use atomic lock to prevent concurrent response creation
+          // CRITICAL: Don't create response if user has interrupted
+          if (this.state.waitingForUser && this.state.hasInitialGreetingCompleted && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
             try {
-              this.state.explicitResponseRequested = true;
+              // Lock acquired - proceed with response creation
+              // Double-check interruption state before sending
+              if (this.state.isInterrupted) {
+                console.log(`🛑 [${this.state.callSid}] Skipping response creation after grace period - user interrupted`);
+                this.state.releaseResponseLock();
+                return;
+              }
+
               if (this.openaiWs && this.openaiWs.readyState === 1) {
                 // CRITICAL FIX: Temporarily disable tools to ensure natural language response
                 // Step 1: Disable tools
@@ -337,6 +620,8 @@ export class TranscriptionHandler {
               }
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after grace period:`, err);
+              // Release lock on error
+              this.state.releaseResponseLock();
             }
           }
         }
@@ -344,6 +629,11 @@ export class TranscriptionHandler {
       
       console.log(`⏱️ [${this.state.callSid}] Started grace period timer (${gracePeriodMs}ms) for speech continuation`);
     } else if (this.state.pendingTranscriptionsAfterGrace.length > 0) {
+      // CRITICAL: Don't process if interrupted
+      if (this.state.isInterrupted) {
+        console.log(`🛑 [${this.state.callSid}] Skipping immediate transcription processing - user has interrupted`);
+        return null;
+      }
       // No grace period - process immediately
       const transcriptionsToProcess = [...this.state.pendingTranscriptionsAfterGrace];
       this.state.pendingTranscriptionsAfterGrace = [];
@@ -354,4 +644,3 @@ export class TranscriptionHandler {
     return null;
   }
 }
-

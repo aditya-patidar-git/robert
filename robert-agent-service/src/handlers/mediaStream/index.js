@@ -163,7 +163,9 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Update tool coordinator with OpenAI WebSocket
             if (setupResult?.openaiWs) {
                 toolCoordinator.setOpenAIWebSocket(setupResult.openaiWs);
-                stateManager.setOpenAIReady(setupResult.openaiWs);
+                // Set OpenAI ready with connection manager reference for robust sending
+                const connectionManager = openaiIntegration?.connectionManager || null;
+                stateManager.setOpenAIReady(setupResult.openaiWs, connectionManager);
             }
             
             // Audio processing will start automatically when first audio arrives
@@ -209,6 +211,24 @@ export const handleMediaStreamConnection = (ws, req) => {
                 }
                 
                 // Handle other Twilio events (mark, stop, etc.)
+                if (json.event === 'mark') {
+                    // Twilio sends mark events when audio finishes playing or is cleared
+                    // This helps track when barge-in clears were acknowledged
+                    const markName = json.mark?.name || 'unknown';
+                    const timestamp = json.timestamp || Date.now();
+                    
+                    // ENHANCED LOGGING: Track mark events to confirm clear message was processed
+                    console.log(`📌 [${stateManager.callSid}] Mark event received from Twilio: "${markName}" (audio finished or cleared)`);
+                    console.log(`   - Timestamp: ${timestamp}`);
+                    console.log(`   - Is interrupted: ${stateManager.isInterrupted}`);
+                    console.log(`   - Active response ID: ${stateManager.activeResponseId || 'none'}`);
+                    
+                    // If we're in an interrupted state, this mark likely confirms audio was cleared
+                    if (stateManager.isInterrupted) {
+                        console.log(`✅ [${stateManager.callSid}] Mark event received during interruption - likely confirms audio was cleared by "clear" message`);
+                    }
+                }
+                
                 if (json.event === 'stop') {
                     console.log(`🛑 [${stateManager.callSid}] Stop event received from Twilio`);
                     cleanup('twilio_stop');
@@ -314,20 +334,62 @@ export const handleMediaStreamConnection = (ws, req) => {
                 turnTakingStateMachine.reset(stateManager.callSid);
                 proactiveAssistanceService.clearCache(stateManager.callSid);
                 
-                // Update database with transcript
-                try {
-                    const sessionManagementService = (await import('../../services/sessionManagementService.js')).default;
-                    const duration = stateManager.callStartTime ? Math.floor((Date.now() - stateManager.callStartTime) / 1000) : null;
-                    const conversation = sessionManagementService.getSession(stateManager.callSid);
-                    
-                    const updateData = {
-                        callStatus: 'completed',
-                        ...(duration && { duration })
-                    };
+                    // Update database with transcript
+                    try {
+                        const sessionManagementService = (await import('../../services/sessionManagementService.js')).default;
+                        const duration = stateManager.callStartTime ? Math.floor((Date.now() - stateManager.callStartTime) / 1000) : null;
+                        const conversation = sessionManagementService.getSession(stateManager.callSid);
+                        
+                        const updateData = {
+                            callStatus: 'completed',
+                            ...(duration && { duration })
+                        };
+                        
+                        // Extract WebSocket connection quality metrics if available
+                        const connectionManager = openaiIntegration?.connectionManager || stateManager.openaiConnectionManager;
+                        if (connectionManager && connectionManager.connectionQuality) {
+                            const quality = connectionManager.connectionQuality;
+                            const latencyArray = quality.latency || [];
+                            
+                            if (latencyArray.length > 0) {
+                                const avgLatency = latencyArray.reduce((a, b) => a + b, 0) / latencyArray.length;
+                                const minLatency = Math.min(...latencyArray);
+                                const maxLatency = Math.max(...latencyArray);
+                                
+                                // Calculate variance (used for jitter estimation)
+                                const variance = latencyArray.reduce((sum, val) => {
+                                    return sum + Math.pow(val - avgLatency, 2);
+                                }, 0) / latencyArray.length;
+                                
+                                // Estimate packet loss from missed pongs
+                                const pingCount = connectionManager.config?.pingInterval 
+                                    ? Math.floor(duration * 1000 / connectionManager.config.pingInterval)
+                                    : 0;
+                                const packetLoss = pingCount > 0 
+                                    ? (quality.consecutivePongMisses / pingCount) * 100 
+                                    : null;
+                                
+                                updateData.websocketMetrics = {
+                                    avgLatency: Math.round(avgLatency * 100) / 100,
+                                    minLatency: Math.round(minLatency * 100) / 100,
+                                    maxLatency: Math.round(maxLatency * 100) / 100,
+                                    latencyVariance: Math.round(variance * 100) / 100,
+                                    packetLoss: packetLoss !== null ? Math.round(packetLoss * 100) / 100 : null,
+                                    consecutivePongMisses: quality.consecutivePongMisses || 0,
+                                    isHealthy: quality.isHealthy !== false,
+                                    pingCount: pingCount,
+                                    pongCount: latencyArray.length,
+                                    measuredAt: new Date()
+                                };
+                                
+                                console.log(`📊 [${stateManager.callSid}] WebSocket metrics saved: avgLatency=${updateData.websocketMetrics.avgLatency}ms, packetLoss=${updateData.websocketMetrics.packetLoss}%`);
+                            }
+                        }
                     
                     // Check recording consent before saving transcript (GDPR compliance)
                     const consent = conversation?.recordingConsent;
-                    const consentGiven = consent?.given === true;
+                    // Default is opt-in: null/undefined means consent given, only false means denied
+                    const consentGiven = consent?.given !== false;
                     
                     if (conversation?.transcript && conversation.transcript.length > 0) {
                         if (consentGiven) {
@@ -335,6 +397,15 @@ export const handleMediaStreamConnection = (ws, req) => {
                             updateData.transcript = conversation.transcript;
                             if (conversation.from) updateData.from = conversation.from;
                             if (conversation.to) updateData.to = conversation.to;
+                            
+                            // Ensure consent is saved (may have been set earlier, but ensure it's persisted)
+                            updateData.recordingConsent = {
+                                requested: consent?.requested || false,
+                                given: true,
+                                requestedAt: consent?.requestedAt || null,
+                                respondedAt: consent?.respondedAt || new Date(),
+                                optOutReason: null
+                            };
                             
                             // Generate summary if not already present
                             if (!updateData.summary && conversation.transcript.length > 0) {
@@ -365,6 +436,17 @@ export const handleMediaStreamConnection = (ws, req) => {
                                 optOutReason: consent?.optOutReason || "Consent not given"
                             };
                             console.log(`🚫 [${stateManager.callSid}] Transcript not saved - recording consent not given`);
+                        }
+                    } else {
+                        // No transcript but ensure consent is saved
+                        if (consent) {
+                            updateData.recordingConsent = {
+                                requested: consent.requested || false,
+                                given: consent.given !== false, // null/undefined means opt-in
+                                requestedAt: consent.requestedAt || null,
+                                respondedAt: consent.respondedAt || null,
+                                optOutReason: consent.optOutReason || null
+                            };
                         }
                     }
                     

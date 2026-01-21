@@ -9,21 +9,38 @@ export async function createNewContact(page, screenshotsDir) {
   try {
     console.log('👤 [STEP 6] Clicking "New contact" button...');
     
-    // WAIT FOR CONTACT PAGE TO LOAD - 3 seconds
-    console.log('⏳ [STEP 6] Waiting for contact choice page to load...');
-    await page.waitForTimeout(3000);
+    // CRITICAL FIX: Wait for iframe to appear after Step 5 (NEXT button click)
+    // The iframe should already exist from Step 4, but may reload after Step 5
+    // Use waitForSelector instead of fixed timeout for reliability
+    console.log('⏳ [STEP 6] Waiting for contact choice page iframe to load...');
+    
+    try {
+      // Wait for iframe to be attached to DOM (it should exist from Step 4)
+      // After Step 5 clicks "NEXT", the iframe content reloads with contact choice page
+      await page.waitForSelector('#eventNewBooking2_iframe', { 
+        state: 'attached', 
+        timeout: 15000  // Increased timeout for CBT Executive and other workflows
+      });
+      console.log('✅ [STEP 6] Contact choice page iframe found');
+    } catch (iframeError) {
+      // If iframe doesn't appear, provide helpful error message with context
+      const currentUrl = page.url();
+      console.error(`❌ [STEP 6] Iframe not found. Current URL: ${currentUrl}`);
+      throw new Error(`eventNewBooking2_iframe not found after Step 5 - the contact choice page may not have loaded. This usually means Step 5 (selectBookingOptions) did not complete successfully or the page did not navigate correctly. Current URL: ${currentUrl}`);
+    }
     
     // The contact choice page is inside eventNewBooking2_iframe
-    console.log('🔍 [STEP 6] Checking for contact choice page in iframe...');
+    console.log('🔍 [STEP 6] Verifying contact choice page iframe is accessible...');
     const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
     
     if (!eventBookingIframeExists) {
-      throw new Error('eventNewBooking2_iframe not found - contact choice page may not have loaded');
+      const currentUrl = page.url();
+      throw new Error(`eventNewBooking2_iframe not found - contact choice page may not have loaded. Current URL: ${currentUrl}`);
     }
     
     const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
     
-    // Wait for iframe to be ready
+    // Wait for iframe content to be ready (content may still be loading)
     await page.waitForTimeout(2000);
     
     // Should see "Contact choice" or "3. Contact" page with two options

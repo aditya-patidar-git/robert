@@ -84,11 +84,6 @@ const callRecordSchema = new mongoose.Schema({
     drivingLicense: [String]
   },
   gdprCompliant: { type: Boolean, default: true },
-  consentRecorded: {
-    recording: { type: Boolean, default: false },
-    processing: { type: Boolean, default: false },
-    timestamp: Date
-  },
   recordingConsent: {
     requested: { type: Boolean, default: false },
     given: { type: Boolean, default: null }, // null = not yet responded, true = consented, false = declined
@@ -116,6 +111,24 @@ const callRecordSchema = new mongoose.Schema({
       enum: ['excellent', 'good', 'fair', 'poor'],
       default: 'good'
     },
+    measuredAt: { type: Date, default: Date.now },
+    source: {
+      type: String,
+      enum: ['voice_insights', 'websocket', 'annotations'],
+      default: null
+    }
+  },
+  // WebSocket connection quality metrics (for Media Streams calls)
+  websocketMetrics: {
+    avgLatency: Number,        // Average ping/pong latency in ms
+    minLatency: Number,        // Minimum latency
+    maxLatency: Number,        // Maximum latency
+    latencyVariance: Number,    // Variance (used for jitter estimation)
+    packetLoss: Number,        // Estimated packet loss percentage
+    consecutivePongMisses: Number, // Missed pong responses
+    isHealthy: Boolean,        // Connection health status
+    pingCount: Number,         // Total ping attempts
+    pongCount: Number,         // Total pong responses received
     measuredAt: { type: Date, default: Date.now }
   },
   toolsUsed: [{

@@ -183,9 +183,12 @@ class GroundednessKPIService {
       }
 
       const callRecords = await CallRecord.find(query)
-        .select('provenance transcript');
+        .select('provenance transcript callSid createdAt');
 
       const analytics = {
+        totalCalls: callRecords.length,
+        callsWithKB: 0,
+        callsWithoutKB: 0,
         totalKBQueries: 0,
         averageSimilarityScore: 0,
         similarityDistribution: {
@@ -206,6 +209,7 @@ class GroundednessKPIService {
 
       for (const record of callRecords) {
         if (record.provenance && record.provenance.length > 0) {
+          analytics.callsWithKB++;
           analytics.totalKBQueries += record.provenance.length;
           analytics.queriesWithResults += record.provenance.length > 0 ? 1 : 0;
 
@@ -231,6 +235,7 @@ class GroundednessKPIService {
             }
           });
         } else {
+          analytics.callsWithoutKB++;
           analytics.queriesWithoutResults++;
         }
       }

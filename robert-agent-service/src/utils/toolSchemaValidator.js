@@ -28,6 +28,18 @@ const emailSchema = z.object({
   template: z.string().optional()
 });
 
+// Send SMS Schema (standalone tool)
+const sendSMSSchema = z.object({
+  to: z.string().regex(/^(?:\+44|0)7\d{9}$/, 'Invalid UK mobile number format. Expected: 11 digits starting with 07 (e.g., 07123456789)'),
+  message: z.string().min(1, 'SMS message is required').max(1600, 'SMS message too long (max 1600 characters)')
+});
+
+// Generate Reference ID Schema (standalone tool)
+const generateReferenceIdSchema = z.object({
+  prefix: z.string().max(10, 'Prefix too long (max 10 characters)').regex(/^[A-Z0-9-]+$/i, 'Prefix must be alphanumeric').optional(),
+  purpose: z.string().optional()
+});
+
 // CRM Schema
 const crmSchema = z.object({
   action: z.enum(['get_customer', 'update_customer', 'create_booking']),
@@ -112,12 +124,21 @@ const kbaVerificationSchema = z.object({
   otpCode: z.string().optional()
 });
 
-// Client Verification Schema
+// Client Verification Schema - All fields optional for incremental collection
+// CRITICAL: The agent MUST collect all three fields incrementally before verification can succeed
 const clientVerificationSchema = z.object({
-  fullName: z.string().min(1, 'Full name is required'),
-  postcode: z.string().min(1, 'Postcode is required'),
-  telephoneNumber: z.string().min(1, 'Telephone number is required')
-});
+  fullName: z.string().min(1, 'Full name is required').optional(),
+  postcode: z.string().min(1, 'Postcode is required').optional(),
+  telephoneNumber: z.string().min(1, 'Telephone number is required').optional()
+}).refine(
+  (data) => {
+    // At least one field must be provided
+    return data.fullName || data.postcode || data.telephoneNumber;
+  },
+  {
+    message: 'At least one verification field (fullName, postcode, or telephoneNumber) must be provided'
+  }
+);
 
 // Complaint Submission Schema
 const complaintSubmissionSchema = z.object({
@@ -248,6 +269,8 @@ const toolSchemas = {
   web_search: webSearchSchema,
   calendar: calendarSchema,
   email: emailSchema,
+  send_sms: sendSMSSchema,
+  generate_reference_id: generateReferenceIdSchema,
   crm: crmSchema,
   crm_browser: crmBrowserSchema,
   payments: paymentsSchema,
@@ -316,18 +339,8 @@ export function validateToolParameters(toolName, parameters) {
   }
 }
 
-/**
- * Check if a tool has a schema defined
- * @param {string} toolName - Name of the tool
- * @returns {boolean} True if schema exists
- */
-export function hasSchema(toolName) {
-  return toolName in toolSchemas;
-}
-
 export default {
   validateToolParameters,
-  hasSchema,
   toolSchemas
 };
 

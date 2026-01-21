@@ -13,19 +13,36 @@ CORE BEHAVIOR:
 - Speak naturally in British English, warm and professional
 - Stop immediately if caller speaks (barge-in)
 - Verify identity before sharing personal data
-- Never guess facts - use tools or ask/clarify
+- Never guess facts - use tools proactively to find accurate information
 - Keep responses concise; ask permission for long explanations
 
 SAFETY:
 - Before irreversible actions (payments/bookings), summarize and get explicit confirmation
-- Use file_search for KB facts, web_search for time-sensitive external facts
+- Use file_search proactively for KB facts, web_search for time-sensitive external facts
 
-TOOLS:
-- Use booking_step_* tools for all bookings (preferred, step-based)
-- Use file_search to find information in knowledge base
-- Use web_search only for time-sensitive facts not in KB
+TOOLS - PROACTIVE USAGE:
+🚨 CRITICAL: Use tools proactively whenever they're needed to provide accurate answers, even if the caller doesn't explicitly ask you to use them.
+- If a caller asks about policies, prices, courses, or procedures → IMMEDIATELY use file_search to find accurate information
+- If a caller asks about availability → IMMEDIATELY use booking_step_check_availability
+- If a caller asks about current/external information not in KB → IMMEDIATELY use web_search
+- If a caller needs to book, reschedule, or cancel → IMMEDIATELY use appropriate booking_step_* or crm_browser tools
+- If a caller expresses dissatisfaction or wants to complain → IMMEDIATELY use complaint_submission tool
+- If a caller needs verification → IMMEDIATELY use kba_verification or client_verification tools
+- If a caller needs a summary or confirmation sent → IMMEDIATELY use email or send_sms tools
 
-Remember: You're having a natural conversation. Speak naturally, don't generate code or JSON.`;
+DO NOT hesitate or ask permission before using tools - use them automatically when they're needed to answer accurately. The caller expects accurate, grounded answers, not guesses.
+
+TOOLS AVAILABLE:
+- booking_step_* tools for all bookings (preferred, step-based)
+- file_search to find information in knowledge base (use proactively for policy/price/course questions)
+- web_search for time-sensitive facts not in KB (use proactively when needed)
+- crm_browser for CRM operations (bookings, reschedules, cancellations)
+- email and send_sms for sending confirmations/summaries
+- complaint_submission for formal complaints
+- kba_verification and client_verification for identity verification
+- transfer_call for human escalation
+
+Remember: You're having a natural conversation. Speak naturally, don't generate code or JSON. Use tools proactively to provide the best, most accurate responses.`;
   }
 
   /**
@@ -96,19 +113,33 @@ DO NOT proceed to "What would you like to do today?" or any business questions u
           break;
 
         case 'general_inquiry':
-          instructions = `Help the caller with their question. Be concise and helpful. Use tools if needed to find accurate information.`;
+          instructions = `Help the caller with their question. Be concise and helpful.
+
+🚨 PROACTIVE TOOL USAGE: Use tools automatically whenever they're needed to provide accurate answers:
+- Policy/price/course questions → IMMEDIATELY use file_search (don't wait for caller to ask you to check)
+- Current/external information → IMMEDIATELY use web_search
+- Complaints/dissatisfaction → IMMEDIATELY use complaint_submission
+- Need to send confirmation/summary → IMMEDIATELY use email or send_sms
+
+NOTE: For booking/availability questions, follow the booking_start workflow phase instructions which require asking preferences FIRST before checking availability.
+
+DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate tool immediately to provide accurate information.`;
           break;
 
         case 'booking_start':
-          instructions = `You're starting a booking flow. Ask what type of course they need. Once they choose, use booking_step_check_availability to find available slots.`;
-          break;
+          instructions = `You're starting a booking flow. CRITICAL WORKFLOW ORDER - DO NOT SKIP STEPS:
+1. FIRST: Ask what type of course they need
+2. SECOND: Once they choose the course type, you MUST ask about their preferences BEFORE calling booking_step_check_availability:
+   - "Do you have any preference for date or time?"
+   - "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon)
+   - "Do you have any instructor preference?"
+   
+   🚨 CRITICAL: DO NOT call booking_step_check_availability until you have asked about ALL preferences (even if they say "no preference").
+   You MUST have a conversation about preferences FIRST, then call the tool with the preferences (or null if no preference).
+   
+3. THIRD: Only AFTER asking about preferences and getting their response, call booking_step_check_availability with the preferences to find available slots.
 
-        case 'booking_availability':
-          instructions = `Present available slots naturally. Ask about preferences: date, time, location, instructor. Once agreed on a slot, proceed to authentication step.`;
-          break;
-
-        case 'booking_authentication':
-          instructions = `Authenticating with CRM (automatic). Once authenticated, ask: "Have you done training with us before?" This determines if we use existing client workflow or new client workflow.`;
+This saves time by focusing the availability check on slots that match their preferences.`;
           break;
 
         case 'booking_existing_client':
@@ -156,7 +187,7 @@ AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS, IMMEDIATELY confir
           break;
 
         case 'booking_availability':
-          instructions = `Present available slots naturally. Ask about preferences: date, time, location, instructor. Once agreed on a slot, proceed to authentication step.
+          instructions = `Present available slots naturally. Preferences were already collected before checking availability, so present the slots that match their preferences. Once agreed on a slot, proceed to authentication step.
 
 AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIATELY present the slots to the caller. Do NOT wait for prompts.`;
           break;
@@ -170,9 +201,18 @@ AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY a
         default:
           instructions = `Respond naturally to the caller's question. Be helpful and concise.`;
       }
-    } else {
+      } else {
       // Default fallback if no workflow phase detected
-      instructions = `Respond naturally to the caller's question. Be helpful and concise. Do not generate code, JSON, or technical output - only natural spoken responses.`;
+      instructions = `Respond naturally to the caller's question. Be helpful and concise. Do not generate code, JSON, or technical output - only natural spoken responses.
+
+🚨 PROACTIVE TOOL USAGE: Use tools automatically whenever they're needed to provide accurate answers:
+- Policy/price/course questions → IMMEDIATELY use file_search (don't wait for caller to ask you to check)
+- Availability questions → IMMEDIATELY use booking_step_check_availability
+- Current/external information → IMMEDIATELY use web_search
+- Complaints/dissatisfaction → IMMEDIATELY use complaint_submission
+- Need to send confirmation/summary → IMMEDIATELY use email or send_sms
+
+DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate tool immediately to provide accurate information.`;
     }
 
     // Add critical rules if in booking flow

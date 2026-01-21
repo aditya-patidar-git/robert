@@ -30,7 +30,6 @@ export async function selectSmartSearch(iframe, page, screenshotsDir) {
     console.log('⏳ [SEARCH] Waiting for dropdown menu to appear...');
     await page.waitForTimeout(2000);
 
-    await takeScreenshot(page, 'dropdown-menu-opened.png', screenshotsDir);
 
     // Look for "Smart search" option and scroll up to make it clickable
     console.log('🔍 [SEARCH] Looking for Smart search option in menu...');
@@ -65,7 +64,6 @@ export async function selectSmartSearch(iframe, page, screenshotsDir) {
     console.log('⏳ [SEARCH] Waiting for Smart search selection...');
     await page.waitForTimeout(2000);
 
-    await takeScreenshot(page, 'smart-search-selected.png', screenshotsDir);
     
     return true;
   } catch (error) {
@@ -150,9 +148,6 @@ export async function executeSearch(iframe, page, searchValue, screenshotsDir) {
     // WAIT FOR SEARCH RESULTS - 5 seconds
     console.log('⏳ [SEARCH] Waiting for search results...');
     await page.waitForTimeout(5000);
-    
-    // Take screenshot after search
-    await takeScreenshot(page, 'search-results.png', screenshotsDir);
     
     return true;
   } catch (error) {

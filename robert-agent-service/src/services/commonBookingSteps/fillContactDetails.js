@@ -207,8 +207,15 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
         console.log(`📍 [STEP 7] Town/City auto-populated: ${townCity}`);
       }
       
-        // If address was auto-populated, return it for confirmation before clicking Next
-        if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
+        // CRITICAL FIX: Only return requiresAddressConfirmation if we're on the Contact Details page
+        // This prevents asking for confirmation on LookupContactPage where the house number field doesn't exist
+        const eventBookingIframeStillExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+        if (!eventBookingIframeStillExists) {
+          // We're not on the Contact Details page anymore - don't ask for confirmation
+          console.log('⚠️ [STEP 8] Not on Contact Details page anymore - skipping address confirmation');
+          // Continue with the flow without confirmation
+        } else if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
+          // Only return requiresAddressConfirmation if we're on the correct page
           return {
             success: true,
             requiresAddressConfirmation: true,

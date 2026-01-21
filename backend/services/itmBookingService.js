@@ -6,7 +6,7 @@
 // In production, if this endpoint is needed, it should be refactored to manage
 // browser instances within robert-agent-service and use API-based communication.
 // For now, we keep the direct import since it's only used for testing purposes.
-import itmBookingService from '../../robert-agent-service/src/services/itmBookingService.js';
+import itmBookingService from '../../robert-agent-service/src/services/itmBooking/index.js';
 
 export default itmBookingService;
 

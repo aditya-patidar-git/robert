@@ -1,6 +1,6 @@
 import { BrowserManager } from './browserManager.js';
 import { TaskExecutor } from './taskExecutor.js';
-import { CourseBookingRouter } from './courseBookingRouter.js';
+// DEPRECATED: CourseBookingRouter removed - create_booking task is blocked
 import { takeScreenshot, saveAuditLog, extractPriceFromBooking } from '../commonBookingSteps/utils.js';
 import urlValidation from '../../utils/urlValidation.js';
 import { clearRecaptchaStorage } from '../../utils/stealthUtils.js';
@@ -32,17 +32,9 @@ class BrowserAgentService {
     // Initialize browser manager
     this.browserManager = new BrowserManager(this.crmCredentials, this.screenshotsDir, this.auditDir);
     
-    // Initialize course booking router
-    this.courseBookingRouter = new CourseBookingRouter(
-      this.browserManager,
-      this.updateExecutionPhase.bind(this),
-      this.activeExecutions
-    );
-    
     // Initialize task executor
     this.taskExecutor = new TaskExecutor(
       this.browserManager,
-      this.courseBookingRouter,
       this.updateExecutionPhase.bind(this),
       this.activeExecutions,
       this.executionLockTimeout,
@@ -205,12 +197,8 @@ class BrowserAgentService {
     await page.goto(url, options);
   }
 
-  // Legacy methods for backward compatibility (delegated to task handlers)
-  // These are kept for any code that might call them directly
-  async createBooking(page, args, auditId) {
-    const { createBooking } = await import('./tasks/createBooking.js');
-    return await createBooking(page, args, auditId);
-  }
+  // DEPRECATED: Legacy createBooking method removed - use booking_step_* tools instead
+  // createBooking is blocked in crmBrowserTool.js
 
   async rescheduleBooking(page, args, auditId) {
     const { rescheduleBooking } = await import('./tasks/rescheduleBooking.js');

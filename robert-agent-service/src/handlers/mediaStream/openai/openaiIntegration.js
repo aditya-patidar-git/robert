@@ -2,6 +2,7 @@ import { WebSocket } from "ws";
 import { conversations, realtimeClients } from "../../../shared/state.js";
 import configManager from "../../../agent/configManager.js";
 import toolExecutor from "../../../tools/index.js";
+import { WebSocketConnectionManager } from "../../../utils/websocketConnectionManager.js";
 
 /**
  * OpenAI Integration
@@ -14,6 +15,7 @@ export class OpenAIIntegration {
     this.audioProcessor = audioProcessor;
     this.onEvent = onEvent; // Callback for event handling
     this.openaiTimeout = null;
+    this.connectionManager = null; // Will be initialized after WebSocket connection
   }
 
   /**
@@ -134,15 +136,16 @@ export class OpenAIIntegration {
             headers: headers
           });
           
-          // Set a connection timeout
+          // OPTIMIZATION: Reduced timeout from 20s to 8s (removed VPN-specific increase)
+          // 8 seconds is sufficient for normal connections and allows faster failure detection
           const connectionTimeout = setTimeout(() => {
             if (ws.readyState !== WebSocket.OPEN) {
-              console.error(`⏱️ [${this.state.callSid}] Connection timeout after 10s (readyState: ${ws.readyState})`);
+              console.error(`⏱️ [${this.state.callSid}] Connection timeout after 8s (readyState: ${ws.readyState})`);
               ws.removeAllListeners();
               ws.terminate();
               reject(new Error('Connection timeout'));
             }
-          }, 10000); // 10 second timeout
+          }, 8000); // Reduced from 20s (VPN-specific) to 8s for faster startup
           
           ws.on('open', () => {
             clearTimeout(connectionTimeout);
@@ -230,6 +233,35 @@ export class OpenAIIntegration {
   }
 
   /**
+   * Send message through OpenAI WebSocket with connection manager support
+   * @param {Object|string} message - Message to send
+   * @param {Object} options - Send options (priority, queueOnFailure)
+   * @returns {boolean} True if sent successfully
+   */
+  sendToOpenAI(message, options = {}) {
+    const messageObj = typeof message === 'string' ? message : JSON.stringify(message);
+    
+    // Use connection manager if available (provides queuing, keep-alive, quality monitoring)
+    if (this.connectionManager) {
+      return this.connectionManager.send(messageObj, options);
+    }
+    
+    // Fallback to direct send if connection manager not initialized
+    if (this.state.openaiWs && this.state.openaiWs.readyState === WebSocket.OPEN) {
+      try {
+        this.state.openaiWs.send(messageObj);
+        return true;
+      } catch (error) {
+        console.error(`❌ [${this.state.callSid}] Error sending message:`, error.message);
+        return false;
+      }
+    }
+    
+    console.warn(`⚠️ [${this.state.callSid}] Cannot send message - WebSocket not ready (readyState: ${this.state.openaiWs?.readyState})`);
+    return false;
+  }
+
+  /**
    * Setup OpenAI WebSocket connection and session
    */
   async setupOpenAI() {
@@ -239,59 +271,26 @@ export class OpenAIIntegration {
     try {
       console.log(`🚀 Setting up OpenAI connection for call: ${this.state.callSid}`);
       
-      // Detailed API key validation and debugging
+      // OPTIMIZATION: Reduced logging verbosity - only validate and log errors
       const rawApiKey = process.env.OPENAI_API_KEY;
-      console.log(`🔍 [${this.state.callSid}] API Key Check:`);
-      console.log(`   - Exists: ${rawApiKey !== undefined && rawApiKey !== null}`);
-      console.log(`   - Type: ${typeof rawApiKey}`);
-      console.log(`   - Length: ${rawApiKey?.length || 0}`);
-      console.log(`   - Is empty string: ${rawApiKey === ''}`);
-      console.log(`   - Is whitespace only: ${rawApiKey?.trim() === ''}`);
-      
-      if (!rawApiKey) {
-        console.error(`❌ [${this.state.callSid}] OPENAI_API_KEY is missing (undefined or null)`);
+      if (!rawApiKey || rawApiKey.trim() === '' || rawApiKey.trim().length < 20) {
+        console.error(`❌ [${this.state.callSid}] OPENAI_API_KEY is invalid or missing`);
         return { error: 'missing_api_key', retryable: false };
       }
       
       const apiKey = rawApiKey.trim();
-      if (apiKey === '') {
-        console.error(`❌ [${this.state.callSid}] OPENAI_API_KEY is empty or whitespace only`);
-        return { error: 'empty_api_key', retryable: false };
-      }
-      
-      if (apiKey.length < 20) {
-        console.error(`❌ [${this.state.callSid}] OPENAI_API_KEY appears invalid (too short: ${apiKey.length} chars)`);
-        return { error: 'invalid_api_key_length', retryable: false };
-      }
-      
-      // Mask API key for logging (show first 4 and last 4 chars)
       const maskedKey = apiKey.length > 8 
         ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` 
         : '***';
-      console.log(`   - Masked key: ${maskedKey}`);
-      console.log(`   - Starts with 'sk-': ${apiKey.startsWith('sk-')}`);
-      console.log(`   - Valid format: ${apiKey.startsWith('sk-') && apiKey.length >= 20}`);
       
       // Get dynamic config for this phone number (with current language)
       const currentLanguage = conversations[this.state.callSid]?.language || 'en';
       const config = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
       const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
       
-      // Detect flow type from conversation context (if available)
+      // OPTIMIZATION: Defer flow detection - it's not needed for initial setup
+      // Flow detection can happen after the greeting is sent
       let flowType = 'default';
-      try {
-        const flowDetectionService = (await import('../../../services/flowDetectionService.js')).default;
-        const conversation = conversations[this.state.callSid] || {};
-        const transcript = conversation.transcript || [];
-        const recentText = transcript.slice(-5).map(t => t.text || t.content || '').join(' ');
-        
-        flowType = flowDetectionService.detectFlow(recentText, transcript, {
-          callSid: this.state.callSid,
-          phoneNumber: this.state.phoneNumber
-        });
-      } catch (error) {
-        console.warn(`⚠️ [${this.state.callSid}] Flow detection failed, using default:`, error.message);
-      }
       
       // Get effective parameters (flow-specific or global)
       const aiConfig = configManager.getAIConfig();
@@ -349,6 +348,10 @@ export class OpenAIIntegration {
       let privacySettings = null;
       if (privacyConfig) {
         privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        // OPTIMIZATION: Cache privacy settings in conversation for reuse
+        if (privacySettings && conversations[this.state.callSid]) {
+          conversations[this.state.callSid]._cachedPrivacySettings = privacySettings;
+        }
       }
       
       const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
@@ -407,13 +410,38 @@ ${config.instructions}`;
         console.log(`✅ [${this.state.callSid}] Recording consent already set (given: true) - skipping consent question`);
       } else {
         // Opt-in by default: automatically set consent to given
-        this.state.recordingConsentState.requested = false;
-        this.state.recordingConsentState.given = true;
-        this.state.recordingConsentState.respondedAt = new Date();
-        conversations[this.state.callSid].recordingConsent.requested = false;
-        conversations[this.state.callSid].recordingConsent.given = true;
-        conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
-        conversations[this.state.callSid].recordingConsent.optOutReason = null;
+        const consentData = {
+          requested: false,
+          given: true,
+          respondedAt: new Date(),
+          optOutReason: null
+        };
+        this.state.recordingConsentState.requested = consentData.requested;
+        this.state.recordingConsentState.given = consentData.given;
+        this.state.recordingConsentState.respondedAt = consentData.respondedAt;
+        conversations[this.state.callSid].recordingConsent.requested = consentData.requested;
+        conversations[this.state.callSid].recordingConsent.given = consentData.given;
+        conversations[this.state.callSid].recordingConsent.respondedAt = consentData.respondedAt;
+        conversations[this.state.callSid].recordingConsent.optOutReason = consentData.optOutReason;
+        
+        // CRITICAL: Save consent to CallRecord immediately so it's available when recording webhook arrives
+        try {
+          const CallRecord = (await import('../../../database/models/CallRecord.js')).default;
+          await CallRecord.findOneAndUpdate(
+            { callSid: this.state.callSid },
+            {
+              $set: {
+                recordingConsent: consentData
+              }
+            },
+            { upsert: true }
+          );
+          console.log(`✅ [${this.state.callSid}] Recording consent saved to CallRecord (opt-in by default)`);
+        } catch (dbError) {
+          console.error(`⚠️ [${this.state.callSid}] Error saving consent to CallRecord:`, dbError);
+          // Continue even if DB save fails - consent is still in memory
+        }
+        
         console.log(`✅ [${this.state.callSid}] Recording consent set to opt-in by default (given: true)`);
         
         // CRITICAL: Even when consent is opt-in, we MUST still ask language preference
@@ -447,15 +475,7 @@ ${config.instructions}`;
         'OpenAI-Beta': 'realtime=v1'
       };
       
-      // Debug header creation
-      console.log(`🔍 [${this.state.callSid}] Header Validation:`);
-      console.log(`   - Authorization header exists: ${!!headers['Authorization']}`);
-      console.log(`   - Authorization header length: ${headers['Authorization']?.length || 0}`);
-      console.log(`   - Authorization starts with 'Bearer ': ${headers['Authorization']?.startsWith('Bearer ') || false}`);
-      console.log(`   - OpenAI-Beta header: ${headers['OpenAI-Beta']}`);
-      console.log(`   - Masked auth header: Bearer ${maskedKey}`);
-      
-      // Verify header format
+      // OPTIMIZATION: Reduced logging - only log if there's an issue
       if (!headers['Authorization'] || !headers['Authorization'].startsWith('Bearer ')) {
         console.error(`❌ [${this.state.callSid}] Invalid Authorization header format`);
         return { error: 'invalid_header_format', retryable: false };
@@ -469,9 +489,18 @@ ${config.instructions}`;
       
       let openaiWs;
       try {
-        console.log(`🔌 [${this.state.callSid}] Attempting WebSocket connection with headers...`);
+        console.log(`🔌 [${this.state.callSid}] Attempting WebSocket connection...`);
         openaiWs = await this.createWebSocketWithRetry(openaiUrl, headers, 3, 1000);
         console.log(`✅ [${this.state.callSid}] OpenAI WebSocket connected successfully`);
+        
+        // Initialize connection manager for robust connection handling (keep-alive, queuing, quality monitoring)
+        this.connectionManager = new WebSocketConnectionManager(openaiWs, this.state.callSid, {
+          pingInterval: 30000, // 30 seconds
+          pongTimeout: 10000, // 10 seconds
+          maxQueueSize: 100,
+          unhealthyThreshold: 3
+        });
+        console.log(`🔧 [${this.state.callSid}] WebSocket connection manager initialized`);
       } catch (err) {
         const isRetryable = this.isRetryableError(err);
         const errorType = isRetryable ? 'retryable_error' : 'non_retryable_error';
@@ -485,7 +514,8 @@ ${config.instructions}`;
         }
       }
       
-      this.state.setOpenAIReady(openaiWs);
+      // Set OpenAI ready with connection manager reference
+      this.state.setOpenAIReady(openaiWs, this.connectionManager);
       realtimeClients[this.state.callSid] = { twilioWs: this.ws, openaiWs, streamSid: this.state.streamSid };
       
       // Ensure transcript and language are set
@@ -521,7 +551,7 @@ ${config.instructions}`;
           
           // Clear any existing conversation state and audio buffer
           try {
-            openaiWs.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+            this.sendToOpenAI({ type: 'input_audio_buffer.clear' }, { priority: 'high' });
             console.log(`🧹 [${this.state.callSid}] Cleared input audio buffer at session start`);
           } catch (err) {
             console.warn(`⚠️ [${this.state.callSid}] Could not clear audio buffer at start:`, err.message);
@@ -534,7 +564,7 @@ ${config.instructions}`;
           const initialThreshold = config.vadThreshold / 1000; // Convert ms to seconds
           
           // Apply dynamic config to OpenAI session
-          openaiWs.send(JSON.stringify({
+          const sessionUpdateMessage = {
             type: 'session.update',
             session: {
               modalities: ['audio', 'text'],
@@ -552,7 +582,10 @@ ${config.instructions}`;
               tools: tools,
               tool_choice: 'auto'
             }
-          }));
+          };
+          
+          // Use robust send method with connection manager support
+          this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
           console.log(`📤 Sent session.update with config and ${tools.length} tools for call: ${this.state.callSid}`);
           console.log(`🔍 [${this.state.callSid}] Session config details:`);
           console.log(`   - input_audio_format: g711_ulaw`);
@@ -670,7 +703,7 @@ ${config.instructions}`;
         
         // CRITICAL: Clear any existing conversation state and audio buffer
         try {
-          openaiWs.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+          this.sendToOpenAI({ type: 'input_audio_buffer.clear' }, { priority: 'high' });
           console.log(`🧹 [${this.state.callSid}] Cleared input audio buffer at session start`);
         } catch (err) {
           console.warn(`⚠️ [${this.state.callSid}] Could not clear audio buffer at start:`, err.message);
@@ -683,7 +716,7 @@ ${config.instructions}`;
         const initialThreshold = config.vadThreshold / 1000; // Convert ms to seconds
         
         // Apply dynamic config to OpenAI session
-        openaiWs.send(JSON.stringify({
+        const sessionUpdateMessage = {
           type: 'session.update',
           session: {
             modalities: ['audio', 'text'],
@@ -701,7 +734,10 @@ ${config.instructions}`;
             tools: tools,
             tool_choice: 'auto'
           }
-        }));
+        };
+        
+        // Use robust send method with connection manager support
+        this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
         console.log(`📤 Sent session.update with config and ${tools.length} tools for call: ${this.state.callSid}`);
         console.log(`🔍 [${this.state.callSid}] Session config details:`);
         console.log(`   - input_audio_format: g711_ulaw`);
@@ -838,6 +874,17 @@ ${config.instructions}`;
    * Cleanup OpenAI connection
    */
   cleanup() {
+    if (this.state.isClosed) return;
+    this.state.isClosed = true;
+    
+    console.log(`🧹 Cleaning up OpenAI integration for call: ${this.state.callSid}`);
+    
+    // Cleanup connection manager (stops keep-alive, clears queue)
+    if (this.connectionManager) {
+      this.connectionManager.cleanup();
+      this.connectionManager = null;
+    }
+    
     if (this.openaiTimeout) {
       clearTimeout(this.openaiTimeout);
       this.openaiTimeout = null;
@@ -845,16 +892,20 @@ ${config.instructions}`;
     
     if (this.state.openaiWs) {
       this.state.openaiWs.removeAllListeners();
-      if (this.state.openaiWs.readyState === 1) {
+      if (this.state.openaiWs.readyState === WebSocket.OPEN) {
         try {
-          this.state.openaiWs.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
-          this.state.openaiWs.send(JSON.stringify({ type: 'session.cancel' }));
+          // Use robust send method for cleanup messages (don't queue on failure)
+          this.sendToOpenAI({ type: 'input_audio_buffer.clear' }, { priority: 'high', queueOnFailure: false });
+          this.sendToOpenAI({ type: 'session.cancel' }, { priority: 'high', queueOnFailure: false });
         } catch (err) {
           console.warn(`⚠️ [${this.state.callSid}] Error clearing state during cleanup:`, err.message);
         }
         this.state.openaiWs.close(1000, 'Call ended');
       }
+      this.state.openaiWs = null;
     }
+    
+    this.state.setOpenAIReady(null);
   }
 }
 

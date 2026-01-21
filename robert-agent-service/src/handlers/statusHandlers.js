@@ -67,7 +67,8 @@ export const callStatus = async (req, res) => {
             // Get conversation data - may be cleaned up, so check CallRecord as fallback
             let conversation = conversations[CallSid];
             let consent = conversation?.recordingConsent;
-            let consentGiven = consent?.given === true;
+            // Default is opt-in: null/undefined means consent given, only false means denied
+            let consentGiven = consent?.given !== false;
             
             // If conversation cleaned up, try to get consent from CallRecord
             if (!conversation || !consent) {
@@ -75,7 +76,8 @@ export const callStatus = async (req, res) => {
                     const existingRecord = await CallRecord.findOne({ callSid: CallSid }).lean();
                     if (existingRecord?.recordingConsent) {
                         consent = existingRecord.recordingConsent;
-                        consentGiven = consent.given === true;
+                        // Default is opt-in: null/undefined means consent given, only false means denied
+                        consentGiven = consent.given !== false;
                         // Use existing record data if conversation is gone
                         if (!conversation && existingRecord) {
                             conversation = {
@@ -100,13 +102,13 @@ export const callStatus = async (req, res) => {
             
             const callerId = From || conversation.from;
             
-            // Save transcript to CallRecord immediately when call completes
-            // This ensures transcript is saved even if recording webhook fails
+            // CRITICAL: Save transcript AND consent to CallRecord BEFORE cleanup
+            // This ensures data is persisted and available when recording webhook arrives
             // BUT only if recording consent was given (GDPR compliance)
             
             if (conversation.transcript && conversation.transcript.length > 0) {
                 if (consentGiven) {
-                    // Consent given - store transcript
+                    // Consent given - store transcript and ensure consent is saved
                     try {
                         await CallRecord.findOneAndUpdate(
                             { callSid: CallSid },
@@ -116,12 +118,20 @@ export const callStatus = async (req, res) => {
                                     from: conversation.from || From,
                                     to: conversation.to || To,
                                     duration: conversation.duration || null,
-                                    language: conversation.language || 'en-GB'
+                                    language: conversation.language || 'en-GB',
+                                    // Ensure consent is saved (may have been set earlier, but ensure it's persisted)
+                                    recordingConsent: {
+                                        requested: consent?.requested || false,
+                                        given: true,
+                                        requestedAt: consent?.requestedAt || null,
+                                        respondedAt: consent?.respondedAt || new Date(),
+                                        optOutReason: null
+                                    }
                                 }
                             },
                             { upsert: true }
                         );
-                        console.log(`✅ [${CallSid}] Transcript saved to CallRecord (${conversation.transcript.length} entries) - consent given`);
+                        console.log(`✅ [${CallSid}] Transcript and consent saved to CallRecord (${conversation.transcript.length} entries) - consent given`);
                     } catch (transcriptError) {
                         console.error(`❌ [${CallSid}] Error saving transcript to CallRecord:`, transcriptError);
                         // Continue with other operations even if transcript save fails
@@ -205,7 +215,8 @@ export const callStatus = async (req, res) => {
                 const conversation = conversations[CallSid] || {};
                 // Only include transcript summary if consent was given
                 const consent = conversation.recordingConsent;
-                const consentGiven = consent?.given === true;
+                // Default is opt-in: null/undefined means consent given, only false means denied
+                const consentGiven = consent?.given !== false;
                 const transcriptSummary = (consentGiven && conversation.transcript)
                     ? conversation.transcript
                         .filter(t => t.role === 'user')
@@ -234,9 +245,10 @@ export const callStatus = async (req, res) => {
 
         // Fetch and save audio quality metrics from Twilio
         // This runs asynchronously and won't block call completion
+        // Increased retries (6) and initial delay (5s) since Twilio metrics can take up to 90 seconds
         twilioMetricsService.fetchAndSaveCallQualityMetrics(CallSid, {
-            maxRetries: 3,
-            initialDelay: 2000
+            maxRetries: 6,
+            initialDelay: 5000
         }).catch(error => {
             console.error(`❌ [${CallSid}] Error fetching call quality metrics:`, error);
             // Error is already logged in the service, just catch to prevent unhandled rejection
@@ -249,9 +261,10 @@ export const callStatus = async (req, res) => {
                 const conversation = conversations[CallSid] || {};
                 const consent = conversation.recordingConsent;
                 
-                // Only fetch if consent was explicitly given
-                if (consent?.given !== true) {
-                    console.log(`ℹ️ [${CallSid}] Recording consent not given, skipping recording fetch`);
+                // Default is opt-in: null/undefined means consent given, only false means denied
+                // Only skip fetch if consent was explicitly denied
+                if (consent?.given === false) {
+                    console.log(`ℹ️ [${CallSid}] Recording consent explicitly denied, skipping recording fetch`);
                     return;
                 }
 
@@ -329,11 +342,22 @@ export const callStatus = async (req, res) => {
         })();
     }
 
-    // Cleanup memory for terminal states
-    if (["failed", "busy", "no-answer", "completed"].includes(CallStatus)) {
+    // CRITICAL: Delay cleanup for completed calls to allow recording webhook to arrive
+    // Only cleanup immediately for failed/busy/no-answer (these won't have recordings)
+    // For completed calls, cleanup happens after a delay or when recording webhook arrives
+    if (["failed", "busy", "no-answer"].includes(CallStatus)) {
         if (conversations[CallSid]) {
             delete conversations[CallSid];
         }
+    } else if (CallStatus === "completed") {
+        // For completed calls, delay cleanup to allow recording webhook to process
+        // Recording webhooks typically arrive within 5-30 seconds after call completion
+        setTimeout(() => {
+            if (conversations[CallSid]) {
+                console.log(`🧹 [${CallSid}] Cleaning up conversation state after delay (recording webhook should have arrived)`);
+                delete conversations[CallSid];
+            }
+        }, 60000); // 60 second delay - should be enough for recording webhook
     }
 
     res.sendStatus(200);

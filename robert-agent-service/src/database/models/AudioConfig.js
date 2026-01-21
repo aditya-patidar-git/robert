@@ -62,6 +62,14 @@ const AudioConfigSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  // Background Noise Filtering Configuration
+  noiseFiltering: {
+    enabled: { type: Boolean, default: true },
+    minConfidence: { type: Number, default: 0.70, min: 0, max: 1 },
+    minTranscriptLength: { type: Number, default: 4, min: 1, max: 10 },
+    maxNoiseRatio: { type: Number, default: 0.3, min: 0, max: 1 },
+    minQualityScore: { type: Number, default: 0.7, min: 0, max: 1 }
+  },
   defaultVoice: {
     id: { 
       type: String, 

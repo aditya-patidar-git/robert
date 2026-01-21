@@ -5,11 +5,45 @@
  */
 
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
-import { StepExecutor } from '../../services/browser/stepExecutor.js';
-import { getStepNumber, STEP_NAMES } from '../../services/browser/stepConfiguration.js';
+import { StepExecutor } from '../../services/browser/stepExecutor/index.js';
+import { getStepNumber, getStepName, STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import { validatePreferences, generatePreferenceErrorMessage } from '../../services/browser/preferenceValidator.js';
 import { BrowserManager } from '../../services/browser/browserManager.js';
 import configManager from '../../agent/configManager.js';
+import { conversations } from '../../shared/state.js';
+import { storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from '../../services/commonBookingSteps/slotStorageUtils.js';
+
+/**
+ * Helper function to map step numbers to tool names
+ * @param {string} courseType - Course type
+ * @param {string} workflowType - Workflow type ('existing' or 'new')
+ * @param {number} stepNumber - Step number
+ * @returns {string|null} Tool name or null if not found
+ */
+function getToolNameForStep(courseType, workflowType, stepNumber) {
+  const stepName = getStepName(courseType, workflowType, stepNumber);
+  
+  if (!stepName) return null;
+  
+  // Map step names to tool names
+  const toolNameMap = {
+    'checkAvailability': 'booking_step_check_availability',
+    'authenticate': 'booking_step_authenticate',
+    'navigateContacts': 'booking_step_navigate_contacts',
+    'searchClient': 'booking_step_search_client',
+    'selectSession': 'booking_step_select_session',
+    'selectBookingOptions': 'booking_step_select_booking_options',
+    'createNewContact': 'booking_step_create_new_contact',
+    'fillContactDetails': 'booking_step_fill_contact_details',
+    'processPayment': 'booking_step_process_payment',
+    'sendPaymentRequest': 'booking_step_send_payment_request',
+    'sendConfirmation': 'booking_step_send_confirmation',
+    'sendTerms': 'booking_step_send_terms',
+    'sendSMS': 'booking_step_send_sms'
+  };
+  
+  return toolNameMap[stepName] || null;
+}
 
 export class BaseStepTool {
   constructor() {
@@ -180,6 +214,17 @@ export class BaseStepTool {
         };
       }
 
+      // CRITICAL: Store preferences BEFORE Step 1 if they're provided
+      // This ensures preferences are available when opening the availability table
+      if (stepNumber === 1 && (stepArgs.preferredDate || stepArgs.preferredTime || stepArgs.location || stepArgs.instructor)) {
+        storePreferencesBeforeAvailabilityCheck(callSid, {
+          preferredDate: stepArgs.preferredDate,
+          preferredTime: stepArgs.preferredTime,
+          location: stepArgs.location,
+          instructor: stepArgs.instructor
+        });
+      }
+
       // Merge known preferences from session with provided args
       const knownPreferences = sessionStateManager.getKnownPreferences(callSid);
       const mergedArgs = {
@@ -216,6 +261,29 @@ export class BaseStepTool {
         // Update session details if provided
         if (result.sessionDetails) {
           sessionStateManager.setSessionDetails(callSid, result.sessionDetails);
+        }
+
+        // CRITICAL FIX: Store availability data in conversation for Step 1 (check_availability)
+        // This ensures Step 6 (select_session) can retrieve sessionDetails even if no slot was initially selected
+        if (stepNumber === 1 && (result.allSlots || result.selectedSlot || result.sessionDetails)) {
+          if (!conversations[callSid]) {
+            conversations[callSid] = {};
+          }
+          conversations[callSid].lastAvailabilityCheck = {
+            allSlots: result.allSlots || null,
+            selectedSlot: result.selectedSlot || result.sessionDetails || null,
+            sessionDetails: result.sessionDetails || result.selectedSlot || null,
+            monthYear: result.monthYear || null
+          };
+          console.log(`✅ [${callSid}] Stored availability data in conversation.lastAvailabilityCheck (allSlots: ${result.allSlots?.length || 0}, selectedSlot: ${!!result.selectedSlot}, sessionDetails: ${!!result.sessionDetails})`);
+        }
+
+        // CRITICAL FIX: Store selected slot when user picks one (via agreedSlot/selectedSlot parameter)
+        // This handles the case where user verbally selects a slot after Step 1
+        if (stepArgs.agreedSlot || stepArgs.selectedSlot) {
+          const selectedSlot = stepArgs.agreedSlot || stepArgs.selectedSlot;
+          const allSlots = conversations[callSid]?.lastAvailabilityCheck?.allSlots || null;
+          storeSelectedSlot(callSid, selectedSlot, allSlots);
         }
 
         // Store page reference
@@ -264,10 +332,15 @@ export class BaseStepTool {
 
     // If no current step, must start from step 1
     if (currentStep === null && stepNumber !== 1) {
+      const requiredToolName = getToolNameForStep(courseType, workflowType, 1);
       return {
         valid: false,
         error: `Booking session not started. Please start with step 1 (checkAvailability).`,
-        requiresStep: 1
+        requiresStep: 1,
+        requiresTool: requiredToolName,
+        autoRetryInstruction: requiredToolName 
+          ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+          : `CRITICAL: You MUST start with step 1 (checkAvailability) without waiting for user input.`
       };
     }
 
@@ -276,12 +349,17 @@ export class BaseStepTool {
       // CRITICAL: For ALL courses, Step 2 (authenticate) MUST complete before ANY subsequent step can be called
       // This prevents asking workflow type (Step 3) or any other step before authentication completes
       if (currentStep < 2 && stepNumber > 2) {
+        const requiredToolName = getToolNameForStep(courseType, workflowType, 2);
         return {
           valid: false,
           error: `Cannot execute step ${stepNumber}. Step 2 (authenticate) must complete first. Current step is ${currentStep}. Please call booking_step_authenticate first and wait for success: true.`,
           currentStep,
           requiresStep: 2,
-          message: 'I need to authenticate first before proceeding. Let me do that now.'
+          requiresTool: requiredToolName,
+          message: 'I need to authenticate first before proceeding. Let me do that now.',
+          autoRetryInstruction: requiredToolName 
+            ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+            : `CRITICAL: You MUST complete step 2 (authenticate) without waiting for user input.`
         };
       }
       
@@ -289,12 +367,17 @@ export class BaseStepTool {
       // This validation ensures workflow type question is not asked before authentication
       const isStep3 = stepNumber === 3;
       if (isStep3 && currentStep < 2) {
+        const requiredToolName = getToolNameForStep(courseType, workflowType, 2);
         return {
           valid: false,
           error: `Cannot execute step 3 (workflow type). Step 2 (authenticate) must complete first. Current step is ${currentStep}. Please call booking_step_authenticate first and wait for success: true.`,
           currentStep,
           requiresStep: 2,
-          message: 'I need to authenticate first before asking about your training history. Let me do that now.'
+          requiresTool: requiredToolName,
+          message: 'I need to authenticate first before asking about your training history. Let me do that now.',
+          autoRetryInstruction: requiredToolName 
+            ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+            : `CRITICAL: You MUST complete step 2 (authenticate) without waiting for user input.`
         };
       }
       
@@ -332,23 +415,30 @@ export class BaseStepTool {
           // Continue with validation - don't block this call
         } else {
           // No workflowType provided - block and require asking the question
+          // Note: Step 3 is conversational, so there's no tool to call - agent must ask the question
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber}. Step 3 (workflow type determination) must be completed first. Please ask: "Have you done training with us before?" and wait for the caller's response before proceeding. Even if you think you know the workflow type, you MUST ask the question first.`,
             currentStep,
             requiresStep: 3,
             requiresWorkflowType: true,
-            message: 'I need to know if you have done training with us before. Have you done training with Universal Motorcycle Training before?'
+            message: 'I need to know if you have done training with us before. Have you done training with Universal Motorcycle Training before?',
+            autoRetryInstruction: `CRITICAL: You MUST ask the workflow type question conversationally: "Have you done training with us before?" Wait for the caller's response, then proceed with the appropriate workflow type (existing or new).`
           };
         }
       }
       
       if (stepNumber < currentStep) {
+        const requiredToolName = getToolNameForStep(courseType, workflowType, currentStep + 1);
         return {
           valid: false,
           error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,
           currentStep,
-          requiresStep: currentStep + 1
+          requiresStep: currentStep + 1,
+          requiresTool: requiredToolName,
+          autoRetryInstruction: requiredToolName 
+            ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+            : `CRITICAL: You MUST continue with step ${currentStep + 1} without waiting for user input.`
         };
       }
       
@@ -362,12 +452,58 @@ export class BaseStepTool {
         // Check if selectSession has been completed
         const selectSessionStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_SESSION);
         if (selectSessionStepNumber !== null && currentStep < selectSessionStepNumber) {
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber);
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber} (selectBookingOptions). You must first complete step ${selectSessionStepNumber} (selectSession). Please call booking_step_select_session first.`,
             currentStep,
             requiresStep: selectSessionStepNumber,
-            message: `I need to select the session first before asking about bike type preferences. Let me do that now.`
+            requiresTool: requiredToolName,
+            message: `I need to select the session first before asking about bike type preferences. Let me do that now.`,
+            autoRetryInstruction: requiredToolName 
+              ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now. The tool will handle navigation and session selection automatically.`
+              : `CRITICAL: You MUST complete step ${selectSessionStepNumber} (selectSession) without waiting for user input.`
+          };
+        }
+      }
+      
+      // CRITICAL FIX: Prevent calling createNewContact (STEP 6) before selectSession (STEP 4) and selectBookingOptions (STEP 5) complete
+      // For new workflow: STEP 4 is selectSession, STEP 5 is selectBookingOptions, STEP 6 is createNewContact
+      // The createNewContact step REQUIRES the iframe to exist, which only appears after selectBookingOptions clicks "NEXT"
+      const isCreateNewContact = currentStepName === STEP_NAMES.CREATE_NEW_CONTACT;
+      
+      if (isCreateNewContact && workflowType === 'new') {
+        // Check if selectSession has been completed
+        const selectSessionStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_SESSION);
+        if (selectSessionStepNumber !== null && currentStep < selectSessionStepNumber) {
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber);
+          return {
+            valid: false,
+            error: `Cannot execute step ${stepNumber} (createNewContact). You must first complete step ${selectSessionStepNumber} (selectSession). Please call booking_step_select_session first.`,
+            currentStep,
+            requiresStep: selectSessionStepNumber,
+            requiresTool: requiredToolName,
+            message: `I need to navigate to the diaries and select the session first. Let me do that now.`,
+            autoRetryInstruction: requiredToolName 
+              ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now. The tool will handle navigation and session selection automatically.`
+              : `CRITICAL: You MUST complete step ${selectSessionStepNumber} (selectSession) without waiting for user input.`
+          };
+        }
+        
+        // Check if selectBookingOptions has been completed
+        const selectBookingOptionsStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_BOOKING_OPTIONS);
+        if (selectBookingOptionsStepNumber !== null && currentStep < selectBookingOptionsStepNumber) {
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber);
+          return {
+            valid: false,
+            error: `Cannot execute step ${stepNumber} (createNewContact). You must first complete step ${selectBookingOptionsStepNumber} (selectBookingOptions). Please call booking_step_select_booking_options first.`,
+            currentStep,
+            requiresStep: selectBookingOptionsStepNumber,
+            requiresTool: requiredToolName,
+            message: `I need to select the booking options first before creating a new contact. Let me do that now.`,
+            autoRetryInstruction: requiredToolName 
+              ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+              : `CRITICAL: You MUST complete step ${selectBookingOptionsStepNumber} (selectBookingOptions) without waiting for user input.`
           };
         }
       }
@@ -396,15 +532,63 @@ export class BaseStepTool {
       
       // For ITM: Step 3 is conversational, can be skipped if workflowType is provided
       // For non-ITM: Step 3 doesn't exist, can be skipped if workflowType is provided
-      const isStep3Skippable = isITM && currentStep === 2 && stepNumber >= 4 && workflowType;
-      const canSkipNonExistentStep = !nextStepExists && workflowType && stepNumber > currentStep + 1;
+      // CRITICAL FIX: Only allow skipping Step 3 (conversational step), NOT Steps 4 and 5
+      // For new workflow: Steps 4 (selectSession) and 5 (selectBookingOptions) MUST be executed in order
+      const isStep3Skippable = isITM && currentStep === 2 && stepNumber === 4 && workflowType;
+      const canSkipNonExistentStep = !nextStepExists && workflowType && stepNumber === 4 && currentStep === 2;
+      
+      // CRITICAL: For new workflow, prevent skipping Steps 4 and 5
+      // Step 4 (selectSession) must complete before Step 5 (selectBookingOptions)
+      // Step 5 (selectBookingOptions) must complete before Step 6 (createNewContact)
+      if (workflowType === 'new') {
+        const selectSessionStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_SESSION);
+        const selectBookingOptionsStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_BOOKING_OPTIONS);
+        const createNewContactStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.CREATE_NEW_CONTACT);
+        
+        // Prevent skipping Step 4 (selectSession) - must execute after Step 2
+        if (stepNumber === selectSessionStepNumber && currentStep === 2 && isStep3Skippable) {
+          // Allow skipping Step 3 to go to Step 4
+        } else if (stepNumber === selectBookingOptionsStepNumber && currentStep < selectSessionStepNumber) {
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber);
+          return {
+            valid: false,
+            error: `Cannot execute step ${stepNumber} (selectBookingOptions). You must first complete step ${selectSessionStepNumber} (selectSession). Please call booking_step_select_session first.`,
+            currentStep,
+            requiresStep: selectSessionStepNumber,
+            requiresTool: requiredToolName,
+            message: `I need to navigate to the diaries and select the session first. Let me do that now.`,
+            autoRetryInstruction: requiredToolName 
+              ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now. The tool will handle navigation and session selection automatically.`
+              : `CRITICAL: You MUST complete step ${selectSessionStepNumber} (selectSession) without waiting for user input.`
+          };
+        } else if (stepNumber === createNewContactStepNumber && currentStep < selectBookingOptionsStepNumber) {
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber);
+          return {
+            valid: false,
+            error: `Cannot execute step ${stepNumber} (createNewContact). You must first complete step ${selectBookingOptionsStepNumber} (selectBookingOptions). Please call booking_step_select_booking_options first.`,
+            currentStep,
+            requiresStep: selectBookingOptionsStepNumber,
+            requiresTool: requiredToolName,
+            message: `I need to select the booking options first before creating a new contact. Let me do that now.`,
+            autoRetryInstruction: requiredToolName 
+              ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+              : `CRITICAL: You MUST complete step ${selectBookingOptionsStepNumber} (selectBookingOptions) without waiting for user input.`
+          };
+        }
+      }
       
       if (stepNumber > currentStep + 1 && !isStep3Skippable && !canSkipNonExistentStep) {
+        const requiredToolName = getToolNameForStep(courseType, workflowType, currentStep + 1);
         return {
           valid: false,
           error: `Cannot skip to step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,
           currentStep,
-          requiresStep: currentStep + 1
+          requiresStep: currentStep + 1,
+          requiresTool: requiredToolName,
+          message: `I need to complete step ${currentStep + 1} first. Let me do that now.`,
+          autoRetryInstruction: requiredToolName 
+            ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+            : `CRITICAL: You MUST continue with step ${currentStep + 1} without waiting for user input.`
         };
       }
       
@@ -418,7 +602,8 @@ export class BaseStepTool {
           currentStep,
           requiresStep: nextStepNumber,
           requiresWorkflowType: true,
-          message: 'I need to know if you have done training with us before. Have you done training with Universal Motorcycle Training before?'
+          message: 'I need to know if you have done training with us before. Have you done training with Universal Motorcycle Training before?',
+          autoRetryInstruction: `CRITICAL: You MUST ask the workflow type question conversationally: "Have you done training with us before?" Wait for the caller's response, then proceed with the appropriate workflow type (existing or new).`
         };
       }
       
@@ -431,31 +616,43 @@ export class BaseStepTool {
           currentStep,
           requiresStep: 3,
           requiresWorkflowType: true,
-          message: 'I need to know if you have done training with us before. Have you done training with Universal Motorcycle Training before?'
+          message: 'I need to know if you have done training with us before. Have you done training with Universal Motorcycle Training before?',
+          autoRetryInstruction: `CRITICAL: You MUST ask the workflow type question conversationally: "Have you done training with us before?" Wait for the caller's response, then proceed with the appropriate workflow type (existing or new).`
         };
       }
     }
 
-    // Validate preferences
-    const requiredPrefs = this.getRequiredPreferences();
-    if (requiredPrefs.length > 0) {
-      const validationResult = validatePreferences(
-        this.getStepName(),
-        courseType,
-        stepArgs
-      );
+    // CRITICAL FIX: For selectBookingOptions, defer preference validation until AFTER navigation
+    // This ensures the agent is on the booking options page before asking for preferences
+    // The step will navigate to the page first, then check preferences and return requiresPreferences if needed
+    const isSelectBookingOptions = this.getStepName() === STEP_NAMES.SELECT_BOOKING_OPTIONS;
 
-      if (!validationResult.valid) {
-        const errorMessage = generatePreferenceErrorMessage(validationResult, courseType);
-        return {
-          valid: false,
-          requiresPreferences: true,
-          missingPreferences: validationResult.missingPreferences,
-          invalidPreferences: validationResult.invalidPreferences.map(p => p.preference),
-          validOptions: validationResult.validOptions,
-          message: errorMessage
-        };
+    if (!isSelectBookingOptions) {
+      // For all other steps, validate preferences BEFORE execution
+      const requiredPrefs = this.getRequiredPreferences();
+      if (requiredPrefs.length > 0) {
+        const validationResult = validatePreferences(
+          this.getStepName(),
+          courseType,
+          stepArgs
+        );
+
+        if (!validationResult.valid) {
+          const errorMessage = generatePreferenceErrorMessage(validationResult, courseType);
+          return {
+            valid: false,
+            requiresPreferences: true,
+            missingPreferences: validationResult.missingPreferences,
+            invalidPreferences: validationResult.invalidPreferences.map(p => p.preference),
+            validOptions: validationResult.validOptions,
+            message: errorMessage
+          };
+        }
       }
+    } else {
+      // For selectBookingOptions, preferences will be validated AFTER navigation
+      // This ensures we're on the booking options page before asking for preferences
+      console.log(`⏭️ [${this.getStepName()}] Deferring preference validation until after navigation to booking options page`);
     }
 
     return { valid: true };

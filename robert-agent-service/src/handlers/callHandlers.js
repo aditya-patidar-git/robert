@@ -20,6 +20,32 @@ dotenv.config();
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 
 /**
+ * Save recording consent to CallRecord database
+ * This ensures consent is persisted and available when recording webhook arrives
+ * @param {string} callSid - Call SID
+ * @param {Object} consentData - Consent data object
+ * @returns {Promise<void>}
+ */
+async function saveConsentToCallRecord(callSid, consentData) {
+    try {
+        const CallRecord = (await import('../database/models/CallRecord.js')).default;
+        await CallRecord.findOneAndUpdate(
+            { callSid: callSid },
+            {
+                $set: {
+                    recordingConsent: consentData
+                }
+            },
+            { upsert: true }
+        );
+        console.log(`✅ [${callSid}] Recording consent saved to CallRecord`);
+    } catch (dbError) {
+        console.error(`⚠️ [${callSid}] Error saving consent to CallRecord:`, dbError);
+        // Don't throw - consent is still in memory, DB save failure shouldn't break call flow
+    }
+}
+
+/**
  * Set recording consent for inbound calls based on privacy config
  * This ensures consent is set before recording webhook arrives and before WebSocket connects
  * @param {string} callSid - Call SID
@@ -51,10 +77,20 @@ async function setInboundCallConsent(callSid, callType = 'Twilio') {
                 };
             }
             
-            conversations[callSid].recordingConsent.requested = false;
-            conversations[callSid].recordingConsent.given = true;
-            conversations[callSid].recordingConsent.respondedAt = new Date();
-            conversations[callSid].recordingConsent.optOutReason = null;
+            const consentData = {
+                requested: false,
+                given: true,
+                respondedAt: new Date(),
+                optOutReason: null
+            };
+            
+            conversations[callSid].recordingConsent.requested = consentData.requested;
+            conversations[callSid].recordingConsent.given = consentData.given;
+            conversations[callSid].recordingConsent.respondedAt = consentData.respondedAt;
+            conversations[callSid].recordingConsent.optOutReason = consentData.optOutReason;
+            
+            // CRITICAL: Save consent to CallRecord immediately so it's available when recording webhook arrives
+            await saveConsentToCallRecord(callSid, consentData);
             
             console.log(`✅ [${callSid}] Recording consent set to opt-in by default for inbound ${callType} call (given: true)`);
         } else {

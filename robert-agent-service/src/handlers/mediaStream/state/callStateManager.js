@@ -13,6 +13,7 @@ export class CallStateManager {
     this.setupComplete = false;
     this.isClosed = false;
     this.accepting = true;
+    this.openaiConnectionManager = null; // Reference to WebSocketConnectionManager for robust sending
     
     // Constants
     this.MAX_CALL_DURATION_MS = 3600000; // 1 hour max
@@ -66,6 +67,8 @@ export class CallStateManager {
     this.agentFinishedSpeakingTime = 0;
     this.userSpeakingWindowMs = 6000;
     this.userSpeechStartedTime = 0;
+    this.pendingBargeInCheck = false; // Flag to track when user is speaking but we're waiting for transcription to check for "stop"
+    this.interruptionTimeout = null; // Timeout to clear isInterrupted if transcriptions don't arrive
     
     // Initial greeting tracking
     this.hasInitialGreetingBeenSent = false;
@@ -96,6 +99,8 @@ export class CallStateManager {
     this.activeToolExecutions = new Map(); // toolName -> { call_id, startTime, callSid }
     this.activeWorkflowTimers = new Map(); // callSid -> { toolName, startTime, timeout }
     this.expectedContinuations = new Map(); // toolName -> { previousCallId, structuredFlags, timestamp, callSid }
+    this.toolExecutionCompleting = false; // Flag to prevent periodic updates during tool completion (race condition fix)
+    this.toolExecutionCompletingTimeout = null; // Safety timeout to auto-clear stuck flag
     
     // VAD Calibration tracking
     this.calibrationSamples = [];
@@ -122,6 +127,10 @@ export class CallStateManager {
       lastResponseTime: null
     };
     
+    // Background noise filtering - track pending audio segments
+    this.pendingAudioSegments = new Map(); // itemId → { timestamp, committedAt, transcriptionReceived, transcriptionQuality }
+    this.segmentTranscriptionMap = new Map(); // itemId → { transcript, confidence, quality, timestamp }
+    
     // Event waiting promises for race condition fixes
     this.pendingSessionUpdatePromise = null;
     this.pendingItemCreatePromise = null;
@@ -140,9 +149,45 @@ export class CallStateManager {
   /**
    * Mark OpenAI connection as ready
    */
-  setOpenAIReady(openaiWs) {
+  setOpenAIReady(openaiWs, connectionManager = null) {
     this.openaiWs = openaiWs;
     this.openaiReady = true;
+    this.openaiConnectionManager = connectionManager;
+  }
+
+  /**
+   * Send message to OpenAI WebSocket with connection manager support
+   * Provides robust sending with queuing, keep-alive, and quality monitoring
+   * @param {Object|string} message - Message to send
+   * @param {Object} options - Send options (priority, queueOnFailure)
+   * @returns {boolean} True if sent successfully
+   */
+  sendToOpenAI(message, options = {}) {
+    // CRITICAL FIX: Don't send if call is closed
+    if (this.isClosed) {
+      console.warn(`⚠️ [${this.callSid}] Cannot send message - call is closed`);
+      return false;
+    }
+    
+    // Use connection manager if available (provides queuing, keep-alive, quality monitoring)
+    if (this.openaiConnectionManager) {
+      return this.openaiConnectionManager.send(message, options);
+    }
+    
+    // Fallback to direct send if connection manager not available
+    if (this.openaiWs && this.openaiWs.readyState === 1) { // 1 = OPEN
+      try {
+        const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+        this.openaiWs.send(messageStr);
+        return true;
+      } catch (error) {
+        console.error(`❌ [${this.callSid}] Error sending message:`, error.message);
+        return false;
+      }
+    }
+    
+    console.warn(`⚠️ [${this.callSid}] Cannot send message - WebSocket not ready (readyState: ${this.openaiWs?.readyState})`);
+    return false;
   }
 
   /**
@@ -207,6 +252,60 @@ export class CallStateManager {
       errorCount: this.errorCount,
       audioChunkCount: this.audioChunkCount
     };
+  }
+
+  /**
+   * Atomically acquire response creation lock
+   * Returns true if lock was acquired, false if already locked
+   * This prevents concurrent response creation from multiple handlers
+   */
+  tryAcquireResponseLock() {
+    if (this.isResponding || this.activeResponseId !== null) {
+      return false; // Already responding
+    }
+    // Atomically set the lock
+    this.isResponding = true;
+    this.explicitResponseRequested = true;
+    return true;
+  }
+
+  /**
+   * Release response creation lock (call on error)
+   */
+  releaseResponseLock() {
+    this.isResponding = false;
+    this.explicitResponseRequested = false;
+  }
+
+  /**
+   * Clear tool execution completing flag
+   * Used to reset state after tool completion response is created or on error
+   */
+  clearToolExecutionCompleting() {
+    this.toolExecutionCompleting = false;
+    // Clear safety timeout if it exists
+    if (this.toolExecutionCompletingTimeout) {
+      clearTimeout(this.toolExecutionCompletingTimeout);
+      this.toolExecutionCompletingTimeout = null;
+    }
+  }
+
+  /**
+   * Cleanup old audio segments to prevent memory leaks
+   * Removes segments older than 30 seconds
+   */
+  cleanupOldSegments() {
+    const now = Date.now();
+    const MAX_SEGMENT_AGE_MS = 30000; // 30 seconds
+    
+    // Clean up pending segments
+    for (const [itemId, segment] of this.pendingAudioSegments.entries()) {
+      const age = now - segment.timestamp;
+      if (age > MAX_SEGMENT_AGE_MS) {
+        this.pendingAudioSegments.delete(itemId);
+        this.segmentTranscriptionMap.delete(itemId);
+      }
+    }
   }
 }
 

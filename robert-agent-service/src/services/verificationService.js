@@ -29,6 +29,35 @@ export function getTelephonePrompt() {
 }
 
 /**
+ * Get the combined verification prompt asking for all three fields at once
+ * @returns {string} - Combined verification prompt text
+ */
+export function getCombinedVerificationPrompt() {
+  return "Thanks for this; I believe that I have found your profile with us; However, for data protection purposes, could you please confirm your full name, postcode, and telephone number?";
+}
+
+/**
+ * Get prompt for missing fields (when some fields are already provided)
+ * @param {Array<string>} missingFields - Array of missing field names: 'fullName', 'postcode', 'telephoneNumber'
+ * @returns {string} - Prompt asking for missing fields
+ */
+export function getMissingFieldsPrompt(missingFields) {
+  const fieldNames = {
+    fullName: 'full name',
+    postcode: 'postcode',
+    telephoneNumber: 'telephone number'
+  };
+  
+  const missingFieldNames = missingFields.map(f => fieldNames[f]).join(', ');
+  
+  if (missingFields.length === 1) {
+    return `Thank you. I still need your ${missingFieldNames}. Could you please provide it?`;
+  } else {
+    return `Thank you. I still need your ${missingFieldNames}. Could you please provide these details?`;
+  }
+}
+
+/**
  * Get field-specific mismatch message per CRM module requirements
  * @param {string} field - Field name: 'fullName', 'postcode', or 'telephoneNumber'
  * @returns {string} - Exact error message for the field

@@ -1,6 +1,7 @@
 import browserAgentService from '../services/browser/index.js';
 import { formatUserFriendlyError, getErrorContext } from '../utils/errorFormatter.js';
 import { conversations } from '../shared/state.js';
+import sessionStateManager from '../services/browser/sessionStateManager.js';
 
 class CRMBrowserTool {
   async execute(parameters, callContext = {}, progressCallback = null) {
@@ -10,6 +11,47 @@ class CRMBrowserTool {
     
     console.log(`🌐 [${callSid}] CRM Browser Tool: Executing ${task}`);
     console.log(`🌐 [${callSid}] Arguments:`, JSON.stringify(args, null, 2));
+    
+    // DEPRECATION: Block create_booking task - use booking_step_* tools instead
+    if (task === 'create_booking') {
+      console.warn(`⚠️ [${callSid}] DEPRECATED: crm_browser create_booking is deprecated. Use booking_step_* tools instead.`);
+      
+      const currentStep = sessionStateManager.getCurrentStep(callSid);
+      if (currentStep !== null) {
+        const session = sessionStateManager.getSession(callSid);
+        const courseType = session?.courseType || args?.courseType || 'unknown';
+        const workflowType = session?.workflowType || args?.workflowType || 'unknown';
+        
+        console.log(`🚫 [${callSid}] BLOCKING: Booking session already in progress (current step: ${currentStep}). Use step-based tools (booking_step_*) instead of crm_browser.`);
+        
+        return {
+          success: false,
+          error: 'A booking process is already in progress for this call. Please continue using the step-based booking tools (booking_step_*) instead of starting a new booking with crm_browser.',
+          message: `A booking session is already in progress (currently at step ${currentStep}). Please continue with the booking using the step-based tools. After client verification, call booking_step_select_session to continue.`,
+          bookingInProgress: true,
+          currentStep: currentStep,
+          courseType: courseType,
+          workflowType: workflowType,
+          nextStepTool: currentStep < 4 ? 'booking_step_select_session' : `Continue with step ${currentStep + 1}`,
+          deprecated: true
+        };
+      }
+      
+      // No active booking session - return deprecation error
+      return {
+        success: false,
+        error: 'The create_booking task in crm_browser tool is deprecated. Please use the step-based booking tools (booking_step_*) instead. These tools provide better state management and allow resumable workflows.',
+        deprecated: true,
+        message: 'Please use booking_step_* tools for new bookings. The crm_browser create_booking task is no longer supported.',
+        recommendedTools: [
+          'booking_step_check_availability',
+          'booking_step_authenticate',
+          'booking_step_select_session',
+          'booking_step_select_booking_options',
+          'booking_step_process_payment'
+        ]
+      };
+    }
     
     try {
       // Ensure callSid is in callContext
