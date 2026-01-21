@@ -314,38 +314,58 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
         await page.waitForTimeout(5000);
       }
       
-      // Check for "Make booking" button in payment request iframe, booking iframe, and main page
+      // CRITICAL FIX: Re-check which iframes exist on EACH polling attempt
+      // After payment completion, the page transitions back to eventNewBooking2_iframe
+      // So we need to check iframe existence dynamically, not use static flags
+      const currentBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+      const currentPaymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
+      
+      console.log(`🔍 [PAYMENT_REQUEST] Polling attempt ${attempt}: Checking iframes - eventNewBooking2_iframe: ${currentBookingIframeExists}, contactSend3DSecureRequest_iframe: ${currentPaymentRequestIframeExists}`);
+      
+      // Check for "Make booking" button - prioritize eventNewBooking2_iframe FIRST
+      // (since after payment completion, the page transitions back to the main payment page)
       for (const selector of makeBookingSelectors) {
         try {
-          // Check in payment request iframe first (contactSend3DSecureRequest_iframe)
-          if (paymentRequestIframeExists) {
-            const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
-            const iframeButton = paymentRequestIframe.locator(selector).first();
-            if (await iframeButton.count() > 0) {
-              const isVisible = await iframeButton.isVisible().catch(() => false);
-              if (isVisible) {
-                console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button in payment request iframe using selector: "${selector}"`);
-                makeBookingButton = iframeButton;
-                break;
+          // PRIORITY 1: Check in booking iframe FIRST (eventNewBooking2_iframe)
+          // This is where the button will be after payment completion
+          if (currentBookingIframeExists) {
+            try {
+              const bookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+              const iframeButton = bookingIframe.locator(selector).first();
+              if (await iframeButton.count() > 0) {
+                const isVisible = await iframeButton.isVisible().catch(() => false);
+                if (isVisible) {
+                  console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button in booking iframe (eventNewBooking2_iframe) using selector: "${selector}"`);
+                  makeBookingButton = iframeButton;
+                  break;
+                }
               }
+            } catch (iframeError) {
+              // Iframe might not be accessible, continue to next check
+              console.log(`⚠️ [PAYMENT_REQUEST] Error checking booking iframe: ${iframeError.message}`);
             }
           }
           
-          // Check in booking iframe (eventNewBooking2_iframe) as fallback
-          if (eventBookingIframeExists) {
-            const bookingIframe = page.frameLocator('#eventNewBooking2_iframe');
-            const iframeButton = bookingIframe.locator(selector).first();
-            if (await iframeButton.count() > 0) {
-              const isVisible = await iframeButton.isVisible().catch(() => false);
-              if (isVisible) {
-                console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button in booking iframe using selector: "${selector}"`);
-                makeBookingButton = iframeButton;
-                break;
+          // PRIORITY 2: Check in payment request iframe (contactSend3DSecureRequest_iframe) as fallback
+          if (currentPaymentRequestIframeExists) {
+            try {
+              const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+              const iframeButton = paymentRequestIframe.locator(selector).first();
+              if (await iframeButton.count() > 0) {
+                const isVisible = await iframeButton.isVisible().catch(() => false);
+                if (isVisible) {
+                  console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button in payment request iframe using selector: "${selector}"`);
+                  makeBookingButton = iframeButton;
+                  break;
+                }
               }
+            } catch (iframeError) {
+              // Iframe might not be accessible, continue to next check
+              console.log(`⚠️ [PAYMENT_REQUEST] Error checking payment request iframe: ${iframeError.message}`);
             }
           }
           
-          // Check in main page context
+          // PRIORITY 3: Check in main page context
           const mainPageButton = page.locator(selector).first();
           if (await mainPageButton.count() > 0) {
             const isVisible = await mainPageButton.isVisible().catch(() => false);
