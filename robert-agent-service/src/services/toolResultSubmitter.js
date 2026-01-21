@@ -165,6 +165,13 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       
       console.error(`❌ [${callId}] Failed to acquire response lock after ${MAX_RETRIES} attempts. Final state: ${finalLockReason}. Agent will wait for user input instead of automatically continuing.`);
       console.error(`   This may cause the agent to appear unresponsive. Tool: ${options?.toolName || 'unknown'}`);
+      
+      // CRITICAL RACE CONDITION FIX: Clear completion flag if lock acquisition failed
+      // Prevents flag from being stuck if response creation fails
+      if (this.stateManager) {
+        this.stateManager.clearToolExecutionCompleting();
+        console.log(`🔓 [${callId}] Cleared toolExecutionCompleting flag after lock acquisition failure`);
+      }
       return;
     }
     
@@ -276,6 +283,13 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       openaiWs.send(JSON.stringify(responseCreatePayload));
       console.log(`✅ [${callId}] Response triggered after tool completion with contextual instructions`);
       
+      // CRITICAL RACE CONDITION FIX: Clear completion flag after response is created
+      // This allows normal operation to resume
+      if (this.stateManager) {
+        this.stateManager.clearToolExecutionCompleting();
+        console.log(`🔓 [${callId}] Cleared toolExecutionCompleting flag after response creation`);
+      }
+      
       // Step 3: Re-enable tools after delay
       setTimeout(() => {
         if (openaiWs && openaiWs.readyState === 1) {
@@ -290,9 +304,11 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       
     } catch (error) {
       console.error(`❌ [${callId}] Error triggering response:`, error);
-      // Release lock on error
+      // Release lock and clear completion flag on error
       if (this.stateManager) {
         this.stateManager.releaseResponseLock();
+        this.stateManager.clearToolExecutionCompleting();
+        console.log(`🔓 [${callId}] Cleared toolExecutionCompleting flag after error`);
       }
     }
   }

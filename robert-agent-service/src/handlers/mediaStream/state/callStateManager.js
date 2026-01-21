@@ -99,6 +99,8 @@ export class CallStateManager {
     this.activeToolExecutions = new Map(); // toolName -> { call_id, startTime, callSid }
     this.activeWorkflowTimers = new Map(); // callSid -> { toolName, startTime, timeout }
     this.expectedContinuations = new Map(); // toolName -> { previousCallId, structuredFlags, timestamp, callSid }
+    this.toolExecutionCompleting = false; // Flag to prevent periodic updates during tool completion (race condition fix)
+    this.toolExecutionCompletingTimeout = null; // Safety timeout to auto-clear stuck flag
     
     // VAD Calibration tracking
     this.calibrationSamples = [];
@@ -273,6 +275,19 @@ export class CallStateManager {
   releaseResponseLock() {
     this.isResponding = false;
     this.explicitResponseRequested = false;
+  }
+
+  /**
+   * Clear tool execution completing flag
+   * Used to reset state after tool completion response is created or on error
+   */
+  clearToolExecutionCompleting() {
+    this.toolExecutionCompleting = false;
+    // Clear safety timeout if it exists
+    if (this.toolExecutionCompletingTimeout) {
+      clearTimeout(this.toolExecutionCompletingTimeout);
+      this.toolExecutionCompletingTimeout = null;
+    }
   }
 
   /**

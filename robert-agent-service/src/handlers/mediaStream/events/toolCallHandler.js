@@ -39,13 +39,18 @@ export class ToolCallHandler {
     });
     
     // Start progress tracking (Media Streams specific)
-    // Skip progress tracking for step-based tools to avoid redundant "hold on" messages
+    // Enable progress tracking for all tools, including step-based tools
+    // Step-based tools use longer thresholds to avoid redundant messages for quick steps
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
     const isStepBasedTool = name && name.startsWith('booking_step_');
     
-    if (conversationBehaviorConfig?.progressIndicators?.enabled && !isStepBasedTool) {
+    if (conversationBehaviorConfig?.progressIndicators?.enabled) {
       // Pass stateManager for thread-safe response state checks
       progressIndicatorService.startToolExecution(this.state.callSid, name, this.state);
+      
+      // Use longer threshold for step-based tools (5 seconds) vs regular tools (2 seconds)
+      const baseThreshold = conversationBehaviorConfig.progressIndicators.acknowledgmentThresholdMs || 2000;
+      const threshold = isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold;
       
       setTimeout(() => {
         if (!this.state.isClosed && this.openaiWs && this.openaiWs.readyState === 1) {
@@ -58,9 +63,7 @@ export class ToolCallHandler {
             }
           }
         }
-      }, conversationBehaviorConfig.progressIndicators.acknowledgmentThresholdMs || 2000);
-    } else if (isStepBasedTool) {
-      console.log(`📊 [${this.state.callSid}] Skipping progress tracking for step-based tool: ${name}`);
+      }, threshold);
     }
     
     // Create progress callback for browser operations
@@ -84,45 +87,52 @@ export class ToolCallHandler {
     
     // Handle result submission
     // executionResult format: {success: true/false, result: {...}, error: '...'}
-    if (executionResult.success === false) {
-      // Submit error result
+    try {
+      if (executionResult.success === false) {
+        // Submit error result
+        await this.resultSubmitter.submitResult(
+          this.state.callSid,
+          call_id,
+          executionResult
+        );
+        
+        // Trigger response if needed - pass tool name and result for special handling
+        // CRITICAL FIX: Extract the actual tool result (same as success path) so client_verification
+        // missingFields can be detected properly. Some tools like client_verification return
+        // {success: false, verified: false, missingFields: [...]} which needs special handling
+        // to trigger automatic continuation asking for missing fields.
+        await this.resultSubmitter.triggerResponse(this.state.callSid, { 
+          toolName: name,
+          toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
+        });
+        
+        // Clean up
+        this.state.pendingToolCalls.delete(call_id);
+        return;
+      }
+      
+      // Submit success result (executionResult already has success: true and result)
       await this.resultSubmitter.submitResult(
         this.state.callSid,
         call_id,
         executionResult
       );
       
-      // Trigger response if needed - pass tool name and result for special handling
-      // CRITICAL FIX: Extract the actual tool result (same as success path) so client_verification
-      // missingFields can be detected properly. Some tools like client_verification return
-      // {success: false, verified: false, missingFields: [...]} which needs special handling
-      // to trigger automatic continuation asking for missing fields.
+      // Trigger response - pass tool name and result for special handling (e.g., client_verification)
       await this.resultSubmitter.triggerResponse(this.state.callSid, { 
         toolName: name,
-        toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
+        toolResult: executionResult.result || executionResult // Pass the tool result so triggerResponse can check for incomplete verification
       });
       
       // Clean up
       this.state.pendingToolCalls.delete(call_id);
-      return;
+    } catch (error) {
+      // CRITICAL RACE CONDITION FIX: Ensure flag is cleared even if submitResult or triggerResponse throw
+      console.error(`❌ [${this.state.callSid}] Error submitting tool result for ${name}:`, error);
+      this.state.clearToolExecutionCompleting();
+      this.state.pendingToolCalls.delete(call_id);
+      throw error; // Re-throw to maintain error propagation
     }
-    
-    // Submit success result (executionResult already has success: true and result)
-    await this.resultSubmitter.submitResult(
-      this.state.callSid,
-      call_id,
-      executionResult
-    );
-    
-    // Trigger response - pass tool name and result for special handling (e.g., client_verification)
-    await this.resultSubmitter.triggerResponse(this.state.callSid, { 
-      toolName: name,
-      toolResult: executionResult.result || executionResult // Pass the tool result so triggerResponse can check for incomplete verification
-    });
-    
-    // Clean up
-    this.state.pendingToolCalls.delete(call_id);
   }
 
 }
-
