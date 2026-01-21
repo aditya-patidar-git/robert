@@ -19,6 +19,7 @@ import KnowledgeBaseManagementTab from './tabs/KnowledgeBaseManagementTab';
 import AIConfigurationTab from './tabs/AIConfigurationTab';
 import SystemOperationsTab from './tabs/SystemOperationsTab';
 import AnalyticsMonitoringTab from './tabs/AnalyticsMonitoringTab';
+import UnansweredQuestionsTab from './tabs/UnansweredQuestionsTab';
 import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
 import kbService from '../../services/kbService';
 import aiService from '../../services/aiService';
@@ -526,6 +527,7 @@ const AIKnowledgePage = () => {
           <Tab label="AI Configuration" />
           <Tab label="System Operations" />
           <Tab label="Analytics & Monitoring" />
+          <Tab label="Unanswered Questions" />
         </Tabs>
       </Paper>
 
@@ -544,6 +546,10 @@ const AIKnowledgePage = () => {
 
       {currentTab === 3 && (
         <AnalyticsMonitoringTab state={tabState} handlers={tabHandlers} />
+      )}
+
+      {currentTab === 4 && (
+        <UnansweredQuestionsTab state={tabState} handlers={tabHandlers} />
       )}
 
       {/* Dialogs */}

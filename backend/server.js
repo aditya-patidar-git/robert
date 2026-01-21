@@ -47,6 +47,7 @@ import templateRoutes from "./routes/templateRoutes.js";
 import kbMappingRoutes from "./routes/kbMappingRoutes.js";
 import alertRoutes from "./routes/alertRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import unansweredQuestionsRoutes from "./routes/unansweredQuestionsRoutes.js";
 import callCleanupService from "./services/callCleanupService.js";
 import websocketService from "./services/websocketService.js";
 import configSyncService, { setIO as setConfigSyncIO } from "./services/configSyncService.js";
@@ -204,6 +205,9 @@ app.use("/api/conversation-behavior", conversationBehaviorRoutes);
 
 // Template Routes (Email/SMS)
 app.use("/api/templates", templateRoutes);
+
+// Unanswered Questions Routes
+app.use("/api/unanswered-questions", unansweredQuestionsRoutes);
 
 // Outbound Routes (Recording proxy) - requires authentication
 app.get("/api/outbound/recording/:callSid", authenticateToken, proxyRecording);

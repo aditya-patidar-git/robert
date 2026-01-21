@@ -11,6 +11,7 @@ import driftService from '../../../services/driftService';
 import reingestService from '../../../services/reingestService';
 import promptVersionService from '../../../services/promptVersionService';
 import flowParameterService from '../../../services/flowParameterService';
+import unansweredQuestionsService from '../../../services/unansweredQuestionsService';
 import { useModelCapabilities } from '../../../hooks/useModelCapabilities';
 import { useAIModels } from '../../../hooks/useAIModels';
 import { useMCPTools } from '../../../hooks/useMCPTools';
@@ -93,6 +94,10 @@ export const useKBPageState = () => {
   const [documentIndexSearch, setDocumentIndexSearch] = useState('');
   const [scheduleReingestDialog, setScheduleReingestDialog] = useState({ open: false, fileIds: [], delay: 0 });
   const [selectedReingestTags, setSelectedReingestTags] = useState([]);
+  
+  // Unanswered Questions state
+  const [unansweredQuestionsStatusFilter, setUnansweredQuestionsStatusFilter] = useState('');
+  const [unansweredQuestionsPriorityFilter, setUnansweredQuestionsPriorityFilter] = useState('');
 
   // Queries
   const { data: kbFiles = [], isLoading: kbLoading, error: kbError } = useQuery({
@@ -144,6 +149,21 @@ export const useKBPageState = () => {
   const { data: reingestStatusData, isLoading: reingestLoading, error: reingestError } = useQuery({
     queryKey: ['reingest-status'],
     queryFn: () => reingestService.getReingestStatus(),
+  });
+
+  // Unanswered Questions query
+  const { data: unansweredQuestionsData, isLoading: unansweredQuestionsLoading, error: unansweredQuestionsError, refetch: refetchUnansweredQuestions } = useQuery({
+    queryKey: ['unanswered-questions', unansweredQuestionsStatusFilter, unansweredQuestionsPriorityFilter],
+    queryFn: async () => {
+      const filters = {};
+      if (unansweredQuestionsStatusFilter) filters.status = unansweredQuestionsStatusFilter;
+      if (unansweredQuestionsPriorityFilter) filters.priority = unansweredQuestionsPriorityFilter;
+      filters.limit = 100;
+      filters.sortBy = 'createdAt';
+      filters.sortOrder = -1;
+      const response = await unansweredQuestionsService.getUnansweredQuestions(filters);
+      return response?.data || response;
+    },
   });
 
   // Use custom hooks
@@ -596,6 +616,17 @@ export const useKBPageState = () => {
     handleFallbackChainDragEnd,
     removeFromChain,
     addToChain,
+    
+    // Unanswered Questions
+    unansweredQuestions: unansweredQuestionsData?.questions || [],
+    unansweredQuestionsLoading,
+    unansweredQuestionsError,
+    unansweredQuestionsTotal: unansweredQuestionsData?.total || 0,
+    unansweredQuestionsStatusFilter,
+    setUnansweredQuestionsStatusFilter,
+    unansweredQuestionsPriorityFilter,
+    setUnansweredQuestionsPriorityFilter,
+    refetchUnansweredQuestions,
     
     // Mutations
     uploadFileMutation,
