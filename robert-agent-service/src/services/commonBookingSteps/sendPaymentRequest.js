@@ -495,15 +495,59 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
             await page.waitForTimeout(1000);
             nextPageCheckAttempts++;
             
+            // CRITICAL FIX: Check for confirmation page indicators in afterBooking_iframe FIRST
+            // The confirmation page appears in afterBooking_iframe after booking completion
+            const afterBookingIframeExists = await page.locator('#afterBooking_iframe').count() > 0;
+            const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+            
             for (const indicator of nextPageIndicators) {
               try {
-                const element = page.locator(indicator).first();
-                if (await element.count() > 0) {
-                  const isVisible = await element.isVisible().catch(() => false);
-                  if (isVisible) {
-                    console.log(`✅ [PAYMENT_REQUEST] Found final confirmation page indicator: "${indicator}"`);
-                    nextPageFound = true;
-                    break;
+                // PRIORITY 1: Check in afterBooking_iframe (where confirmation page actually appears)
+                if (afterBookingIframeExists) {
+                  try {
+                    const afterBookingIframe = page.frameLocator('#afterBooking_iframe');
+                    const element = afterBookingIframe.locator(indicator).first();
+                    if (await element.count() > 0) {
+                      const isVisible = await element.isVisible().catch(() => false);
+                      if (isVisible) {
+                        console.log(`✅ [PAYMENT_REQUEST] Found final confirmation page indicator: "${indicator}" in afterBooking_iframe`);
+                        nextPageFound = true;
+                        break;
+                      }
+                    }
+                  } catch (iframeError) {
+                    // Continue to next check
+                  }
+                }
+                
+                // PRIORITY 2: Check in eventNewBooking2_iframe as fallback
+                if (!nextPageFound && eventBookingIframeExists) {
+                  try {
+                    const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+                    const element = eventBookingIframe.locator(indicator).first();
+                    if (await element.count() > 0) {
+                      const isVisible = await element.isVisible().catch(() => false);
+                      if (isVisible) {
+                        console.log(`✅ [PAYMENT_REQUEST] Found final confirmation page indicator: "${indicator}" in eventNewBooking2_iframe`);
+                        nextPageFound = true;
+                        break;
+                      }
+                    }
+                  } catch (iframeError) {
+                    // Continue to next check
+                  }
+                }
+                
+                // PRIORITY 3: Check in main page as final fallback
+                if (!nextPageFound) {
+                  const element = page.locator(indicator).first();
+                  if (await element.count() > 0) {
+                    const isVisible = await element.isVisible().catch(() => false);
+                    if (isVisible) {
+                      console.log(`✅ [PAYMENT_REQUEST] Found final confirmation page indicator: "${indicator}" on main page`);
+                      nextPageFound = true;
+                      break;
+                    }
                   }
                 }
               } catch (e) {

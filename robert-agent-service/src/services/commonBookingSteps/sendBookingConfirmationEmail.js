@@ -14,12 +14,17 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
     // Wait for page to be ready after booking completion
     await page.waitForTimeout(3000);
     
-    // Determine if we need to work with iframe or main page
+    // CRITICAL FIX: Check for afterBooking_iframe FIRST (where confirmation page actually appears)
+    // After booking completion, the confirmation page appears in afterBooking_iframe
+    const afterBookingIframeExists = await page.locator('#afterBooking_iframe').count() > 0;
     const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
     let searchContext = page;
     
-    if (eventBookingIframeExists) {
-      console.log('🔍 [CONFIRMATION] Working with eventNewBooking2_iframe...');
+    if (afterBookingIframeExists) {
+      console.log('🔍 [CONFIRMATION] Working with afterBooking_iframe (confirmation page)...');
+      searchContext = page.frameLocator('#afterBooking_iframe');
+    } else if (eventBookingIframeExists) {
+      console.log('🔍 [CONFIRMATION] Working with eventNewBooking2_iframe (fallback)...');
       searchContext = page.frameLocator('#eventNewBooking2_iframe');
     } else {
       console.log('🔍 [CONFIRMATION] Working with main page...');
@@ -55,12 +60,45 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
     }
     await page.waitForTimeout(2000);
     
+    // CRITICAL FIX: After clicking "Send a confirmation", the page transitions to stationerySender_iframe
+    // Steps 10-11 (template selection, preview, email) must use stationerySender_iframe
+    console.log('⏳ [CONFIRMATION] Waiting for page transition to stationerySender_iframe...');
+    let stationerySenderIframeExists = false;
+    let stationerySearchContext = searchContext; // Default to previous context as fallback
+    
+    // Check for stationerySender_iframe with retry logic
+    for (let i = 0; i < 10; i++) {
+      stationerySenderIframeExists = await page.locator('#stationerySender_iframe').count() > 0;
+      if (stationerySenderIframeExists) {
+        try {
+          const stationerySenderIframe = page.frameLocator('#stationerySender_iframe');
+          const testLocator = stationerySenderIframe.locator('body').first();
+          await testLocator.waitFor({ state: 'attached', timeout: 3000 });
+          console.log('✅ [CONFIRMATION] Found stationerySender_iframe (stationery selection page)');
+          stationerySearchContext = stationerySenderIframe;
+          break;
+        } catch (iframeError) {
+          console.log(`⚠️ [CONFIRMATION] StationerySender iframe detected but not loaded yet, retrying (${i + 1}/10)...`);
+          if (i < 9) await page.waitForTimeout(2000);
+        }
+      } else {
+        if (i < 9) {
+          console.log(`⏳ [CONFIRMATION] StationerySender iframe not found, retrying (${i + 1}/10)...`);
+          await page.waitForTimeout(2000);
+        }
+      }
+    }
+    
+    if (!stationerySenderIframeExists) {
+      console.log('⚠️ [CONFIRMATION] StationerySender iframe not found after 10 attempts, using previous context as fallback');
+    }
+    
     // Wait for "Pick an item of stationary" page
     console.log('⏳ [CONFIRMATION] Waiting for stationary selection page...');
     await page.waitForTimeout(2000);
     
-    // Check for "Pick an item of stationary" text
-    const stationaryPageIndicator = searchContext.locator('text=/Pick an item of stationary/i, text=/stationary/i').first();
+    // Check for "Pick an item of stationary" text in the new iframe context
+    const stationaryPageIndicator = stationerySearchContext.locator('text=/Pick an item of stationary/i, text=/stationary/i').first();
     const pageLoaded = await stationaryPageIndicator.count() > 0;
     if (!pageLoaded) {
       console.log('⚠️ [CONFIRMATION] Stationary page indicator not immediately visible, continuing...');
@@ -72,21 +110,21 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
     const templateName = stationeryHelpers.getConfirmationTemplateName(courseType);
     console.log(`🔍 [CONFIRMATION] Looking for template: "${templateName}"`);
     
-    // Select the stationery template
-    await stationeryHelpers.selectStationeryTemplate(page, searchContext, templateName);
+    // Select the stationery template (using stationerySender_iframe context)
+    await stationeryHelpers.selectStationeryTemplate(page, stationerySearchContext, templateName);
     
     await takeScreenshot(page, 'template-selected.png', screenshotsDir);
     
-    // Click Preview button
-    await stationeryHelpers.clickPreviewButton(page, searchContext);
+    // Click Preview button (using stationerySender_iframe context)
+    await stationeryHelpers.clickPreviewButton(page, stationerySearchContext);
     
     await takeScreenshot(page, 'preview-shown.png', screenshotsDir);
     
-    // Click Email button
-    await stationeryHelpers.clickEmailButton(page, searchContext);
+    // Click Email button (using stationerySender_iframe context)
+    await stationeryHelpers.clickEmailButton(page, stationerySearchContext);
     
-    // Wait for email sent confirmation
-    await stationeryHelpers.waitForEmailSentConfirmation(page, searchContext);
+    // Wait for email sent confirmation (using stationerySender_iframe context)
+    await stationeryHelpers.waitForEmailSentConfirmation(page, stationerySearchContext);
     
     await takeScreenshot(page, 'email-sent-confirmation.png', screenshotsDir);
     console.log('✅ [CONFIRMATION] Booking confirmation email sent successfully');

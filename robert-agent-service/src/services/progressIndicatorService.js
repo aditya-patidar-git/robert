@@ -19,6 +19,19 @@ class ProgressIndicatorService {
   }
 
   /**
+   * Check if periodic updates should be enabled for a tool
+   * Only specific long-running browser automation tools should have periodic updates
+   * @param {string} toolName - Name of the tool
+   * @returns {boolean} - True if periodic updates should be enabled
+   */
+  shouldEnablePeriodicUpdates(toolName) {
+    // Only enable periodic updates for specific long-running navigation operations:
+    // 1. booking_step_search_client - navigates from client search page to client verification page
+    // 2. booking_step_select_session - navigates after client verification page to selectBookingOptions page
+    return toolName === 'booking_step_search_client' || toolName === 'booking_step_select_session';
+  }
+
+  /**
    * Start tracking a tool execution
    * @param {string} callSid - Call SID
    * @param {string} toolName - Name of the tool being executed
@@ -34,16 +47,20 @@ class ProgressIndicatorService {
     
     // Enable progress tracking for all tools, including step-based tools
     // Step-based tools will use longer thresholds to avoid redundant messages for quick steps
+    const allowsPeriodicUpdates = this.shouldEnablePeriodicUpdates(toolName);
     this.activeExecutions.set(callSid, {
       toolName,
       startTime: Date.now(),
       acknowledgmentSent: false,
       lastUpdateTime: Date.now(),
       updateInterval: null,
+      updateTimeout: null, // Track setTimeout for single periodic update
+      periodicUpdateSent: false, // Track if periodic update has been sent
       stateManager: stateManager, // Store reference for thread-safe checks
-      isStepBasedTool: this.isStepBasedTool(toolName) // Track if this is a step-based tool for threshold adjustment
+      isStepBasedTool: this.isStepBasedTool(toolName), // Track if this is a step-based tool for threshold adjustment
+      allowsPeriodicUpdates: allowsPeriodicUpdates // Track if this tool should have periodic updates enabled
     });
-    console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${this.isStepBasedTool(toolName) ? ' (step-based, using longer threshold)' : ''}`);
+    console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${this.isStepBasedTool(toolName) ? ' (step-based, using longer threshold)' : ''}${allowsPeriodicUpdates ? ' (periodic updates enabled)' : ''}`);
   }
 
   /**
@@ -88,8 +105,13 @@ class ProgressIndicatorService {
         return false;
       }
 
-      // Note: We intentionally allow acknowledgments during tool execution - they are meant to reassure callers
-      // The toolExecutionCompleting, isInterrupted, and isResponding flags provide sufficient safeguards
+      // CRITICAL RACE CONDITION FIX: Acquire response lock atomically before sending
+      // This prevents race conditions with tool completion responses
+      if (execution.stateManager && !execution.stateManager.tryAcquireResponseLock()) {
+        // Lock not available - another response is being created (likely tool completion)
+        // Skip this acknowledgment to avoid "conversation_already_has_active_response" error
+        return false;
+      }
 
       const messages = config.progressIndicators.acknowledgmentMessages || [
         "Let me check that for you.",
@@ -126,8 +148,10 @@ class ProgressIndicatorService {
           execution.acknowledgmentSent = true;
           console.log(`✅ [${callSid}] Sent acknowledgment after ${elapsed}ms: "${message}"`);
           
-          // Start periodic updates
-          this.startPeriodicUpdates(callSid, openaiWs, config);
+          // Start periodic updates only for whitelisted tools
+          if (execution.allowsPeriodicUpdates) {
+            this.startPeriodicUpdates(callSid, openaiWs, config);
+          }
           
           return true;
         }
@@ -141,6 +165,7 @@ class ProgressIndicatorService {
 
   /**
    * Start sending periodic updates during long operations
+   * Only sends ONE periodic update for whitelisted tools
    * @param {string} callSid - Call SID
    * @param {WebSocket} openaiWs - OpenAI WebSocket connection
    * @param {Object} config - ConversationBehaviorConfig
@@ -151,10 +176,22 @@ class ProgressIndicatorService {
       return;
     }
 
-    // Enable periodic updates for all tools, including step-based tools
-    // Step-based tools will use longer intervals to avoid redundant messages
+    // CRITICAL: Only enable periodic updates for whitelisted tools
+    if (!execution.allowsPeriodicUpdates) {
+      console.log(`⏭️ [${callSid}] Skipping periodic updates - tool ${execution.toolName} is not whitelisted`);
+      return;
+    }
 
-    // Clear any existing interval
+    // Prevent duplicate periodic updates
+    if (execution.periodicUpdateSent) {
+      console.log(`⏭️ [${callSid}] Skipping periodic updates - already sent for ${execution.toolName}`);
+      return;
+    }
+
+    // Clear any existing timeout or interval
+    if (execution.updateTimeout) {
+      clearTimeout(execution.updateTimeout);
+    }
     if (execution.updateInterval) {
       clearInterval(execution.updateInterval);
     }
@@ -166,12 +203,17 @@ class ProgressIndicatorService {
       "Almost there, please bear with me."
     ];
 
-    let updateCount = 0;
-    execution.updateInterval = setInterval(() => {
+    // Use setTimeout instead of setInterval to send only ONE update
+    execution.updateTimeout = setTimeout(async () => {
       // Atomic check: get execution atomically (thread-safe per callSid)
       const execution = this.activeExecutions.get(callSid);
       if (!execution || !openaiWs || openaiWs.readyState !== 1) {
         this.stopPeriodicUpdates(callSid);
+        return;
+      }
+
+      // Prevent duplicate sends
+      if (execution.periodicUpdateSent) {
         return;
       }
 
@@ -198,14 +240,10 @@ class ProgressIndicatorService {
           console.log(`⏭️ [${callSid}] Skipping periodic update - response already active (isResponding: ${execution.stateManager.isResponding}, activeResponseId: ${execution.stateManager.activeResponseId})`);
           return;
         }
-        
-        // Note: We intentionally allow periodic updates during tool execution - they are meant to reassure callers
-        // The toolExecutionCompleting, isInterrupted, and isResponding flags provide sufficient safeguards
       }
 
       const elapsed = Date.now() - execution.startTime;
-      const message = messages[updateCount % messages.length];
-      updateCount++;
+      const message = messages[Math.floor(Math.random() * messages.length)];
 
       try {
         // Double-check interruption and response state before sending
@@ -221,12 +259,27 @@ class ProgressIndicatorService {
             this.stopPeriodicUpdates(callSid);
             return;
           }
-          if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
-            return; // Response became active between check and send
+          
+          // CRITICAL RACE CONDITION FIX: Acquire response lock atomically before sending
+          // This prevents race conditions with tool completion responses
+          if (!execution.stateManager.tryAcquireResponseLock()) {
+            // Lock not available - another response is being created (likely tool completion)
+            // Skip this periodic update to avoid "conversation_already_has_active_response" error
+            return;
           }
-          // Note: We intentionally allow periodic updates during tool execution - they are meant to reassure callers
-          // The toolExecutionCompleting, isInterrupted, and isResponding flags provide sufficient safeguards
         }
+
+        // CRITICAL FIX: Disable tools before sending periodic update to prevent AI from responding
+        // Periodic updates are informational only and should not trigger tool invocations
+        openaiWs.send(JSON.stringify({
+          type: 'session.update',
+          session: {
+            tool_choice: 'none'
+          }
+        }));
+        
+        // Wait briefly for session update to take effect
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         openaiWs.send(JSON.stringify({
           type: 'response.create',
@@ -250,7 +303,22 @@ class ProgressIndicatorService {
         }));
         
         execution.lastUpdateTime = Date.now();
+        execution.periodicUpdateSent = true;
+        execution.updateTimeout = null; // Clear timeout reference after sending
         console.log(`📊 [${callSid}] Sent periodic update after ${elapsed}ms: "${message}"`);
+        
+        // Re-enable tools after a delay to allow periodic update to complete
+        // This ensures tools are available for the actual tool execution completion
+        setTimeout(() => {
+          if (openaiWs && openaiWs.readyState === 1) {
+            openaiWs.send(JSON.stringify({
+              type: 'session.update',
+              session: {
+                tool_choice: 'auto'
+              }
+            }));
+          }
+        }, 2000); // Wait 2 seconds for periodic update audio to start playing
       } catch (err) {
         console.error(`❌ [${callSid}] Error sending periodic update:`, err);
         this.stopPeriodicUpdates(callSid);
@@ -264,10 +332,18 @@ class ProgressIndicatorService {
    */
   stopPeriodicUpdates(callSid) {
     const execution = this.activeExecutions.get(callSid);
-    if (execution && execution.updateInterval) {
+    if (execution) {
       try {
-        clearInterval(execution.updateInterval);
-        execution.updateInterval = null;
+        // Clear setTimeout (for single periodic update)
+        if (execution.updateTimeout) {
+          clearTimeout(execution.updateTimeout);
+          execution.updateTimeout = null;
+        }
+        // Clear setInterval (for legacy/backward compatibility)
+        if (execution.updateInterval) {
+          clearInterval(execution.updateInterval);
+          execution.updateInterval = null;
+        }
       } catch (err) {
         console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
       }
@@ -281,10 +357,18 @@ class ProgressIndicatorService {
    */
   stopPeriodicUpdatesOnly(callSid) {
     const execution = this.activeExecutions.get(callSid);
-    if (execution && execution.updateInterval) {
+    if (execution) {
       try {
-        clearInterval(execution.updateInterval);
-        execution.updateInterval = null;
+        // Clear setTimeout (for single periodic update)
+        if (execution.updateTimeout) {
+          clearTimeout(execution.updateTimeout);
+          execution.updateTimeout = null;
+        }
+        // Clear setInterval (for legacy/backward compatibility)
+        if (execution.updateInterval) {
+          clearInterval(execution.updateInterval);
+          execution.updateInterval = null;
+        }
         console.log(`🛑 [${callSid}] Stopped periodic updates (execution still tracked for metrics)`);
       } catch (err) {
         console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
