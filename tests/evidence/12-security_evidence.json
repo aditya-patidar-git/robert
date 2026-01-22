@@ -1,0 +1,23 @@
+{
+  "logs": [],
+  "recordings": [],
+  "screenshots": [],
+  "metrics": {},
+  "errors": [
+    {
+      "timestamp": "2026-01-22T06:39:15.002Z",
+      "message": "Unmasked phone number detected",
+      "stack": "Error: Unmasked phone number detected\n    at Assertions.assertPIIMasked (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/assertions.js:218:15)\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/12-security.test.js:146:16)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+      "error": "Error: Unmasked phone number detected"
+    },
+    {
+      "timestamp": "2026-01-22T06:39:15.180Z",
+      "message": "Unmasked phone number detected",
+      "stack": "Error: Unmasked phone number detected\n    at Assertions.assertPIIMasked (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/assertions.js:218:15)\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/12-security.test.js:146:16)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+      "error": "Error: Unmasked phone number detected"
+    }
+  ],
+  "startTime": 1769063954963,
+  "endTime": 1769063955180,
+  "duration": 217
+}

@@ -1,0 +1,23 @@
+{
+  "logs": [],
+  "recordings": [],
+  "screenshots": [],
+  "metrics": {},
+  "errors": [
+    {
+      "timestamp": "2026-01-22T06:51:19.764Z",
+      "message": "Call CAe516a209f1fd01af23c4322786f05c10 was not answered within 5000ms",
+      "stack": "Error: Call CAe516a209f1fd01af23c4322786f05c10 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:86:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/06-crm-tasking.test.js:34:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+      "error": "Error: Call CAe516a209f1fd01af23c4322786f05c10 was not answered within 5000ms"
+    },
+    {
+      "timestamp": "2026-01-22T06:51:20.030Z",
+      "message": "Call CAe516a209f1fd01af23c4322786f05c10 was not answered within 5000ms",
+      "stack": "Error: Call CAe516a209f1fd01af23c4322786f05c10 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:86:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/06-crm-tasking.test.js:34:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+      "error": "Error: Call CAe516a209f1fd01af23c4322786f05c10 was not answered within 5000ms"
+    }
+  ],
+  "startTime": 1769064674112,
+  "endTime": 1769064680030,
+  "duration": 5918
+}

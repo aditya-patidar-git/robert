@@ -1,0 +1,754 @@
+{
+  "run1": {
+    "runNumber": 1,
+    "summary": {
+      "total": 12,
+      "passed": 0,
+      "failed": 12,
+      "duration": 8561,
+      "passRate": "0.00%"
+    },
+    "results": [
+      {
+        "name": "01-call-pickup",
+        "passed": false,
+        "duration": 1767,
+        "error": "getaddrinfo ENOTFOUND api.twilio.com",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:34.470Z",
+              "message": "getaddrinfo ENOTFOUND api.twilio.com",
+              "stack": "Error: getaddrinfo ENOTFOUND api.twilio.com\n    at AxiosError.from (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:914:14)\n    at ClientRequest.handleRequestError (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:3515:25)\n    at ClientRequest.emit (node:events:518:28)\n    at emitErrorEvent (node:_http_client:104:11)\n    at TLSSocket.socketErrorListener (node:_http_client:518:5)\n    at TLSSocket.emit (node:events:518:28)\n    at emitErrorNT (node:internal/streams/destroy:170:8)\n    at emitErrorCloseNT (node:internal/streams/destroy:129:3)\n    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)\n    at Axios.request (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:4731:41)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: getaddrinfo ENOTFOUND api.twilio.com"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:34.663Z",
+              "message": "getaddrinfo ENOTFOUND api.twilio.com",
+              "stack": "Error: getaddrinfo ENOTFOUND api.twilio.com\n    at AxiosError.from (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:914:14)\n    at ClientRequest.handleRequestError (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:3515:25)\n    at ClientRequest.emit (node:events:518:28)\n    at emitErrorEvent (node:_http_client:104:11)\n    at TLSSocket.socketErrorListener (node:_http_client:518:5)\n    at TLSSocket.emit (node:events:518:28)\n    at emitErrorNT (node:internal/streams/destroy:170:8)\n    at emitErrorCloseNT (node:internal/streams/destroy:129:3)\n    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)\n    at Axios.request (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:4731:41)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: getaddrinfo ENOTFOUND api.twilio.com"
+            }
+          ],
+          "startTime": 1769021493120,
+          "endTime": 1769021494664,
+          "duration": 1544
+        },
+        "stack": "Error: getaddrinfo ENOTFOUND api.twilio.com\n    at AxiosError.from (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:914:14)\n    at ClientRequest.handleRequestError (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:3515:25)\n    at ClientRequest.emit (node:events:518:28)\n    at emitErrorEvent (node:_http_client:104:11)\n    at TLSSocket.socketErrorListener (node:_http_client:518:5)\n    at TLSSocket.emit (node:events:518:28)\n    at emitErrorNT (node:internal/streams/destroy:170:8)\n    at emitErrorCloseNT (node:internal/streams/destroy:129:3)\n    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)\n    at Axios.request (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\axios\\dist\\node\\axios.cjs:4731:41)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "02-barge-in",
+        "passed": false,
+        "duration": 697,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:35.178Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/02-barge-in.test.js:25:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:35.364Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/02-barge-in.test.js:25:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021494858,
+          "endTime": 1769021495364,
+          "duration": 506
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/02-barge-in.test.js:25:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "03-vad-thresholds",
+        "passed": false,
+        "duration": 629,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:35.808Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/03-vad-thresholds.test.js:24:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:35.996Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/03-vad-thresholds.test.js:24:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021495554,
+          "endTime": 1769021495996,
+          "duration": 442
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/03-vad-thresholds.test.js:24:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "04-kb-retrieval",
+        "passed": false,
+        "duration": 621,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:36.432Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/04-kb-retrieval.test.js:27:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:36.620Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/04-kb-retrieval.test.js:27:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021496187,
+          "endTime": 1769021496620,
+          "duration": 433
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/04-kb-retrieval.test.js:27:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "05-web-search",
+        "passed": false,
+        "duration": 625,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:37.061Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/05-web-search.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:37.248Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/05-web-search.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021496818,
+          "endTime": 1769021497248,
+          "duration": 430
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/05-web-search.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "06-crm-tasking",
+        "passed": false,
+        "duration": 611,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:37.675Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/06-crm-tasking.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:37.862Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/06-crm-tasking.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021497442,
+          "endTime": 1769021497862,
+          "duration": 420
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/06-crm-tasking.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "07-human-transfer",
+        "passed": false,
+        "duration": 628,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:38.294Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/07-human-transfer.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:38.493Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/07-human-transfer.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021498049,
+          "endTime": 1769021498493,
+          "duration": 444
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/07-human-transfer.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "08-memory",
+        "passed": false,
+        "duration": 628,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:38.940Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/08-memory.test.js:27:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:39.124Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/08-memory.test.js:27:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021498682,
+          "endTime": 1769021499124,
+          "duration": 442
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/08-memory.test.js:27:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "09-concurrency",
+        "passed": false,
+        "duration": 731,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:39.648Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:39:28",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:39.858Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:39:28",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021499322,
+          "endTime": 1769021499858,
+          "duration": 536
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:39:28"
+      },
+      {
+        "name": "10-error-paths",
+        "passed": false,
+        "duration": 606,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:40.280Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:36:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:40.467Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:36:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021500048,
+          "endTime": 1769021500467,
+          "duration": 419
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:36:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "11-gdpr-dsar",
+        "passed": false,
+        "duration": 614,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:40.896Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/11-gdpr-dsar.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:41.084Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/11-gdpr-dsar.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021500656,
+          "endTime": 1769021501084,
+          "duration": 428
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/11-gdpr-dsar.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      },
+      {
+        "name": "12-security",
+        "passed": false,
+        "duration": 404,
+        "error": "Unmasked phone number detected",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:41.304Z",
+              "message": "Unmasked phone number detected",
+              "stack": "Error: Unmasked phone number detected\n    at Assertions.assertPIIMasked (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/assertions.js:218:15)\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/12-security.test.js:146:16)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Unmasked phone number detected"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:41.491Z",
+              "message": "Unmasked phone number detected",
+              "stack": "Error: Unmasked phone number detected\n    at Assertions.assertPIIMasked (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/assertions.js:218:15)\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/12-security.test.js:146:16)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
+              "error": "Error: Unmasked phone number detected"
+            }
+          ],
+          "startTime": 1769021501278,
+          "endTime": 1769021501491,
+          "duration": 213
+        },
+        "stack": "Error: Unmasked phone number detected\n    at Assertions.assertPIIMasked (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/assertions.js:218:15)\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/12-security.test.js:146:16)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)"
+      }
+    ],
+    "timestamp": "2026-01-21T18:51:41.690Z"
+  },
+  "run2": {
+    "runNumber": 2,
+    "summary": {
+      "total": 24,
+      "passed": 0,
+      "failed": 24,
+      "duration": 16117,
+      "passRate": "0.00%"
+    },
+    "results": [
+      {
+        "name": "01-call-pickup",
+        "passed": false,
+        "duration": 610,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:47.989Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:48.179Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021507759,
+          "endTime": 1769021508179,
+          "duration": 420
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "02-barge-in",
+        "passed": false,
+        "duration": 602,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:48.600Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/02-barge-in.test.js:25:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:48.783Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/02-barge-in.test.js:25:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021508372,
+          "endTime": 1769021508783,
+          "duration": 411
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/02-barge-in.test.js:25:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "03-vad-thresholds",
+        "passed": false,
+        "duration": 638,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:49.230Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/03-vad-thresholds.test.js:24:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:49.424Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/03-vad-thresholds.test.js:24:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021508984,
+          "endTime": 1769021509424,
+          "duration": 440
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/03-vad-thresholds.test.js:24:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "04-kb-retrieval",
+        "passed": false,
+        "duration": 614,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:49.852Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/04-kb-retrieval.test.js:27:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:50.041Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/04-kb-retrieval.test.js:27:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021509612,
+          "endTime": 1769021510041,
+          "duration": 429
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/04-kb-retrieval.test.js:27:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "05-web-search",
+        "passed": false,
+        "duration": 673,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:50.479Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/05-web-search.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:50.718Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/05-web-search.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021510231,
+          "endTime": 1769021510718,
+          "duration": 487
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/05-web-search.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "06-crm-tasking",
+        "passed": false,
+        "duration": 704,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:51.183Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/06-crm-tasking.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:51.433Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/06-crm-tasking.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021510945,
+          "endTime": 1769021511433,
+          "duration": 488
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/06-crm-tasking.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "07-human-transfer",
+        "passed": false,
+        "duration": 625,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:51.872Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/07-human-transfer.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:52.061Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/07-human-transfer.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021511641,
+          "endTime": 1769021512061,
+          "duration": 420
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/07-human-transfer.test.js:26:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "08-memory",
+        "passed": false,
+        "duration": 726,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:52.518Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/08-memory.test.js:27:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:52.790Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/08-memory.test.js:27:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021512272,
+          "endTime": 1769021512790,
+          "duration": 518
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/08-memory.test.js:27:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "09-concurrency",
+        "passed": false,
+        "duration": 747,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:53.353Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:39:28",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:53.577Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:39:28",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021513052,
+          "endTime": 1769021513577,
+          "duration": 525
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:39:28"
+      },
+      {
+        "name": "10-error-paths",
+        "passed": false,
+        "duration": 613,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:54.002Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:36:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:54.192Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:36:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021513763,
+          "endTime": 1769021514192,
+          "duration": 429
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:36:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "11-gdpr-dsar",
+        "passed": false,
+        "duration": 612,
+        "error": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:54.621Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/11-gdpr-dsar.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:54.806Z",
+              "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
+              "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/11-gdpr-dsar.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+            }
+          ],
+          "startTime": 1769021514379,
+          "endTime": 1769021514806,
+          "duration": 427
+        },
+        "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:37:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/11-gdpr-dsar.test.js:32:24)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      },
+      {
+        "name": "12-security",
+        "passed": false,
+        "duration": 392,
+        "error": "Unmasked phone number detected",
+        "evidence": {
+          "logs": [],
+          "recordings": [],
+          "screenshots": [],
+          "metrics": {},
+          "errors": [
+            {
+              "timestamp": "2026-01-21T18:51:55.016Z",
+              "message": "Unmasked phone number detected",
+              "stack": "Error: Unmasked phone number detected\n    at Assertions.assertPIIMasked (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/assertions.js:218:15)\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/12-security.test.js:146:16)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Unmasked phone number detected"
+            },
+            {
+              "timestamp": "2026-01-21T18:51:55.201Z",
+              "message": "Unmasked phone number detected",
+              "stack": "Error: Unmasked phone number detected\n    at Assertions.assertPIIMasked (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/assertions.js:218:15)\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/12-security.test.js:146:16)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)",
+              "error": "Error: Unmasked phone number detected"
+            }
+          ],
+          "startTime": 1769021514998,
+          "endTime": 1769021515201,
+          "duration": 203
+        },
+        "stack": "Error: Unmasked phone number detected\n    at Assertions.assertPIIMasked (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/assertions.js:218:15)\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/12-security.test.js:146:16)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:119:25)"
+      }
+    ],
+    "timestamp": "2026-01-21T18:51:55.411Z"
+  },
+  "overall": {
+    "total": 36,
+    "passed": 0,
+    "failed": 36,
+    "duration": 23625
+  }
+}

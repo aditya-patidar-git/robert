@@ -1,0 +1,24 @@
+{
+  "name": "robert-voice-platform",
+  "version": "1.0.0",
+  "description": "Robert AI Voice Platform - Root package for test dependencies",
+  "type": "module",
+  "scripts": {
+    "test:acceptance": "node tests/acceptance/runAllTests.js",
+    "test:acceptance:single": "node tests/acceptance"
+  },
+  "keywords": ["voice-agent", "testing"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "dotenv": "^17.2.2",
+    "nock": "^13.5.0",
+    "p-limit": "^5.0.0",
+    "archiver": "^7.0.1",
+    "twilio": "^5.10.0",
+    "mongoose": "^8.18.1",
+    "axios": "^1.7.7",
+    "playwright": "^1.56.1",
+    "ws": "^8.18.0"
+  }
+}
