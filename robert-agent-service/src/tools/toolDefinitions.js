@@ -343,6 +343,10 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
           confirmed: {
             type: 'boolean',
             description: 'Whether the client has confirmed the email/phone number. Set to false on first call to get confirmation, then set to true after client confirms. Default: false'
+          },
+          termsAcceptedBeforeSend: {
+            type: 'boolean',
+            description: 'CRITICAL: Whether the client has accepted the terms and conditions BEFORE sending the payment request. This is MANDATORY - terms must be asked and accepted before sending payment request. Set to undefined/false on first call to ask terms, then set to true after client accepts. Default: undefined (terms will be asked)'
           }
         },
         required: ['courseType', 'workflowType', 'deliveryMethod']

@@ -261,7 +261,8 @@ const bookingStepSendPaymentRequestSchema = z.object({
   deliveryMethod: z.enum(['email', 'sms']),
   clientEmail: z.string().email().optional(),
   clientMobile: z.string().optional(),
-  confirmed: z.boolean().optional()
+  confirmed: z.boolean().optional(),
+  termsAcceptedBeforeSend: z.boolean().optional()
 });
 
 // Schema map for all tools

@@ -1,4 +1,5 @@
 import { takeScreenshot } from './utils.js';
+import { getTermsText, validateTermsAcceptance } from './termsUtils.js';
 
 /**
  * Send Payment Request
@@ -9,10 +10,61 @@ import { takeScreenshot } from './utils.js';
  * @param {string} clientEmail - Optional client email address
  * @param {string} clientMobile - Optional client mobile number
  * @param {boolean} confirmed - Whether client has confirmed the email/phone number (default: false)
- * @returns {Promise<{success: boolean, paymentCompleted: boolean, requiresConfirmation?: boolean, emailAddress?: string, phoneNumber?: string, error?: string}>}
+ * @param {boolean|undefined} termsAcceptedBeforeSend - Whether client has accepted terms and conditions BEFORE sending payment request (MANDATORY)
+ * @returns {Promise<{success: boolean, paymentCompleted: boolean, requiresConfirmation?: boolean, requiresTermsBeforeSend?: boolean, termsText?: string, termsNotAccepted?: boolean, requiresRetry?: boolean, emailAddress?: string, phoneNumber?: string, error?: string}>}
  */
-export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null, confirmed = false) {
+export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null, confirmed = false, termsAcceptedBeforeSend = undefined) {
   try {
+    // ============================================
+    // CRITICAL: MANDATORY TERMS CHECK - FIRST THING IN FUNCTION
+    // ============================================
+    // This check happens BEFORE email/mobile filling, BEFORE confirmation check,
+    // and BEFORE clicking send button. It is a MANDATORY gate that cannot be bypassed.
+    console.log(`🔍 [PAYMENT_REQUEST] Checking terms acceptance: ${termsAcceptedBeforeSend} (type: ${typeof termsAcceptedBeforeSend})`);
+    
+    const termsValidation = validateTermsAcceptance(termsAcceptedBeforeSend);
+    
+    // Flow 1: Terms not accepted - return immediately with terms requirement
+    if (termsValidation.requiresTermsBeforeSend) {
+      console.log('⏸️ [PAYMENT_REQUEST] Terms and conditions must be accepted before sending payment request');
+      return {
+        success: true,
+        paymentCompleted: false,
+        requiresTermsBeforeSend: true,
+        termsText: getTermsText(),
+        message: 'Before I can proceed with sending the payment request, I must make you aware of the following terms and conditions.',
+        instruction: 'CRITICAL: Read the terms to the caller and ask "Do you agree with the statements that I have just made?" Wait for response. If yes, call tool again with termsAcceptedBeforeSend: true. If no, try to answer their questions.'
+      };
+    }
+    
+    // Flow 2: Terms explicitly rejected (false) - handle retry/transfer/terminate
+    if (termsValidation.termsNotAccepted) {
+      console.log('❌ [PAYMENT_REQUEST] Terms not accepted by client');
+      return {
+        success: false,
+        paymentCompleted: false,
+        termsNotAccepted: true,
+        requiresRetry: true,
+        message: 'The client did not agree with the terms. Try to answer their questions to the best of your abilities. If they still don\'t agree after explanation, ask if they wish to be transferred to a human agent.',
+        instruction: 'Try to address the client\'s concerns. If they still don\'t agree, ask: "Would you like to be transferred to a human agent?" If yes, use transfer_call tool with target: "+442036918807". If no, say "Unfortunately, it will not be possible to proceed with the booking. Goodbye." and terminate the call.'
+      };
+    }
+    
+    // Flow 3: Terms accepted (true) - proceed with rest of flow
+    if (!termsValidation.termsAccepted) {
+      // This should not happen, but defensive check
+      console.warn('⚠️ [PAYMENT_REQUEST] Unexpected terms validation state, defaulting to requiring terms');
+      return {
+        success: true,
+        paymentCompleted: false,
+        requiresTermsBeforeSend: true,
+        termsText: getTermsText(),
+        message: 'Before I can proceed with sending the payment request, I must make you aware of the following terms and conditions.',
+        instruction: 'CRITICAL: Read the terms to the caller and ask "Do you agree with the statements that I have just made?" Wait for response. If yes, call tool again with termsAcceptedBeforeSend: true.'
+      };
+    }
+    
+    console.log('✅ [PAYMENT_REQUEST] Terms accepted, proceeding with payment request flow...');
     console.log(`💳 [PAYMENT_REQUEST] Sending payment request via ${deliveryMethod}...`);
     
     // FIX 3: Wait for payment request page to load - check for contactSend3DSecureRequest_iframe first
