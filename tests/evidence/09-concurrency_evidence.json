@@ -5,19 +5,19 @@
   "metrics": {},
   "errors": [
     {
-      "timestamp": "2026-01-22T06:39:13.199Z",
-      "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
-      "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:40:26)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:39:28",
-      "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+      "timestamp": "2026-01-22T13:38:13.936Z",
+      "message": "Call CAb718fb98166497e5a32859a678a29670 was not answered within 5000ms",
+      "stack": "Error: Call CAb718fb98166497e5a32859a678a29670 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:74:11)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:43:9",
+      "error": "Error: Call CAb718fb98166497e5a32859a678a29670 was not answered within 5000ms"
     },
     {
-      "timestamp": "2026-01-22T06:39:13.477Z",
-      "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
-      "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:40:26)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:39:28",
-      "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+      "timestamp": "2026-01-22T13:38:13.985Z",
+      "message": "Call CAb718fb98166497e5a32859a678a29670 was not answered within 5000ms",
+      "stack": "Error: Call CAb718fb98166497e5a32859a678a29670 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:74:11)\n    at async file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/09-concurrency.test.js:43:9",
+      "error": "Error: Call CAb718fb98166497e5a32859a678a29670 was not answered within 5000ms"
     }
   ],
-  "startTime": 1769063952863,
-  "endTime": 1769063953477,
-  "duration": 614
+  "startTime": 1769089088459,
+  "endTime": 1769089093985,
+  "duration": 5526
 }

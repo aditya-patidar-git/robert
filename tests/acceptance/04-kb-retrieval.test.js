@@ -12,7 +12,7 @@ import callSimulator from './callSimulator.js';
 import { assertions } from './helpers/assertions.js';
 import { transcriptAnalyzer } from './helpers/transcriptAnalyzer.js';
 import { stateManager } from './helpers/stateManager.js';
-import testData from './fixtures/kbQueries.json' assert { type: 'json' };
+import testData from './fixtures/kbQueries.json' with { type: 'json' };
 import testConfig from './config/testConfig.js';
 import mongoose from 'mongoose';
 

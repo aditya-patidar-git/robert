@@ -16,7 +16,7 @@ import { assertions } from './helpers/assertions.js';
 import { transcriptAnalyzer } from './helpers/transcriptAnalyzer.js';
 import { stateManager } from './helpers/stateManager.js';
 import testConfig from './config/testConfig.js';
-import crmData from './fixtures/crmData.json' assert { type: 'json' };
+import crmData from './fixtures/crmData.json' with { type: 'json' };
 import mongoose from 'mongoose';
 
 const TEST_NAME = '06-crm-tasking';

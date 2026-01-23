@@ -57,6 +57,9 @@ async function runTestSuite(runNumber) {
   console.log(`Running Acceptance Test Suite - Run ${runNumber}`);
   console.log(`${'='.repeat(60)}\n`);
   
+  // Reset test harness for this run
+  testHarness.reset();
+  
   // Initialize test harness
   await testHarness.initialize();
   
@@ -170,9 +173,13 @@ async function main() {
 }
 
 // Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
-}
+// This file is meant to be run directly, so always execute main()
+console.log('[TestRunner] Starting test runner...');
+main().catch(error => {
+  console.error('\n[TestRunner] Fatal error:', error);
+  console.error(error.stack);
+  process.exit(1);
+});
 
 export default { runTestSuite, main };
 

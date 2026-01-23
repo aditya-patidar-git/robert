@@ -23,12 +23,25 @@ class TwilioHelper {
   }
 
   /**
+   * Ensure client is initialized, try to re-initialize if needed
+   */
+  ensureInitialized() {
+    if (!this.client) {
+      const { accountSid, authToken } = testConfig.credentials.twilio;
+      if (accountSid && authToken) {
+        this.client = twilio(accountSid, authToken);
+        console.log('[TwilioHelper] Twilio client initialized');
+      } else {
+        throw new Error('Twilio client not initialized - credentials not available');
+      }
+    }
+  }
+
+  /**
    * Initiate a test call
    */
   async initiateCall(from, to, options = {}) {
-    if (!this.client) {
-      throw new Error('Twilio client not initialized');
-    }
+    this.ensureInitialized();
 
     try {
       const call = await this.client.calls.create({
@@ -58,9 +71,7 @@ class TwilioHelper {
    * Send DTMF tones
    */
   async sendDTMF(callSid, digits) {
-    if (!this.client) {
-      throw new Error('Twilio client not initialized');
-    }
+    this.ensureInitialized();
 
     try {
       const dtmf = await this.client.calls(callSid)
@@ -78,9 +89,7 @@ class TwilioHelper {
    * Get call details
    */
   async getCall(callSid) {
-    if (!this.client) {
-      throw new Error('Twilio client not initialized');
-    }
+    this.ensureInitialized();
 
     try {
       const call = await this.client.calls(callSid).fetch();
@@ -95,9 +104,7 @@ class TwilioHelper {
    * Get call recordings
    */
   async getRecordings(callSid) {
-    if (!this.client) {
-      throw new Error('Twilio client not initialized');
-    }
+    this.ensureInitialized();
 
     try {
       const recordings = await this.client.recordings.list({
@@ -115,9 +122,7 @@ class TwilioHelper {
    * Update call (for transfer, etc.)
    */
   async updateCall(callSid, updates) {
-    if (!this.client) {
-      throw new Error('Twilio client not initialized');
-    }
+    this.ensureInitialized();
 
     try {
       const call = await this.client.calls(callSid).update(updates);
@@ -132,9 +137,7 @@ class TwilioHelper {
    * Hang up call
    */
   async hangupCall(callSid) {
-    if (!this.client) {
-      throw new Error('Twilio client not initialized');
-    }
+    this.ensureInitialized();
 
     try {
       const call = await this.client.calls(callSid).update({ status: 'completed' });
@@ -149,9 +152,7 @@ class TwilioHelper {
    * Fetch Voice Insights metrics
    */
   async getVoiceInsights(callSid) {
-    if (!this.client) {
-      throw new Error('Twilio client not initialized');
-    }
+    this.ensureInitialized();
 
     try {
       // Voice Insights API endpoint
