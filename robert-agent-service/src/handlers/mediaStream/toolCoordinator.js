@@ -1,8 +1,10 @@
 import { BargeInHandler, ConsentHandler, ResponseHandler, TranscriptionHandler, ToolCallHandler } from './events/index.js';
 import { MemoryManager, LanguageDetector } from './utils/index.js';
+import { getConversationFlowState } from './utils/conversationStateHelpers.js';
 import { conversations } from '../../shared/state.js';
 import { getRecordingConsent, updateRecordingConsent, conversationExists } from '../../shared/conversationStateAccessor.js';
 import promptService from '../../services/promptService.js';
+import consentInstructionBuilder from '../../services/consentInstructionBuilder.js';
 
 /**
  * Tool Coordinator
@@ -156,21 +158,42 @@ export class ToolCoordinator {
         const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
         const consentQuestion = "Do you consent to this call being recorded?";
         
-        // Check language preference state
-        const waitingForLanguage = conversations[this.state.callSid]?.waitingForLanguage || this.state.waitingForLanguage || false;
-        const languageSelected = conversations[this.state.callSid]?.languagePreferenceState?.selected || this.state.languagePreferenceState?.selected || false;
+        // Check language preference state and consent state using reusable helper
+        const flowState = getConversationFlowState(this.state.callSid, this.state);
+        const { waitingForLanguage, languageSelected, consentGiven } = flowState;
         
-        // Get contextual instructions for initial greeting OR language question
-        responseInstructions = promptService.getContextualInstructions({
-          isInitialGreeting: !waitingForLanguage,
-          requireConsent: requireExplicitConsent && !waitingForLanguage,
-          consentNotice,
-          consentQuestion,
-          waitingForLanguage: waitingForLanguage && !languageSelected,
-          languageSelected
-        });
-        
-        console.log(`📋 [${this.state.callSid}] Using contextual instructions for initial greeting (length: ${responseInstructions?.length || 0})`);
+        // CRITICAL FIX: Use instruction builder to get full instructions based on current state
+        // This ensures we don't override session-level instructions with incomplete contextual ones
+        if (requireExplicitConsent && !consentGiven) {
+          // Use instruction builder to get phase-specific instructions
+          const consentInstructions = consentInstructionBuilder.buildConsentFlowInstructions({
+            consentNotice,
+            consentQuestion,
+            languageSelected,
+            consentGiven,
+            requireExplicitConsent,
+            baseInstructions: '' // Base instructions are already in session
+          });
+          
+          if (consentInstructions) {
+            // Use full instructions from builder instead of short contextual ones
+            responseInstructions = consentInstructions;
+            console.log(`📋 [${this.state.callSid}] Using instruction builder for initial greeting (phase: ${languageSelected ? 'consent' : 'language'}, length: ${responseInstructions?.length || 0})`);
+          } else {
+            // No specific instructions needed - let session-level instructions handle it
+            responseInstructions = null;
+            console.log(`📋 [${this.state.callSid}] No override needed - using session-level instructions for initial greeting`);
+          }
+        } else {
+          // Consent not required or already given - use promptService for language question if needed
+          responseInstructions = promptService.getContextualInstructions({
+            isInitialGreeting: !waitingForLanguage,
+            requireConsent: false,
+            waitingForLanguage: waitingForLanguage && !languageSelected,
+            languageSelected
+          });
+          console.log(`📋 [${this.state.callSid}] Using contextual instructions for initial greeting (consent not required, length: ${responseInstructions?.length || 0})`);
+        }
         
         // OPTIMIZATION: Reduced delay from 300ms to 100ms
         // Session should already be ready after session.update confirmation
@@ -204,9 +227,9 @@ export class ToolCoordinator {
           currentStep = bookingSession.currentStep;
         }
         
-        // Check language preference state
-        const waitingForLanguage = conversations[this.state.callSid]?.waitingForLanguage || this.state.waitingForLanguage || false;
-        const languageSelected = conversations[this.state.callSid]?.languagePreferenceState?.selected || this.state.languagePreferenceState?.selected || false;
+        // Check language preference state using reusable helper
+        const flowState = getConversationFlowState(this.state.callSid, this.state);
+        const { waitingForLanguage, languageSelected } = flowState;
         
         // Get contextual instructions for this response
         responseInstructions = promptService.getContextualInstructions({

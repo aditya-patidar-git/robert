@@ -8,6 +8,7 @@ export { step5BookingOptions } from './step5_bookingOptions.js';
 export { step6NewContact } from './step6_newContact.js';
 export { step6SelectSession } from './step6_selectSession.js';
 export { step7BookingOptions } from './step7_bookingOptions.js';
+export { step7_5LookupContact } from './step7_5_lookupContact.js';
 export { step8ContactDetails } from './step8_contactDetails.js';
 export { step9Payment } from './step9_payment.js';
 

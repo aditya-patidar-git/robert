@@ -1,0 +1,28 @@
+[
+  {
+    "id": "audit_1769084578961_b61be694",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769084578961",
+      "period": "monthly",
+      "generatedAt": "2026-01-22T12:22:58.961Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-22T12:22:58.961Z",
+    "system": "robert-ai"
+  }
+]

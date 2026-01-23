@@ -179,18 +179,69 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       // Wait for form to be fully loaded
       await page.waitForTimeout(2000);
       
-      const missingFields = [];
-      const fieldChecks = [
-        { label: 'Contact e-mail', id: 'cnt_email', name: 'email', question: 'I can see in your profile that we currently don\'t have your email address; could you please provide me with your full email address?' },
-        { label: 'Contact mobile number', id: 'cnt_mobile_number', name: 'mobileNumber', question: 'I can see in your profile that we currently don\'t have your mobile number; could you please provide me with your full mobile number?' },
-        { label: 'Post Code', id: 'cmp_post_code', name: 'postcode', question: 'I can see in your profile that we currently don\'t have your postcode; could you please provide me with your postcode?' },
-        { label: 'House number or name', id: 'cmp_buildingnumber', name: 'houseNumber', question: 'I can see in your profile that we currently don\'t have your house number or name; could you please provide me with your house number or name?' },
-        { label: 'Licence held', id: 'cnt_licence_held', name: 'licenceHeld', question: 'I can see in your profile that we currently don\'t have your licence held information; could you please provide me with your licence held type?' },
-        { label: 'National Insurance number', id: 'cnt_national_insurance_number', name: 'nationalInsuranceNumber', question: 'I can see in your profile that we currently don\'t have your National Insurance number; could you please provide me with your National Insurance number?' },
-        { label: 'Driving licence number', id: 'cnt_driving_licence_number', name: 'drivingLicenceNumber', question: 'I can see in your profile that we currently don\'t have your driving licence number; could you please provide me with your driving licence number?' }
+      // Sequential field checking - check fields one at a time in documented order
+      // This matches the client_verification pattern where fields are checked sequentially
+      const fieldOrder = [
+        { 
+          label: 'Contact e-mail', 
+          id: 'cnt_email', 
+          name: 'email', 
+          paramName: 'customerEmail',
+          question: 'I can see in your profile that we currently don\'t have your email address; could you please provide me with your full email address?',
+          confirmationQuestion: 'Could you please confirm to me your full email address again?'
+        },
+        { 
+          label: 'Contact mobile number', 
+          id: 'cnt_mobile_number', 
+          name: 'mobileNumber',
+          paramName: 'customerMobile',
+          question: 'I can see in your profile that we currently don\'t have your mobile number; could you please provide me with your full mobile number?',
+          confirmationQuestion: 'Could you please confirm to me your full mobile number again?'
+        },
+        { 
+          label: 'Post Code', 
+          id: 'cmp_post_code', 
+          name: 'postcode',
+          paramName: 'postcode',
+          question: 'I can see in your profile that we currently don\'t have your postcode; could you please provide me with your postcode?',
+          confirmationQuestion: 'Could you please confirm to me your postcode again?'
+        },
+        { 
+          label: 'House number or name', 
+          id: 'cmp_buildingnumber', 
+          name: 'houseNumber',
+          paramName: 'houseNumber',
+          question: 'I can see in your profile that we currently don\'t have your house number or name; could you please provide me with your house number or name?',
+          confirmationQuestion: 'Could you please confirm to me your house number or house name?'
+        },
+        { 
+          label: 'Licence held', 
+          id: 'cnt_licence_held', 
+          name: 'licenceHeld',
+          paramName: 'licenceHeld',
+          question: 'I can see in your profile that we currently don\'t have your licence held information; could you please provide me with your licence held type?',
+          confirmationQuestion: null // No confirmation needed for dropdown
+        },
+        { 
+          label: 'National Insurance number', 
+          id: 'cnt_national_insurance_number', 
+          name: 'nationalInsuranceNumber',
+          paramName: 'nationalInsurance',
+          question: 'I can see in your profile that we currently don\'t have your National Insurance number; could you please provide me with your National Insurance number?',
+          confirmationQuestion: 'Could you please confirm to me your National Insurance number again?'
+        },
+        { 
+          label: 'Driving licence number', 
+          id: 'cnt_driving_licence_number', 
+          name: 'drivingLicenceNumber',
+          paramName: 'drivingLicenceNumber',
+          question: 'I can see in your profile that we currently don\'t have your driving licence number; could you please provide me with your driving licence number?',
+          confirmationQuestion: 'Could you please confirm to me your driving licence number again?'
+        }
       ];
       
-      for (const field of fieldChecks) {
+      // Check fields sequentially - return immediately when first missing field is found
+      for (const field of fieldOrder) {
         try {
           let fieldLocator = eventBookingIframe.getByLabel(field.label);
           if (await fieldLocator.count() === 0) {
@@ -201,51 +252,93 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           }
           
           if (await fieldLocator.count() > 0) {
-            const currentValue = await fieldLocator.inputValue().catch(() => '');
+            // For dropdown fields (like Licence held), check selected value differently
+            let currentValue = '';
+            if (field.name === 'licenceHeld') {
+              // For dropdown, check selected option
+              currentValue = await fieldLocator.evaluate(el => {
+                if (el.tagName === 'SELECT') {
+                  return el.value || '';
+                }
+                return el.textContent?.trim() || '';
+              }).catch(() => '');
+            } else {
+              currentValue = await fieldLocator.inputValue().catch(() => '');
+            }
+            
             if (!currentValue || currentValue.trim() === '') {
-              missingFields.push({
-                ...field,
-                canUpdateLater: true // All fields can be updated later
-              });
+              // Found missing field - return immediately to ask for this field
+              console.log(`⚠️ [STEP 8] Missing field detected: ${field.name} (${field.label})`);
+              return {
+                success: true,
+                requiresField: field.name,
+                fieldName: field.name,
+                paramName: field.paramName,
+                question: field.question,
+                message: field.question,
+                instruction: `Ask the client for their ${field.label.toLowerCase()}. After collecting it, call this tool again with ${field.paramName} parameter.`
+              };
             }
           }
         } catch (error) {
           console.warn(`⚠️ [STEP 8] Could not check ${field.label}:`, error.message);
+          // Continue to next field if this one fails
         }
       }
       
-      // CRITICAL FIX 3: Email confirmation should ONLY be asked on client details page, not lookupContact page
-      // Check if email field exists and has a value - if so, ask for confirmation
-      const emailField = eventBookingIframe.getByLabel('Contact e-mail');
-      let emailValue = '';
-      if (await emailField.count() > 0) {
-        emailValue = await emailField.inputValue().catch(() => '');
+      // All required fields are present - fill any provided field values before clicking Next
+      // This handles cases where the agent provides field values after being asked
+      
+      // Fill email if provided
+      if (args.customerEmail) {
+        const emailField = eventBookingIframe.getByLabel('Contact e-mail');
+        if (await emailField.count() > 0) {
+          const currentEmail = await emailField.inputValue().catch(() => '');
+          if (!currentEmail || currentEmail.trim() === '') {
+            console.log(`📝 [STEP 8] Filling Contact e-mail: ${args.customerEmail}`);
+            await emailField.fill(args.customerEmail);
+            await page.waitForTimeout(500);
+          }
+        }
       }
       
-      if (emailValue && emailValue.trim() !== '') {
-        // Email exists - ask for confirmation (ONLY on client details page)
-        return {
-          success: true,
-          requiresEmailConfirmation: true,
-          emailAddress: emailValue.trim(),
-          missingFields: missingFields.map(f => f.name),
-          missingFieldsDetails: missingFields,
-          message: `I can see your email address is ${emailValue.trim()}. Could you please confirm to me your full email address again?${missingFields.length > 0 ? ' Also, I notice some missing information in your profile.' : ''}`,
-          instruction: 'Ask the client to confirm their email address. After confirmation, if there are missing fields, ask about them one by one, or ask if they want to update them later.'
-        };
-      } else if (missingFields.length > 0) {
-        // Email is missing - ask for it along with other missing fields
-        return {
-          success: true,
-          requiresMissingFields: true,
-          missingFields: missingFields.map(f => f.name),
-          missingFieldsDetails: missingFields,
-          message: `I notice some missing information in your profile. Would you like to provide this information now, or would you prefer to update it later?`,
-          instruction: 'Ask the client about missing fields. If they say "update later", "later", "not now", or similar, proceed by clicking Next. Otherwise, collect the missing information.'
-        };
+      // Fill mobile number if provided
+      if (args.customerMobile) {
+        const mobileField = eventBookingIframe.getByLabel('Contact mobile number');
+        if (await mobileField.count() === 0) {
+          const mobileFieldAlt = eventBookingIframe.locator('#cnt_mobile_number .dx-texteditor-input');
+          if (await mobileFieldAlt.count() > 0) {
+            const currentMobile = await mobileFieldAlt.inputValue().catch(() => '');
+            if (!currentMobile || currentMobile.trim() === '') {
+              console.log(`📝 [STEP 8] Filling Contact mobile number: ${args.customerMobile}`);
+              await mobileFieldAlt.fill(args.customerMobile);
+              await page.waitForTimeout(500);
+            }
+          }
+        } else {
+          const currentMobile = await mobileField.inputValue().catch(() => '');
+          if (!currentMobile || currentMobile.trim() === '') {
+            console.log(`📝 [STEP 8] Filling Contact mobile number: ${args.customerMobile}`);
+            await mobileField.fill(args.customerMobile);
+            await page.waitForTimeout(500);
+          }
+        }
       }
       
-      // Check for house number and address confirmation
+      // Fill postcode if provided
+      if (args.postcode) {
+        const postcodeField = eventBookingIframe.getByLabel('Post Code');
+        if (await postcodeField.count() > 0) {
+          const currentPostcode = await postcodeField.inputValue().catch(() => '');
+          if (!currentPostcode || currentPostcode.trim() === '') {
+            console.log(`📝 [STEP 8] Filling Post Code: ${args.postcode}`);
+            await postcodeField.fill(args.postcode);
+            await page.waitForTimeout(500);
+          }
+        }
+      }
+      
+      // Fill house number and handle address confirmation
       const houseNumber = args.houseNumber || args.houseNumberOrName;
       let houseNumberField = eventBookingIframe.getByLabel('House number or name');
       if (await houseNumberField.count() === 0) {
@@ -273,27 +366,63 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             if (await address1Field.count() > 0) {
               const autoPopulatedAddress = await address1Field.inputValue();
               if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
-                // CRITICAL FIX: Only return requiresAddressConfirmation if we're on the Contact Details page
-                const eventBookingIframeStillExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
-                if (!eventBookingIframeStillExists) {
-                  console.log('⚠️ [STEP 8] Not on Contact Details page anymore - skipping address confirmation');
-                } else {
-                  return {
-                    success: true,
-                    requiresAddressConfirmation: true,
-                    autoPopulatedAddress: autoPopulatedAddress,
-                    message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`
-                  };
-                }
+                // Return requiresAddressConfirmation to verify address with client
+                return {
+                  success: true,
+                  requiresAddressConfirmation: true,
+                  autoPopulatedAddress: autoPopulatedAddress,
+                  message: `I believe that I now have the first line of your address, is it ${autoPopulatedAddress}?`,
+                  instruction: 'Read the auto-populated address to the client and ask if it\'s correct. If yes, proceed. If no, ask for corrected address and call tool again with correctedAddress parameter.'
+                };
               }
             }
-          } else {
-            // House number is missing but not provided - ask agent to get it
-            return {
-              success: false,
-              requiresHouseNumber: true,
-              message: 'The house number or name field is missing on the client details page. Please ask the client for their house number or name before proceeding.'
-            };
+          }
+        }
+      }
+      
+      // Fill National Insurance if provided
+      if (args.nationalInsurance) {
+        const niField = eventBookingIframe.getByLabel('National Insurance number');
+        if (await niField.count() > 0) {
+          const currentNI = await niField.inputValue().catch(() => '');
+          if (!currentNI || currentNI.trim() === '') {
+            console.log(`📝 [STEP 8] Filling National Insurance number: ${args.nationalInsurance}`);
+            await niField.fill(args.nationalInsurance);
+            await page.waitForTimeout(500);
+          }
+        }
+      }
+      
+      // Fill Driving Licence Number if provided
+      if (args.drivingLicenceNumber) {
+        const dlField = eventBookingIframe.getByLabel('Driving licence number');
+        if (await dlField.count() > 0) {
+          const currentDL = await dlField.inputValue().catch(() => '');
+          if (!currentDL || currentDL.trim() === '') {
+            console.log(`📝 [STEP 8] Filling Driving licence number: ${args.drivingLicenceNumber}`);
+            await dlField.fill(args.drivingLicenceNumber);
+            await page.waitForTimeout(500);
+          }
+        }
+      }
+      
+      // Fill Licence Held if provided (dropdown)
+      if (args.licenceHeld) {
+        const licenceField = eventBookingIframe.getByLabel('Licence held');
+        if (await licenceField.count() > 0) {
+          const currentLicence = await licenceField.evaluate(el => {
+            if (el.tagName === 'SELECT') {
+              return el.value || '';
+            }
+            return el.textContent?.trim() || '';
+          }).catch(() => '');
+          if (!currentLicence || currentLicence.trim() === '') {
+            console.log(`📝 [STEP 8] Selecting Licence held: ${args.licenceHeld}`);
+            await licenceField.selectOption({ label: args.licenceHeld }).catch(() => {
+              // Try by value if label doesn't work
+              licenceField.selectOption(args.licenceHeld);
+            });
+            await page.waitForTimeout(500);
           }
         }
       }
@@ -302,7 +431,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       console.log('⚠️ [STEP 8] Not on client details page yet - skipping missing fields check');
     }
     
-    // After handling missing fields/email confirmation, click Next
+    // After handling missing fields (if any were provided), click Next
     await commonSteps.lookupContactAndWait(page, clientEmail, screenshotsDir, clientPostcode, false);
     
     // CRITICAL FIX 5: Detect page transition after Next click

@@ -85,15 +85,29 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
     } = context;
 
     // Initial greeting instructions
+    // NEW ORDER: Language preference (greeting) → Consent question → Main follow-up
     if (isInitialGreeting) {
-      if (requireConsent && consentNotice && consentQuestion) {
-        return `Start the call by saying: "${consentNotice}" Then immediately ask: "${consentQuestion}" Wait for the caller's response before continuing.`;
-      } else {
-        return `Say hello and introduce yourself as Robert from Universal Motorcycle Training. Ask what language the caller would like to use.`;
-      }
+      // For initial greeting, always ask language preference first
+      return `Say hello and introduce yourself as Robert from Universal Motorcycle Training. Ask what language the caller would like to use. Say exactly: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
+
+WAIT for the caller's response. If their response is unclear or you detect noise/barge-in, repeat: "What language would you like to use today?" until you get a clear answer.
+
+DO NOT ask the consent question or "What would you like to do today?" until language preference is confirmed.`;
     }
 
-    // CRITICAL: After consent is given, MUST ask language preference before anything else
+    // CRITICAL: After language is selected, MUST ask consent question before main follow-up
+    if (languageSelected && requireConsent && consentNotice && consentQuestion) {
+      return `CRITICAL: You MUST ask the consent question NOW before proceeding with any other conversation. Follow this exact sequence:
+
+1. First, say: "${consentNotice}"
+2. Then immediately ask: "${consentQuestion}"
+3. WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
+4. If the caller's response is unclear, ambiguous, or you detect background noise/barge-in that prevents you from understanding their answer, IMMEDIATELY repeat the question: "${consentQuestion}" - DO NOT proceed until you receive a clear yes or no answer
+
+DO NOT proceed to "What would you like to do today?" or any business questions until consent is given.`;
+    }
+
+    // After language is selected but consent not required or already given
     if (waitingForLanguage && !languageSelected) {
       return `CRITICAL: You MUST ask the language preference question NOW before proceeding with any other conversation. Say exactly: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?" 
 
@@ -147,9 +161,12 @@ This saves time by focusing the availability check on slots that match their pre
 
 AUTOMATIC CONTINUATION: After any tool completes successfully, IMMEDIATELY acknowledge the result and proceed to the next step. Do NOT wait for the caller to prompt you. For example:
 - After client_verification returns verified: true → Say "Thank you, your identity has been verified successfully. Now let me continue with your booking." and IMMEDIATELY call the next booking step (booking_step_select_session).
-- After booking_step_search_client finds a client → IMMEDIATELY proceed to verification or next step.
+- After booking_step_search_client (Step 5) finds a client → IMMEDIATELY proceed to client_verification.
 - After booking_step_select_session completes → IMMEDIATELY proceed to select booking options.
-- After booking_step_fill_contact_details completes → IMMEDIATELY proceed to payment step.`;
+- After booking_step_lookup_contact (Step 7.5) completes → IMMEDIATELY proceed to fill_contact_details.
+- After booking_step_fill_contact_details completes → IMMEDIATELY proceed to payment step.
+
+IMPORTANT: Do NOT confuse booking_step_search_client (Step 5, in Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).`;
           break;
 
         case 'booking_options':
@@ -160,22 +177,54 @@ AUTOMATIC CONTINUATION: After any tool completes successfully, IMMEDIATELY ackno
    - For other courses: Ask about relevant course options
    - Ask about bike type/preferences if applicable
 
-2. ONLY AFTER collecting course options: Proceed to collect contact details (house number, address, etc.)
+2. ONLY AFTER collecting course options: Proceed to lookup contact step (for existing clients) or fill contact details step (for new clients)
 
 DO NOT ask for house number or contact details until you've collected the course-specific options (like CBT type). The workflow should be:
-- Select session → Select booking options (CBT type, bike type) → Fill contact details (house number, etc.)
+- Select session → Select booking options (CBT type, bike type) → Lookup contact (existing clients only, silent) → Fill contact details (checks fields sequentially)
 
-AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes, IMMEDIATELY proceed to fill contact details step. Do NOT wait for prompts.`;
+AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes:
+- For existing clients: IMMEDIATELY proceed to booking_step_lookup_contact (Step 7.5, silent step, no questions). DO NOT call booking_step_search_client - that was already done in Step 5 before client verification.
+- For new clients: IMMEDIATELY proceed to booking_step_create_new_contact (silent step, no questions)
+
+CRITICAL: booking_step_fill_contact_details will check fields sequentially (email, mobile, postcode, house number, licence held, NI number, driving licence). If a field is missing, the tool will return requiresField with fieldName and question. Ask the client for that specific field, collect it, then call the tool again with the collected value.`;
+          break;
+
+        case 'booking_lookup_contact':
+          instructions = `You're looking up an existing client contact. This is a silent step - do NOT ask any questions. The system will automatically look up the client and proceed to fill contact details.
+
+AUTOMATIC CONTINUATION: After booking_step_lookup_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`;
           break;
 
         case 'booking_new_client':
-          instructions = `You're booking for a new client. Collect: name, email, mobile, postcode, house number. Use booking_step_create_new_contact, then booking_step_fill_contact_details.
+          instructions = `You're booking for a new client. 
 
-AUTOMATIC CONTINUATION: After any tool completes successfully, IMMEDIATELY acknowledge the result and proceed to the next step. Do NOT wait for the caller to prompt you.`;
+WORKFLOW: booking_step_create_new_contact (silent, no questions) → booking_step_fill_contact_details (fills all fields)
+
+CRITICAL: booking_step_create_new_contact does NOT ask any questions - it silently clicks the "New contact" button. Do NOT ask for email confirmation or any other questions after this step completes.
+
+AUTOMATIC CONTINUATION: After booking_step_create_new_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`;
           break;
 
         case 'booking_payment':
-          instructions = `Processing payment. CRITICAL: Only say "Booking confirmed" when paymentCompleted: true appears in tool result. Terms acceptance ONLY after payment is confirmed, just before clicking "Make booking" button.
+          instructions = `Processing payment. CRITICAL: Only say "Booking confirmed" when paymentCompleted: true appears in tool result.
+
+🚨 MANDATORY TERMS AND CONDITIONS CHECK 🚨
+CRITICAL WORKFLOW ORDER:
+1. BEFORE calling booking_step_send_payment_request: Ask terms and conditions to caller
+   - Read the full terms text from the tool result (termsText field)
+   - Ask: "Do you agree with the statements that I have just made?"
+   - Wait for caller's response
+2. Handle terms response:
+   - If "yes": Call booking_step_send_payment_request with termsAcceptedBeforeSend: true
+   - If "no" or questions: Try to answer their questions to the best of your abilities
+     - If they still don't agree after explanation: Ask "Would you like to be transferred to a human agent?"
+     - If yes: Use transfer_call tool with target: "+442036918807"
+     - If no: Say "Unfortunately, it will not be possible to proceed with the booking. Goodbye." and terminate the call
+3. ONLY after termsAcceptedBeforeSend: true, proceed with payment request sending
+4. After payment request is sent, polling will automatically find "Make booking" button and click it
+5. NO NEED to ask terms again after "Make booking" button appears (already handled before sending)
+
+CRITICAL: Terms check is MANDATORY and cannot be bypassed. The tool will return requiresTermsBeforeSend if termsAcceptedBeforeSend is not true.
 
 AUTOMATIC CONTINUATION: After payment tools complete, IMMEDIATELY proceed to next steps (confirmation email, terms, SMS). Do NOT wait for prompts.`;
           break;
@@ -267,6 +316,7 @@ DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate 
         if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
         if (currentStep === 6 && bookingSession?.workflowType === 'new') return 'booking_new_client';
         if (currentStep === 7) return 'booking_options'; // Select booking options (CBT type, bike type, etc.)
+        if (currentStep === 7.5 && bookingSession?.workflowType === 'existing') return 'booking_lookup_contact'; // Lookup contact (existing workflow only)
         if (currentStep >= 8 && currentStep <= 9) {
           // Payment steps
           return 'booking_payment';

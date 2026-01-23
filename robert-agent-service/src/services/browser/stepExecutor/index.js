@@ -16,6 +16,7 @@ import { executeSearchClient } from './stepExecutors/searchClient.js';
 import { executeSelectSession } from './stepExecutors/selectSession.js';
 import { executeSelectBookingOptions } from './stepExecutors/selectBookingOptions.js';
 import { executeCreateNewContact } from './stepExecutors/createNewContact.js';
+import { executeLookupContact } from './stepExecutors/lookupContact.js';
 import { executeFillContactDetails } from './stepExecutors/fillContactDetails/index.js';
 import { executeProcessPayment } from './stepExecutors/processPayment.js';
 import { executeSendPaymentRequest } from './stepExecutors/sendPaymentRequest.js';
@@ -64,6 +65,9 @@ export class StepExecutor {
           break;
         case 'createNewContact':
           result = await executeCreateNewContact(page, args, sessionState, this.screenshotsDir);
+          break;
+        case 'lookupContact':
+          result = await executeLookupContact(page, args, sessionState, this.screenshotsDir);
           break;
         case 'fillContactDetails':
           result = await executeFillContactDetails(page, args, sessionState, this.screenshotsDir);

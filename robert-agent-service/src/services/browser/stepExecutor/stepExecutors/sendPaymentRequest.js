@@ -82,9 +82,13 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
   // Also check for undefined/null and default to false
   const confirmed = args.confirmed === true || args.confirmed === 'true';
   
+  // Extract termsAcceptedBeforeSend parameter (MANDATORY check)
+  const termsAcceptedBeforeSend = args.termsAcceptedBeforeSend === true ? true : (args.termsAcceptedBeforeSend === false ? false : undefined);
+  
   // Debug logging to trace parameter passing
   console.log(`🔍 [SEND_PAYMENT_REQUEST] All args keys:`, Object.keys(args));
   console.log(`🔍 [SEND_PAYMENT_REQUEST] Confirmed parameter: ${args.confirmed} (type: ${typeof args.confirmed}), evaluated as: ${confirmed}`);
+  console.log(`🔍 [SEND_PAYMENT_REQUEST] TermsAcceptedBeforeSend parameter: ${args.termsAcceptedBeforeSend} (type: ${typeof args.termsAcceptedBeforeSend}), evaluated as: ${termsAcceptedBeforeSend}`);
   
   const result = await sendPaymentRequest(
     page,
@@ -92,8 +96,33 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     deliveryMethod,
     clientEmail,
     clientMobile,
-    confirmed
+    confirmed,
+    termsAcceptedBeforeSend
   );
+  
+  // CRITICAL: Handle terms-related results FIRST (before any other processing)
+  // Terms check is MANDATORY and must be handled before email/mobile confirmation
+  if (result.requiresTermsBeforeSend) {
+    return {
+      success: true,
+      paymentCompleted: false,
+      requiresTermsBeforeSend: true,
+      termsText: result.termsText,
+      message: result.message,
+      instruction: result.instruction
+    };
+  }
+  
+  if (result.termsNotAccepted) {
+    return {
+      success: false,
+      paymentCompleted: false,
+      termsNotAccepted: true,
+      requiresRetry: result.requiresRetry,
+      message: result.message,
+      instruction: result.instruction
+    };
+  }
   
   // If confirmation is required, return early
   if (result.requiresConfirmation) {
