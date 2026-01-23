@@ -34,6 +34,7 @@ function getToolNameForStep(courseType, workflowType, stepNumber) {
     'selectSession': 'booking_step_select_session',
     'selectBookingOptions': 'booking_step_select_booking_options',
     'createNewContact': 'booking_step_create_new_contact',
+    'lookupContact': 'booking_step_lookup_contact',
     'fillContactDetails': 'booking_step_fill_contact_details',
     'processPayment': 'booking_step_process_payment',
     'sendPaymentRequest': 'booking_step_send_payment_request',
@@ -504,6 +505,53 @@ export class BaseStepTool {
             autoRetryInstruction: requiredToolName 
               ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
               : `CRITICAL: You MUST complete step ${selectBookingOptionsStepNumber} (selectBookingOptions) without waiting for user input.`
+          };
+        }
+      }
+      
+      // CRITICAL FIX: Prevent calling lookupContact (STEP 7.5) before selectBookingOptions (STEP 7) completes
+      // For existing workflow: STEP 7 is selectBookingOptions, STEP 7.5 is lookupContact
+      // The lookupContact step REQUIRES the iframe to exist, which only appears after selectBookingOptions clicks "NEXT"
+      const isLookupContact = currentStepName === STEP_NAMES.LOOKUP_CONTACT;
+      
+      if (isLookupContact && workflowType === 'existing') {
+        // Check if selectBookingOptions has been completed
+        const selectBookingOptionsStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_BOOKING_OPTIONS);
+        if (selectBookingOptionsStepNumber !== null && currentStep < selectBookingOptionsStepNumber) {
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber);
+          return {
+            valid: false,
+            error: `Cannot execute step ${stepNumber} (lookupContact). You must first complete step ${selectBookingOptionsStepNumber} (selectBookingOptions). Please call booking_step_select_booking_options first.`,
+            currentStep,
+            requiresStep: selectBookingOptionsStepNumber,
+            requiresTool: requiredToolName,
+            message: `I need to select the booking options first before looking up the contact. Let me do that now.`,
+            autoRetryInstruction: requiredToolName 
+              ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+              : `CRITICAL: You MUST complete step ${selectBookingOptionsStepNumber} (selectBookingOptions) without waiting for user input.`
+          };
+        }
+      }
+      
+      // CRITICAL FIX: Ensure fillContactDetails requires lookupContact to complete first for existing workflow
+      // For existing workflow: STEP 7.5 is lookupContact, STEP 8 is fillContactDetails
+      const isFillContactDetails = currentStepName === STEP_NAMES.FILL_CONTACT_DETAILS;
+      
+      if (isFillContactDetails && workflowType === 'existing') {
+        // Check if lookupContact has been completed
+        const lookupContactStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.LOOKUP_CONTACT);
+        if (lookupContactStepNumber !== null && currentStep < lookupContactStepNumber) {
+          const requiredToolName = getToolNameForStep(courseType, workflowType, lookupContactStepNumber);
+          return {
+            valid: false,
+            error: `Cannot execute step ${stepNumber} (fillContactDetails). You must first complete step ${lookupContactStepNumber} (lookupContact). Please call booking_step_lookup_contact first.`,
+            currentStep,
+            requiresStep: lookupContactStepNumber,
+            requiresTool: requiredToolName,
+            message: `I need to look up the contact first before filling contact details. Let me do that now.`,
+            autoRetryInstruction: requiredToolName 
+              ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+              : `CRITICAL: You MUST complete step ${lookupContactStepNumber} (lookupContact) without waiting for user input.`
           };
         }
       }

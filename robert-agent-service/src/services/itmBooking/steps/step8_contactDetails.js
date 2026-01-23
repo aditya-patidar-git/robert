@@ -8,14 +8,8 @@ import * as commonSteps from '../../commonBookingSteps/index.js';
 export async function step8ContactDetails(page, bookingArgs, callContext, screenshotsDir, screenshots, workflowType = 'existing') {
   if (workflowType === 'existing') {
     // EXISTING CLIENT: Fill MISSING fields only
-    console.log('🔍 Step 8: Looking up contact and filling missing details...');
-    const clientEmail = bookingArgs.customerEmail || callContext.clientDetails?.email || bookingArgs.clientDetails?.email;
-    if (!clientEmail) {
-      throw new Error('Client email is required for contact lookup');
-    }
-    // Pass postcode for verification when multiple matches appear
-    const clientPostcode = bookingArgs.postcode || callContext.clientDetails?.postcode || bookingArgs.clientDetails?.postcode;
-    await commonSteps.lookupContactAndWait(page, clientEmail, screenshotsDir, clientPostcode);
+    // Note: Contact lookup is now handled by Step 7.5, so this step only handles field checking and filling
+    console.log('📝 Step 8: Checking and filling missing contact details...');
     screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', screenshotsDir));
     console.log('✅ Step 8 completed: Contact details updated');
   } else {

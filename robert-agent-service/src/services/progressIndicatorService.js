@@ -28,12 +28,14 @@ class ProgressIndicatorService {
     // Only enable periodic updates for specific long-running navigation operations:
     // 1. booking_step_search_client - navigates from client search page to client verification page
     // 2. booking_step_select_session - navigates after client verification page to selectBookingOptions page
-    // 3. booking_step_fill_contact_details - fills contact details form and checks for missing fields sequentially
-    // 4. booking_step_send_confirmation - sends booking confirmation email
-    // 5. booking_step_send_terms - sends terms and conditions email
-    // 6. booking_step_send_sms - sends SMS confirmation
+    // 3. booking_step_lookup_contact - looks up existing client contact (existing workflow only)
+    // 4. booking_step_fill_contact_details - fills contact details form and checks for missing fields sequentially
+    // 5. booking_step_send_confirmation - sends booking confirmation email
+    // 6. booking_step_send_terms - sends terms and conditions email
+    // 7. booking_step_send_sms - sends SMS confirmation
     return toolName === 'booking_step_search_client' 
       || toolName === 'booking_step_select_session' 
+      || toolName === 'booking_step_lookup_contact'
       || toolName === 'booking_step_fill_contact_details'
       || toolName === 'booking_step_send_confirmation'
       || toolName === 'booking_step_send_terms'
@@ -57,11 +59,12 @@ class ProgressIndicatorService {
     // Enable progress tracking for all tools, including step-based tools
     // Step-based tools will use longer thresholds to avoid redundant messages for quick steps
     const allowsPeriodicUpdates = this.shouldEnablePeriodicUpdates(toolName);
-    // Tools that get 2 periodic updates: booking_step_select_session, booking_step_fill_contact_details,
-    // booking_step_send_confirmation, booking_step_send_terms, booking_step_send_sms
+    // Tools that get 2 periodic updates: booking_step_select_session, booking_step_lookup_contact,
+    // booking_step_fill_contact_details, booking_step_send_confirmation, booking_step_send_terms, booking_step_send_sms
     // Others get 1 update
     const toolsWithTwoUpdates = [
       'booking_step_select_session',
+      'booking_step_lookup_contact',
       'booking_step_fill_contact_details',
       'booking_step_send_confirmation',
       'booking_step_send_terms',
@@ -219,9 +222,7 @@ class ProgressIndicatorService {
 
     const updateInterval = config.progressIndicators.updateIntervalMs || 8000;
     const messages = config.progressIndicators.updateMessages || [
-      "This is taking a bit longer than usual, please hold on.",
-      "I'm still working on that, just a moment.",
-      "Almost there, please bear with me."
+      "Please bear with me for a moment"
     ];
 
     // Use setTimeout instead of setInterval to send only ONE update
@@ -302,13 +303,8 @@ class ProgressIndicatorService {
         // Wait briefly for session update to take effect
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        openaiWs.send(JSON.stringify({
-          type: 'response.create',
-          response: {
-            modalities: ['audio', 'text']
-          }
-        }));
-        
+        // CRITICAL: Send conversation.item.create FIRST so the message exists when response.create is called
+        // This ensures the AI can reference the exact message that was just added
         openaiWs.send(JSON.stringify({
           type: 'conversation.item.create',
           item: {
@@ -322,10 +318,30 @@ class ProgressIndicatorService {
             ]
           }
         }));
+
+        // Wait for message to be added to conversation before creating response
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // CRITICAL: Add explicit instructions to force exact message repetition
+        // This prevents the AI from generating additional questions or content based on workflow phase
+        const periodicUpdateInstructions = `CRITICAL: You MUST say EXACTLY the message that was just added to the conversation. Say ONLY that message word-for-word. Do NOT add any additional questions, comments, or content. Do NOT use any contextual instructions or workflow phase information. Say ONLY the exact message provided.`;
+
+        openaiWs.send(JSON.stringify({
+          type: 'response.create',
+          response: {
+            modalities: ['audio', 'text'],
+            instructions: periodicUpdateInstructions
+          }
+        }));
         
         execution.lastUpdateTime = Date.now();
         execution.periodicUpdateCount++;
         console.log(`📊 [${callSid}] Sent periodic update ${execution.periodicUpdateCount}/${execution.maxPeriodicUpdates} after ${elapsed}ms: "${message}"`);
+        
+        // Calculate estimated audio duration and completion time for first update
+        const estimatedAudioDuration = this.estimateAudioDuration(message);
+        const firstUpdateCompletionTime = Date.now() + estimatedAudioDuration;
+        console.log(`⏱️ [${callSid}] First update estimated completion time: ${new Date(firstUpdateCompletionTime).toISOString()} (${estimatedAudioDuration}ms audio duration)`);
         
         // Re-enable tools after a delay to allow periodic update to complete
         // This ensures tools are available for the actual tool execution completion
@@ -341,7 +357,15 @@ class ProgressIndicatorService {
         }, 2000); // Wait 2 seconds for periodic update audio to start playing
         
         // Schedule second periodic update if needed (for booking_step_select_session)
+        // CRITICAL FIX: Schedule second update 8 seconds AFTER first update completes (not starts)
+        // This ensures consistent 8-second gaps between update endings and next update beginnings
         if (execution.periodicUpdateCount < execution.maxPeriodicUpdates) {
+          // Calculate time until second update should start (8 seconds after first update completes)
+          const timeUntilSecondUpdate = (firstUpdateCompletionTime + updateInterval) - Date.now();
+          const delayForSecondUpdate = Math.max(0, timeUntilSecondUpdate);
+          
+          console.log(`⏱️ [${callSid}] Scheduling second update in ${delayForSecondUpdate}ms (${delayForSecondUpdate / 1000}s) - will start 8s after first update completes`);
+          
           execution.updateTimeout = setTimeout(async () => {
             // Re-check execution state before sending second update
             const execution = this.activeExecutions.get(callSid);
@@ -376,7 +400,8 @@ class ProgressIndicatorService {
             }
 
             const elapsed = Date.now() - execution.startTime;
-            const message = messages[Math.floor(Math.random() * messages.length)];
+            // Use first message (generic message for all periodic updates)
+            const message = messages[0];
 
             try {
               // Double-check interruption and response state before sending
@@ -407,13 +432,8 @@ class ProgressIndicatorService {
               
               await new Promise(resolve => setTimeout(resolve, 100));
 
-              openaiWs.send(JSON.stringify({
-                type: 'response.create',
-                response: {
-                  modalities: ['audio', 'text']
-                }
-              }));
-              
+              // CRITICAL: Send conversation.item.create FIRST so the message exists when response.create is called
+              // This ensures the AI can reference the exact message that was just added
               openaiWs.send(JSON.stringify({
                 type: 'conversation.item.create',
                 item: {
@@ -425,6 +445,21 @@ class ProgressIndicatorService {
                       text: message
                     }
                   ]
+                }
+              }));
+
+              // Wait for message to be added to conversation before creating response
+              await new Promise(resolve => setTimeout(resolve, 100));
+
+              // CRITICAL: Add explicit instructions to force exact message repetition
+              // This prevents the AI from generating additional questions or content based on workflow phase
+              const periodicUpdateInstructions = `CRITICAL: You MUST say EXACTLY the message that was just added to the conversation. Say ONLY that message word-for-word. Do NOT add any additional questions, comments, or content. Do NOT use any contextual instructions or workflow phase information. Say ONLY the exact message provided.`;
+
+              openaiWs.send(JSON.stringify({
+                type: 'response.create',
+                response: {
+                  modalities: ['audio', 'text'],
+                  instructions: periodicUpdateInstructions
                 }
               }));
               
@@ -448,7 +483,7 @@ class ProgressIndicatorService {
               console.error(`❌ [${callSid}] Error sending second periodic update:`, err);
               this.stopPeriodicUpdates(callSid);
             }
-          }, updateInterval); // Schedule second update after another updateInterval delay
+          }, delayForSecondUpdate); // Schedule second update 8 seconds after first update completes
         } else {
           execution.updateTimeout = null; // Clear timeout reference if no more updates needed
         }
@@ -457,6 +492,23 @@ class ProgressIndicatorService {
         this.stopPeriodicUpdates(callSid);
       }
     }, updateInterval);
+  }
+
+  /**
+   * Estimate audio playback duration for a message
+   * @param {string} message - Message text
+   * @returns {number} Estimated duration in milliseconds
+   */
+  estimateAudioDuration(message) {
+    if (!message || typeof message !== 'string') {
+      return 2000; // Default 2 seconds for empty/invalid messages
+    }
+    
+    const wordCount = message.trim().split(/\s+/).filter(word => word.length > 0).length;
+    // Average speech rate: ~2.5 words/second (150 words/minute)
+    // Add 1 second buffer for natural pauses and processing
+    const durationMs = (wordCount / 2.5) * 1000 + 1000;
+    return Math.ceil(durationMs);
   }
 
   /**

@@ -129,6 +129,14 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
     await takeScreenshot(page, 'email-sent-confirmation.png', screenshotsDir);
     console.log('✅ [CONFIRMATION] Booking confirmation email sent successfully');
     
+    // Click Back button to return to afterBooking_iframe
+    // This ensures Step 11 starts in the correct iframe context
+    console.log('🔙 [CONFIRMATION] Clicking back button to return to afterBooking_iframe...');
+    await stationeryHelpers.clickBackButton(page, stationerySearchContext);
+    await page.waitForTimeout(2000);
+    await takeScreenshot(page, 'back-to-after-booking-menu.png', screenshotsDir);
+    console.log('✅ [CONFIRMATION] Returned to afterBooking_iframe - Step 10 complete');
+    
   } catch (error) {
     console.error('❌ [CONFIRMATION] Error sending booking confirmation email:', error);
     await takeScreenshot(page, 'confirmation-email-error.png', screenshotsDir);

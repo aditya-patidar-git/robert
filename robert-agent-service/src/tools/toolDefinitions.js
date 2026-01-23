@@ -111,7 +111,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_search_client',
-      description: `Step 5 (Existing workflow only): Search for existing client by mobile number or email. Verifies client identity. Use this ONLY for existing client workflow.`,
+      description: `Step 5 (Existing workflow only): Search for existing client in Contacts tab by mobile number or email. This happens BEFORE client verification. After this step completes, client verification is required. Use this ONLY for existing client workflow after navigate_contacts. DO NOT confuse this with booking_step_lookup_contact (Step 7.5) which happens later in the booking form.`,
       parameters: {
         type: 'object',
         properties: {
@@ -225,8 +225,37 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     },
     {
       type: 'function',
+      name: 'booking_step_lookup_contact',
+      description: `Step 7.5 (Existing workflow only): Lookup existing client contact in booking form iframe. This happens AFTER booking_step_select_booking_options and BEFORE booking_step_fill_contact_details. This is a silent step with periodic updates - do NOT ask questions. Use this ONLY for existing client workflow after booking_step_select_booking_options. DO NOT confuse this with booking_step_search_client (Step 5) which happens earlier in the Contacts tab before client verification.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment']
+          },
+          workflowType: {
+            type: 'string',
+            enum: ['existing'],
+            description: 'Must be "existing" for this step'
+          },
+          customerEmail: {
+            type: 'string',
+            description: 'Customer email address (optional, can come from session)'
+          },
+          postcode: {
+            type: 'string',
+            description: 'Customer postcode (optional, for verification when multiple matches appear)'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
       name: 'booking_step_fill_contact_details',
-      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. For existing clients: fills only missing fields. For new clients: fills all fields from scratch.`,
+      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. For existing clients: this happens AFTER booking_step_lookup_contact (Step 7.5) and fills only missing fields. For new clients: this happens AFTER booking_step_create_new_contact (Step 6) and fills all fields from scratch.`,
       parameters: {
         type: 'object',
         properties: {

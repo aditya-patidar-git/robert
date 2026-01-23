@@ -17,13 +17,13 @@ export class SendPaymentRequestStep extends BaseStepTool {
   }
 
   /**
-   * Get timeout for payment request - needs extra time for polling (5 minutes + overhead)
+   * Get timeout for payment request - needs extra time for polling (10 minutes + overhead)
    * Payment request involves: opening modal, filling email/mobile, clicking send,
-   * polling every 30 seconds for up to 5 minutes, and clicking "Make booking" button
-   * @returns {number} Timeout in milliseconds (360000ms = 6 minutes)
+   * polling every 30 seconds for up to 10 minutes, and clicking "Make booking" button
+   * @returns {number} Timeout in milliseconds (900000ms = 15 minutes)
    */
   getTimeout() {
-    return 360000; // 6 minutes to account for 5-minute polling + overhead
+    return 900000; // 15 minutes to account for 10-minute polling + overhead
   }
 }
 

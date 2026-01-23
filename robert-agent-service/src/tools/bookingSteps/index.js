@@ -10,6 +10,7 @@ import searchClientTool from './searchClient.js';
 import selectSessionTool from './selectSession.js';
 import selectBookingOptionsTool from './selectBookingOptions.js';
 import createNewContactTool from './createNewContact.js';
+import lookupContactTool from './lookupContact.js';
 import fillContactDetailsTool from './fillContactDetails.js';
 import processPaymentTool from './processPayment.js';
 import sendPaymentRequestTool from './sendPaymentRequest.js';
@@ -26,6 +27,7 @@ export const bookingStepTools = {
   'booking_step_select_session': selectSessionTool,
   'booking_step_select_booking_options': selectBookingOptionsTool,
   'booking_step_create_new_contact': createNewContactTool,
+  'booking_step_lookup_contact': lookupContactTool,
   'booking_step_fill_contact_details': fillContactDetailsTool,
   'booking_step_process_payment': processPaymentTool,
   'booking_step_send_payment_request': sendPaymentRequestTool,
@@ -43,6 +45,7 @@ export {
   selectSessionTool,
   selectBookingOptionsTool,
   createNewContactTool,
+  lookupContactTool,
   fillContactDetailsTool,
   processPaymentTool,
   sendPaymentRequestTool,
