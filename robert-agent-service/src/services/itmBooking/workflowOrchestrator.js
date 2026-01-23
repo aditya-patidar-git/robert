@@ -149,6 +149,11 @@ export class WorkflowOrchestrator {
             return step7Result;
           }
 
+          // STEP 7.5: Lookup contact (for EXISTING CLIENT workflow)
+          updatePhase('step7_5_lookup_contact');
+          checkCancellation();
+          await stepHandlers.step7_5LookupContact(page, bookingArgs, callContext, this.screenshotsDir, screenshots);
+
           // STEP 8: Contact details - fill MISSING fields only
           updatePhase('step8_contact_details');
           checkCancellation();

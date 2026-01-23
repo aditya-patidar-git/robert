@@ -213,6 +213,13 @@ const bookingStepCreateNewContactSchema = z.object({
   workflowType: z.enum(['new'])
 });
 
+const bookingStepLookupContactSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']),
+  customerEmail: z.string().email().optional(),
+  postcode: z.string().optional()
+});
+
 const bookingStepFillContactDetailsSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
@@ -288,6 +295,7 @@ const toolSchemas = {
   booking_step_select_session: bookingStepSelectSessionSchema,
   booking_step_select_booking_options: bookingStepSelectBookingOptionsSchema,
   booking_step_create_new_contact: bookingStepCreateNewContactSchema,
+  booking_step_lookup_contact: bookingStepLookupContactSchema,
   booking_step_fill_contact_details: bookingStepFillContactDetailsSchema,
   booking_step_process_payment: bookingStepProcessPaymentSchema,
   booking_step_send_payment_request: bookingStepSendPaymentRequestSchema,

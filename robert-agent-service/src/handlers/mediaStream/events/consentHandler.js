@@ -151,22 +151,14 @@ export class ConsentHandler {
       
       console.log(`✅ [${this.state.callSid}] Recording consent GIVEN by user: "${transcript}"`);
       
-      // CRITICAL: After consent is given, we MUST ask language preference
-      this.state.waitingForLanguage = true;
-      this.state.languagePreferenceState.asked = false; // Will be set to true when question is asked
+      // CRITICAL: After consent is given, proceed to main follow-up
+      // NEW ORDER: Language preference (greeting) → Consent question → Main follow-up
+      // Both language and consent are now complete, so proceed to main conversation
+      this.state.waitingForLanguage = false; // Language should already be selected at this point
       if (conversations[this.state.callSid]) {
-        conversations[this.state.callSid].waitingForLanguage = true;
-        if (!conversations[this.state.callSid].languagePreferenceState) {
-          conversations[this.state.callSid].languagePreferenceState = {
-            asked: false,
-            selected: false,
-            language: null,
-            askedAt: null,
-            selectedAt: null
-          };
-        }
+        conversations[this.state.callSid].waitingForLanguage = false;
       }
-      console.log(`🌐 [${this.state.callSid}] Consent given - language preference MUST be asked next`);
+      console.log(`✅ [${this.state.callSid}] Consent given - proceeding to main follow-up ("What would you like to do today?")`);
     } else if (declineDetected) {
       // Clear timeout immediately
       if (this.state.consentTimeout) {
