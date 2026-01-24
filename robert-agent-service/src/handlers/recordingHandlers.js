@@ -2,9 +2,7 @@ import axios from "axios";
 import CallRecord from "../database/models/CallRecord.js";
 import { conversations } from "../shared/state.js";
 import twilioClient from "../utils/twilioClient.js";
-import dotenv from "dotenv";
-
-dotenv.config();
+// dotenv is already loaded in index.js, no need to reload here
 
 /**
  * Get recording consent from conversation state or CallRecord

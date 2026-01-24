@@ -1,6 +1,5 @@
 import twilio from "twilio";
-import dotenv from "dotenv";
-dotenv.config();
+// dotenv is already loaded in index.js, no need to reload here
 
 const client = twilio(
   process.env.TWILIO_SID,

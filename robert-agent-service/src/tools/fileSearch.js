@@ -1,20 +1,20 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
+// dotenv is already loaded in index.js, no need to reload here
 import mongoose from 'mongoose';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import Provenance from '../database/models/Provenance.js';
 import uncertaintyGateService from '../services/uncertaintyGateService.js';
 import configManager from '../agent/configManager.js';
 
-// Load .env from project root
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-dotenv.config({ path: join(__dirname, '../../.env') });
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 class FileSearchTool {
   constructor() {
@@ -35,6 +35,9 @@ class FileSearchTool {
 
     try {
       console.log(`🔍 [${callContext.callSid || 'unknown'}] Searching knowledge base: "${query}"`);
+
+      // Get OpenAI client (lazy initialization)
+      const openai = getOpenAIClient();
 
       // Get vector store
       const vectorStore = await openai.vectorStores.retrieve(this.vectorStoreId);
@@ -224,4 +227,3 @@ class FileSearchTool {
 }
 
 export default new FileSearchTool();
-

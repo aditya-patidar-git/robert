@@ -1,15 +1,29 @@
 /**
  * Session Management Service
- * Centralized service for session lifecycle management, cleanup, and monitoring
+ * Centralized service for session lifecycle management, cleanup, and monitoring.
+ * 
+ * Now supports distributed state via Twilio Sync:
+ * - When Sync is configured, TTL is managed by Sync (automatic cleanup)
+ * - Manual cleanup timers only run for local-only mode
+ * - Sessions are synced to distributed state for horizontal scalability
  */
 
 import { createConversationState, mergeConversationState, validateConversationState } from '../shared/stateFactory.js';
-import { conversations } from '../shared/state.js';
+import { 
+  conversations, 
+  setConversation, 
+  getConversation, 
+  deleteConversation,
+  initializeDistributedState 
+} from '../shared/state.js';
+import distributedStateService from './distributedStateService.js';
+import { validateSessionConfig, logValidationResult } from '../utils/configValidator.js';
 
 class SessionManagementService {
   constructor() {
     // Configuration from environment variables
     this.sessionTTL = parseInt(process.env.SESSION_TTL_MINUTES || '60', 10) * 60 * 1000; // Convert to ms
+    this.sessionTTLSeconds = parseInt(process.env.SYNC_SESSION_TTL, 10) || this.sessionTTL / 1000; // For Sync TTL
     this.maxSessions = parseInt(process.env.MAX_SESSIONS || '100', 10);
     this.cleanupInterval = parseInt(process.env.SESSION_CLEANUP_INTERVAL_SECONDS || '60', 10) * 1000; // Convert to ms
     
@@ -17,12 +31,74 @@ class SessionManagementService {
     this.cleanupCount = 0;
     this.evictionCount = 0;
     
-    // Start cleanup interval
-    this.startCleanupInterval();
+    // Track if distributed state is available
+    this.useDistributedState = false;
+    
+    // Track configuration validation
+    this.configValidated = false;
+    
+    // Initialize distributed state and start cleanup interval
+    this._initialize();
   }
 
   /**
-   * Initialize a new session with standardized structure
+   * Validate session configuration and log warnings.
+   * Called during service initialization.
+   * @returns {Object} Validation result
+   */
+  validateConfiguration() {
+    if (this.configValidated) {
+      return this._lastValidationResult;
+    }
+
+    const result = validateSessionConfig(process.env);
+    logValidationResult(result, 'Session Management');
+    
+    // Additional validation for concurrent call support
+    if (this.maxSessions < 50) {
+      result.warnings.push(
+        `MAX_SESSIONS (${this.maxSessions}) is below recommended minimum (50) for 20 concurrent calls. ` +
+        'Consider increasing to at least 50 to handle concurrent calls with buffer.'
+      );
+    }
+
+    this._lastValidationResult = result;
+    this.configValidated = true;
+    
+    return result;
+  }
+
+  /**
+   * Initialize the service, including distributed state setup.
+   * @private
+   */
+  async _initialize() {
+    try {
+      // Validate configuration (logs warnings if issues detected)
+      this.validateConfiguration();
+      
+      // Initialize distributed state
+      this.useDistributedState = await initializeDistributedState();
+      
+      if (this.useDistributedState) {
+        console.log(`✅ [SESSION] Distributed state enabled - Sync TTL will handle session expiry (${this.sessionTTLSeconds}s)`);
+        // With Sync TTL, we can reduce cleanup frequency (only for local cache maintenance)
+        this.cleanupInterval = Math.max(this.cleanupInterval, 300000); // At least 5 minutes
+      }
+      
+      // Start cleanup interval (for local cache and non-Sync mode)
+      this.startCleanupInterval();
+    } catch (error) {
+      console.error('[SESSION] Initialization error:', error.message);
+      // Fall back to local-only mode
+      this.startCleanupInterval();
+    }
+  }
+
+  /**
+   * Initialize a new session with standardized structure.
+   * Syncs to distributed state when available.
+   * 
    * @param {string} callSid - Call SID identifier
    * @param {Object} initialData - Initial state data
    * @returns {Object} Created session state
@@ -36,6 +112,8 @@ class SessionManagementService {
     if (conversations[callSid]) {
       console.log(`📝 [SESSION] Session ${callSid} already exists, updating lastActivityTime`);
       conversations[callSid].lastActivityTime = Date.now();
+      // Sync to distributed state (fire-and-forget)
+      this._syncToDistributed(callSid, conversations[callSid]);
       return conversations[callSid];
     }
 
@@ -49,9 +127,25 @@ class SessionManagementService {
     });
 
     conversations[callSid] = state;
-    console.log(`✅ [SESSION] Initialized session ${callSid} (total: ${Object.keys(conversations).length})`);
+    
+    // Sync to distributed state with TTL (fire-and-forget)
+    this._syncToDistributed(callSid, state);
+    
+    console.log(`✅ [SESSION] Initialized session ${callSid} (total: ${Object.keys(conversations).length}, distributed: ${this.useDistributedState})`);
     
     return state;
+  }
+
+  /**
+   * Sync a session to distributed state (fire-and-forget).
+   * @private
+   */
+  _syncToDistributed(callSid, data) {
+    if (this.useDistributedState) {
+      setConversation(callSid, data, this.sessionTTLSeconds).catch(err => {
+        console.warn(`[SESSION] Failed to sync ${callSid} to distributed state:`, err.message);
+      });
+    }
   }
 
   /**
@@ -84,7 +178,9 @@ class SessionManagementService {
   }
 
   /**
-   * Update session data
+   * Update session data.
+   * Syncs to distributed state when available.
+   * 
    * @param {string} callSid - Call SID identifier
    * @param {Object} updates - Updates to apply
    * @returns {Object|null} Updated session or null if not found
@@ -98,13 +194,19 @@ class SessionManagementService {
 
     // Merge updates
     conversations[callSid] = mergeConversationState(session, updates);
+    
+    // Sync to distributed state (fire-and-forget)
+    this._syncToDistributed(callSid, conversations[callSid]);
+    
     console.log(`📝 [SESSION] Updated session ${callSid}`);
     
     return conversations[callSid];
   }
 
   /**
-   * Delete session
+   * Delete session.
+   * Removes from both local memory and distributed state.
+   * 
    * @param {string} callSid - Call SID identifier
    * @returns {boolean} True if deleted, false if not found
    */
@@ -113,17 +215,33 @@ class SessionManagementService {
       return false;
     }
 
+    const existed = !!conversations[callSid];
+    
+    // Delete from local memory
     if (conversations[callSid]) {
       delete conversations[callSid];
+    }
+    
+    // Delete from distributed state (fire-and-forget)
+    if (this.useDistributedState) {
+      deleteConversation(callSid).catch(err => {
+        console.warn(`[SESSION] Failed to delete ${callSid} from distributed state:`, err.message);
+      });
+    }
+    
+    if (existed) {
       console.log(`🧹 [SESSION] Deleted session ${callSid} (remaining: ${Object.keys(conversations).length})`);
-      return true;
     }
 
-    return false;
+    return existed;
   }
 
   /**
-   * Clean up stale sessions (exceeding TTL)
+   * Clean up stale sessions (exceeding TTL).
+   * 
+   * Note: When Twilio Sync is enabled, session expiry is handled automatically
+   * by Sync TTL. This method primarily cleans up the local cache in that case.
+   * 
    * @returns {number} Number of sessions cleaned up
    */
   cleanupStaleSessions() {
@@ -152,7 +270,8 @@ class SessionManagementService {
     });
 
     if (staleSessions.length > 0) {
-      console.log(`🧹 [SESSION] Cleaned up ${staleSessions.length} stale session(s) (TTL: ${this.sessionTTL / 1000 / 60} minutes)`);
+      const mode = this.useDistributedState ? 'local cache' : 'local storage';
+      console.log(`🧹 [SESSION] Cleaned up ${staleSessions.length} stale session(s) from ${mode} (TTL: ${this.sessionTTL / 1000 / 60} minutes)`);
     }
 
     return staleSessions.length;
@@ -225,10 +344,12 @@ class SessionManagementService {
   }
 
   /**
-   * Get session metrics for monitoring
-   * @returns {Object} Metrics object
+   * Get session metrics for monitoring.
+   * Includes distributed state info when available.
+   * 
+   * @returns {Promise<Object>} Metrics object
    */
-  getSessionMetrics() {
+  async getSessionMetrics() {
     const sessionCount = Object.keys(conversations).length;
     const now = Date.now();
     
@@ -244,7 +365,7 @@ class SessionManagementService {
     
     const avgAge = activeCount > 0 ? totalAge / activeCount : 0;
 
-    return {
+    const metrics = {
       activeSessions: sessionCount,
       maxSessions: this.maxSessions,
       sessionTTLMinutes: this.sessionTTL / 1000 / 60,
@@ -252,16 +373,77 @@ class SessionManagementService {
       totalCleanups: this.cleanupCount,
       totalEvictions: this.evictionCount,
       averageSessionAgeMs: Math.round(avgAge),
-      memoryUsagePercent: Math.round((sessionCount / this.maxSessions) * 100)
+      memoryUsagePercent: Math.round((sessionCount / this.maxSessions) * 100),
+      useDistributedState: this.useDistributedState
     };
+    
+    // Add distributed state metrics if available
+    if (this.useDistributedState) {
+      try {
+        const distributedStatus = await distributedStateService.getStatus();
+        metrics.distributed = {
+          enabled: true,
+          syncTTLSeconds: this.sessionTTLSeconds,
+          ...distributedStatus
+        };
+      } catch (error) {
+        metrics.distributed = {
+          enabled: true,
+          error: error.message
+        };
+      }
+    }
+
+    return metrics;
   }
 
   /**
-   * Get all active session IDs
+   * Get all active session IDs.
+   * Returns local session IDs; for distributed session count, use getSessionMetrics.
+   * 
    * @returns {Array<string>} Array of callSids
    */
   getActiveSessionIds() {
     return Object.keys(conversations);
+  }
+
+  /**
+   * Get a session from distributed state (async version).
+   * Falls back to local memory if not found in distributed state.
+   * 
+   * @param {string} callSid - Call SID identifier
+   * @returns {Promise<Object|null>} Session state or null if not found
+   */
+  async getSessionAsync(callSid) {
+    if (!callSid) {
+      return null;
+    }
+
+    // Try distributed state first
+    if (this.useDistributedState) {
+      try {
+        const distributed = await getConversation(callSid);
+        if (distributed) {
+          // Update local cache
+          conversations[callSid] = distributed;
+          distributed.lastActivityTime = Date.now();
+          return distributed;
+        }
+      } catch (error) {
+        console.warn(`[SESSION] Error getting distributed session ${callSid}:`, error.message);
+      }
+    }
+
+    // Fall back to local session
+    return this.getSession(callSid);
+  }
+
+  /**
+   * Check if distributed state is enabled.
+   * @returns {boolean} True if distributed state is enabled
+   */
+  isDistributedEnabled() {
+    return this.useDistributedState;
   }
 }
 

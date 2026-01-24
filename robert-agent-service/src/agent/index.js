@@ -1,11 +1,18 @@
+// Load .env FIRST before any other imports that might need env vars
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: join(__dirname, '../../.env') });
+
+// Now import everything else
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import twilio from 'twilio';
-import dotenv from 'dotenv';
 import cors from 'cors';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import configManager from './configManager.js';
 import { handleMediaStreamConnection } from '../handlers/mediaStream/index.js';
 import { makeCall, aiIntro, getAllCalls, handleIncomingCall } from '../handlers/callHandlers.js';
@@ -16,6 +23,9 @@ import secretsManager from '../services/secretsManager.js';
 import browserAgentService from '../services/browser/index.js';
 import toolExecutor from '../tools/index.js';
 import sessionManagementService from '../services/sessionManagementService.js';
+import healthCheckService from '../services/healthCheckService.js';
+import distributedStateService from '../services/distributedStateService.js';
+import { validateAndLogStartupConfig } from '../utils/configValidator.js';
 import scheduler from '../jobs/scheduler.js';
 import memoryCleanupJob from '../jobs/memoryCleanupJob.js';
 import retentionCleanupJob from '../jobs/retentionCleanupJob.js';
@@ -28,13 +38,6 @@ import { initializeMetrics } from '../services/metricsService.js';
 initializeTelemetry();
 // Initialize metrics after telemetry
 initializeMetrics();
-
-// Get the directory of the current module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Load .env from project root (two levels up from src/agent/)
-dotenv.config({ path: join(__dirname, '../../.env') });
 
 // Initialize secrets manager and validate required secrets
 (async () => {
@@ -105,7 +108,7 @@ app.use(express.urlencoded({ extended: true })); // Required for Twilio form-enc
 // Initialize config manager
 await configManager.initialize();
 
-// Health check
+// Basic health check (backward compatible)
 app.get('/', async (_, res) => {
   const sipService = (await import('../services/sipService.js')).default;
   const sipStats = sipService.getStats();
@@ -133,6 +136,45 @@ app.get('/', async (_, res) => {
       warnings: sipValidation.warnings
     }
   });
+});
+
+// Comprehensive health endpoint (for load balancers and monitoring)
+app.get('/health', async (req, res) => {
+  try {
+    // Get full health status with all service metrics
+    const healthStatus = await healthCheckService.getFullStatus({
+      sessionManagementService,
+      browserAgentService,
+      distributedStateService
+    });
+
+    // Determine HTTP status code based on health
+    const httpStatus = healthStatus.status === 'unhealthy' ? 503 : 200;
+    
+    // Support minimal response for load balancer probes
+    if (req.query.minimal === 'true') {
+      return res.status(httpStatus).json({
+        status: healthStatus.status,
+        uptime: healthStatus.uptime
+      });
+    }
+
+    res.status(httpStatus).json(healthStatus);
+  } catch (error) {
+    console.error('❌ [Health] Error getting health status:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Quick health check (minimal computation, for frequent polling)
+app.get('/health/quick', (req, res) => {
+  const quickStatus = healthCheckService.getQuickStatus();
+  const httpStatus = quickStatus.status === 'unhealthy' ? 503 : 200;
+  res.status(httpStatus).json(quickStatus);
 });
 
 // WebSocket test endpoint
@@ -517,6 +559,23 @@ server.listen(PORT, async () => {
   const toolConfigsCount = configManager.getAllToolConfigs().length;
   console.log(`📋 Configs: AI=${configManager.getAIConfig() ? '✅' : '❌'}, Audio=${configManager.getAudioConfig() ? '✅' : '❌'}, Telephony=${configManager.getTelephonyConfig() ? '✅' : '❌'}, Tools=${toolConfigsCount > 0 ? `✅ (${toolConfigsCount})` : '❌'}`);
   
+  // Validate all configurations at startup
+  validateAndLogStartupConfig();
+  
+  // Initialize browser agent service (includes pool initialization)
+  try {
+    await browserAgentService.initialize();
+    const poolStatus = browserAgentService.getPoolStatus();
+    if (poolStatus) {
+      console.log(`🏊 Browser Pool: size=${poolStatus.config.size}, mode=${poolStatus.mode}, available=${poolStatus.available}`);
+    } else {
+      console.log(`🏊 Browser Pool: disabled (VPN mode or single browser)`);
+    }
+  } catch (error) {
+    console.error('❌ Error initializing browser agent service:', error);
+    // Don't fail startup if browser pool fails to initialize
+  }
+  
   // Initialize scheduled jobs
   try {
     scheduler.registerJob(memoryCleanupJob.name, memoryCleanupJob.schedule, memoryCleanupJob.run);
@@ -537,7 +596,7 @@ server.listen(PORT, async () => {
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
   scheduler.stop();
-  await browserAgentService.cleanup();
+  await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
   configManager.destroy();
   await shutdownTelemetry();
   server.close(() => {
@@ -548,7 +607,7 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
   scheduler.stop();
-  await browserAgentService.cleanup();
+  await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
   configManager.destroy();
   await shutdownTelemetry();
   server.close(() => {

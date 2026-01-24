@@ -1,8 +1,26 @@
-// Shared in-memory storage for conversations and realtime clients
-// This is used across multiple handler modules
+/**
+ * Shared State Module
+ * Provides both synchronous in-memory access and async distributed state access.
+ * 
+ * For horizontal scalability, use the async methods (getConversation, setConversation, etc.)
+ * which leverage Twilio Sync for distributed state when configured.
+ * 
+ * The direct exports (conversations, realtimeClients) are maintained for backward
+ * compatibility but only provide local instance state.
+ * 
+ * @module shared/state
+ */
 
-import sessionManagementService from '../services/sessionManagementService.js';
+import distributedStateService from '../services/distributedStateService.js';
 
+// ============================================================================
+// LEGACY EXPORTS - Direct object access (local instance only)
+// ============================================================================
+
+/**
+ * In-memory conversation storage (local instance only).
+ * @deprecated Use getConversation/setConversation for distributed state.
+ */
 export const conversations = {}; // in-memory storage (maintained for backward compatibility)
 // Structure: {
 //   [callSid]: {
@@ -64,5 +82,220 @@ export const conversations = {}; // in-memory storage (maintained for backward c
 //     }
 //   }
 // }
+
+/**
+ * Store active Realtime API connections (local instance only).
+ * WebSocket connections cannot be distributed, so this remains local.
+ */
 export const realtimeClients = {}; // Store active Realtime API connections
 
+// ============================================================================
+// DISTRIBUTED STATE METHODS - Use these for horizontal scalability
+// ============================================================================
+
+/**
+ * Initialize the distributed state system.
+ * Call this on server startup to enable distributed state.
+ * 
+ * @returns {Promise<boolean>} True if distributed mode enabled
+ */
+export async function initializeDistributedState() {
+  try {
+    const result = await distributedStateService.initialize();
+    console.log(`[State] Distributed state initialized: ${result ? 'enabled' : 'in-memory only'}`);
+    return result;
+  } catch (error) {
+    console.error('[State] Failed to initialize distributed state:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Get a conversation by call SID.
+ * Uses distributed state when available, falls back to local memory.
+ * 
+ * @param {string} callSid - Call SID
+ * @returns {Promise<Object|null>} Conversation data or null
+ */
+export async function getConversation(callSid) {
+  // Try distributed state first
+  try {
+    const distributed = await distributedStateService.getSession(callSid);
+    if (distributed) {
+      // Sync to local cache
+      conversations[callSid] = distributed;
+      return distributed;
+    }
+  } catch (error) {
+    console.warn(`[State] Error getting distributed conversation ${callSid}:`, error.message);
+  }
+  
+  // Fall back to local memory
+  return conversations[callSid] || null;
+}
+
+/**
+ * Set a conversation.
+ * Writes to both local memory and distributed state.
+ * 
+ * @param {string} callSid - Call SID
+ * @param {Object} data - Conversation data
+ * @param {number} [ttl] - Time-to-live in seconds (for distributed state)
+ * @returns {Promise<boolean>} True if successful
+ */
+export async function setConversation(callSid, data, ttl = undefined) {
+  // Always update local memory
+  conversations[callSid] = data;
+  
+  // Also update distributed state
+  try {
+    await distributedStateService.setSession(callSid, data, ttl);
+  } catch (error) {
+    console.warn(`[State] Error setting distributed conversation ${callSid}:`, error.message);
+  }
+  
+  return true;
+}
+
+/**
+ * Update specific fields in a conversation.
+ * 
+ * @param {string} callSid - Call SID
+ * @param {Object} updates - Fields to update
+ * @param {number} [ttl] - Time-to-live in seconds
+ * @returns {Promise<boolean>} True if successful
+ */
+export async function updateConversation(callSid, updates, ttl = undefined) {
+  // Get existing conversation
+  const existing = await getConversation(callSid) || {};
+  
+  // Merge updates
+  const merged = {
+    ...existing,
+    ...updates,
+    _lastUpdated: new Date().toISOString()
+  };
+  
+  return setConversation(callSid, merged, ttl);
+}
+
+/**
+ * Delete a conversation.
+ * Removes from both local memory and distributed state.
+ * 
+ * @param {string} callSid - Call SID
+ * @returns {Promise<boolean>} True if successful
+ */
+export async function deleteConversation(callSid) {
+  // Remove from local memory
+  delete conversations[callSid];
+  
+  // Remove from distributed state
+  try {
+    await distributedStateService.deleteSession(callSid);
+  } catch (error) {
+    console.warn(`[State] Error deleting distributed conversation ${callSid}:`, error.message);
+  }
+  
+  return true;
+}
+
+/**
+ * Check if a conversation exists.
+ * 
+ * @param {string} callSid - Call SID
+ * @returns {Promise<boolean>} True if exists
+ */
+export async function hasConversation(callSid) {
+  // Check local first (fast)
+  if (conversations[callSid]) {
+    return true;
+  }
+  
+  // Check distributed
+  try {
+    return await distributedStateService.hasSession(callSid);
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Acquire a distributed lock for a call.
+ * Use this before making changes that require exclusive access.
+ * 
+ * @param {string} callSid - Call SID to lock
+ * @param {number} [ttl] - Lock TTL in seconds (default: 30)
+ * @returns {Promise<boolean>} True if lock acquired
+ */
+export async function acquireLock(callSid, ttl = 30) {
+  return distributedStateService.acquireLock(callSid, ttl);
+}
+
+/**
+ * Release a distributed lock.
+ * 
+ * @param {string} callSid - Call SID to unlock
+ * @returns {Promise<boolean>} True if released
+ */
+export async function releaseLock(callSid) {
+  return distributedStateService.releaseLock(callSid);
+}
+
+/**
+ * Get state system status for monitoring.
+ * 
+ * @returns {Promise<Object>} Status object
+ */
+export async function getStateStatus() {
+  const distributedStatus = await distributedStateService.getStatus();
+  
+  return {
+    localConversationCount: Object.keys(conversations).length,
+    localRealtimeClientCount: Object.keys(realtimeClients).length,
+    distributed: distributedStatus
+  };
+}
+
+/**
+ * Sync a local conversation to distributed state.
+ * Useful after modifying the local `conversations` object directly.
+ * 
+ * @param {string} callSid - Call SID to sync
+ * @returns {Promise<boolean>} True if synced
+ */
+export async function syncToDistributed(callSid) {
+  const localData = conversations[callSid];
+  if (!localData) {
+    return false;
+  }
+  
+  try {
+    await distributedStateService.setSession(callSid, localData);
+    return true;
+  } catch (error) {
+    console.warn(`[State] Error syncing conversation ${callSid}:`, error.message);
+    return false;
+  }
+}
+
+/**
+ * Sync from distributed state to local memory.
+ * Useful for warming the local cache.
+ * 
+ * @param {string} callSid - Call SID to sync
+ * @returns {Promise<boolean>} True if synced
+ */
+export async function syncFromDistributed(callSid) {
+  try {
+    const distributed = await distributedStateService.getSession(callSid);
+    if (distributed) {
+      conversations[callSid] = distributed;
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.warn(`[State] Error syncing from distributed ${callSid}:`, error.message);
+    return false;
+  }
+}

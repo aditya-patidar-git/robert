@@ -7,6 +7,7 @@ import {
 } from '../../utils/stealthUtils.js';
 import { loginToCRM } from '../commonBookingSteps/index.js';
 import { ensureDirectories } from '../commonBookingSteps/utils.js';
+import browserPoolService from './browserPoolService.js';
 
 export class BrowserManager {
   constructor(crmCredentials, screenshotsDir, auditDir) {
@@ -22,8 +23,71 @@ export class BrowserManager {
     this.authenticatedPage = null; // Store the authenticated page for reuse
     this.usingPersistentContext = false; // Track if using VPN mode
     
+    // Pool mode tracking
+    this.usePoolMode = process.env.BROWSER_POOL_ENABLED !== 'false';
+    this.poolInitialized = false;
+    this.currentPooledBrowser = null; // Track currently acquired browser from pool
+    
     // Ensure directories exist
     ensureDirectories([screenshotsDir, auditDir]);
+  }
+
+  /**
+   * Initialize browser pool for normal (non-VPN) mode
+   * Called once during service startup
+   * @returns {Promise<void>}
+   */
+  async initializePool() {
+    // Skip pool initialization in VPN mode
+    const userDataDir = process.env.CHROME_USER_DATA_DIR;
+    const isVpnMode = userDataDir && process.env.NODE_ENV !== 'production';
+    
+    if (isVpnMode) {
+      console.log('ℹ️ VPN mode detected - browser pool disabled (single CDP connection)');
+      this.usePoolMode = false;
+      return;
+    }
+
+    if (!this.usePoolMode) {
+      console.log('ℹ️ Browser pool disabled via BROWSER_POOL_ENABLED=false');
+      return;
+    }
+
+    if (this.poolInitialized) {
+      console.log('⚠️ Browser pool already initialized');
+      return;
+    }
+
+    try {
+      await browserPoolService.initialize({
+        vpnMode: false,
+        browserFactory: async () => {
+          console.log('🌐 Pool: Creating new browser instance with stealth mode...');
+          return await chromium.launch({
+            headless: false,
+            args: getStealthBrowserArgs()
+          });
+        }
+      });
+      
+      this.poolInitialized = true;
+      console.log('✅ Browser pool initialized for normal mode');
+    } catch (error) {
+      console.error('❌ Failed to initialize browser pool:', error.message);
+      console.log('⚠️ Falling back to single browser mode');
+      this.usePoolMode = false;
+    }
+  }
+
+  /**
+   * Get pool status for monitoring
+   * @returns {Object|null}
+   */
+  getPoolStatus() {
+    if (!this.usePoolMode || !this.poolInitialized) {
+      return null;
+    }
+    return browserPoolService.getStatus();
   }
 
   /**
@@ -250,6 +314,7 @@ export class BrowserManager {
     const usePersistentContext = userDataDir && process.env.NODE_ENV !== 'production';
     
     if (usePersistentContext) {
+      // VPN mode - use single persistent context (pool not applicable)
       // Check if we already have a persistent context
       if (this.persistentContext) {
         try {
@@ -285,7 +350,12 @@ export class BrowserManager {
       return this.persistentContext.browser();
     }
     
-    // Normal mode (no VPN) - return existing browser if connected
+    // Normal mode (no VPN) - use pool if available
+    if (this.usePoolMode && this.poolInitialized) {
+      return await this.getBrowserFromPool();
+    }
+    
+    // Fallback: Single browser mode (pool not initialized)
     if (this.browserInstance && this.browserInstance.isConnected()) {
       return this.browserInstance;
     }
@@ -301,6 +371,64 @@ export class BrowserManager {
     
     this.usingPersistentContext = false;
     return this.browserInstance;
+  }
+
+  /**
+   * Get browser from pool (for normal mode only)
+   * @returns {Promise<import('playwright').Browser>}
+   */
+  async getBrowserFromPool() {
+    try {
+      // Release previous browser if still held
+      if (this.currentPooledBrowser) {
+        console.log('🔄 Releasing previously held pooled browser');
+        await browserPoolService.release(this.currentPooledBrowser);
+        this.currentPooledBrowser = null;
+      }
+
+      // Acquire browser from pool
+      this.currentPooledBrowser = await browserPoolService.acquire();
+      console.log(`✅ Acquired browser from pool: ${this.currentPooledBrowser.id}`);
+      
+      return this.currentPooledBrowser.browser;
+    } catch (error) {
+      console.error('❌ Failed to acquire browser from pool:', error.message);
+      
+      // Fallback to single browser mode
+      console.log('⚠️ Falling back to single browser mode');
+      this.usePoolMode = false;
+      
+      if (this.browserInstance && this.browserInstance.isConnected()) {
+        return this.browserInstance;
+      }
+      
+      this.browserInstance = await chromium.launch({
+        headless: false,
+        args: getStealthBrowserArgs()
+      });
+      
+      return this.browserInstance;
+    }
+  }
+
+  /**
+   * Release browser back to pool (call when done with browser operations)
+   * @param {Object} [options] - Release options
+   * @param {boolean} [options.recycle] - Force browser recycling
+   */
+  async releaseBrowserToPool(options = {}) {
+    if (!this.usePoolMode || !this.currentPooledBrowser) {
+      return;
+    }
+    
+    try {
+      await browserPoolService.release(this.currentPooledBrowser, options);
+      console.log(`🔄 Released browser to pool: ${this.currentPooledBrowser.id}`);
+      this.currentPooledBrowser = null;
+    } catch (error) {
+      console.warn('⚠️ Error releasing browser to pool:', error.message);
+      this.currentPooledBrowser = null;
+    }
   }
 
   async getContext(progressCallback = null) {
@@ -529,6 +657,17 @@ export class BrowserManager {
 
   async cleanup() {
     try {
+      // Release current pooled browser if held
+      if (this.currentPooledBrowser) {
+        try {
+          await browserPoolService.release(this.currentPooledBrowser);
+          console.log('🧹 Released current pooled browser');
+        } catch (error) {
+          console.warn('⚠️ Error releasing pooled browser:', error.message);
+        }
+        this.currentPooledBrowser = null;
+      }
+
       // Cleanup persistent context if exists (VPN mode)
       if (this.persistentContext) {
         try {
@@ -572,8 +711,8 @@ export class BrowserManager {
         this.browserContext = null;
       }
       
-      // Cleanup normal browser instance
-      if (this.browserInstance) {
+      // Cleanup normal browser instance (only if not using pool)
+      if (this.browserInstance && !this.usePoolMode) {
         try {
           if (this.browserInstance.isConnected()) {
             await this.browserInstance.close();
@@ -594,6 +733,18 @@ export class BrowserManager {
       this.browserInitialized = false;
     } catch (error) {
       console.error('❌ Error cleaning up browser:', error);
+    }
+  }
+
+  /**
+   * Shutdown browser pool (call on service shutdown)
+   * @returns {Promise<void>}
+   */
+  async shutdownPool() {
+    if (this.usePoolMode && this.poolInitialized) {
+      console.log('🛑 Shutting down browser pool...');
+      await browserPoolService.shutdown();
+      this.poolInitialized = false;
     }
   }
 

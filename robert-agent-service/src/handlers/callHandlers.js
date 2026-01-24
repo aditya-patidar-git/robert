@@ -13,9 +13,7 @@ import {
     generateErrorTwiML,
     buildMediaStreamsWsUrl
 } from '../utils/twimlGenerator.js';
-import dotenv from "dotenv";
-
-dotenv.config();
+// dotenv is already loaded in index.js, no need to reload here
 
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 

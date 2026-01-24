@@ -5,12 +5,10 @@
  * Falls back to Media Streams if SIP is not available
  */
 
-import dotenv from "dotenv";
+// dotenv is already loaded in index.js, no need to reload here
 import sipValidation from "./sip/sipValidation.js";
 import sipSessionManager from "./sip/sipSessionManager.js";
 import sipStatusTracker from "./sip/sipStatusTracker.js";
-
-dotenv.config();
 
 class SipService {
   constructor() {

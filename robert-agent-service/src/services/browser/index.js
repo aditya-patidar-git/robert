@@ -42,6 +42,66 @@ class BrowserAgentService {
       this.crmCredentials,
       this.screenshotsDir
     );
+
+    // Track initialization state
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize browser pool for concurrent operations
+   * Call this once during service startup
+   * @returns {Promise<void>}
+   */
+  async initialize() {
+    if (this.initialized) {
+      console.log('⚠️ BrowserAgentService already initialized');
+      return;
+    }
+
+    console.log('🚀 Initializing BrowserAgentService...');
+    await this.browserManager.initializePool();
+    this.initialized = true;
+    console.log('✅ BrowserAgentService initialized');
+  }
+
+  /**
+   * Shutdown service and cleanup resources
+   * Call this during graceful shutdown
+   * @returns {Promise<void>}
+   */
+  async shutdown() {
+    console.log('🛑 Shutting down BrowserAgentService...');
+    await this.cleanup();
+    await this.browserManager.shutdownPool();
+    this.initialized = false;
+    console.log('✅ BrowserAgentService shutdown complete');
+  }
+
+  /**
+   * Get browser pool status for monitoring
+   * @returns {Object|null}
+   */
+  getPoolStatus() {
+    return this.browserManager.getPoolStatus();
+  }
+
+  /**
+   * Get active executions for monitoring
+   * @returns {Array}
+   */
+  getActiveExecutions() {
+    const executions = [];
+    for (const [key, value] of this.activeExecutions) {
+      executions.push({
+        key,
+        task: value.task,
+        startTime: value.startTime,
+        lastHeartbeat: value.lastHeartbeat,
+        phase: value.phase,
+        duration: Date.now() - value.startTime
+      });
+    }
+    return executions;
   }
 
   // Delegate browser management methods

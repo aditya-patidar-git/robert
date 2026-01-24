@@ -1,11 +1,16 @@
 import OpenAI from "openai";
-import dotenv from "dotenv";
+// dotenv is already loaded in index.js, no need to reload here
 
-dotenv.config();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 /**
  * Summary Service
@@ -54,6 +59,8 @@ Important:
 - Key facts should be the most important information (booking references, dates, issues, etc.)
 - Return ONLY valid JSON, no additional text`;
 
+      // Get OpenAI client (lazy initialization)
+      const openai = getOpenAIClient();
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini", // Use cheaper model for summaries
         messages: [
@@ -112,4 +119,3 @@ Important:
 }
 
 export default new SummaryService();
-

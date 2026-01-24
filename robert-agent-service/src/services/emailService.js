@@ -1,7 +1,5 @@
 import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv is already loaded in index.js, no need to reload here
 
 /**
  * General Email Service for sending emails via SMTP

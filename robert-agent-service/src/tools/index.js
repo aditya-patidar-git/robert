@@ -16,6 +16,7 @@ import ToolRegistry from './toolRegistry.js';
 import ToolExecutor from './toolExecutor.js';
 import { getToolDefinitions } from './toolDefinitions.js';
 import { bookingStepTools } from './bookingSteps/index.js';
+import { getToolsForContext } from '../services/toolFilterService.js';
 
 /**
  * Tool Executor for OpenAI Realtime API
@@ -78,6 +79,42 @@ class UnifiedToolExecutor {
    */
   getToolDefinitions() {
     return getToolDefinitions();
+  }
+
+  /**
+   * Get filtered tool definitions based on workflow context.
+   * Uses toolFilterService to determine which tools are allowed for the current phase.
+   * 
+   * @param {Object} context - Context for filtering tools
+   * @param {string} context.workflowPhase - Current workflow phase (e.g., 'greeting', 'booking_start')
+   * @param {boolean} [context.clientVerified] - Whether client identity is verified
+   * @param {boolean} [context.adminAccess] - Whether admin operations are allowed
+   * @param {boolean} [context.legacyMode] - Whether to include legacy tools
+   * @returns {Array} Filtered array of tool definition objects
+   */
+  getFilteredToolDefinitions(context = {}) {
+    const allDefinitions = getToolDefinitions();
+    
+    // Get allowed tool names for the context
+    const allowedToolNames = getToolsForContext(
+      context.workflowPhase || 'general_inquiry',
+      context
+    );
+    
+    // If null, return all tools (full access mode)
+    if (allowedToolNames === null) {
+      return allDefinitions;
+    }
+    
+    // Filter definitions to only include allowed tools
+    const filteredDefinitions = allDefinitions.filter(
+      tool => allowedToolNames.includes(tool.name)
+    );
+    
+    // Log filtering result for debugging
+    console.log(`🔧 [TOOL FILTER] Phase: ${context.workflowPhase || 'general_inquiry'}, Tools: ${filteredDefinitions.length}/${allDefinitions.length}`);
+    
+    return filteredDefinitions;
   }
 
   /**
