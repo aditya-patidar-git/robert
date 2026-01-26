@@ -23,9 +23,14 @@ const useDSARRequest = () => {
     setLoading(true);
     try {
       const response = await privacyService.getDSARRequestDetails(dsarId);
-      setRequest(response.request || response);
-      if (response.timeline) {
-        setTimeline(response.timeline);
+      // Handle normalized response structure: { success, data: { request }, ... }
+      const requestData = response?.data?.request || response?.request || response?.data || response;
+      setRequest(requestData);
+      
+      // Extract timeline if included in request response
+      const timelineData = response?.data?.timeline || response?.timeline;
+      if (Array.isArray(timelineData)) {
+        setTimeline(timelineData);
       }
     } catch (error) {
       showError(error.message || 'Failed to load DSAR request');
@@ -35,11 +40,19 @@ const useDSARRequest = () => {
   }, [showError]);
 
   const loadPreview = useCallback(async (dsarId, dataTypes) => {
+    if (!dsarId) {
+      setPreview(null);
+      return;
+    }
+    
     setLoading(true);
     try {
       const response = await privacyService.previewDSARData(dsarId, dataTypes);
-      setPreview(response.preview || response);
+      // Handle normalized response structure: { success, data: { preview }, ... }
+      const previewData = response?.data?.preview || response?.preview || response?.data || response;
+      setPreview(previewData);
     } catch (error) {
+      console.error('Failed to load preview:', error);
       showError(error.message || 'Failed to load preview');
     } finally {
       setLoading(false);
@@ -76,12 +89,21 @@ const useDSARRequest = () => {
   }, [showSuccess, showError]);
 
   const loadTimeline = useCallback(async (dsarId) => {
+    if (!dsarId) {
+      setTimeline([]);
+      return;
+    }
+    
     setLoading(true);
     try {
       const response = await privacyService.getDSARRequestTimeline(dsarId);
-      setTimeline(response.timeline || response);
+      // Handle normalized response structure: { success, data: { timeline }, ... }
+      const timelineData = response?.data?.timeline || response?.timeline || response?.data;
+      setTimeline(Array.isArray(timelineData) ? timelineData : []);
     } catch (error) {
+      console.error('Failed to load timeline:', error);
       showError(error.message || 'Failed to load timeline');
+      setTimeline([]); // Reset to empty array on error
     } finally {
       setLoading(false);
     }

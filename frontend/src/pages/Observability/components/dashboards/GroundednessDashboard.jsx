@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Box, Typography, CircularProgress, Alert, Button } from '@mui/material';
-import { CheckCircle, Cancel, TrendingUp, Refresh } from '@mui/icons-material';
+import { CheckCircle, Cancel, TrendingUp, Refresh, PhoneForwarded } from '@mui/icons-material';
 import StatGrid from '../shared/StatGrid';
 import ChartContainer from '../shared/ChartContainer';
 import DataTable from '../shared/DataTable';
@@ -108,6 +108,16 @@ const GroundednessDashboard = ({ timeRange = '24h' }) => {
       unit: '',
       color: 'warning',
       icon: Cancel
+    },
+    {
+      id: 'escalation-rate',
+      title: 'Escalation Rate',
+      value: metrics?.escalationRate || 0,
+      unit: '',
+      color: 'info',
+      icon: PhoneForwarded,
+      subtitle: 'Calls transferred to human',
+      type: 'percentage'
     }
   ];
 
@@ -120,7 +130,8 @@ const GroundednessDashboard = ({ timeRange = '24h' }) => {
     { metric: 'Total Calls', value: metrics?.totalCalls || 0 },
     { metric: 'Total Responses', value: metrics?.totalResponses || 0 },
     { metric: 'Ungrounded Responses', value: metrics?.totalUngroundedResponses || 0 },
-    { metric: 'KB Coverage', value: `${((metrics?.callsWithKB || 0) / (metrics?.totalCalls || 1) * 100).toFixed(1)}%` }
+    { metric: 'KB Coverage', value: `${((metrics?.callsWithKB || 0) / (metrics?.totalCalls || 1) * 100).toFixed(1)}%` },
+    { metric: 'Escalated Calls', value: metrics?.escalatedCalls || 0 }
   ];
 
   return (

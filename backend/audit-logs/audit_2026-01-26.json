@@ -1,0 +1,457 @@
+[
+  {
+    "id": "audit_1769422795503_119c35b8",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769422795503",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T10:19:55.503Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T10:19:55.503Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769423571699_09c4fa6c",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769423571699",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T10:32:51.699Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T10:32:51.703Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769423895689_9f7a2de8",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769423895688",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T10:38:15.688Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T10:38:15.689Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769424236676_e55b7c47",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769424236675",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T10:43:56.675Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T10:43:56.676Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769424683333_bac17b28",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769424683333",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T10:51:23.333Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T10:51:23.333Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769425115964_39679b3d",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769425115964",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T10:58:35.964Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T10:58:35.964Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769425324217_d0b22235",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769425324217",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:02:04.217Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:02:04.217Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769425537665_d61007d7",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769425537665",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:05:37.665Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:05:37.665Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769425642696_d944c772",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769425642696",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:07:22.696Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:07:22.697Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769425955225_80ce89f4",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769425955225",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:12:35.225Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:12:35.225Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769426056353_f60ab384",
+    "eventType": "dsar_created",
+    "eventData": {
+      "requestId": "DSAR-1769426056236-80D5A1F5",
+      "requestorEmail": "admin@example.com",
+      "requestType": "export",
+      "userIdentifier": "admin@example.com",
+      "status": "pending"
+    },
+    "timestamp": "2026-01-26T11:14:16.354Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769426056594_f6721373",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769426056594",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:14:16.594Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:14:16.594Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769426439105_9e42a32f",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769426439105",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:20:39.105Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:20:39.106Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769427470208_635d1776",
+    "eventType": "dsar_deleted",
+    "eventData": {
+      "requestId": "DSAR-1769426056236-80D5A1F5",
+      "requestorEmail": "admin@example.com",
+      "requestType": "export",
+      "status": "pending",
+      "deletedAt": "2026-01-26T11:37:50.208Z"
+    },
+    "timestamp": "2026-01-26T11:37:50.208Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769427471352_3bc809e6",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769427471352",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:37:51.352Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:37:51.352Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769427515988_9687c77d",
+    "eventType": "dsar_created",
+    "eventData": {
+      "requestId": "DSAR-1769427515865-2B8A11F7",
+      "requestorEmail": "john@gmail.com",
+      "requestType": "export",
+      "userIdentifier": "john@gmail.com",
+      "status": "pending"
+    },
+    "timestamp": "2026-01-26T11:38:35.988Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769427516248_e0a61312",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769427516248",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:38:36.248Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:38:36.248Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769427713586_c32f209e",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769427713585",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:41:53.585Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:41:53.586Z",
+    "system": "robert-ai"
+  },
+  {
+    "id": "audit_1769427782101_62ef7de6",
+    "eventType": "compliance_report_generated",
+    "eventData": {
+      "id": "compliance_1769427782101",
+      "period": "monthly",
+      "generatedAt": "2026-01-26T11:43:02.101Z",
+      "metrics": {
+        "totalCalls": 0,
+        "consentRate": 0.95,
+        "dsarRequests": 0,
+        "dataExports": 0,
+        "dataDeletions": 0,
+        "retentionCleanups": 0,
+        "breaches": 0
+      },
+      "complianceStatus": "compliant",
+      "recommendations": [
+        "Continue regular retention cleanup",
+        "Monitor consent rates",
+        "Review data processing activities"
+      ]
+    },
+    "timestamp": "2026-01-26T11:43:02.102Z",
+    "system": "robert-ai"
+  }
+]

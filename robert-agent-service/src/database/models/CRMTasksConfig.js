@@ -8,18 +8,9 @@ const CRMTasksConfigSchema = new mongoose.Schema({
     default: "default"
   },
   // Task-specific configurations
+  // Only createBooking and cancel tasks are supported
   tasks: {
     createBooking: {
-      enabled: {
-        type: Boolean,
-        default: true
-      },
-      requireConfirmation: {
-        type: Boolean,
-        default: true
-      }
-    },
-    reschedule: {
       enabled: {
         type: Boolean,
         default: true
@@ -33,26 +24,6 @@ const CRMTasksConfigSchema = new mongoose.Schema({
       enabled: {
         type: Boolean,
         default: true
-      },
-      requireConfirmation: {
-        type: Boolean,
-        default: true
-      }
-    },
-    updateRecord: {
-      enabled: {
-        type: Boolean,
-        default: true
-      },
-      requireConfirmation: {
-        type: Boolean,
-        default: false
-      }
-    },
-    issueRefund: {
-      enabled: {
-        type: Boolean,
-        default: false
       },
       requireConfirmation: {
         type: Boolean,

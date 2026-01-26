@@ -26,7 +26,9 @@ const DSARRequestInfo = ({ request }) => {
           <Typography variant="body2">{request.requestorName || 'N/A'}</Typography>
         </Box>
         <Box sx={{ width: { xs: '100%', md: 'calc(50% - 8px)' }, minWidth: { md: '200px' } }}>
-          <Typography variant="caption" color="text.secondary">Request Type</Typography>
+          <Typography variant="caption" color="text.secondary" display="block">
+            Request Type
+          </Typography>
           <Chip
             label={request.requestType || request.type || 'N/A'}
             size="small"
@@ -35,7 +37,9 @@ const DSARRequestInfo = ({ request }) => {
           />
         </Box>
         <Box sx={{ width: { xs: '100%', md: 'calc(50% - 8px)' }, minWidth: { md: '200px' } }}>
-          <Typography variant="caption" color="text.secondary">Status</Typography>
+          <Typography variant="caption" color="text.secondary" display="block">
+            Status
+          </Typography>
           <Chip
             label={request.status || 'N/A'}
             size="small"
@@ -54,9 +58,12 @@ const DSARRequestInfo = ({ request }) => {
         <Box sx={{ width: { xs: '100%', md: 'calc(50% - 8px)' }, minWidth: { md: '200px' } }}>
           <Typography variant="caption" color="text.secondary">Requested Data Types</Typography>
           <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
-            {(request.requestedData || []).map((dataType, index) => (
+            {(request.requestedDataTypes || request.requestedData || []).map((dataType, index) => (
               <Chip key={index} label={dataType} size="small" variant="outlined" />
             ))}
+            {(!request.requestedDataTypes?.length && !request.requestedData?.length) && (
+              <Typography variant="body2" color="text.secondary">All Data</Typography>
+            )}
           </Box>
         </Box>
       </Box>

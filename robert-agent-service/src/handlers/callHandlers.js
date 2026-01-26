@@ -253,6 +253,18 @@ export const handleIncomingCall = async (req, res) => {
         // Initialize conversation state using session management service
         const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
         
+        // Check concurrent call limit from database configuration
+        if (!sessionManagementService.canAcceptNewCall()) {
+            const maxCalls = sessionManagementService.getMaxConcurrentCalls();
+            span.setAttribute('call.blocked', true);
+            span.setAttribute('call.block_reason', 'concurrent_limit_reached');
+            span.setStatus({ code: SpanStatusCode.ERROR, message: `Concurrent call limit reached (${maxCalls})` });
+            console.log(`🚫 [${CallSid}] Call blocked: Concurrent call limit reached (${maxCalls})`);
+            const twiml = generateBlockedCallTwiML('Sorry, all lines are currently busy. Please try again in a few minutes.');
+            span.end();
+            return res.type("text/xml").send(twiml);
+        }
+        
         // Check if SIP should be used (primary path)
         const telephonyConfig = configManager.getTelephonyConfig();
         const shouldUseSip = sipCallRouter.shouldUseSip(telephonyConfig) && sipService.isSipEnabled();

@@ -1,11 +1,16 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
+// dotenv is already loaded in server.js, no need to reload here
 
-dotenv.config();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 class MessageSummarizationService {
   constructor() {
@@ -45,6 +50,7 @@ Summary:`;
       // Use a lightweight model for summarization to save tokens
       const summaryModel = modelId.includes('gpt-4') ? 'gpt-4o-mini' : 'gpt-3.5-turbo';
       
+      const openai = getOpenAIClient();
       const response = await openai.chat.completions.create({
         model: summaryModel,
         messages: [

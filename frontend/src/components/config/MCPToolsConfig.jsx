@@ -35,6 +35,8 @@ const MCPToolsConfig = forwardRef(({
   const [editingDomains, setEditingDomains] = useState({});
   const [newDomainInputs, setNewDomainInputs] = useState({});
   const [rateLimitValues, setRateLimitValues] = useState({});
+  const [maxTimeValues, setMaxTimeValues] = useState({});
+  const [enabledValues, setEnabledValues] = useState({});
 
   // Fetch MCP tools
   const { data: fetchedMcpTools = [], isLoading: mcpLoading, refetch: refetchMcpTools } = useQuery({
@@ -57,44 +59,41 @@ const MCPToolsConfig = forwardRef(({
     if (filteredMcpTools && filteredMcpTools.length > 0) {
       const domainsState = {};
       const rateLimitState = {};
+      const maxTimeState = {};
+      const enabledState = {};
       filteredMcpTools.forEach(tool => {
         domainsState[tool.name] = [...(tool.domains || [])];
         rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
+        maxTimeState[tool.name] = tool.maxTime || null;
+        enabledState[tool.name] = tool.enabled ?? true;
       });
       setEditingDomains(domainsState);
       setRateLimitValues(rateLimitState);
+      setMaxTimeValues(maxTimeState);
+      setEnabledValues(enabledState);
     }
   }, [filteredMcpTools]);
 
-  // MCP Tools Handlers
-  const handleToggleTool = async (toolName, enabled) => {
+  // MCP Tools Handlers - All changes are local until Save is clicked
+  const handleToggleTool = (toolName, enabled) => {
     if (readOnly) return;
-    try {
-      if (enabled) {
-        await mcpToolsService.enableTool(toolName);
-      } else {
-        await mcpToolsService.disableTool(toolName);
-      }
-      showSuccess(`Tool ${toolName} ${enabled ? 'enabled' : 'disabled'}`);
-      queryClient.invalidateQueries(['mcp-tools']);
-    } catch (error) {
-      showError(`Failed to ${enabled ? 'enable' : 'disable'} tool ${toolName}`);
-    }
+    setEnabledValues(prev => ({ ...prev, [toolName]: enabled }));
   };
 
-  const handleUpdateRateLimit = async (toolName, newLimit) => {
+  const handleUpdateRateLimit = (toolName, newLimit) => {
     if (readOnly) return;
-    try {
-      if (newLimit < 1 || newLimit > 1000) {
-        showError('Rate limit must be between 1 and 1000');
-        return;
-      }
-      await mcpToolsService.updateRateLimit(toolName, newLimit);
-      showSuccess(`Rate limit updated for ${toolName}`);
-      queryClient.invalidateQueries(['mcp-tools']);
-    } catch (error) {
-      showError(`Failed to update rate limit for ${toolName}`);
+    if (newLimit < 1 || newLimit > 1000) {
+      showError('Rate limit must be between 1 and 1000');
+      return;
     }
+    setRateLimitValues(prev => ({ ...prev, [toolName]: newLimit }));
+  };
+
+  const handleUpdateMaxTime = (toolName, maxTimeSeconds) => {
+    if (readOnly) return;
+    // Store in milliseconds, null means no limit
+    const maxTimeMs = maxTimeSeconds ? maxTimeSeconds * 1000 : null;
+    setMaxTimeValues(prev => ({ ...prev, [toolName]: maxTimeMs }));
   };
 
   const handleAddDomain = useCallback((toolName, domain) => {
@@ -132,18 +131,6 @@ const MCPToolsConfig = forwardRef(({
     });
   }, [readOnly]);
 
-  const handleSaveDomains = async (toolName) => {
-    if (readOnly) return;
-    try {
-      const domains = editingDomains[toolName] || [];
-      await mcpToolsService.updateDomainAllowlist(toolName, domains);
-      showSuccess(`Domain allowlist updated for ${toolName}`);
-      queryClient.invalidateQueries(['mcp-tools']);
-    } catch (error) {
-      showError(`Failed to update domain allowlist for ${toolName}`);
-    }
-  };
-
   // Expose saveAll method to parent component
   useImperativeHandle(ref, () => ({
     saveAll: async () => {
@@ -155,12 +142,27 @@ const MCPToolsConfig = forwardRef(({
       const savePromises = [];
       const errors = [];
 
-      // Save all pending domain changes
+      // Save all pending changes for each tool
       for (const tool of toolsArray) {
+        // Save enabled state if changed
+        const enabledValue = enabledValues[tool.name];
+        const originalEnabled = tool.enabled;
+        
+        if (enabledValue !== undefined && enabledValue !== originalEnabled) {
+          savePromises.push(
+            (enabledValue 
+              ? mcpToolsService.enableTool(tool.name) 
+              : mcpToolsService.disableTool(tool.name)
+            ).catch(error => {
+              errors.push(`Failed to ${enabledValue ? 'enable' : 'disable'} ${tool.name}: ${error.message}`);
+            })
+          );
+        }
+
+        // Save domains if changed
         const toolDomains = editingDomains[tool.name] || [];
         const originalDomains = tool.domains || [];
         
-        // Check if domains have changed
         const domainsChanged = toolDomains.length !== originalDomains.length || 
           toolDomains.some((domain, idx) => domain !== (originalDomains[idx] || ''));
         
@@ -186,6 +188,19 @@ const MCPToolsConfig = forwardRef(({
                 })
             );
           }
+        }
+
+        // Save maxTime if changed
+        const maxTimeValue = maxTimeValues[tool.name];
+        const originalMaxTime = tool.maxTime;
+        
+        if (maxTimeValue !== originalMaxTime) {
+          savePromises.push(
+            mcpToolsService.updateMaxTime(tool.name, maxTimeValue)
+              .catch(error => {
+                errors.push(`Failed to save max time for ${tool.name}: ${error.message}`);
+              })
+          );
         }
       }
 
@@ -237,11 +252,12 @@ const MCPToolsConfig = forwardRef(({
               <Table sx={{ tableLayout: 'fixed' }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ width: '15%' }}><strong>Tool</strong></TableCell>
-                    <TableCell sx={{ width: '25%' }}><strong>Description</strong></TableCell>
-                    <TableCell align="center" sx={{ width: '10%' }}><strong>Enabled</strong></TableCell>
-                    <TableCell sx={{ width: '15%' }}><strong>Rate Limit</strong></TableCell>
-                    <TableCell sx={{ width: '20%' }}><strong>Domain Allowlist</strong></TableCell>
+                    <TableCell sx={{ width: '12%' }}><strong>Tool</strong></TableCell>
+                    <TableCell sx={{ width: '20%' }}><strong>Description</strong></TableCell>
+                    <TableCell align="center" sx={{ width: '8%' }}><strong>Enabled</strong></TableCell>
+                    <TableCell sx={{ width: '12%' }}><strong>Rate Limit</strong></TableCell>
+                    <TableCell sx={{ width: '10%' }}><strong>Max Time</strong></TableCell>
+                    <TableCell sx={{ width: '23%' }}><strong>Domain Allowlist</strong></TableCell>
                     <TableCell sx={{ width: '15%' }}><strong>Usage Stats</strong></TableCell>
                   </TableRow>
                 </TableHead>
@@ -250,6 +266,11 @@ const MCPToolsConfig = forwardRef(({
                   const toolDomains = editingDomains[tool.name] || tool.domains || [];
                   const newDomainInput = newDomainInputs[tool.name] || '';
                   const rateLimitValue = rateLimitValues[tool.name] ?? tool.rateLimit?.limit ?? 100;
+                  // maxTime is stored in ms in backend, display in seconds
+                  const maxTimeValue = maxTimeValues[tool.name] !== undefined 
+                    ? maxTimeValues[tool.name] 
+                    : (tool.maxTime || null);
+                  const maxTimeSeconds = maxTimeValue ? Math.round(maxTimeValue / 1000) : '';
                   
                   return (
                     <TableRow key={tool.name}>
@@ -285,7 +306,7 @@ const MCPToolsConfig = forwardRef(({
                       </TableCell>
                       <TableCell align="center">
                         <Switch
-                          checked={tool.enabled}
+                          checked={enabledValues[tool.name] ?? tool.enabled ?? true}
                           onChange={(e) => handleToggleTool(tool.name, e.target.checked)}
                           size="small"
                           disabled={readOnly}
@@ -299,12 +320,6 @@ const MCPToolsConfig = forwardRef(({
                             onChange={(e) => {
                               const value = parseInt(e.target.value, 10);
                               if (!isNaN(value)) {
-                                setRateLimitValues(prev => ({ ...prev, [tool.name]: value }));
-                              }
-                            }}
-                            onBlur={(e) => {
-                              const value = parseInt(e.target.value, 10);
-                              if (!isNaN(value) && value !== tool.rateLimit?.limit) {
                                 handleUpdateRateLimit(tool.name, value);
                               }
                             }}
@@ -321,6 +336,39 @@ const MCPToolsConfig = forwardRef(({
                             /min
                           </Typography>
                         </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Tooltip title="Maximum execution time in seconds (empty = no limit)">
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <TextField
+                              type="number"
+                              value={maxTimeSeconds}
+                              placeholder="∞"
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === null) {
+                                  handleUpdateMaxTime(tool.name, null);
+                                } else {
+                                  const seconds = parseInt(value, 10);
+                                  if (!isNaN(seconds) && seconds >= 0) {
+                                    handleUpdateMaxTime(tool.name, seconds);
+                                  }
+                                }
+                              }}
+                              inputProps={{
+                                min: 1,
+                                max: 300,
+                                style: { textAlign: 'center', width: '50px' }
+                              }}
+                              size="small"
+                              sx={{ width: '70px' }}
+                              disabled={readOnly}
+                            />
+                            <Typography variant="caption" color="text.secondary">
+                              s
+                            </Typography>
+                          </Box>
+                        </Tooltip>
                       </TableCell>
                       <TableCell>
                         <Box sx={{ width: '100%', overflow: 'hidden' }}>
@@ -371,20 +419,6 @@ const MCPToolsConfig = forwardRef(({
                               >
                                 Add
                               </Button>
-                              {(() => {
-                                const originalDomains = tool.domains || [];
-                                const hasChanges = toolDomains.length !== originalDomains.length || 
-                                  toolDomains.some((domain, idx) => domain !== (originalDomains[idx] || ''));
-                                return hasChanges ? (
-                                  <Button
-                                    size="small"
-                                    variant="contained"
-                                    onClick={() => handleSaveDomains(tool.name)}
-                                  >
-                                    Save
-                                  </Button>
-                                ) : null;
-                              })()}
                             </Box>
                           )}
                         </Box>

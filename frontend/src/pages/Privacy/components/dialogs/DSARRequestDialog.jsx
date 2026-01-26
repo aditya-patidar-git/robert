@@ -12,7 +12,11 @@ import {
   MenuItem,
   Box,
   Typography,
-  Alert
+  Alert,
+  Checkbox,
+  FormControlLabel,
+  FormGroup,
+  FormLabel
 } from '@mui/material';
 import { Save, Cancel } from '@mui/icons-material';
 
@@ -28,25 +32,42 @@ export function DSARRequestDialog({
   loading
 }) {
   const [formData, setFormData] = useState({
-    subjectEmail: '',
-    subjectPhone: '',
-    requestType: 'access',
+    requestorEmail: '',
+    requestorName: '',
+    requestorPhone: '',
+    requestType: 'export',
+    requestedDataTypes: ['all'],
+    userIdentifier: '',
     description: ''
   });
+
+  const availableDataTypes = [
+    { id: 'all', label: 'All Data' },
+    { id: 'transcripts', label: 'Transcripts' },
+    { id: 'recordings', label: 'Recordings' },
+    { id: 'metadata', label: 'Metadata' },
+    { id: 'callRecords', label: 'Call Records' }
+  ];
 
   useEffect(() => {
     if (request) {
       setFormData({
-        subjectEmail: request.subjectEmail || '',
-        subjectPhone: request.subjectPhone || '',
-        requestType: request.requestType || 'access',
+        requestorEmail: request.requestorEmail || request.subjectEmail || '',
+        requestorName: request.requestorName || '',
+        requestorPhone: request.requestorPhone || request.subjectPhone || '',
+        requestType: request.requestType || 'export',
+        requestedDataTypes: request.requestedDataTypes || ['all'],
+        userIdentifier: request.userIdentifier || request.requestorEmail || '',
         description: request.description || ''
       });
     } else {
       setFormData({
-        subjectEmail: '',
-        subjectPhone: '',
-        requestType: 'access',
+        requestorEmail: '',
+        requestorName: '',
+        requestorPhone: '',
+        requestType: 'export',
+        requestedDataTypes: ['all'],
+        userIdentifier: '',
         description: ''
       });
     }
@@ -56,9 +77,44 @@ export function DSARRequestDialog({
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleDataTypeToggle = (dataType) => {
+    let newSelection;
+    if (dataType === 'all') {
+      newSelection = ['all'];
+    } else {
+      newSelection = formData.requestedDataTypes.filter(dt => dt !== 'all');
+      if (formData.requestedDataTypes.includes(dataType)) {
+        newSelection = newSelection.filter(dt => dt !== dataType);
+      } else {
+        newSelection.push(dataType);
+      }
+      if (newSelection.length === 0) {
+        newSelection = ['all'];
+      }
+    }
+    setFormData(prev => ({ ...prev, requestedDataTypes: newSelection }));
+  };
+
   const handleSubmit = async () => {
+    // Validate required fields
+    if (!formData.requestorEmail || !formData.userIdentifier) {
+      console.error('Missing required fields: requestorEmail and userIdentifier are required');
+      return;
+    }
+
     try {
-      await onSubmit(request?.id ? { id: request.id, data: formData } : formData);
+      // Prepare submission data with proper field mapping
+      const submissionData = {
+        requestorEmail: formData.requestorEmail,
+        requestorName: formData.requestorName,
+        requestorPhone: formData.requestorPhone,
+        requestType: formData.requestType,
+        requestedDataTypes: formData.requestedDataTypes,
+        userIdentifier: formData.userIdentifier || formData.requestorEmail,
+        description: formData.description
+      };
+
+      await onSubmit(request?.id ? { id: request.id, data: submissionData } : submissionData);
       onClose();
     } catch (error) {
       console.error('Failed to submit DSAR request:', error);
@@ -79,33 +135,77 @@ export function DSARRequestDialog({
               onChange={(e) => handleChange('requestType', e.target.value)}
               label="Request Type"
             >
-              <MenuItem value="access">Data Access</MenuItem>
-              <MenuItem value="portability">Data Portability</MenuItem>
-              <MenuItem value="deletion">Data Deletion</MenuItem>
+              <MenuItem value="export">Data Export (Access/Portability)</MenuItem>
+              <MenuItem value="delete">Data Deletion</MenuItem>
               <MenuItem value="rectification">Data Rectification</MenuItem>
             </Select>
           </FormControl>
 
           <TextField
-            label="Subject Email"
-            type="email"
-            value={formData.subjectEmail}
-            onChange={(e) => handleChange('subjectEmail', e.target.value)}
+            label="Requestor Name"
+            value={formData.requestorName}
+            onChange={(e) => handleChange('requestorName', e.target.value)}
             fullWidth
+            helperText="Full name of the person making the request"
           />
 
           <TextField
-            label="Subject Phone"
-            type="tel"
-            value={formData.subjectPhone}
-            onChange={(e) => handleChange('subjectPhone', e.target.value)}
+            label="Requestor Email"
+            type="email"
+            value={formData.requestorEmail}
+            onChange={(e) => {
+              handleChange('requestorEmail', e.target.value);
+              // Auto-fill userIdentifier if empty
+              if (!formData.userIdentifier) {
+                handleChange('userIdentifier', e.target.value);
+              }
+            }}
             fullWidth
+            required
+            helperText="Email address of the person making the request"
           />
+
+          <TextField
+            label="Requestor Phone"
+            type="tel"
+            value={formData.requestorPhone}
+            onChange={(e) => handleChange('requestorPhone', e.target.value)}
+            fullWidth
+            helperText="Optional contact phone number"
+          />
+
+          <TextField
+            label="User Identifier"
+            value={formData.userIdentifier}
+            onChange={(e) => handleChange('userIdentifier', e.target.value)}
+            fullWidth
+            required
+            helperText="Phone number or email used in calls (to search records)"
+          />
+
+          <FormControl component="fieldset">
+            <FormLabel component="legend">Requested Data Types</FormLabel>
+            <FormGroup row>
+              {availableDataTypes.map((dataType) => (
+                <FormControlLabel
+                  key={dataType.id}
+                  control={
+                    <Checkbox
+                      checked={formData.requestedDataTypes.includes(dataType.id)}
+                      onChange={() => handleDataTypeToggle(dataType.id)}
+                      size="small"
+                    />
+                  }
+                  label={dataType.label}
+                />
+              ))}
+            </FormGroup>
+          </FormControl>
 
           <TextField
             label="Description"
             multiline
-            rows={4}
+            rows={3}
             value={formData.description}
             onChange={(e) => handleChange('description', e.target.value)}
             fullWidth
@@ -125,7 +225,7 @@ export function DSARRequestDialog({
           startIcon={<Save />}
           onClick={handleSubmit}
           variant="contained"
-          disabled={loading}
+          disabled={loading || !formData.requestorEmail || !formData.userIdentifier}
         >
           {request ? 'Update' : 'Create'}
         </Button>

@@ -104,30 +104,12 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, [showError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // WebSocket handlers removed - using mock data only
 
   // Event handlers
-  const handleMetricCardClick = (metricType) => {
-    switch (metricType) {
-      case 'totalCalls':
-        navigate('/transcripts');
-        break;
-      case 'activeCalls':
-        navigate('/transcripts');
-        break;
-      case 'bookings':
-        navigate('/admin/booking');
-        break;
-      case 'users':
-        navigate('/admin/users');
-        break;
-      default:
-        break;
-    }
-  };
-
   const handleCallRowClick = (call) => {
     navigate(`/admin/transcripts`, { 
       state: { 
@@ -137,8 +119,20 @@ const Dashboard = () => {
     });
   };
 
-  const handleDismissAlert = (alertId) => {
-    setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+  const handleDismissAlert = async (alertId) => {
+    try {
+      const response = await dashboardService.dismissAlert(alertId);
+      if (response.success) {
+        setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+      } else {
+        showError('Failed to dismiss alert');
+      }
+    } catch (error) {
+      console.error('❌ Error dismissing alert:', error);
+      // Still remove from UI for better UX, but log the error
+      setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+      showError('Alert dismissed locally but failed to sync');
+    }
   };
 
   const handleToggleMCPTools = () => {
@@ -204,7 +198,7 @@ const Dashboard = () => {
     }
   };
 
-  // Business metrics for dashboard
+  // Business metrics for dashboard (display only, no click actions)
   const visibleMetrics = [
     {
       title: 'Total Calls',
@@ -212,8 +206,7 @@ const Dashboard = () => {
       icon: <PhoneCallback />,
       color: 'primary',
       change: metricChanges?.totalCalls ? `${metricChanges.totalCalls.changeType === 'positive' ? '+' : metricChanges.totalCalls.changeType === 'negative' ? '-' : ''}${metricChanges.totalCalls.change}` : null,
-      changeType: metricChanges?.totalCalls?.changeType || 'neutral',
-      onClick: null
+      changeType: metricChanges?.totalCalls?.changeType || 'neutral'
     },
     {
       title: 'Active Calls',
@@ -221,8 +214,7 @@ const Dashboard = () => {
       icon: <Phone />,
       color: 'primary',
       change: metricChanges?.activeCalls ? `${metricChanges.activeCalls.changeType === 'positive' ? '+' : metricChanges.activeCalls.changeType === 'negative' ? '-' : ''}${metricChanges.activeCalls.change}` : null,
-      changeType: metricChanges?.activeCalls?.changeType || 'neutral',
-      onClick: null
+      changeType: metricChanges?.activeCalls?.changeType || 'neutral'
     },
     {
       title: 'Bookings',
@@ -230,8 +222,7 @@ const Dashboard = () => {
       icon: <Event />,
       color: 'primary',
       change: metricChanges?.bookings ? `${metricChanges.bookings.changeType === 'positive' ? '+' : metricChanges.bookings.changeType === 'negative' ? '-' : ''}${metricChanges.bookings.change}` : null,
-      changeType: metricChanges?.bookings?.changeType || 'neutral',
-      onClick: null
+      changeType: metricChanges?.bookings?.changeType || 'neutral'
     },
     {
       title: 'Users',
@@ -239,8 +230,7 @@ const Dashboard = () => {
       icon: <People />,
       color: 'primary',
       change: metricChanges?.users ? `${metricChanges.users.changeType === 'positive' ? '+' : metricChanges.users.changeType === 'negative' ? '-' : ''}${metricChanges.users.change}` : null,
-      changeType: metricChanges?.users?.changeType || 'neutral',
-      onClick: null
+      changeType: metricChanges?.users?.changeType || 'neutral'
     }
   ];
 
@@ -293,7 +283,6 @@ const Dashboard = () => {
             color={metric.color}
             change={metric.change}
             changeType={metric.changeType}
-            onClick={metric.onClick}
             loading={loading.metrics}
             comparisonPeriod={comparisonPeriod}
           />

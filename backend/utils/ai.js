@@ -1,11 +1,16 @@
 import OpenAI from "openai";
-import dotenv from "dotenv";
+// dotenv is already loaded in server.js, no need to reload here
 
-dotenv.config();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 // Global system instructions for Robert
 const ROBERT_SYSTEM_INSTRUCTIONS = `
@@ -329,6 +334,7 @@ export const getAIResponse = async (conversationText, tools = null, callContext 
             }
         }
 
+        const openai = getOpenAIClient();
         const response = await openai.chat.completions.create({
             model: effectiveParams.model,
             messages: optimizedMessages,

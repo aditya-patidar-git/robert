@@ -151,10 +151,10 @@ export const getDashboardAnalytics = async (req, res) => {
 
       return {
         callSid: call.callSid,
-        callerId: call.callSid, // Using callSid as callerId for now
+        callerId: call.from || 'Unknown',
         status: status,
         duration: duration,
-        assignedNumber: call.from || 'Unknown',
+        assignedNumber: call.to || 'Not assigned',
         agent: agentName,
         startTime: call.createdAt
       };
@@ -211,6 +211,46 @@ export const getDashboardAnalytics = async (req, res) => {
       error: 'Failed to fetch dashboard analytics',
       message: error.message,
       timestamp: new Date().toISOString()
+    });
+  }
+};
+
+// Dismiss an alert
+export const dismissAlert = async (req, res) => {
+  try {
+    const { alertId } = req.params;
+    console.log('🔕 Dismissing alert:', alertId);
+    console.log('🔐 User authenticated:', req.user?.email, 'Role:', req.user?.role);
+
+    if (!alertId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Alert ID is required'
+      });
+    }
+
+    // Acknowledge/dismiss the alert via observability service
+    const dismissedAlert = observabilityService.acknowledgeAlert(alertId, req.user?.id || req.user?.email);
+
+    if (!dismissedAlert) {
+      return res.status(404).json({
+        success: false,
+        error: 'Alert not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Alert dismissed successfully',
+      alert: dismissedAlert
+    });
+
+  } catch (error) {
+    console.error('❌ Error dismissing alert:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to dismiss alert',
+      message: error.message
     });
   }
 };

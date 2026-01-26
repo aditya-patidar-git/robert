@@ -14,6 +14,7 @@ import adaptiveTimingService from "../../services/adaptiveTimingService.js";
 import turnTakingStateMachine from "../../services/turnTakingStateMachine.js";
 import proactiveAssistanceService from "../../services/proactiveAssistanceService.js";
 import CallRecord from "../../database/models/CallRecord.js";
+import recordingService from "../../services/recordingService.js";
 
 /**
  * Media Stream HTTP endpoint handler
@@ -173,6 +174,29 @@ export const handleMediaStreamConnection = (ws, req) => {
             
             // Memory consent will be checked after initial greeting completes
             // (moved to responseHandler.handleResponseDone to avoid blocking conversation start)
+            
+            // Start recording for inbound calls (consent is checked by recording service)
+            // Recording is started via Twilio API since <Record> TwiML verb conflicts with Media Streams
+            try {
+                const conversation = conversations[callSid];
+                if (recordingService.shouldRecordCall(conversation)) {
+                    const callbackUrl = recordingService.getRecordingCallbackUrl('inbound');
+                    const recordingResult = await recordingService.startCallRecording(callSid, {
+                        statusCallbackUrl: callbackUrl
+                    });
+                    
+                    if (recordingResult.success) {
+                        console.log(`🎙️ [${callSid}] Recording started for inbound call`);
+                    } else if (recordingResult.error !== 'already_recording') {
+                        console.warn(`⚠️ [${callSid}] Could not start recording: ${recordingResult.message}`);
+                    }
+                } else {
+                    console.log(`🔇 [${callSid}] Recording skipped - consent not given`);
+                }
+            } catch (recordingError) {
+                // Don't fail the call if recording fails - it's not critical
+                console.warn(`⚠️ [${callSid}] Recording setup error (non-blocking):`, recordingError.message);
+            }
             
             return { success: true };
         });

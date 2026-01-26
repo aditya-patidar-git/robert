@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import privacyService from '../../../services/privacyService';
 import dsarService from '../../../services/dsarService';
 import auditLogService from '../../../services/auditLogService';
+import configService from '../../../services/configService';
+import { useToast } from '../../../components/common/ToastProvider';
 
 /**
  * Custom hook for Privacy page state management
@@ -10,6 +12,7 @@ import auditLogService from '../../../services/auditLogService';
  */
 export function usePrivacyPageState() {
   const queryClient = useQueryClient();
+  const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState(0);
   const [selectedDSAR, setSelectedDSAR] = useState(null);
   const [exportPreviewOpen, setExportPreviewOpen] = useState(false);
@@ -18,11 +21,26 @@ export function usePrivacyPageState() {
   const [privacyNoticeDialogOpen, setPrivacyNoticeDialogOpen] = useState(false);
   const [retentionDialogOpen, setRetentionDialogOpen] = useState(false);
   const [breachDialogOpen, setBreachDialogOpen] = useState(false);
+  
+  // Audit log filters state
+  const [auditLogFilters, setAuditLogFilters] = useState({
+    eventType: '',
+    startDate: '',
+    endDate: ''
+  });
+  
+  // Audit log pagination state
+  const [auditLogPage, setAuditLogPage] = useState(0); // 0-indexed for MUI
+  const auditLogPageSize = 15;
 
-  // Fetch privacy configuration
+  // Fetch privacy configuration from the same source as System page and Agent Service
   const { data: privacyConfig, isLoading: configLoading, refetch: refetchConfig } = useQuery({
-    queryKey: ['privacyConfig'],
-    queryFn: () => privacyService.getConfig()
+    queryKey: ['privacy-config'],
+    queryFn: async () => {
+      const response = await configService.getPrivacyConfig();
+      // Handle normalized response structure - return the config object
+      return response?.data?.config || response?.config || response?.data || response || null;
+    }
   });
 
   // Fetch DSAR requests
@@ -35,15 +53,55 @@ export function usePrivacyPageState() {
     }
   });
 
-  // Fetch audit logs
-  const { data: auditLogs, isLoading: auditLogsLoading, refetch: refetchAuditLogs } = useQuery({
-    queryKey: ['auditLogs'],
+  // Fetch audit logs with filters and pagination
+  const { data: auditLogsData, isLoading: auditLogsLoading, refetch: refetchAuditLogs } = useQuery({
+    queryKey: ['auditLogs', auditLogFilters, auditLogPage],
     queryFn: async () => {
-      const response = await auditLogService.getAuditLogs({ limit: 100 });
-      // Handle normalized response structure
-      return response?.data?.auditLogs || response?.auditLogs || response?.data || response || [];
+      // Build filter params with pagination
+      const params = { 
+        limit: auditLogPageSize, 
+        page: auditLogPage + 1 // API uses 1-indexed pages
+      };
+      if (auditLogFilters.eventType) params.action = auditLogFilters.eventType;
+      if (auditLogFilters.startDate) params.startDate = auditLogFilters.startDate;
+      if (auditLogFilters.endDate) params.endDate = auditLogFilters.endDate;
+      
+      const response = await auditLogService.getAuditLogs(params);
+      
+      // Extract data from normalized response structure
+      // The normalizer returns: { success, data: { auditLogs, pagination }, error, metadata }
+      const responseData = response?.data || response;
+      
+      // Handle both normalized and raw response formats
+      const logs = responseData?.auditLogs || response?.auditLogs || [];
+      const paginationData = responseData?.pagination || response?.pagination;
+      
+      return {
+        auditLogs: Array.isArray(logs) ? logs : [],
+        pagination: paginationData || { 
+          total: Array.isArray(logs) ? logs.length : 0, 
+          page: auditLogPage + 1, 
+          limit: auditLogPageSize,
+          pages: 1 
+        }
+      };
     }
   });
+  
+  // Extract audit logs and pagination from response with safe defaults
+  const auditLogs = auditLogsData?.auditLogs || [];
+  const auditLogPagination = auditLogsData?.pagination || { 
+    total: auditLogs.length, 
+    page: 1, 
+    limit: auditLogPageSize,
+    pages: 1 
+  };
+  
+  // Reset page when filters change
+  const handleAuditLogFiltersChange = useCallback((newFilters) => {
+    setAuditLogFilters(newFilters);
+    setAuditLogPage(0); // Reset to first page
+  }, []);
 
   // Fetch retention policies
   const { data: retentionPolicies, isLoading: retentionLoading, refetch: refetchRetention } = useQuery({
@@ -75,11 +133,11 @@ export function usePrivacyPageState() {
     }
   });
 
-  // Update privacy configuration mutation
+  // Update privacy configuration mutation - uses configService for proper sync
   const updateConfigMutation = useMutation({
-    mutationFn: (data) => privacyService.updateConfig(data),
+    mutationFn: (data) => configService.updatePrivacyConfig(data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['privacyConfig']);
+      queryClient.invalidateQueries(['privacy-config']);
     }
   });
 
@@ -88,6 +146,11 @@ export function usePrivacyPageState() {
     mutationFn: (data) => dsarService.createRequest(data),
     onSuccess: () => {
       queryClient.invalidateQueries(['dsarRequests']);
+      queryClient.invalidateQueries(['dsar-requests']);
+      showSuccess('DSAR request created successfully. A verification email has been sent.');
+    },
+    onError: (error) => {
+      showError(error.message || 'Failed to create DSAR request');
     }
   });
 
@@ -96,6 +159,11 @@ export function usePrivacyPageState() {
     mutationFn: ({ id, data }) => dsarService.updateRequest(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries(['dsarRequests']);
+      queryClient.invalidateQueries(['dsar-requests']);
+      showSuccess('DSAR request updated successfully');
+    },
+    onError: (error) => {
+      showError(error.message || 'Failed to update DSAR request');
     }
   });
 
@@ -228,6 +296,12 @@ export function usePrivacyPageState() {
     dsarLoading,
     auditLogs,
     auditLogsLoading,
+    auditLogFilters,
+    setAuditLogFilters: handleAuditLogFiltersChange,
+    auditLogPage,
+    setAuditLogPage,
+    auditLogPageSize,
+    auditLogPagination,
     retentionPolicies,
     retentionLoading,
     complianceReport,

@@ -90,10 +90,8 @@ const unansweredQuestionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for performance
+// Indexes for performance (callSid, questionHash, status, priority already have index: true in schema)
 unansweredQuestionSchema.index({ status: 1, createdAt: -1 });
-unansweredQuestionSchema.index({ callSid: 1 });
-unansweredQuestionSchema.index({ questionHash: 1 });
 unansweredQuestionSchema.index({ priority: 1, status: 1 });
 
 export default mongoose.model("UnansweredQuestion", unansweredQuestionSchema);

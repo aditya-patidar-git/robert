@@ -16,6 +16,42 @@ class ToolExecutor {
     this.configManager = configManager;
     this.defaultTimeout = 10000; // 10 seconds
     this.rateLimitTrackers = new Map(); // Track rate limits per tool
+    this.globalRateLimitTracker = null; // Track global MCP rate limit
+  }
+
+  /**
+   * Check global MCP rate limit
+   * @returns {boolean} True if within global rate limit
+   */
+  checkGlobalRateLimit() {
+    const globalRateLimit = this.configManager.getMCPRateLimit();
+    if (!globalRateLimit) {
+      return true; // No global rate limit configured
+    }
+
+    const now = Date.now();
+    const windowMs = 60000; // 1 minute window for global rate limit
+
+    if (!this.globalRateLimitTracker) {
+      this.globalRateLimitTracker = {
+        requests: 0,
+        windowStart: now
+      };
+    }
+
+    // Reset window if expired
+    if (now - this.globalRateLimitTracker.windowStart >= windowMs) {
+      this.globalRateLimitTracker.requests = 0;
+      this.globalRateLimitTracker.windowStart = now;
+    }
+
+    // Check if under global limit
+    if (this.globalRateLimitTracker.requests >= globalRateLimit) {
+      return false;
+    }
+
+    this.globalRateLimitTracker.requests++;
+    return true;
   }
 
   /**
@@ -79,6 +115,24 @@ class ToolExecutor {
     });
 
     try {
+      // ========== GLOBAL MCP SETTINGS CHECK ==========
+      // Check if MCP tools are globally enabled
+      if (!this.configManager.isMCPEnabled()) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: 'MCP tools are globally disabled' });
+        span.end();
+        console.error(`❌ [${callSid}] MCP tools are globally disabled. Tool ${toolName} blocked.`);
+        throw new Error('MCP tools are currently disabled. Please contact an administrator.');
+      }
+
+      // Check global MCP rate limit (applies to all tools)
+      if (!this.checkGlobalRateLimit()) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: 'Global MCP rate limit exceeded' });
+        span.end();
+        console.error(`❌ [${callSid}] Global MCP rate limit exceeded`);
+        throw new Error('Global rate limit exceeded. Too many tool calls. Please try again later.');
+      }
+      // ================================================
+
       if (!this.toolRegistry.has(toolName)) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: `Tool not found: ${toolName}` });
         span.end();
@@ -102,7 +156,7 @@ class ToolExecutor {
       // Get tool configuration from ConfigManager
       const toolConfig = this.configManager.getToolConfig(toolName);
       
-      // Check if tool is enabled
+      // Check if tool is enabled (per-tool setting)
       if (!toolConfig.enabled) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: 'Tool is disabled' });
         span.end();
@@ -110,7 +164,7 @@ class ToolExecutor {
         throw new Error(`Tool ${toolName} is disabled`);
       }
 
-      // Check rate limit (simple in-memory tracking per tool executor instance)
+      // Check per-tool rate limit (simple in-memory tracking per tool executor instance)
       // Note: For distributed systems, this should be in Redis or similar
       if (!this.checkRateLimit(toolName, toolConfig.rateLimit)) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: 'Rate limit exceeded' });
@@ -140,8 +194,11 @@ class ToolExecutor {
       // Get tool instance BEFORE checking timeout (fixes ReferenceError)
       const tool = this.toolRegistry.get(toolName);
 
-      // Check if tool has a custom timeout method (for step-based tools)
+      // ========== TIMEOUT PRIORITY ==========
+      // Priority: tool.getTimeout() > toolConfig.maxTime > globalMCPTimeout > hardcoded defaults
       let toolSpecificTimeout = null;
+      
+      // 1. Check if tool has a custom timeout method (for step-based tools)
       if (tool && typeof tool.getTimeout === 'function') {
         toolSpecificTimeout = tool.getTimeout();
         if (toolSpecificTimeout !== null && toolSpecificTimeout > 0) {
@@ -150,17 +207,28 @@ class ToolExecutor {
         }
       }
       
-      // Use configured maxTime if available and no tool-specific timeout was set
+      // 2. Use per-tool configured maxTime if available and no tool-specific timeout was set
       if (toolConfig.maxTime && toolSpecificTimeout === null) {
         timeout = toolConfig.maxTime;
+        console.log(`⏱️ [${callSid}] Using per-tool maxTime for ${toolName}: ${timeout}ms`);
       }
       
-      // Increase timeout for browser automation tools - they need more time
-      // Only if no tool-specific timeout and no config maxTime
+      // 3. Use global MCP timeout as fallback if no other timeout was set
+      if (toolSpecificTimeout === null && !toolConfig.maxTime) {
+        const globalTimeoutMs = this.configManager.getMCPTimeoutMs();
+        if (globalTimeoutMs && globalTimeoutMs > 0) {
+          timeout = globalTimeoutMs;
+          console.log(`⏱️ [${callSid}] Using global MCP timeout for ${toolName}: ${timeout}ms`);
+        }
+      }
+      
+      // 4. Increase timeout for browser automation tools - they need more time
+      // Only if no tool-specific timeout, no per-tool maxTime, and not using global timeout override
       if (toolName === 'crm_browser' && toolSpecificTimeout === null && !toolConfig.maxTime) {
-        timeout = 360000; // 360 seconds (6 minutes) for browser operations
+        timeout = Math.max(timeout, 360000); // At least 360 seconds (6 minutes) for browser operations
         console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
       }
+      // ==========================================
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Executing tool: ${toolName}`);
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Parameters:`, JSON.stringify(validatedParameters, null, 2));
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Timeout: ${timeout}ms`);

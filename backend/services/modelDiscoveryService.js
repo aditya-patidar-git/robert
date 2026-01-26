@@ -1,13 +1,18 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
+// dotenv is already loaded in server.js, no need to reload here
 import AIConfig from '../models/AIConfig.js';
 import ModelHistory from '../models/ModelHistory.js';
 
-dotenv.config();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 class ModelDiscoveryService {
   constructor() {
@@ -27,6 +32,7 @@ class ModelDiscoveryService {
         return this.getFallbackModels();
       }
 
+      const openai = getOpenAIClient();
       const response = await openai.models.list();
       const models = response.data.map(model => ({
         id: model.id,

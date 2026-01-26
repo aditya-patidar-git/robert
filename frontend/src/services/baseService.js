@@ -36,6 +36,17 @@ export class BaseService {
       return path;
     }
     const base = this.baseEndpoint.replace(/\/$/, '');
+    
+    // Handle empty path - just return base endpoint
+    if (!path || path === '') {
+      return base;
+    }
+    
+    // Handle query strings - don't add leading slash
+    if (path.startsWith('?')) {
+      return `${base}${path}`;
+    }
+    
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     return `${base}${cleanPath}`;
   }

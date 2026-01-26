@@ -75,7 +75,7 @@ const MCPToolsTab = ({ control, watch, currentTab }) => {
         </Typography>
 
         <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 6 }}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Controller
               name="mcpEnabled"
               control={control}
@@ -88,7 +88,7 @@ const MCPToolsTab = ({ control, watch, currentTab }) => {
             />
           </Grid>
 
-          <Grid size={{ xs: 12, md: 6 }}>
+          <Grid size={{ xs: 12, md: 4 }} sx={{ pr: { md: 10 } }}>
             <Typography variant="subtitle2" gutterBottom>
               Global Rate Limit: {watch('mcpRateLimit')} calls/min
             </Typography>
@@ -106,6 +106,32 @@ const MCPToolsTab = ({ control, watch, currentTab }) => {
                     { value: 100, label: '100' },
                     { value: 500, label: '500' },
                     { value: 1000, label: '1000' }
+                  ]}
+                  valueLabelDisplay="auto"
+                />
+              )}
+            />
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Tool Timeout: {watch('mcpTimeout')} seconds
+            </Typography>
+            <Controller
+              name="mcpTimeout"
+              control={control}
+              render={({ field }) => (
+                <Slider
+                  {...field}
+                  min={5}
+                  max={300}
+                  step={5}
+                  marks={[
+                    { value: 5, label: '5s' },
+                    { value: 30, label: '30s' },
+                    { value: 60, label: '60s' },
+                    { value: 120, label: '120s' },
+                    { value: 300, label: '300s' }
                   ]}
                   valueLabelDisplay="auto"
                 />

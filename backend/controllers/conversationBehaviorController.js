@@ -39,8 +39,17 @@ export const getConfig = async (req, res) => {
           conversationFlow: {
             userSpeakingWindowMs: 6000,
             adaptivePacing: true,
+            adaptationWindowSize: 5,
+            minAdaptiveWindowMs: 3000,
+            maxAdaptiveWindowMs: 15000,
             minResponseDelayMs: 300,
-            maxResponseDelayMs: 2000
+            maxResponseDelayMs: 2000,
+            speechContinuation: {
+              enabled: true,
+              gracePeriodMs: 1500,
+              pauseDetectionMs: 800,
+              maxGracePeriodExtensions: 2
+            }
           },
           errorHandling: {
             retryEnabled: true,
@@ -53,6 +62,12 @@ export const getConfig = async (req, res) => {
             trackLatency: true,
             trackInterruptions: true,
             trackToolSuccess: true
+          },
+          proactiveAssistance: {
+            enabled: true,
+            hesitationThresholdMs: 3000,
+            enableFollowUpSuggestions: true,
+            suggestionDelayMs: 2000
           },
           isActive: true
         }

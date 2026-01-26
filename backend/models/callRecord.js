@@ -93,6 +93,13 @@ const callRecordSchema = new mongoose.Schema({
     respondedAt: { type: Date, default: null },
     optOutReason: { type: String, default: null }
   },
+  // Recording availability status (to cache Twilio lookup results)
+  recordingStatus: {
+    type: String,
+    enum: ['unknown', 'available', 'not_found', 'processing', 'error'],
+    default: 'unknown'
+  },
+  recordingCheckedAt: { type: Date, default: null }, // Last time we checked Twilio for this recording
   // Observability fields
   metrics: {
     aiResponseTime: Number,
@@ -130,11 +137,10 @@ const callRecordSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for performance
+// Indexes for performance (callSid and callStatus already have index: true in schema)
 callRecordSchema.index({ createdAt: -1 });
 callRecordSchema.index({ from: 1 });
 callRecordSchema.index({ result: 1 });
-callRecordSchema.index({ callStatus: 1 });
 callRecordSchema.index({ 'escalation.escalated': 1 });
 callRecordSchema.index({ 'complaint.hasComplaint': 1 });
 callRecordSchema.index({ 'audioQuality.measuredAt': -1 });

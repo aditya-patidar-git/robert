@@ -98,8 +98,7 @@ const ConversationContextSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for performance
-ConversationContextSchema.index({ callSid: 1 });
+// Indexes for performance (callSid already has index: true in schema)
 ConversationContextSchema.index({ createdAt: -1 });
 ConversationContextSchema.index({ modelId: 1 });
 

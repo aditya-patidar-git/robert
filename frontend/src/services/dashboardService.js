@@ -28,6 +28,15 @@ class DashboardService extends BaseService {
   async toggleRouting() {
     return this.post('/routing/toggle');
   }
+
+  /**
+   * Dismiss an alert
+   * @param {string} alertId - The ID of the alert to dismiss
+   * @returns {Promise<Object>} Dismissed alert response
+   */
+  async dismissAlert(alertId) {
+    return this.patch(`/alerts/${alertId}/dismiss`);
+  }
 }
 
 // Export singleton instance

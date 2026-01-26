@@ -21,11 +21,15 @@ import { validateSessionConfig, logValidationResult } from '../utils/configValid
 
 class SessionManagementService {
   constructor() {
-    // Configuration from environment variables
+    // Configuration from environment variables (defaults)
     this.sessionTTL = parseInt(process.env.SESSION_TTL_MINUTES || '60', 10) * 60 * 1000; // Convert to ms
     this.sessionTTLSeconds = parseInt(process.env.SYNC_SESSION_TTL, 10) || this.sessionTTL / 1000; // For Sync TTL
     this.maxSessions = parseInt(process.env.MAX_SESSIONS || '100', 10);
     this.cleanupInterval = parseInt(process.env.SESSION_CLEANUP_INTERVAL_SECONDS || '60', 10) * 1000; // Convert to ms
+    
+    // Database-configurable settings (will be updated from configManager)
+    this.maxConcurrentCalls = 50; // Will be synced from DB config
+    this.callTimeout = 300; // Seconds, will be synced from DB config
     
     this.cleanupTimer = null;
     this.cleanupCount = 0;
@@ -39,6 +43,69 @@ class SessionManagementService {
     
     // Initialize distributed state and start cleanup interval
     this._initialize();
+  }
+
+  /**
+   * Update session limits from configManager settings.
+   * Called periodically to sync with database configuration.
+   * @param {Object} systemSettings - System settings from configManager
+   */
+  updateFromConfig(systemSettings) {
+    if (!systemSettings) return;
+    
+    const { maxConcurrentCalls, callTimeout } = systemSettings;
+    
+    let changed = false;
+    
+    if (maxConcurrentCalls && maxConcurrentCalls !== this.maxConcurrentCalls) {
+      this.maxConcurrentCalls = maxConcurrentCalls;
+      // Update maxSessions to be at least maxConcurrentCalls + buffer
+      const minSessions = Math.ceil(maxConcurrentCalls * 1.2); // 20% buffer
+      if (this.maxSessions < minSessions) {
+        this.maxSessions = minSessions;
+      }
+      changed = true;
+    }
+    
+    if (callTimeout && callTimeout !== this.callTimeout) {
+      this.callTimeout = callTimeout;
+      // Update session TTL to be at least callTimeout + 5 minutes buffer
+      const minTTL = (callTimeout + 300) * 1000;
+      if (this.sessionTTL < minTTL) {
+        this.sessionTTL = minTTL;
+        this.sessionTTLSeconds = this.sessionTTL / 1000;
+      }
+      changed = true;
+    }
+    
+    if (changed) {
+      console.log(`📋 [SESSION] Config updated: maxConcurrentCalls=${this.maxConcurrentCalls}, callTimeout=${this.callTimeout}s, maxSessions=${this.maxSessions}`);
+    }
+  }
+
+  /**
+   * Get the current call limit.
+   * @returns {number} Max concurrent calls allowed
+   */
+  getMaxConcurrentCalls() {
+    return this.maxConcurrentCalls;
+  }
+
+  /**
+   * Get the current call timeout in seconds.
+   * @returns {number} Call timeout in seconds
+   */
+  getCallTimeout() {
+    return this.callTimeout;
+  }
+
+  /**
+   * Check if a new call can be accepted based on current limits.
+   * @returns {boolean} True if under limit, false if at capacity
+   */
+  canAcceptNewCall() {
+    const currentCalls = Object.keys(conversations).length;
+    return currentCalls < this.maxConcurrentCalls;
   }
 
   /**

@@ -17,6 +17,7 @@ export const useTranscriptsState = () => {
     limit: 20,
     search: '',
     result: '',
+    consentStatus: '',
     startDate: '',
     endDate: ''
   });
@@ -55,7 +56,7 @@ export const useTranscriptsState = () => {
   const [newPriority, setNewPriority] = useState('');
 
   // Queries
-  const { data: transcriptData } = useQuery({
+  const { data: transcriptData, isLoading: isLoadingTranscripts } = useQuery({
     queryKey: ['transcripts', user?.id, filters],
     queryFn: async () => {
       const response = await transcriptService.getAllTranscripts(filters);
@@ -198,6 +199,7 @@ export const useTranscriptsState = () => {
     pagination,
     complaints,
     complaintPagination,
+    isLoadingTranscripts,
     isLoadingComplaints,
     fullTranscriptData,
     isLoadingTranscript,

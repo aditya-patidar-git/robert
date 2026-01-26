@@ -19,8 +19,9 @@ class AuditLogService extends BaseService {
    * @returns {Promise<Object>} Audit logs with pagination
    */
   async getAuditLogs(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
-    return this.get(queryString ? `?${queryString}` : '');
+    // Pass params to axios via the second argument, not as part of the URL
+    // This avoids URL construction issues with query strings
+    return this.get('', params);
   }
 
   /**

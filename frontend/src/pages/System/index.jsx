@@ -114,8 +114,6 @@ const SystemConfigPage = () => {
             watch={watch}
             isOwner={isOwner}
             saveConfigMutation={saveConfigMutation}
-            handleSubmit={handleSubmit}
-            onSubmit={onSubmit}
           />
         )}
       </form>

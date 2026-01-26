@@ -117,6 +117,18 @@ class MCPToolsService extends BaseService {
     const response = await this.get(`/${toolName}/metrics`);
     return response.data?.metrics || response.data;
   }
+
+  /**
+   * Update max time (timeout) for a tool
+   * @param {string} toolName - Tool name
+   * @param {number|null} maxTime - Max time in milliseconds (null for no limit)
+   * @returns {Promise<Object>} Updated tool configuration
+   */
+  async updateMaxTime(toolName, maxTime) {
+    return this.put(`/${toolName}`, {
+      maxTime
+    });
+  }
 }
 
 // Export singleton instance

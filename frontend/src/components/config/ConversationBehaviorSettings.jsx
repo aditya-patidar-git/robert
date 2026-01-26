@@ -44,8 +44,17 @@ const ConversationBehaviorSettings = ({
     conversationFlow: {
       userSpeakingWindowMs: 6000,
       adaptivePacing: true,
+      adaptationWindowSize: 5,
+      minAdaptiveWindowMs: 3000,
+      maxAdaptiveWindowMs: 15000,
       minResponseDelayMs: 300,
-      maxResponseDelayMs: 2000
+      maxResponseDelayMs: 2000,
+      speechContinuation: {
+        enabled: true,
+        gracePeriodMs: 1500,
+        pauseDetectionMs: 800,
+        maxGracePeriodExtensions: 2
+      }
     },
     errorHandling: {
       retryEnabled: true,
@@ -58,6 +67,12 @@ const ConversationBehaviorSettings = ({
       trackLatency: true,
       trackInterruptions: true,
       trackToolSuccess: true
+    },
+    proactiveAssistance: {
+      enabled: true,
+      hesitationThresholdMs: 3000,
+      enableFollowUpSuggestions: true,
+      suggestionDelayMs: 2000
     }
   });
 
@@ -434,6 +449,86 @@ const ConversationBehaviorSettings = ({
             label="Adaptive Pacing"
           />
 
+          {/* Adaptive Pacing Detail Settings */}
+          {localConfig.conversationFlow?.adaptivePacing && (
+            <Box sx={{ pl: 3, borderLeft: '2px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Adaptive Pacing Settings
+              </Typography>
+              
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Adaptation Window Size: {localConfig.conversationFlow?.adaptationWindowSize || 5} turns
+                </Typography>
+                <Slider
+                  value={localConfig.conversationFlow?.adaptationWindowSize || 5}
+                  onChange={(e, value) => handleChange('conversationFlow.adaptationWindowSize', value)}
+                  min={3}
+                  max={20}
+                  step={1}
+                  marks={[
+                    { value: 3, label: '3' },
+                    { value: 5, label: '5' },
+                    { value: 10, label: '10' },
+                    { value: 20, label: '20' }
+                  ]}
+                  valueLabelDisplay="auto"
+                  disabled={isLoading}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Number of conversation turns to analyze for pacing adaptation
+                </Typography>
+              </Box>
+
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Min Adaptive Window: {localConfig.conversationFlow?.minAdaptiveWindowMs || 3000}ms
+                </Typography>
+                <Slider
+                  value={localConfig.conversationFlow?.minAdaptiveWindowMs || 3000}
+                  onChange={(e, value) => handleChange('conversationFlow.minAdaptiveWindowMs', value)}
+                  min={1000}
+                  max={10000}
+                  step={500}
+                  marks={[
+                    { value: 1000, label: '1s' },
+                    { value: 3000, label: '3s' },
+                    { value: 5000, label: '5s' },
+                    { value: 10000, label: '10s' }
+                  ]}
+                  valueLabelDisplay="auto"
+                  disabled={isLoading}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Minimum adaptive speaking window duration
+                </Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  Max Adaptive Window: {localConfig.conversationFlow?.maxAdaptiveWindowMs || 15000}ms
+                </Typography>
+                <Slider
+                  value={localConfig.conversationFlow?.maxAdaptiveWindowMs || 15000}
+                  onChange={(e, value) => handleChange('conversationFlow.maxAdaptiveWindowMs', value)}
+                  min={5000}
+                  max={30000}
+                  step={1000}
+                  marks={[
+                    { value: 5000, label: '5s' },
+                    { value: 15000, label: '15s' },
+                    { value: 30000, label: '30s' }
+                  ]}
+                  valueLabelDisplay="auto"
+                  disabled={isLoading}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Maximum adaptive speaking window duration
+                </Typography>
+              </Box>
+            </Box>
+          )}
+
           <Box>
             <Typography variant="subtitle2" gutterBottom>
               Min Response Delay: {localConfig.conversationFlow?.minResponseDelayMs}ms
@@ -475,6 +570,196 @@ const ConversationBehaviorSettings = ({
               disabled={isLoading}
             />
           </Box>
+
+          <Divider sx={{ my: 2 }} />
+
+          {/* Speech Continuation Settings */}
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+              <Typography variant="subtitle1" fontWeight="medium">Speech Continuation</Typography>
+              <Tooltip title="Allow brief pauses in user speech without triggering agent response">
+                <IconButton size="small" sx={{ ml: 1 }}>
+                  <Info fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Detect natural pauses vs. end of speech to avoid interrupting users mid-thought
+            </Typography>
+
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={localConfig.conversationFlow?.speechContinuation?.enabled ?? true}
+                  onChange={(e) => handleChange('conversationFlow.speechContinuation.enabled', e.target.checked)}
+                  disabled={isLoading}
+                />
+              }
+              label="Enable Speech Continuation"
+            />
+
+            {localConfig.conversationFlow?.speechContinuation?.enabled && (
+              <Box sx={{ pl: 3, mt: 2, borderLeft: '2px solid', borderColor: 'divider' }}>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Grace Period: {localConfig.conversationFlow?.speechContinuation?.gracePeriodMs || 1500}ms
+                  </Typography>
+                  <Slider
+                    value={localConfig.conversationFlow?.speechContinuation?.gracePeriodMs || 1500}
+                    onChange={(e, value) => handleChange('conversationFlow.speechContinuation.gracePeriodMs', value)}
+                    min={500}
+                    max={5000}
+                    step={100}
+                    marks={[
+                      { value: 500, label: '500ms' },
+                      { value: 1500, label: '1.5s' },
+                      { value: 3000, label: '3s' },
+                      { value: 5000, label: '5s' }
+                    ]}
+                    valueLabelDisplay="auto"
+                    disabled={isLoading}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Time to wait for user to continue speaking after a pause
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Pause Detection: {localConfig.conversationFlow?.speechContinuation?.pauseDetectionMs || 800}ms
+                  </Typography>
+                  <Slider
+                    value={localConfig.conversationFlow?.speechContinuation?.pauseDetectionMs || 800}
+                    onChange={(e, value) => handleChange('conversationFlow.speechContinuation.pauseDetectionMs', value)}
+                    min={300}
+                    max={2000}
+                    step={100}
+                    marks={[
+                      { value: 300, label: '300ms' },
+                      { value: 800, label: '800ms' },
+                      { value: 1500, label: '1.5s' },
+                      { value: 2000, label: '2s' }
+                    ]}
+                    valueLabelDisplay="auto"
+                    disabled={isLoading}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Silence duration to consider as a pause (vs. finished speaking)
+                  </Typography>
+                </Box>
+
+                <Box>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Max Grace Extensions: {localConfig.conversationFlow?.speechContinuation?.maxGracePeriodExtensions || 2}
+                  </Typography>
+                  <Slider
+                    value={localConfig.conversationFlow?.speechContinuation?.maxGracePeriodExtensions || 2}
+                    onChange={(e, value) => handleChange('conversationFlow.speechContinuation.maxGracePeriodExtensions', value)}
+                    min={0}
+                    max={5}
+                    step={1}
+                    marks
+                    valueLabelDisplay="auto"
+                    disabled={isLoading}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    Maximum number of times to extend grace period for continued speech
+                  </Typography>
+                </Box>
+              </Box>
+            )}
+          </Box>
+        </Stack>
+      </Paper>
+
+      {/* Proactive Assistance Settings */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6">Proactive Assistance</Typography>
+          <Tooltip title="Intelligently offer help based on conversation patterns like hesitation or confusion">
+            <IconButton size="small" sx={{ ml: 1 }}>
+              <Info fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Analyze conversation patterns to proactively assist callers who may be hesitating or confused
+        </Typography>
+
+        <Stack spacing={3}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={localConfig.proactiveAssistance?.enabled ?? true}
+                onChange={(e) => handleChange('proactiveAssistance.enabled', e.target.checked)}
+                disabled={isLoading}
+              />
+            }
+            label="Enable Proactive Assistance"
+          />
+
+          {localConfig.proactiveAssistance?.enabled && (
+            <>
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  Hesitation Threshold: {localConfig.proactiveAssistance?.hesitationThresholdMs || 3000}ms
+                </Typography>
+                <Slider
+                  value={localConfig.proactiveAssistance?.hesitationThresholdMs || 3000}
+                  onChange={(e, value) => handleChange('proactiveAssistance.hesitationThresholdMs', value)}
+                  min={1000}
+                  max={10000}
+                  step={500}
+                  marks={[
+                    { value: 1000, label: '1s' },
+                    { value: 3000, label: '3s' },
+                    { value: 5000, label: '5s' },
+                    { value: 10000, label: '10s' }
+                  ]}
+                  valueLabelDisplay="auto"
+                  disabled={isLoading}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Duration of hesitation before offering proactive assistance
+                </Typography>
+              </Box>
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localConfig.proactiveAssistance?.enableFollowUpSuggestions ?? true}
+                    onChange={(e) => handleChange('proactiveAssistance.enableFollowUpSuggestions', e.target.checked)}
+                    disabled={isLoading}
+                  />
+                }
+                label="Enable Follow-Up Suggestions"
+              />
+
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  Suggestion Delay: {localConfig.proactiveAssistance?.suggestionDelayMs || 2000}ms
+                </Typography>
+                <Slider
+                  value={localConfig.proactiveAssistance?.suggestionDelayMs || 2000}
+                  onChange={(e, value) => handleChange('proactiveAssistance.suggestionDelayMs', value)}
+                  min={500}
+                  max={5000}
+                  step={250}
+                  marks={[
+                    { value: 500, label: '500ms' },
+                    { value: 2000, label: '2s' },
+                    { value: 3500, label: '3.5s' },
+                    { value: 5000, label: '5s' }
+                  ]}
+                  valueLabelDisplay="auto"
+                  disabled={isLoading}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  Delay before offering follow-up suggestions based on context
+                </Typography>
+              </Box>
+            </>
+          )}
         </Stack>
       </Paper>
 

@@ -1,0 +1,482 @@
+Universal Motorcycle Training — “Robert” Voice AI Platform  
+ 
+Hi team, can we get the same document and timeline excel prepared for the following 
+project asap? I know you both are working on Jordan's project but this is another one that 
+we have in our kitty, mostly. Depending on our estimation on time.  
+ 
+please find attached to this email:  
+ 
+A. Emergent AI current prompt/brief to develop the above web application.  
+B. System's prompt for AI phone answering (Robert)  
+ 
+Also, please find the scope of the first project below:  
+ 
+Purpose:  This document describes —at production level of detail —the web -based, 
+multi -agent phone -answering platform we want Emergent AI’s engineering team to build 
+and test end -to-end. It specifies goals, scope, architecture, models, tools, security controls, 
+admin  functionality (including a full user -management system), CI/CD and acceptance tests. 
+Where behaviour depends on platform features, we ground it in current OpenAI & Twilio 
+documentation and UK compliance guidance.  
+ 
+0) Guiding Principles   
+ 
+1) Production -grade:  No delivery until all automated tests and manual acceptance checks 
+pass 100% twice in a clean, production -like environment (see §14 Acceptance).   
+2) Zero -hallucination policy:  Answers spoken by the agent must be **grounded in tools or 
+our KB** (OpenAI File Search) or else the ag ent asks a concise clarifying question or offers to 
+transfer. Implement an **uncertainty gate** that only allows “confident” answers when 
+retrieval confidence and provenance are above threshold; otherwise fail closed.   
+3) Secrets:  No hard -coded keys in code, prompts or logs. Secrets are vaulted and injected via 
+environment variables only; app fails fast if a required secret is missing. Follow OWASP 
+**Secrets Management** and **Logging** guidance (PII masking).   
+4) Privacy & UK compliance:  Provide lawful b asis, notice and controls for recording; DSAR 
+export/deletion; retention schedules; CLI presentation; PECR rules for marketing calls 
+(TPS/CTPS). See §12.  
+ 
+1) Goals & Outcomes  
+ 
+- Primary goal:  A live, SIP -connected speech -to-speech agent (“Robert”) that answers our UK 
+number in <2 seconds, converses naturally, uses **OpenAI gpt -realtime** for audio in/out, 
+can **retrieve from our KB via File Search**, and can **perform CRM bookings** through a 
+controlled **browser agent** (Playwright), with verifiable audit artefacts (screenshots/HAR) 
+and caller confirmation gates.   
+- Secondary goals :  
+  - Transcription layer (parallel or after -call) using **whisper -1** or **gpt -4o-transcribe** 
+(configurable) to produce high -quality transcripts and structured call summaries.   
+  - MCP tool servers for time -sensitive web lookups (Brave Search) and utilities, available to 
+Real time sessions.   
+  - Robust Admin Console with comprehensive User Management (RBAC), model/voice 
+controls, audio/VAD thresholds, KB management, observability, privacy and routing settings.  
+ 
+2) Scope  
+ 
+- In-scope:  Inbound calls (primary), outbound callbacks (optional), English default with 
+multilingual switching, File Search KB, CRM browser tasking (create/reschedule/update 
+booking), human transfer, voicemail, consent scripts, audit/observability, DSAR flows, Admin 
+UI, CI/CD.   
+- Out-of-scope (v1):  Taking car d payments in -agent (we may add via Twilio <Pay> in v1.1; 
+design should be ready).  
+ 
+--- 
+ 
+3) Target Users  
+ 
+- Callers:  Prospective and existing students, partners (TfL, Ocado, JustEat, UberEats), 
+corporate enquiries.   
+- Internal:  Admins (owner/admin), Customer Service (user), Read -only auditors.  
+ 
+--- 
+ 
+4) High -Level Architecture (Multi -Agent)  
+ 
+Ingress (SIP First, Streams Fallback)    
+- Primary:  **Twilio Elastic SIP Trunking → OpenAI Realtime SIP** (low -latency PSTN 
+integration).   
+- Fallback:  **Twilio Media St reams** (`<Stream>` WebSockets) to our Voice Gateway, which 
+bridges audio to OpenAI Realtime Client API and returns TTS back to Twilio.  
+ 
+Agents & Services    
+- **A1: Call Agent (Realtime)** — **OpenAI `gpt -realtime`**, full -duplex audio, 
+function/tool calling, barge -in, VAD turn -taking, multilingual. Model runs with **system + 
+developer prompts** and tool declarations.   
+- **A2: Transcriber** — selectable **`whisper -1`** or **`gpt -4o-transcribe`** for 
+parallel/after -call transcription and summarisation. (Model selection in Admin.)   
+- **A3: KB Retrieval** — **File Search** tool on our OpenAI vector store 
+(UNIVERSALAIDATABASE). (Nightly re -ingest; tags; drift detection.)   
+- **A4: Browser Agent** — **Headless Playwright** worker to operate our cloud CRM via 
+controlled scripts (dry -run → diff → caller confirm → commit), with DOM as sertions and 
+artefacts.   
+- **A5: MCP Server(s)** — **mcp.web_search** (Brave), **mcp.calendar/email** 
+(optional), **mcp.crm** (optional API facade). Realtime supports **remote MCP servers**; 
+expose as tools to the model.  
+ 
+Control Plane & State  
+- **Orchestrator API** (Node/TypeScript): Session registry (per Call SID), tool schema 
+enforcement (Zod/JSON Schema), uncertainty gate, transcripts, memory, audit logs, 
+DSAR/export, retention.   
+- **Admin Console** (Next.js/React): Models & voices, audio/VAD, prompts , KB, tools, 
+telephony routing, security/privacy, observability, **User Management** (see §10).  
+ 
+Observability  
+- **OpenTelemetry** for traces/metrics/logs; link Twilio Call SID to app spans.   
+- **Twilio Voice Insights** for call quality, MOS, jitter, packet loss; SLO dashboards.  
+ 
+--- 
+ 
+5) Models & Capabilities  
+ 
+- Primary voice model:  **`gpt -realtime`** (GA). Enable **voice selection** with **default: 
+“Ash”** (when listed for the account/region) and **fallbacks** (e.g., **Cedar**, 
+**Marin**) via Admin.   
+- Transcription:  Admin can choose **`whisper -1`** or **`gpt -4o-transcribe`** per 
+line/number or globally (we’ll expose both with capability notes in UI).   
+- File Search:  Use OpenAI vector stores and the **File Search** tool to ground answers and 
+cite document titles in -call.   
+- Model Discovery Service:  On startup and hourly, call **`/v1/models`**; cache a 
+**capability registry** with: context limits, tool support, audio in/out, rate limits, supported 
+voices, and default temperature/top -p ranges. Admin can se t a **fallback chain** (e.g., `gpt -
+realtime -latest → gpt -realtime -1 → tts -capable fallback`).  
+ 
+Please see the latest documentation released by OpenAI in the two weblinks below:  
+ 
+(A) https://openai.com/index/introducing -gpt-realtime/  
+ 
+(B) https://platform.openai.com/docs/guides/realtime  
+ 
+--- 
+ 
+6) Knowledge Base (RAG via OpenAI File Search)  
+ 
+- Migration:  If we hold legacy vector IDs, migrate to OpenAI **vector stores** and persist 
+`vector_store_id` + per -file `file_id`. Map `{title, version, tags → file_id}`  in our DB.   
+- Runtime retrieval:  When user asks a policy/booking/price/centre question, the 
+Orchestrator passes a **File Search** tool with a **scoped set of files** (by tag: 
+“Policy/CBT/T&Cs/Pricing”). Responses must **speak a simple source cue** (“According to 
+our CBT policy updated Ap ril 2025...”), which is also stored in transcript metadata.   
+- Uncertainty gate:  Require ≥N passages above similarity threshold and an explicit 
+**provenance list** before speaking a declarative answer; otherwise ask a bri ef clarifier or 
+transfer.  
+ 
+--- 
+ 
+7) CRM Tasking (Headless Browser Agent)  
+ 
+- Playwright scripts for: **Create booking**, **Reschedule CBT**, and **Update customer 
+record**.  
+- Safety flow:  **Dry -run → diff preview → verbal summary → explicit caller confirmation → 
+commit → verify success (DOM assertion)**. Persist **screenshots + HAR** with PII 
+masking in artefact storage.   
+- Auth & secrecy:  Credentials in vault; optional **TOTP** for 2FA. **Never** take card 
+details via the agent; if payments are later requir ed, use **Twilio <Pay>** (PCI Mode) so we 
+never process or hear PAN/DTMF ourselves.  
+ 
+--- 
+ 
+8) Audio UX (VAD, Barge -in, Padding)  
+ 
+- Turn detection (VAD):  Start with ~**500 –700 ms** end -of-turn silence; adapt per call.   
+- Barge -in: If the caller speaks while TTS is playing, stop TTS immediately and resume 
+listening (Realtime supports barge -in).   
+- Padding:  Inject ~**250 ms** leading and **300 –500 ms** trailing silence on TTS chunks to 
+prevent PSTN clipping; tuneable in Admin.   
+- Noise control:  Prefer primar y **SIP→Realtime** path to reduce latency; fallback **Media 
+Streams** path can apply server -side noise suppression if needed.  
+ 
+--- 
+ 
+9) Multilingual & Accent Handling  
+ 
+- Greeting flow:  “Hello, you’re through to Universal Motorcycle Training. This is Robert. What 
+language would you like to use today?”  Detects language and switch voice/language 
+seamlessly. Maintain per -caller language preference with consent. (Realtime supports 
+multilingual audio.)  
+ 
+--- 
+ 
+10) Admin Console — Comprehensive User Management (RBAC) & Controls  
+ 
+10.1 User & Auth Model (Backend)  
+ 
+- User:  `id (UUID)`, `email`, `username`, `role (owner|admin|user)`, `status 
+(pending|active|blocked|excluded|deleted)`, `password_hash (Argon2id)`, `mfa_enabled`, 
+`last_login_at`, timestamps. Use **Argon2id** for password hashing, with modern 
+parameters configurable i n env.   
+- Allowlist:  `id`, `type (email|domain)`, `value`, `notes`, timestamps, `created_by`.   
+- AuditLog:  `id`, `actor_id`, `action`, `target_type`, `target_id`, `ip`, `user_agent`, `diff (JSON)`, 
+timestamps.   
+- Sessions/Tokens:  Signed JWT (short -lived ) + refresh; server -side session store for 
+**revocation on status change**.  
+ 
+> **Security defaults:** Argon2id; strict rate -limiting; IP throttles; CSRF for state -changing 
+endpoints; **PII redaction in logs**; absolute **secrets in vault**.  
+ 
+10.2 Admin API Endpoints  
+ 
+- `GET /admin/users` — Paginated list; filter by status/role; search by email/username.   
+- `POST /admin/users` — Create user (owner/admin only).   
+- `PATCH /admin/users/{id}/approve` — Approve pending → active.   
+- `PATCH /admin/users/{id}/blo ck` — Block.   
+- `PATCH /admin/users/{id}/exclude` — Permanent ban (audit mandatory).   
+- `DELETE /admin/users/{id}` — Soft delete (default); `?hard=true` if owner.   
+- `GET|POST|DELETE /admin/allowlist` — Manage pre -approval allowlist.   
+- `GET /admin/audit` — Paginated audit trail (securely filterable).  
+ 
+RBAC rules  
+- **owner**: Full access including hard delete and role changes.   
+- **admin**: Manage users (not owners), allowlist, prompts, models; no hard delete of 
+owners.   
+- **user**: No admin access.  
+ 
+Status transitions  
+- `pending → active` (approval); `active ↔ blocked`; `active → excluded` (ban); `* → 
+deleted` (soft/hard).   
+- On **block/exclude/delete**: revoke all sessions immediately (JWT blacklist/rotation).  
+ 
+10.3 Admin UI (Next.js/React)  
+ 
+- Users Table  with role/status badges; search/filter; pagin ation; row actions with confirm 
+dialog; **bulk actions** (block/approve/delete).   
+- Create User Modal:  Email, username, role, initial status; client & server validation.   
+- Allowlist Manager:  Add/remove email or domain entries with notes.   
+- Security:  Owner -only access to Admin; route guards; “view as” is **never** allowed; no 
+secrets in client bundle.  
+ 
+--- 
+ 
+11) Admin Controls — Models, Audio, Tools, KB, Telephony, Privacy  
+ 
+- Models & Voices:  Drop -downs populated from **capability registry** (discovered via 
+`/v1/models`). Choose **default voice = Ash**; set fallbacks (Cedar/Marin etc.).   
+- Audio parameters:  Silence threshold (VAD), start/end padding, **temperature**, 
+**top_p**, **max output tokens**, **speech rate** (if supported), **barge -in policy** 
+(stop/pause). (Where Realtime lacks a direct knob, we implement at the gateway.)   
+- Prompts:  System/developer prompts are versioned; live edit; rollback.   
+- KB: Upload PDFs/HTML/MD; tag (Policy/CBT/Pricing/T&Cs); re -ingest; drift detection vs live 
+website;  “test retrieval” tool.   
+- Tools:  Toggle MCP servers; set per -tool rate -limits; **domain allow -list** for web search.   
+- Telephony:  Number routing; transfer numbers; after -hours policy; voicemail policy; DTMF 
+capture toggles; SIP region selection.   
+- Privacy:  Recording consent scripts; retention days (e.g., 90d audio, 365d metadata); DSAR 
+export; Delete request; PII redaction mask patterns.  
+ 
+--- 
+ 
+12) Security, Privacy & UK Compliance (Key Requirements)  
+ 
+- Lawful basis & notice:  Provide fair processing info at start of call, and identify lawful basis 
+(typically **legitimate interests** for service/scheduling; **consent** if marketing).   
+- **PECR / Marketing**: If we ever run outbound marketing, screen lists against 
+**TPS/CTPS**; display valid CLI; honour opt -out.   
+- **CLI presentation**: Ensure a valid, dialable CLI per Ofcom guidance.   
+- Recording:  Announce recording; provide opt -out to unrecorded path/voicemail; retention 
+& access controls; DSAR expor t within statutory timeframe.   
+- Payments:  If enabled, **Twilio <Pay>** with **PCI Mode** (DTMF redaction, encrypted 
+recordings) so card data bypasses us entirely.   
+- Secrets:  Vaulted; rotation; least privilege; no client -side exposure.  
+ 
+--- 
+ 
+13) Detailed Call Flow (Primary SIP Path)  
+ 
+1) Ringing → Pickup B(<2.0 s). **Realtime SIP** session initialised; **system prompt** and 
+**session tools** configured (File Search, MCP , Browser Agent).   
+2) Greeting & Language:  English male (default **Ash** voice) asks preferred language; 
+detect and switch voice/language seamlessly.   
+3) Barge -in: If caller interrupts, TTS halts within ~200 ms; VAD resumes listening.   
+4) Grounded Q&A:  For polic y/booking queries, **File Search** retrieves sources; agent 
+answers with short, grounded wording **and verbal source cue**.   
+5) Browser tasking:  For “Move my CBT to next Tuesday 10am”, agent performs **KBA** 
+(e-mail + postcode + booking ref or OTP), runs **dry -run**, reads back diff, obtains 
+**explicit confirmation**, **commits**, then asserts success; sends SMS/e -mail confirm.   
+6) Escalation:  On low confidence or request, transfer to human queue; capture DTMF where 
+needed.   
+7) Closure:  Summarise outcome ; log structured call record; optionally store **short 
+cross -call memory** with consent.  
+ 
+--- 
+ 
+14) Acceptance Criteria & Tests (must pass 100% twice)  
+ 
+1) Pickup:  Inbound answers <2.0 s; greeting played; language request heard; French reply 
+triggers immediate switch.   
+2) Barge -in: Caller speech interrupts TTS; stop within 200 ms; agent continues.   
+3) VAD/padding:  No over -talk; no tail -cut; padding prevents clipping.   
+4) **KB retrieval**: A DVSA/CBT policy question returns correct passage via **File Search ** 
+and is cited in speech/transcript.   
+5) **Web search**: A current, non -KB fact triggers **MCP web_search** with prior 
+disclosure (“I’m checking online…”); result grounded and logged.   
+6) **CRM tasking**: Reschedule request completed with **KBA**, **dry -run diff**, 
+confirmation, commit, **DOM assert success**; confirmation sent.   
+7) **Human transfer**: DTMF capture; bridge success.   
+8) **Memory**: Preference set in call 1; recalled in call 2 **only after consent**.   
+9) **Concurrency**: 20 simultaneous calls; p95 end -to-end turn latency with in target; **no 
+cross -talk**; Twilio **Voice Insights** shows acceptable MOS/jitter.   
+10) **Error paths**: Inject OpenAI 5xx / Twilio stream drop; graceful apology; retry; 
+voicemail fallback.   
+11) **GDPR/DSAR**: Export transcript & metadata; delete on request; retention 
+respected.   
+12) **Security**: No secrets in logs or bundles; password hashing Argon2id; session 
+revocation on status change; PII masking.  
+ 
+--- 
+ 
+15) Admin Console — Additional Panels  
+ 
+- **Prompts**: Manage **global system prompt** for “Rob ert” (editable any time), plus 
+per-number overrides; versioning & rollback.   
+- **Audio**: VAD silence threshold; start/end padding; **temperature**, **top_p**, 
+**max tokens**; barge -in policy (pause/stop); speech rate (if supported by model).   
+- **Models & Voices**: Show **capability registry** with model limits (context/output 
+tokens, audio support, tools). Toggle default voice = **Ash**; list **Cedar/Marin** etc.   
+- **KB & Tools**: Upload/tag files; re -ingest; drift alerts; toggle MCP servers & rate li mits.   
+- **Telephony**: Routing, transfer numbers, after -hours rules, voicemail; CLI configuration 
+check.   
+- **Observability**: Live calls, tool traces, error rates, exports; Integrate Twilio **Voice 
+Insights** panels.   
+- **Security & Privacy**: Retention sliders; DSAR export/delete; redaction patterns; 
+recording consent scripts.  
+ 
+--- 
+ 
+16) Data Model (selected)  
+ 
+**Calls**: `id`, `twilio_call_sid`, `opened_at`, `closed_at`, `lang`, `entry_path (SIP|Streams)`, 
+`result (resolved|escalated|voicemail|error)`,  `confidence_scores`, `tool_trace_id`, 
+`recording_uri (if any)`, retention metadata.   
+**Transcripts**: `id`, `call_id`, `model (whisper -1|gpt -4o-transcribe)`, `text`, `segments`, 
+`confidence`, `redactions`, `provenance (files/urls)`.   
+**KB Provenance**: `call_id`, `file_ids`, `titles`, `similarity_scores`.   
+**Audit**: as in §10.1.   
+**Users/Allowlist/Sessions**: as in §10.1.  
+ 
+--- 
+ 
+17) APIs (selected)  
+ 
+Realtime Session (server -side kick -off)  
+- On `call.accept` (SIP) or **Streams** connect, POST session config with: `instructions`, 
+`voice`, `tools` (File Search, MCP , Browser functions), `temperature`, `top_p`, 
+`max_output_tokens`, `turn_detection` enabled.  
+ 
+**Responses API (toolful  turns)**   
+- For longer, non -audio tool calls (e.g., File Search fetch, web_search), use **Responses 
+API** with tool schemas and idempotency keys.  
+ 
+Admin API    
+- User endpoints (see §10.2).   
+- Models/Voices: `GET /admin/models` (from capability registry), `PATCH /admin/defaults`.   
+- Audio settings: `PATCH /admin/audio`.   
+- KB: `POST /admin/kb/files`, `POST /admin/kb/reingest`, `GET /admin/kb/search?q=`.   
+- Tools: `PATCH /admin/tools/mcp`.   
+- Privacy: `POST /admin/dsar/export`, `POST /admin/dsar/delete `. 
+ 
+--- 
+ 
+18) Orchestrator Logic (tool -calling & uncertainty gate)  
+ 
+1) Intent detection:  Ask the model to decide among categories (answer / KB lookup / CRM 
+action / web search / transfer).   
+2) KB:  If KB -likely, call **File Search** with relevant file set; **reject** answering if 
+confidence below threshold.   
+3) CRM:  If action requested, if it is an existing client, enforce **KBA** 
+(e-mail+postcode+booking ref or OTP via CRM phone) before dry -run. If it is a new client, 
+there is no need, as you will be colle cting all the required data to make the  booking from the 
+client and input on the CRM (Incontact).  
+4) Web:  If time -sensitive and not in KB, disclose “I’m checking online…”, call 
+**mcp.web_search** (allow -list + latency budget).   
+5) Payments:  If enabled, hand off to **Twilio <Pay>** only; never collect PAN/DTMF.  
+ 
+--- 
+ 
+19) Prompts (templates)  
+ 
+Global System (editable in Admin):   
+- “You are **Robert**, Universal Motorcycle Training’s AI phone agent. Speak clear, calm, 
+**British English** by default (male). Greet and ask the caller’s preferred language, then 
+switch seamlessly. **Never guess**: if the answer isn’t grounded by the Knowl edge Base or 
+a tool, ask a brief clarifying question or offer to transfer. Verify identity before disclosing or 
+changing personal/booking data. Summarise and confirm before irreversible actions. Stop 
+speaking immediately if the caller speaks (barge -in). When citing KB, mention the document 
+in simple terms (‘our CBT policy, April 2025 update’). Keep answers short unless asked for 
+detail.”  
+ 
+Please note:  the above is just a condensed basic prompt, the full system's prompt for AI 
+phone answering (Robert) is attached to this email (please see file B attached to this email).  
+ 
+--- 
+ 
+20) Configuration & Secrets  
+ 
+Environment variables (names only):  
+`OPENAI_API_KEY`, `OPENAI_VECTOR_STORE_ID`, 
+`OPENAI _VECTOR_STORE_NAME=UNIVERSALAIDATABASE`, `TWILIO_ACCOUNT_SID`, 
+`TWILIO_AUTH_TOKEN`, `TWILIO_NUMBER`, `TWILIO_BU_SID`, optional: 
+`BRAVE_SEARCH_API_KEY`, CRM credentials (browser agent).   
+**Secrets** stored in a vault; never logged; rotation policy documented; CI fails if 
+placeholders are used.  
+ 
+--- 
+ 
+21) Observability & SLOs  
+ 
+- **Twilio Voice Insights** dashboards for MOS, jitter, packet loss, answer time; error 
+budgets and alerts.   
+- **OTel** traces: per -call timeline: greeting → language → barge -in → KB l ookup → CRM 
+dry-run → commit → confirmation.   
+- **Groundedness KPI**: % answers w/ citations; % escalations; RAG hit ratio; average tool 
+latency.  
+ 
+--- 
+ 
+22) CI/CD & Testing  
+ 
+- Pipelines:  Lint, unit, contract tests (tools), integration (SIP/Streams loopback), Playwright 
+headless tests, load tests (N=20 concurrent), e2e voice sims.   
+- Evidence pack:  logs, traces, screenshots, HARs, audio clips, Voice Insights reports.  
+ 
+--- 
+ 
+23) Future -Ready Hooks  
+ 
+- **Payments** via **Twilio <Pay>** (PCI Mode, DTMF redaction, encrypted recordings).    
+- **Reusable prompts** and **asynchronous function calling** in Realtime to keep 
+conversation flowing during long tools.  
+ 
+--- 
+ 
+24) What I Expect from the Build  
+ 
+1) An implemented system matching this spec, with a polished Admin Console and all 
+user -management features (RBAC, statuses, allowlist, audit, Argon2id).   
+2) Strict grounding & safety:  uncertainty gate wired to File Search and tool provenance.   
+3) Operational discipline:  secrets vaulted, PII masked, logs clean, documented 
+retention/DSAR flows (UK).   
+4) Quality artefacts:  Test suite + acceptance evidence pack; runbook; admin guide; change 
+log listing OpenAI/Twilio d ocs versions used.   
+5) No credentials in code;  no keys in client bundles; SSRF and DOM -injection defended in 
+browser agent.  
+ 
+--- 
+ 
+25) References (key sources)  
+ 
+- OpenAI:  Realtime blog & docs; File Search; Vector Stores; Realtime API reference; 
+Speech -to-text models (Whisper, GPT -4o-Transcribe).   
+- Twilio:  Media Streams & SIP Trunking; Voice Insights; `<Pay>` documentation & PCI Mode.   
+- OWASP:  Password Storage (Argon2id), Secrets Management, Logging & Session 
+Management.   
+- UK Compliance:  ICO (UK GDPR /  DPA 2018) lawful basis & PECR (TPS/CTPS), Ofcom CLI 
+guidance.  
+ 
+ 
+26) Credentials   
+ 
+OPENAI API KEY for integration into the web app:  It will be given to you that once we start 
+the project.  
+ 
+OPENAI API VECTOR STORE ID KEY:  It will be given to you once we start the project.  
+ 
+OPENAI API VECTOR STORE NAME:  It will be given to you that once we start the project.  
+ 
+BRAVE SEARCH API KEY:  It will be given to you once we start the project.  
+ 
+Twilio Phone number SID:  It will be given to you once we start the project.  
+ 
+Twilio phone number:  +442045726060  
+ 
+Twilio Account SID:  It will be given to you once  we start the project.  
+ 
+Twilio Auth Token:  It will be given to you once we start the project.  
+ 
+Twilio username:  It will be given you once we start the project.  
+ 
+Twilio password:  It will be given you once we start the project.  
+ 
+CRM accessed via browser only through 
+here:  https://takeabyte.co.uk/InContact/Account/Login  - Below are the credentials required 
+to access the CRC via browser:  
+- login name: universalmct  
+- user name: auagent  
+- password: It will be given to you once we start the project.  
+ 
+ 

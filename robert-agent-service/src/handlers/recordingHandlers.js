@@ -70,17 +70,13 @@ export const recordingStatus = async (req, res) => {
             console.log(`⚠️ [${CallSid}] No consent data found - storing minimal record`);
             await CallRecord.findOneAndUpdate(
                 { callSid: CallSid },
-                {
-                    callSid: CallSid,
-                    recordingUrl: null,
-                    transcript: [],
-                    summary: "Recording and transcript not stored - consent data unavailable",
-                    recordingConsent: {
-                        requested: false,
-                        given: false,
-                        requestedAt: null,
-                        respondedAt: null,
-                        optOutReason: "Consent data unavailable"
+                { 
+                    $set: {
+                        recordingUrl: null,
+                        recordingStatus: 'error',
+                        'recordingConsent.requested': false,
+                        'recordingConsent.given': false,
+                        'recordingConsent.optOutReason': "Consent data unavailable"
                     }
                 },
                 { upsert: true, new: true }
@@ -94,28 +90,29 @@ export const recordingStatus = async (req, res) => {
         const consentGiven = consent?.given !== false;
         
         if (!consentGiven) {
-            // Consent was denied or not given - do not store recording OR transcript
+            // Consent was denied - do not store recording OR transcript (GDPR compliance)
             console.log(`🚫 [${CallSid}] Recording consent not given - not storing recording URL or transcript`);
             
-            // Update CallRecord with consent info, but without recording URL or transcript
-            // This ensures GDPR compliance - no personal data stored without consent
+            // Use $set to only update consent-related fields
+            // Clear any existing recording/transcript data for GDPR compliance
+            const updateFields = {
+                recordingUrl: null,
+                recordingStatus: 'not_found',
+                transcript: [],
+                summary: "Recording and transcript not stored - consent not given",
+                'recordingConsent.requested': consent?.requested || false,
+                'recordingConsent.given': false,
+                'recordingConsent.requestedAt': consent?.requestedAt || null,
+                'recordingConsent.respondedAt': consent?.respondedAt || null,
+                'recordingConsent.optOutReason': consent?.optOutReason || "Consent not given"
+            };
+            
+            if (from) updateFields.from = from;
+            if (to) updateFields.to = to;
+            
             await CallRecord.findOneAndUpdate(
                 { callSid: CallSid },
-                {
-                    callSid: CallSid,
-                    recordingUrl: null, // Explicitly set to null
-                    transcript: [], // Do not store transcript when consent not given
-                    summary: "Recording and transcript not stored - consent not given",
-                    from: from || null,
-                    to: to || null,
-                    recordingConsent: {
-                        requested: consent?.requested || false,
-                        given: consent?.given || false,
-                        requestedAt: consent?.requestedAt || null,
-                        respondedAt: consent?.respondedAt || null,
-                        optOutReason: consent?.optOutReason || "Consent not given"
-                    }
-                },
+                { $set: updateFields },
                 { upsert: true, new: true }
             );
             
@@ -126,41 +123,42 @@ export const recordingStatus = async (req, res) => {
         // Consent given - process recording normally
         console.log(`✅ [${CallSid}] Recording consent given - storing recording URL`);
         
-        // Generate a short summary
-        let summary = "Summary not available";
-        try {
-            const transcriptArray = transcript || [];
-            if (transcriptArray.length > 0) {
-                const transcriptText = transcriptArray
-                    .map(t => `${t.role === "agent" ? "Agent" : "User"}: ${t.text}`)
-                    .join("\n");
-
-                // Simple summary generation (can be enhanced with AI later)
-                if (transcriptText.length > 0) {
-                    summary = `Call transcript available with ${transcriptArray.length} exchanges.`;
-                }
-            }
-        } catch (err) {
-            console.error("Summary generation error:", err);
+        // Build update object - only set recording-related fields
+        // IMPORTANT: Don't overwrite transcript/summary - they may be saved by cleanup() later
+        const updateFields = {
+            recordingUrl: RecordingUrl,
+            recordingStatus: 'available',
+            'recordingConsent.requested': consent?.requested || false,
+            'recordingConsent.given': consent?.given !== false ? true : false,
+            'recordingConsent.requestedAt': consent?.requestedAt || null,
+            'recordingConsent.respondedAt': consent?.respondedAt || null,
+            'recordingConsent.optOutReason': null
+        };
+        
+        // Only set from/to if we have values (don't overwrite existing)
+        if (from) updateFields.from = from;
+        if (to) updateFields.to = to;
+        
+        // Only set transcript if we have content AND the existing record doesn't have one
+        // This prevents race condition where webhook overwrites transcript before cleanup saves it
+        const existingRecord = await CallRecord.findOne({ callSid: CallSid }).lean();
+        const existingTranscriptLength = existingRecord?.transcript?.length || 0;
+        const newTranscriptLength = transcript?.length || 0;
+        
+        if (newTranscriptLength > 0 && newTranscriptLength > existingTranscriptLength) {
+            // Only update transcript if we have more data than existing
+            updateFields.transcript = transcript;
+            updateFields.summary = `Call transcript available with ${newTranscriptLength} exchanges.`;
+            console.log(`📝 [${CallSid}] Updating transcript with ${newTranscriptLength} entries (existing: ${existingTranscriptLength})`);
+        } else if (existingTranscriptLength > 0) {
+            console.log(`📝 [${CallSid}] Preserving existing transcript with ${existingTranscriptLength} entries`);
+        } else {
+            console.log(`📝 [${CallSid}] No transcript available yet - will be saved by cleanup()`);
         }
 
         await CallRecord.findOneAndUpdate(
             { callSid: CallSid },
-            {
-                callSid: CallSid,
-                recordingUrl: RecordingUrl,
-                transcript: transcript || [],
-                summary: summary,
-                from: from || null,
-                to: to || null,
-                recordingConsent: {
-                    requested: consent?.requested || false,
-                    given: consent?.given || true,
-                    requestedAt: consent?.requestedAt || null,
-                    respondedAt: consent?.respondedAt || null,
-                    optOutReason: null
-                }
-            },
+            { $set: updateFields },
             { upsert: true, new: true }
         );
 

@@ -116,6 +116,24 @@ const AIConfigSchema = new mongoose.Schema({
       default: true
     }
   },
+  mcpSettings: {
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    rateLimit: {
+      type: Number,
+      default: 100,
+      min: 10,
+      max: 1000
+    },
+    timeout: {
+      type: Number,
+      default: 30,
+      min: 5,
+      max: 300
+    }
+  },
   isActive: { 
     type: Boolean, 
     default: true 

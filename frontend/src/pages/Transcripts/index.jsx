@@ -29,6 +29,8 @@ import { SmartToy, Person, Description, Timeline, ExpandMore } from '@mui/icons-
 import { useTranscriptsState } from './hooks/useTranscriptsState';
 import TranscriptsTab from './tabs/TranscriptsTab';
 import ComplaintsTab from './tabs/ComplaintsTab';
+import { getComplaintPriority, COMPLAINT_TYPE_OPTIONS } from './constants';
+import { getConfidenceColor, formatConfidenceScore } from './utils';
 import transcriptService from '../../services/transcriptService';
 import complaintService from '../../services/complaintService';
 import { formatDateTime } from '../../utils/formatters';
@@ -364,11 +366,15 @@ const TranscriptsComplaintsPage = () => {
 
   const handleSubmitComplaint = useCallback(async () => {
     try {
+      // Auto-set priority based on complaint type (high-risk types get 'urgent')
+      const priority = getComplaintPriority(complaintType);
+      
       await transcriptService.submitComplaint({
         callId: selectedTranscript?.callSid,
         complaintText,
         complaintType: complaintType,
-        callerId: selectedTranscript?.from
+        callerId: selectedTranscript?.from,
+        priority
       });
       showSuccess('Complaint submitted successfully');
       setComplaintDialog(false);
@@ -628,10 +634,6 @@ const TranscriptsComplaintsPage = () => {
             </Box>
           ) : (
             <>
-              {/* Debug: Log transcript data structure */}
-              {console.log('Full Transcript Data:', fullTranscriptData)}
-              {console.log('Selected Transcript:', selectedTranscript)}
-              
               {/* Display transcript - try fullTranscriptData first, then fallback to selectedTranscript */}
               {(() => {
                 // The backend returns: { transcript: CallRecord, escalations: [...], ... }
@@ -688,6 +690,40 @@ const TranscriptsComplaintsPage = () => {
                   <Typography variant="body2">{(fullTranscriptData?.transcript?.summary || fullTranscriptData?.summary || selectedTranscript?.summary)}</Typography>
                 </Box>
               )}
+
+              {/* Display confidence scores */}
+              {(() => {
+                const scores = fullTranscriptData?.transcript?.confidenceScores || 
+                               fullTranscriptData?.confidenceScores || 
+                               selectedTranscript?.confidenceScores;
+                if (!scores) return null;
+                
+                return (
+                  <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    {scores.overall !== undefined && (
+                      <Chip 
+                        label={`Overall: ${formatConfidenceScore(scores.overall)}`}
+                        color={getConfidenceColor(scores.overall)}
+                        size="small"
+                      />
+                    )}
+                    {scores.understanding !== undefined && (
+                      <Chip 
+                        label={`Understanding: ${formatConfidenceScore(scores.understanding)}`}
+                        color={getConfidenceColor(scores.understanding)}
+                        size="small"
+                      />
+                    )}
+                    {scores.transcription !== undefined && (
+                      <Chip 
+                        label={`Transcription: ${formatConfidenceScore(scores.transcription)}`}
+                        color={getConfidenceColor(scores.transcription)}
+                        size="small"
+                      />
+                    )}
+                  </Box>
+                );
+              })()}
 
               {fullTranscriptData?.provenance && fullTranscriptData.provenance.length > 0 && (
                 <Box sx={{ mt: 3 }}>
@@ -852,7 +888,6 @@ const TranscriptsComplaintsPage = () => {
             >
               <MenuItem value="csv">CSV</MenuItem>
               <MenuItem value="json">JSON</MenuItem>
-              <MenuItem value="txt">TXT</MenuItem>
             </Select>
           </FormControl>
         </DialogContent>
@@ -882,6 +917,17 @@ const TranscriptsComplaintsPage = () => {
           )}
         </DialogContent>
         <DialogActions>
+          {selectedComplaint?.callRecord && (
+            <Button 
+              onClick={() => {
+                setSelectedTranscript(selectedComplaint.callRecord);
+                setComplaintDetailDialog(false);
+                setTranscriptDialog(true);
+              }}
+            >
+              View Call Transcript
+            </Button>
+          )}
           <Button onClick={() => setComplaintDetailDialog(false)}>Close</Button>
           {canSeeAll && (
             <>

@@ -52,9 +52,8 @@ const CallMemorySchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for performance
-CallMemorySchema.index({ callerId: 1, createdAt: -1 });
-CallMemorySchema.index({ expiresAt: 1 }); // For cleanup jobs
+// Indexes for performance (callerId, callSid, createdAt, expiresAt already have index: true in schema)
+CallMemorySchema.index({ callerId: 1, createdAt: -1 }); // Compound index for caller history queries
 
 export default mongoose.model("CallMemory", CallMemorySchema);
 

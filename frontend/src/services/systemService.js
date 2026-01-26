@@ -14,6 +14,17 @@ class SystemService extends BaseService {
   }
 
   /**
+   * Long-running operation config
+   * Disables retries and increases timeout for backup/restore operations
+   */
+  get longRunningConfig() {
+    return {
+      timeout: 300000, // 5 minutes
+      metadata: { disableRetries: true }
+    };
+  }
+
+  /**
    * Get system configuration
    * @returns {Promise<Object>} System configuration
    */
@@ -71,11 +82,12 @@ class SystemService extends BaseService {
 
   /**
    * Create system backup
+   * Long-running operation - retries disabled, extended timeout
    * @param {Object} options - Backup options
    * @returns {Promise<Object>} Backup result
    */
   async createBackup(options = {}) {
-    return this.post('/backup', options);
+    return this.post('/backup', options, this.longRunningConfig);
   }
 
   /**
@@ -106,21 +118,41 @@ class SystemService extends BaseService {
 
   /**
    * Restore system backup
+   * Long-running operation - retries disabled, extended timeout
    * @param {string} backupId - Backup ID
    * @param {Object} options - Restore options
    * @returns {Promise<Object>} Restore result
    */
   async restoreBackup(backupId, options = {}) {
-    return this.post(`/restore/${backupId}`, options);
+    return this.post(`/restore/${backupId}`, options, this.longRunningConfig);
   }
 
   /**
    * Get restore preview
    * @param {string} backupId - Backup ID
+   * @param {string[]} collections - Optional collections to preview
    * @returns {Promise<Object>} Preview result
    */
-  async getRestorePreview(backupId) {
-    return this.get(`/restore/${backupId}/preview`);
+  async getRestorePreview(backupId, collections = null) {
+    const params = collections ? `?collections=${collections.join(',')}` : '';
+    return this.get(`/restore/${backupId}/preview${params}`);
+  }
+
+  /**
+   * Get available collections for backup/restore
+   * @returns {Promise<Object>} Available collections
+   */
+  async getBackupCollections() {
+    return this.get('/backup/collections');
+  }
+
+  /**
+   * Validate backup file
+   * @param {string} backupId - Backup ID
+   * @returns {Promise<Object>} Validation result
+   */
+  async validateBackup(backupId) {
+    return this.post(`/backups/${backupId}/validate`);
   }
 }
 
