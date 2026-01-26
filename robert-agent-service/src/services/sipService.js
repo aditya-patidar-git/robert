@@ -12,14 +12,30 @@ import sipStatusTracker from "./sip/sipStatusTracker.js";
 
 class SipService {
   constructor() {
-    this.openaiSipEndpoint = process.env.OPENAI_SIP_ENDPOINT || null;
-    this.sipEnabled = process.env.SIP_ENABLED === 'true' || false;
+    // Note: SIP config values are read live via getters to avoid initialization timing issues
+    // This ensures secrets loaded after module import are always reflected
     this.retryConfig = {
       maxRetries: 3,
       initialDelay: 1000,
       maxDelay: 10000,
       backoffMultiplier: 2
     };
+  }
+
+  /**
+   * Get OpenAI SIP endpoint from environment (lazy evaluation)
+   * @returns {string|null} - SIP endpoint URL or null
+   */
+  get openaiSipEndpoint() {
+    return process.env.OPENAI_SIP_ENDPOINT || null;
+  }
+
+  /**
+   * Check if SIP is enabled via environment variable (lazy evaluation)
+   * @returns {boolean} - True if SIP_ENABLED=true
+   */
+  get sipEnabled() {
+    return process.env.SIP_ENABLED === 'true';
   }
 
   /**

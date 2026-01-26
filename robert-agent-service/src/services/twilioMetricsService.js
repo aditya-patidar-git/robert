@@ -9,12 +9,25 @@ import Alert from '../database/models/Alert.js';
 
 class TwilioMetricsService {
   constructor() {
-    this.client = twilio(
-      process.env.TWILIO_SID || process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
+    // Lazy-initialized Twilio client to avoid ES module import hoisting issues
+    // where env vars might not be loaded yet at module evaluation time
+    this._client = null;
     // Track if we've detected basic Voice Insights plan (no API access)
     this.basicPlanDetected = false;
+  }
+
+  /**
+   * Get the Twilio client instance.
+   * Creates the client on first access when env vars are guaranteed to be loaded.
+   */
+  get client() {
+    if (!this._client) {
+      this._client = twilio(
+        process.env.TWILIO_SID || process.env.TWILIO_ACCOUNT_SID,
+        process.env.TWILIO_AUTH_TOKEN
+      );
+    }
+    return this._client;
   }
 
   /**

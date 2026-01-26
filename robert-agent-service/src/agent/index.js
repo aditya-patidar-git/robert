@@ -11,7 +11,7 @@ dotenv.config({ path: join(__dirname, '../../.env') });
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
-import twilio from 'twilio';
+import twilioClient from '../utils/twilioClient.js';
 import cors from 'cors';
 import configManager from './configManager.js';
 import { handleMediaStreamConnection } from '../handlers/mediaStream/index.js';
@@ -491,7 +491,7 @@ app.get('/call', async (req, res) => {
     }
     
     console.log(`📞 [DEBUG] Call request received for: ${to}`);
-    const client = twilio(TWILIO_SID, TWILIO_AUTH_TOKEN);
+    // Use shared lazy-initialized Twilio client instead of creating new one per request
     const baseUrl = TUNNEL_DOMAIN ? `https://${TUNNEL_DOMAIN}` : `http://localhost:${PORT}`;
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -523,7 +523,7 @@ app.get('/call', async (req, res) => {
     const telephonyConfig = configManager.getTelephonyConfig();
     
     const { call, method } = await sipCallRouter.routeCall(
-      client,
+      twilioClient,
       to,
       TWILIO_NUMBER,
       telephonyConfig,
