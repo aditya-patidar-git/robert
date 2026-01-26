@@ -45,7 +45,33 @@ class ReportGenerator {
    * Build HTML report content
    */
   buildHTML(testResults) {
-    const { summary, tests, metrics } = testResults;
+    // Handle the structure from runAllTests.js
+    let summary, tests, metrics;
+    
+    if (testResults.run1 && testResults.run2) {
+      // Combined results from two runs
+      summary = testResults.overall || {
+        total: (testResults.run1.summary?.total || 0) + (testResults.run2.summary?.total || 0),
+        passed: (testResults.run1.summary?.passed || 0) + (testResults.run2.summary?.passed || 0),
+        failed: (testResults.run1.summary?.failed || 0) + (testResults.run2.summary?.failed || 0),
+        duration: (testResults.run1.summary?.duration || 0) + (testResults.run2.summary?.duration || 0)
+      };
+      tests = [
+        ...(testResults.run1.results || []).map(r => ({ ...r, run: 1 })),
+        ...(testResults.run2.results || []).map(r => ({ ...r, run: 2 }))
+      ];
+      metrics = {};
+    } else if (testResults.summary && testResults.tests) {
+      // Single run structure
+      summary = testResults.summary;
+      tests = testResults.tests || [];
+      metrics = testResults.metrics || {};
+    } else {
+      // Fallback: try to extract from whatever structure we have
+      summary = testResults.summary || { total: 0, passed: 0, failed: 0, duration: 0 };
+      tests = testResults.tests || testResults.results || [];
+      metrics = testResults.metrics || {};
+    }
     
     return `<!DOCTYPE html>
 <html>
@@ -85,15 +111,15 @@ class ReportGenerator {
   </div>
 
   <h2>Test Results</h2>
-  ${tests.map(test => `
+  ${tests.length > 0 ? tests.map(test => `
     <div class="test ${test.passed ? 'pass' : 'fail'}">
-      <h3>${test.name}</h3>
+      <h3>${test.name}${test.run ? ` (Run ${test.run})` : ''}</h3>
       <p><strong>Status:</strong> ${test.passed ? 'PASS' : 'FAIL'}</p>
-      <p><strong>Duration:</strong> ${test.duration}ms</p>
+      <p><strong>Duration:</strong> ${test.duration || 0}ms</p>
       ${test.error ? `<p><strong>Error:</strong> <pre>${test.error}</pre></p>` : ''}
-      ${test.evidence ? `<p><strong>Evidence:</strong> ${test.evidence}</p>` : ''}
+      ${test.evidence ? `<p><strong>Evidence:</strong> ${typeof test.evidence === 'object' ? JSON.stringify(test.evidence) : test.evidence}</p>` : ''}
     </div>
-  `).join('')}
+  `).join('') : '<p>No test results available.</p>'}
 </body>
 </html>`;
   }

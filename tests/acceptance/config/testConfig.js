@@ -39,24 +39,26 @@ export const testConfig = {
     maxPacketLoss: 5 // Maximum acceptable packet loss (%)
   },
 
-  // Test credentials (from environment variables)
-  credentials: {
-    twilio: {
-      accountSid: process.env.TWILIO_ACCOUNT_SID,
-      authToken: process.env.TWILIO_AUTH_TOKEN,
-      phoneNumber: process.env.TWILIO_NUMBER || '+442045726060',
-      testPhoneNumber: process.env.TEST_TWILIO_NUMBER || process.env.TWILIO_NUMBER
-    },
-    openai: {
-      apiKey: process.env.OPENAI_API_KEY
-    },
-    crm: {
-      loginName: process.env.CRM_LOGIN_NAME || 'universalmct',
-      userName: process.env.CRM_USER_NAME || 'auagent',
-      password: process.env.CRM_PASSWORD,
-      url: process.env.CRM_URL || 'https://takeabyte.co.uk/InContact/Account/Login'
-    },
-    transferNumber: process.env.TRANSFER_NUMBER || '+442036918807'
+  // Test credentials (from environment variables) - using getters for dynamic reading
+  get credentials() {
+    return {
+      twilio: {
+        accountSid: process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID,
+        authToken: process.env.TWILIO_AUTH_TOKEN,
+        phoneNumber: process.env.TWILIO_NUMBER || '+442045726060',
+        testPhoneNumber: process.env.TEST_TWILIO_NUMBER || process.env.TWILIO_NUMBER || '+442045726060'
+      },
+      openai: {
+        apiKey: process.env.OPENAI_API_KEY
+      },
+      crm: {
+        loginName: process.env.CRM_LOGIN_NAME || 'universalmct',
+        userName: process.env.CRM_USER_NAME || 'auagent',
+        password: process.env.CRM_PASSWORD,
+        url: process.env.CRM_URL || 'https://takeabyte.co.uk/InContact/Account/Login'
+      },
+      transferNumber: process.env.TRANSFER_NUMBER || '+442036918807'
+    };
   },
 
   // Test data

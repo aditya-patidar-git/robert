@@ -5,19 +5,19 @@
   "metrics": {},
   "errors": [
     {
-      "timestamp": "2026-01-22T06:39:13.973Z",
-      "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
-      "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:40:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:36:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
-      "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+      "timestamp": "2026-01-22T13:38:20.095Z",
+      "message": "Call CA8965fbd11a40759afb42eb104c3554c3 was not answered within 5000ms",
+      "stack": "Error: Call CA8965fbd11a40759afb42eb104c3554c3 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:74:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:38:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
+      "error": "Error: Call CA8965fbd11a40759afb42eb104c3554c3 was not answered within 5000ms"
     },
     {
-      "timestamp": "2026-01-22T06:39:14.175Z",
-      "message": "Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call",
-      "stack": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call\n    at success (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\twilio\\lib\\base\\Version.js:79:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async TwilioHelper.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/helpers/twilioHelper.js:38:20)\n    at async CallSimulator.initiateCall (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:40:26)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:36:25)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:98:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:134:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:72:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:113:25)",
-      "error": "Error: Url is not a valid URL: http://localhost:3002/api/inbound/incoming-call"
+      "timestamp": "2026-01-22T13:38:20.106Z",
+      "message": "Call CA8965fbd11a40759afb42eb104c3554c3 was not answered within 5000ms",
+      "stack": "Error: Call CA8965fbd11a40759afb42eb104c3554c3 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:74:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/10-error-paths.test.js:38:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
+      "error": "Error: Call CA8965fbd11a40759afb42eb104c3554c3 was not answered within 5000ms"
     }
   ],
-  "startTime": 1769063953714,
-  "endTime": 1769063954175,
-  "duration": 461
+  "startTime": 1769089094018,
+  "endTime": 1769089100106,
+  "duration": 6088
 }
