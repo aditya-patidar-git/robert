@@ -86,23 +86,34 @@ class DistributedStateService {
    */
   async _doInitialize() {
     try {
+      console.log('[DEBUG] [DistributedStateService._doInitialize] Starting initialization...');
+      console.log('[DEBUG] [DistributedStateService._doInitialize] Checking if Twilio Sync is configured...');
+      
       // Check if Sync is configured
-      if (!twilioSyncService.isConfigured()) {
+      const isConfigured = twilioSyncService.isConfigured();
+      console.log('[DEBUG] [DistributedStateService._doInitialize] isConfigured() result:', isConfigured);
+      
+      if (!isConfigured) {
         console.log('[DistributedStateService] Twilio Sync not configured - using in-memory mode');
+        console.log('[DEBUG] [DistributedStateService._doInitialize] ❌ Sync not configured, falling back to in-memory mode');
         this.useSync = false;
         this.initialized = true;
         return false;
       }
       
+      console.log('[DEBUG] [DistributedStateService._doInitialize] Sync is configured, attempting initialization...');
       // Try to initialize Sync
       const syncInitialized = await twilioSyncService.initialize();
+      console.log('[DEBUG] [DistributedStateService._doInitialize] Sync initialization result:', syncInitialized);
       
       if (syncInitialized) {
         console.log('[DistributedStateService] Connected to Twilio Sync - distributed mode enabled');
         console.log(`  - Instance ID: ${this.instanceId}`);
+        console.log('[DEBUG] [DistributedStateService._doInitialize] ✅ Sync initialized successfully');
         this.useSync = true;
       } else {
         console.log('[DistributedStateService] Twilio Sync initialization failed - using in-memory mode');
+        console.log('[DEBUG] [DistributedStateService._doInitialize] ❌ Sync initialization failed');
         this.useSync = false;
       }
       
@@ -110,6 +121,11 @@ class DistributedStateService {
       return this.useSync;
     } catch (error) {
       console.error('[DistributedStateService] Initialization error:', error.message);
+      console.error('[DEBUG] [DistributedStateService._doInitialize] ❌ Exception during initialization:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
       this.useSync = false;
       this.initialized = true;
       return false;

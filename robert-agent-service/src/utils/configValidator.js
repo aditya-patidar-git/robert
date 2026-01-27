@@ -213,8 +213,8 @@ export function validateTwilioSyncConfig(config = process.env) {
   }
 
   // Check for other required Twilio credentials
-  if (!config.TWILIO_ACCOUNT_SID) {
-    result.errors.push('TWILIO_ACCOUNT_SID: Required for Twilio Sync but not configured');
+  if (!config.TWILIO_ACCOUNT_SID && !config.TWILIO_SID) {
+    result.errors.push('TWILIO_ACCOUNT_SID or TWILIO_SID: Required for Twilio Sync but not configured');
     result.valid = false;
   }
 

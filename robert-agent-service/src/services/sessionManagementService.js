@@ -41,8 +41,9 @@ class SessionManagementService {
     // Track configuration validation
     this.configValidated = false;
     
-    // Initialize distributed state and start cleanup interval
-    this._initialize();
+    // Track initialization state (lazy initialization - call initialize() explicitly)
+    this._initialized = false;
+    this._initPromise = null;
   }
 
   /**
@@ -136,7 +137,35 @@ class SessionManagementService {
   }
 
   /**
-   * Initialize the service, including distributed state setup.
+   * Public initialize method - call this explicitly after environment variables are loaded.
+   * Ensures distributed state initialization happens after dotenv has loaded all env vars.
+   * 
+   * @returns {Promise<void>}
+   */
+  async initialize() {
+    // Return existing promise if initialization is in progress
+    if (this._initPromise) {
+      return this._initPromise;
+    }
+    
+    // Return immediately if already initialized
+    if (this._initialized) {
+      return;
+    }
+    
+    // Create initialization promise
+    this._initPromise = this._initialize();
+    
+    try {
+      await this._initPromise;
+      this._initialized = true;
+    } finally {
+      this._initPromise = null;
+    }
+  }
+
+  /**
+   * Internal initialization logic.
    * @private
    */
   async _initialize() {

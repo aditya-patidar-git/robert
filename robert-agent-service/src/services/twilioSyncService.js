@@ -60,18 +60,58 @@ class TwilioSyncService {
    * @returns {boolean} True if Sync is properly configured
    */
   isConfigured() {
-    // Check basic presence
-    const hasAccountSid = !!process.env.TWILIO_ACCOUNT_SID;
-    const hasAuthToken = !!process.env.TWILIO_AUTH_TOKEN;
-    const hasSyncSid = !!process.env.TWILIO_SYNC_SERVICE_SID;
+    // DEBUG: Extensive logging to trace configuration check
+    const accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const syncSid = process.env.TWILIO_SYNC_SERVICE_SID;
+    
+    const hasAccountSid = !!accountSid;
+    const hasAuthToken = !!authToken;
+    const hasSyncSid = !!syncSid;
+    
+    console.log('[DEBUG] [TwilioSyncService.isConfigured] Starting configuration check...');
+    console.log('[DEBUG] Environment variables check:', {
+      'TWILIO_ACCOUNT_SID': process.env.TWILIO_ACCOUNT_SID ? 'present' : 'missing',
+      'TWILIO_SID': process.env.TWILIO_SID ? `present (${process.env.TWILIO_SID?.substring(0, 8)}...)` : 'missing',
+      'TWILIO_AUTH_TOKEN': authToken ? `present (${authToken.substring(0, 8)}...)` : 'missing',
+      'TWILIO_SYNC_SERVICE_SID': syncSid ? `present (${syncSid})` : 'missing'
+    });
+    
+    console.log('[DEBUG] Boolean checks:', {
+      hasAccountSid,
+      hasAuthToken,
+      hasSyncSid,
+      accountSidValue: accountSid ? `${accountSid.substring(0, 8)}...` : 'null/undefined',
+      authTokenValue: authToken ? `${authToken.substring(0, 8)}...` : 'null/undefined',
+      syncSidValue: syncSid || 'null/undefined',
+      syncSidType: typeof syncSid,
+      syncSidLength: syncSid ? syncSid.length : 0
+    });
     
     if (!hasAccountSid || !hasAuthToken || !hasSyncSid) {
+      console.log('[DEBUG] [TwilioSyncService.isConfigured] ❌ FAILED: Missing required environment variables');
+      console.log('[DEBUG] Missing vars:', {
+        missingAccountSid: !hasAccountSid,
+        missingAuthToken: !hasAuthToken,
+        missingSyncSid: !hasSyncSid
+      });
       return false;
     }
     
     // Check for placeholder values
-    const syncSid = process.env.TWILIO_SYNC_SERVICE_SID;
-    if (isPlaceholder(syncSid)) {
+    const syncSidTrimmed = syncSid.trim();
+    const placeholderCheck = isPlaceholder(syncSid);
+    
+    console.log('[DEBUG] Placeholder check:', {
+      syncSidRaw: syncSid,
+      syncSidTrimmed: syncSidTrimmed,
+      syncSidLength: syncSidTrimmed.length,
+      isPlaceholder: placeholderCheck,
+      expectedFormat: 'IS + 32 hex characters',
+      actualFormat: syncSidTrimmed.match(/^IS([a-f0-9]{32})$/i) ? 'VALID' : 'INVALID'
+    });
+    
+    if (placeholderCheck) {
       // Log warning only once
       if (!this._placeholderWarningLogged) {
         console.warn(
@@ -80,11 +120,18 @@ class TwilioSyncService {
           'To enable, create a Twilio Sync Service at https://console.twilio.com/sync/services ' +
           'and update your .env file with the actual SID.'
         );
+        console.warn('[DEBUG] Placeholder details:', {
+          syncSid: syncSid,
+          trimmed: syncSidTrimmed,
+          length: syncSidTrimmed.length
+        });
         this._placeholderWarningLogged = true;
       }
+      console.log('[DEBUG] [TwilioSyncService.isConfigured] ❌ FAILED: SID detected as placeholder');
       return false;
     }
     
+    console.log('[DEBUG] [TwilioSyncService.isConfigured] ✅ PASSED: All checks passed');
     return true;
   }
 
@@ -95,27 +142,42 @@ class TwilioSyncService {
    * @returns {Promise<boolean>} True if initialization successful
    */
   async initialize() {
+    console.log('[DEBUG] [TwilioSyncService.initialize] Called');
+    console.log('[DEBUG] Current state:', {
+      initPromise: this.initPromise ? 'exists' : 'null',
+      initialized: this.initialized
+    });
+    
     // Return existing promise if initialization is in progress
     if (this.initPromise) {
+      console.log('[DEBUG] [TwilioSyncService.initialize] Returning existing init promise');
       return this.initPromise;
     }
     
     // Return immediately if already initialized
     if (this.initialized) {
+      console.log('[DEBUG] [TwilioSyncService.initialize] Already initialized, returning true');
       return true;
     }
     
     // Check if configured
-    if (!this.isConfigured()) {
+    console.log('[DEBUG] [TwilioSyncService.initialize] Checking configuration...');
+    const configured = this.isConfigured();
+    console.log('[DEBUG] [TwilioSyncService.initialize] Configuration check result:', configured);
+    
+    if (!configured) {
       console.log('[TwilioSyncService] Not configured - missing environment variables');
+      console.log('[DEBUG] [TwilioSyncService.initialize] ❌ Initialization aborted: not configured');
       return false;
     }
     
     // Create initialization promise
+    console.log('[DEBUG] [TwilioSyncService.initialize] Starting initialization process...');
     this.initPromise = this._doInitialize();
     
     try {
       const result = await this.initPromise;
+      console.log('[DEBUG] [TwilioSyncService.initialize] Initialization completed:', result);
       return result;
     } finally {
       this.initPromise = null;
@@ -128,33 +190,54 @@ class TwilioSyncService {
    */
   async _doInitialize() {
     try {
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] Starting internal initialization...');
       console.log('[TwilioSyncService] Initializing...');
       
       // Validate configuration (logs warnings if placeholder detected)
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] Validating configuration...');
       this.validateConfiguration();
       
       // Create Twilio client
-      this.client = twilio(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN
-      );
+      const accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
+      const authToken = process.env.TWILIO_AUTH_TOKEN;
+      
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] Creating Twilio client...', {
+        accountSid: accountSid ? `${accountSid.substring(0, 8)}...` : 'missing',
+        authToken: authToken ? `${authToken.substring(0, 8)}...` : 'missing'
+      });
+      
+      this.client = twilio(accountSid, authToken);
       
       this.syncServiceSid = process.env.TWILIO_SYNC_SERVICE_SID;
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] Sync Service SID:', {
+        syncServiceSid: this.syncServiceSid,
+        length: this.syncServiceSid?.length
+      });
       
       // Ensure sessions map exists
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] Ensuring sessions map exists...');
       this.sessionsMapSid = await this._ensureMapExists(this.config.sessionsMapName);
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] Sessions Map SID:', this.sessionsMapSid);
       
       // Ensure locks document exists
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] Ensuring locks document exists...');
       this.locksDocumentSid = await this._ensureDocumentExists(this.config.locksDocumentName, {});
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] Locks Document SID:', this.locksDocumentSid);
       
       this.initialized = true;
       console.log('[TwilioSyncService] Initialized successfully');
       console.log(`  - Sessions Map SID: ${this.sessionsMapSid}`);
       console.log(`  - Locks Document SID: ${this.locksDocumentSid}`);
+      console.log('[DEBUG] [TwilioSyncService._doInitialize] ✅ Initialization successful');
       
       return true;
     } catch (error) {
       console.error('[TwilioSyncService] Initialization failed:', error.message);
+      console.error('[DEBUG] [TwilioSyncService._doInitialize] ❌ Initialization error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
       this.initialized = false;
       return false;
     }

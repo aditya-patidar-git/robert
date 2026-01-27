@@ -45,9 +45,11 @@ initializeMetrics();
     await secretsManager.initialize();
     console.log('✅ Secrets Manager initialized successfully');
     
-    // Initialize session management service (starts cleanup interval)
+    // Initialize session management service AFTER environment variables are loaded
+    // This ensures Twilio Sync can access env vars during initialization
+    await sessionManagementService.initialize();
     console.log('✅ Session Management Service initialized');
-    const metrics = sessionManagementService.getSessionMetrics();
+    const metrics = await sessionManagementService.getSessionMetrics();
     console.log(`📊 Session Management: TTL=${metrics.sessionTTLMinutes}min, Max=${metrics.maxSessions}, Cleanup=${metrics.cleanupIntervalSeconds}s`);
     
     // Validate SIP configuration on startup
