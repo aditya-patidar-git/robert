@@ -333,14 +333,19 @@ export const handleIncomingCall = async (req, res) => {
         
         // Fallback to Media Streams (if SIP not enabled or failed)
         if (!conversations[CallSid]) {
-            sessionManagementService.initializeSession(CallSid, {
-                from: From,
-                to: To,
-                language: 'en-GB',
-                callType: callType,
-                entryPath: entryPath,
-                realtimeWs: null
-            });
+            try {
+                sessionManagementService.initializeSession(CallSid, {
+                    from: From,
+                    to: To,
+                    language: 'en-GB',
+                    callType: callType,
+                    entryPath: entryPath,
+                    realtimeWs: null
+                });
+            } catch (sessionError) {
+                console.error(`[CallHandler] Error initializing session for ${CallSid}:`, sessionError.message);
+                throw sessionError;
+            }
             
             // Record call metrics
             recordCallMetrics({
@@ -384,7 +389,7 @@ export const handleIncomingCall = async (req, res) => {
         span.recordException(error);
         span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
         span.end();
-        console.error(`❌ [${CallSid}] Error in handleIncomingCall:`, error);
+        console.error(`[CallHandler] Error in handleIncomingCall for ${CallSid}:`, error.message);
         const errorTwiml = generateErrorTwiML('An error occurred. Please try again later.');
         res.status(500).type("text/xml").send(errorTwiml);
     }

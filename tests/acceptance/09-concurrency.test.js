@@ -113,6 +113,7 @@ export async function runTest() {
     console.log('[Test 9] ✓ p95 latency assertion passed');
     
     // Step 4: Verify no state leakage
+    const states = Array.from(stateManager.testStates.values());
     const isolationVerified = stateManager.verifyIsolation();
     
     if (!isolationVerified) {
@@ -120,7 +121,7 @@ export async function runTest() {
     }
     
     console.log('[Test 9] ✓ No state leakage detected');
-    assertions.assertNoStateLeakage([...stateManager.testStates.values()]);
+    assertions.assertNoStateLeakage(states);
     
     // Step 5: Verify no cross-talk (audio mixing)
     // In real implementation, we'd analyze audio recordings for cross-talk

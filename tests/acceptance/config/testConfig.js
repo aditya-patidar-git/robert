@@ -104,6 +104,13 @@ export const testConfig = {
   retries: {
     maxRetries: 2,
     retryDelay: 1000
+  },
+
+  // Retention settings (for GDPR/DSAR tests)
+  retentionSettings: {
+    transcriptRetention: 90, // days
+    metadataRetention: 90,
+    recordingRetention: 90
   }
 };
 

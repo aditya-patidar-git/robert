@@ -12,6 +12,7 @@
  */
 
 import distributedStateService from '../services/distributedStateService.js';
+import { sanitizeForJSON } from '../utils/objectUtils.js';
 
 // ============================================================================
 // LEGACY EXPORTS - Direct object access (local instance only)
@@ -144,10 +145,10 @@ export async function getConversation(callSid) {
  * @returns {Promise<boolean>} True if successful
  */
 export async function setConversation(callSid, data, ttl = undefined) {
-  // Always update local memory
+  // Always update local memory (keep original data with all objects)
   conversations[callSid] = data;
   
-  // Also update distributed state
+  // Also update distributed state (sanitization happens in distributedStateService.setSession())
   try {
     await distributedStateService.setSession(callSid, data, ttl);
   } catch (error) {
@@ -271,7 +272,9 @@ export async function syncToDistributed(callSid) {
   }
   
   try {
-    await distributedStateService.setSession(callSid, localData);
+    // Sanitize data before syncing to ensure JSON serialization works
+    const sanitizedData = sanitizeForJSON(localData);
+    await distributedStateService.setSession(callSid, sanitizedData);
     return true;
   } catch (error) {
     console.warn(`[State] Error syncing conversation ${callSid}:`, error.message);

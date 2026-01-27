@@ -5,19 +5,19 @@
   "metrics": {},
   "errors": [
     {
-      "timestamp": "2026-01-22T13:37:19.446Z",
-      "message": "Operation `callrecords.findOne()` buffering timed out after 10000ms",
-      "stack": "MongooseError: Operation `callrecords.findOne()` buffering timed out after 10000ms\n    at Timeout.<anonymous> (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\robert-agent-service\\node_modules\\mongoose\\lib\\drivers\\node-mongodb-native\\collection.js:187:23)\n    at listOnTimeout (node:internal/timers:588:17)\n    at process.processTimers (node:internal/timers:523:7)",
-      "error": "MongooseError: Operation `callrecords.findOne()` buffering timed out after 10000ms"
+      "timestamp": "2026-01-27T08:57:59.326Z",
+      "message": "Call CA32aec127c836c629e9313908260023d9 was not answered within 5000ms",
+      "stack": "Error: Call CA32aec127c836c629e9313908260023d9 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:77:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/04-kb-retrieval.test.js:29:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
+      "error": "Error: Call CA32aec127c836c629e9313908260023d9 was not answered within 5000ms"
     },
     {
-      "timestamp": "2026-01-22T13:37:19.464Z",
-      "message": "Operation `callrecords.findOne()` buffering timed out after 10000ms",
-      "stack": "MongooseError: Operation `callrecords.findOne()` buffering timed out after 10000ms\n    at Timeout.<anonymous> (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\robert-agent-service\\node_modules\\mongoose\\lib\\drivers\\node-mongodb-native\\collection.js:187:23)\n    at listOnTimeout (node:internal/timers:588:17)\n    at process.processTimers (node:internal/timers:523:7)",
-      "error": "MongooseError: Operation `callrecords.findOne()` buffering timed out after 10000ms"
+      "timestamp": "2026-01-27T08:57:59.357Z",
+      "message": "Call CA32aec127c836c629e9313908260023d9 was not answered within 5000ms",
+      "stack": "Error: Call CA32aec127c836c629e9313908260023d9 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:77:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/04-kb-retrieval.test.js:29:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
+      "error": "Error: Call CA32aec127c836c629e9313908260023d9 was not answered within 5000ms"
     }
   ],
-  "startTime": 1769089015158,
-  "endTime": 1769089039464,
-  "duration": 24306
+  "startTime": 1769504273698,
+  "endTime": 1769504279357,
+  "duration": 5659
 }

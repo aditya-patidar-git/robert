@@ -53,7 +53,7 @@ export async function runTest() {
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     const memoryRecord = await CallMemory.findOne({
-      phoneNumber: testPhoneNumber
+      callerId: testPhoneNumber
     }).lean();
     
     if (!memoryRecord) {

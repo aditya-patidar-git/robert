@@ -17,6 +17,7 @@
 
 import twilioSyncService from './twilioSyncService.js';
 import crypto from 'crypto';
+import { sanitizeForJSON } from '../utils/objectUtils.js';
 
 class DistributedStateService {
   constructor() {
@@ -86,34 +87,25 @@ class DistributedStateService {
    */
   async _doInitialize() {
     try {
-      console.log('[DEBUG] [DistributedStateService._doInitialize] Starting initialization...');
-      console.log('[DEBUG] [DistributedStateService._doInitialize] Checking if Twilio Sync is configured...');
-      
       // Check if Sync is configured
       const isConfigured = twilioSyncService.isConfigured();
-      console.log('[DEBUG] [DistributedStateService._doInitialize] isConfigured() result:', isConfigured);
       
       if (!isConfigured) {
         console.log('[DistributedStateService] Twilio Sync not configured - using in-memory mode');
-        console.log('[DEBUG] [DistributedStateService._doInitialize] ❌ Sync not configured, falling back to in-memory mode');
         this.useSync = false;
         this.initialized = true;
         return false;
       }
       
-      console.log('[DEBUG] [DistributedStateService._doInitialize] Sync is configured, attempting initialization...');
       // Try to initialize Sync
       const syncInitialized = await twilioSyncService.initialize();
-      console.log('[DEBUG] [DistributedStateService._doInitialize] Sync initialization result:', syncInitialized);
       
       if (syncInitialized) {
         console.log('[DistributedStateService] Connected to Twilio Sync - distributed mode enabled');
         console.log(`  - Instance ID: ${this.instanceId}`);
-        console.log('[DEBUG] [DistributedStateService._doInitialize] ✅ Sync initialized successfully');
         this.useSync = true;
       } else {
         console.log('[DistributedStateService] Twilio Sync initialization failed - using in-memory mode');
-        console.log('[DEBUG] [DistributedStateService._doInitialize] ❌ Sync initialization failed');
         this.useSync = false;
       }
       
@@ -121,11 +113,6 @@ class DistributedStateService {
       return this.useSync;
     } catch (error) {
       console.error('[DistributedStateService] Initialization error:', error.message);
-      console.error('[DEBUG] [DistributedStateService._doInitialize] ❌ Exception during initialization:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      });
       this.useSync = false;
       this.initialized = true;
       return false;
@@ -202,24 +189,67 @@ class DistributedStateService {
    * @returns {Promise<boolean>} True if successful
    */
   async setSession(callSid, data, ttl = this.config.defaultTtl) {
+    const startTime = Date.now();
+    console.log(`[DIST-VERBOSE] [${callSid}] setSession() called at ${new Date().toISOString()}`);
+    console.log(`[DIST-VERBOSE] [${callSid}] State: initialized=${this.initialized}, useSync=${this.useSync}`);
+    
     // Ensure initialized
     if (!this.initialized) {
+      console.log(`[DIST-VERBOSE] [${callSid}] Not initialized, calling initialize()...`);
       await this.initialize();
+      console.log(`[DIST-VERBOSE] [${callSid}] After initialization: useSync=${this.useSync}`);
     }
     
-    // Always update local cache
-    this._updateCache(callSid, data);
+    // CRITICAL FIX: Sanitize data FIRST before any JSON.stringify() calls
+    // This prevents circular reference errors in _updateCache() which calls JSON.stringify() for size calculation
+    console.log(`[DIST-VERBOSE] [${callSid}] Sanitizing data (removing non-serializable objects like Timeout, WebSocket)...`);
+    const sanitizeStart = Date.now();
+    let sanitizedData;
+    try {
+      sanitizedData = sanitizeForJSON(data);
+      const sanitizeDuration = Date.now() - sanitizeStart;
+      console.log(`[DIST-VERBOSE] [${callSid}] ✅ Sanitization completed in ${sanitizeDuration}ms`);
+    } catch (error) {
+      const sanitizeDuration = Date.now() - sanitizeStart;
+      console.error(`[DIST-VERBOSE] [${callSid}] ❌ Sanitization failed after ${sanitizeDuration}ms:`, error.message);
+      // If sanitization fails, try to continue with original data (will likely fail at Sync write)
+      sanitizedData = data;
+    }
     
-    // Write to Sync if available
+    // Update local cache with sanitized data (safe for JSON.stringify() in _updateCache)
+    console.log(`[DIST-VERBOSE] [${callSid}] Updating local cache with sanitized data...`);
+    try {
+      this._updateCache(callSid, sanitizedData);
+    } catch (error) {
+      console.error(`[DIST-VERBOSE] [${callSid}] ⚠️ Error updating cache:`, error.message);
+      // Continue anyway - cache update failure shouldn't block sync write
+    }
+    
+    // Write to Sync if available (using already-sanitized data)
     if (this.useSync) {
       try {
-        await twilioSyncService.setSession(callSid, data, ttl);
+        console.log(`[DIST-VERBOSE] [${callSid}] Writing to Twilio Sync (useSync=true)...`);
+        const syncStart = Date.now();
+        await twilioSyncService.setSession(callSid, sanitizedData, ttl);
+        const syncDuration = Date.now() - syncStart;
+        const totalDuration = Date.now() - startTime;
+        console.log(`[DIST-VERBOSE] [${callSid}] ✅ setSession() completed in ${totalDuration}ms (sanitize: ${Date.now() - sanitizeStart}ms, sync: ${syncDuration}ms)`);
         return true;
       } catch (error) {
-        console.error(`[DistributedStateService] Error setting session ${callSid} in Sync:`, error.message);
+        const duration = Date.now() - startTime;
+        console.error(`[DIST-VERBOSE] [${callSid}] ❌ Error setting session in Sync after ${duration}ms:`, {
+          message: error.message,
+          code: error.code,
+          status: error.status,
+          stack: error.stack?.split('\n').slice(0, 10).join('\n')
+        });
+        console.error(`[DistributedState] Error setting session ${callSid} in Sync:`, error.message);
         // Continue with local cache only
         return true;
       }
+    } else {
+      const duration = Date.now() - startTime;
+      console.log(`[DIST-VERBOSE] [${callSid}] ✅ setSession() completed in ${duration}ms (cache only, useSync=false)`);
     }
     
     return true;
@@ -369,9 +399,20 @@ class DistributedStateService {
    */
   _updateCache(callSid, data) {
     this.localCache.set(callSid, data);
+    
+    // Calculate size safely - data should already be sanitized, but add try-catch for safety
+    let size = 0;
+    try {
+      size = JSON.stringify(data).length;
+    } catch (error) {
+      // If JSON.stringify fails (shouldn't happen with sanitized data), estimate size
+      console.warn(`[DistributedState] Could not calculate cache size for ${callSid}, using fallback:`, error.message);
+      size = JSON.stringify({ _error: 'size_calculation_failed' }).length;
+    }
+    
     this.cacheMetadata.set(callSid, {
       fetchedAt: Date.now(),
-      size: JSON.stringify(data).length
+      size
     });
   }
 

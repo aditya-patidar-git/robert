@@ -6,6 +6,7 @@
 
 import twilio from 'twilio';
 import testConfig from '../config/testConfig.js';
+import UrlBuilder from './urlBuilder.js';
 
 class TwilioHelper {
   constructor() {
@@ -47,7 +48,7 @@ class TwilioHelper {
       const call = await this.client.calls.create({
         from: from || testConfig.credentials.twilio.phoneNumber,
         to: to || testConfig.credentials.twilio.testPhoneNumber,
-        url: options.webhookUrl || `${process.env.BASE_URL || 'http://localhost:3001'}/api/inbound/handle-call`,
+        url: options.webhookUrl || UrlBuilder.buildWebhookUrl('/api/inbound/handle-call'),
         method: 'POST',
         statusCallback: options.statusCallback,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
@@ -180,6 +181,18 @@ class TwilioHelper {
     }
     
     throw new Error(`Call ${callSid} did not reach status ${targetStatus} within ${timeout}ms`);
+  }
+
+  /**
+   * Get Media Streams WebSocket URL for a call
+   * Reusable method for connecting to Media Streams WebSocket
+   * Uses UrlBuilder for consistent URL construction
+   * @param {string} callSid - Call SID
+   * @param {Object} options - Options (passed to UrlBuilder)
+   * @returns {string} - WebSocket URL
+   */
+  getMediaStreamsUrl(callSid, options = {}) {
+    return UrlBuilder.buildMediaStreamsUrl(callSid, options);
   }
 }
 

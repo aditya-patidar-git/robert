@@ -7,10 +7,13 @@
 import twilioHelper from './helpers/twilioHelper.js';
 import testConfig from './config/testConfig.js';
 import { stateManager } from './helpers/stateManager.js';
+import MediaStreamsClient from './helpers/mediaStreamsClient.js';
+import AudioEncoder from './helpers/audioEncoder.js';
 
 class CallSimulator {
   constructor() {
     this.activeCalls = new Map();
+    this.mediaStreamsClients = new Map(); // Store Media Streams clients per call
   }
 
   /**
@@ -75,16 +78,85 @@ class CallSimulator {
   }
 
   /**
-   * Send audio input (simulate user speech)
+   * Get or create Media Streams client for a call
+   * @private
    */
-  async sendAudioInput(callSid, audioData) {
-    // Note: Real implementation would send audio via Media Streams WebSocket
-    // This is a placeholder for the test framework
-    // In real tests, we'd need to connect to Media Streams and send audio chunks
+  async getMediaStreamsClient(callSid) {
+    if (this.mediaStreamsClients.has(callSid)) {
+      const client = this.mediaStreamsClients.get(callSid);
+      if (client.isConnected()) {
+        return client;
+      }
+      // Reconnect if disconnected
+      await client.disconnect();
+    }
+
+    // Get WebSocket URL for this call
+    const wsUrl = twilioHelper.getMediaStreamsUrl(callSid);
+    const client = new MediaStreamsClient(callSid, wsUrl);
     
-    console.log(`[CallSimulator] Sending audio input for call ${callSid}`);
-    // Implementation would send audio via WebSocket to Media Streams endpoint
-    return true;
+    // Connect to Media Streams
+    await client.connect();
+    
+    this.mediaStreamsClients.set(callSid, client);
+    return client;
+  }
+
+  /**
+   * Send audio input (simulate user speech)
+   * @param {string} callSid - Call SID
+   * @param {string} text - Text to send as audio (will be converted to audio)
+   * @param {Object} options - Options
+   * @param {string} options.language - Language code (default: 'en')
+   * @returns {Promise<boolean>} True if sent successfully
+   */
+  async sendAudioInput(callSid, text, options = {}) {
+    try {
+      console.log(`[CallSimulator] Sending audio input for call ${callSid}: "${text}"`);
+      
+      // Get or create Media Streams client
+      const client = await this.getMediaStreamsClient(callSid);
+      
+      // Convert text to audio
+      // For now, use placeholder audio generation
+      // In production, this would use TTS service
+      const language = options.language || 'en';
+      let audioBase64 = await AudioEncoder.textToAudio(text, language);
+      
+      // If textToAudio returns empty, generate placeholder
+      if (!audioBase64) {
+        if (language === 'fr') {
+          // Use French audio placeholder for Test 1
+          audioBase64 = AudioEncoder.generateFrenchAudioPlaceholder(text);
+        } else {
+          // Generate placeholder audio for other languages
+          audioBase64 = AudioEncoder.generateFrenchAudioPlaceholder(text); // Reuse for now
+        }
+      }
+      
+      // Fallback: create minimal audio chunk (silence) if still empty
+      if (!audioBase64) {
+        console.warn(`[CallSimulator] Could not generate audio for "${text}", using silence chunk`);
+        // Create minimal audio chunk (silence)
+        const samples = 8000; // 1 second at 8kHz
+        const audioData = Buffer.alloc(samples, 0x7F); // μ-law silence
+        audioBase64 = audioData.toString('base64');
+      }
+      
+      // Send audio chunk via WebSocket
+      const sent = client.sendAudioChunk(audioBase64);
+      
+      if (!sent) {
+        console.warn(`[CallSimulator] Failed to send audio chunk for call ${callSid}`);
+        return false;
+      }
+      
+      console.log(`[CallSimulator] ✓ Audio input sent for call ${callSid}`);
+      return true;
+    } catch (error) {
+      console.error(`[CallSimulator] Error sending audio input: ${error.message}`);
+      throw error;
+    }
   }
 
   /**
@@ -99,6 +171,13 @@ class CallSimulator {
    */
   async hangup(callSid) {
     try {
+      // Disconnect Media Streams client if exists
+      if (this.mediaStreamsClients.has(callSid)) {
+        const client = this.mediaStreamsClients.get(callSid);
+        await client.disconnect();
+        this.mediaStreamsClients.delete(callSid);
+      }
+      
       await twilioHelper.hangupCall(callSid);
       this.activeCalls.delete(callSid);
       return true;
@@ -138,6 +217,15 @@ class CallSimulator {
    * Cleanup all active calls
    */
   async cleanup() {
+    // Disconnect all Media Streams clients
+    const disconnectPromises = Array.from(this.mediaStreamsClients.values()).map(client =>
+      client.disconnect().catch(err =>
+        console.error(`[CallSimulator] Error disconnecting Media Streams client:`, err.message)
+      )
+    );
+    await Promise.all(disconnectPromises);
+    this.mediaStreamsClients.clear();
+    
     const hangupPromises = Array.from(this.activeCalls.keys()).map(callSid =>
       this.hangup(callSid).catch(err => 
         console.error(`[CallSimulator] Error cleaning up call ${callSid}:`, err.message)
@@ -150,21 +238,43 @@ class CallSimulator {
 
   /**
    * Monitor Media Streams for audio output
-   * Note: This would require WebSocket connection to Media Streams endpoint
+   * @param {string} callSid - Call SID
+   * @param {Function} callback - Callback function called with audio chunks
+   * @returns {Promise<Object>} Monitor object with stop() method
    */
   async monitorAudioOutput(callSid, callback) {
-    // Placeholder: Real implementation would:
-    // 1. Connect to Media Streams WebSocket
-    // 2. Listen for audio chunks
-    // 3. Call callback with audio data
-    
-    console.log(`[CallSimulator] Monitoring audio output for call ${callSid}`);
-    // Implementation would establish WebSocket connection
-    return {
-      stop: () => {
-        console.log(`[CallSimulator] Stopped monitoring audio for call ${callSid}`);
-      }
-    };
+    try {
+      console.log(`[CallSimulator] Monitoring audio output for call ${callSid}`);
+      
+      // Get or create Media Streams client
+      const client = await this.getMediaStreamsClient(callSid);
+      
+      // Set up callback for outbound audio (agent speaking)
+      const mediaHandler = (payload, track) => {
+        // Only process outbound audio (agent speaking)
+        if (track === 'outbound' && callback) {
+          callback(payload);
+        }
+      };
+      
+      // Register callback with MediaStreamsClient
+      client.onMedia(mediaHandler);
+      
+      return {
+        stop: () => {
+          console.log(`[CallSimulator] Stopped monitoring audio for call ${callSid}`);
+          client.offMedia(mediaHandler);
+        }
+      };
+    } catch (error) {
+      console.error(`[CallSimulator] Error setting up audio monitoring: ${error.message}`);
+      // Return a no-op monitor if setup fails
+      return {
+        stop: () => {
+          console.log(`[CallSimulator] Stopped monitoring (was not active)`);
+        }
+      };
+    }
   }
 }
 

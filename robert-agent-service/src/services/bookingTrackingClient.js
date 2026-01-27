@@ -4,7 +4,7 @@
  * This allows the dashboard to display accurate booking counts
  */
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3002';
 
 /**
  * Track a successful CRM booking by calling the backend API

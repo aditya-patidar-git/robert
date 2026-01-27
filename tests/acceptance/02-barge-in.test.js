@@ -34,65 +34,63 @@ export async function runTest() {
     // Step 2: Monitor for TTS activity
     let ttsActive = false;
     let ttsChunks = [];
+    let lastTTSChunkTime = null;
     
     const audioMonitor = await callSimulator.monitorAudioOutput(callSid, (audioChunk) => {
       if (audioChunk) {
+        const chunkTime = Date.now();
         ttsActive = true;
+        lastTTSChunkTime = chunkTime;
         ttsChunks.push({
-          timestamp: Date.now(),
+          timestamp: chunkTime,
           chunk: audioChunk
         });
       }
     });
     
-    // Wait for TTS to be active
+    // Wait for TTS to be active (agent starts speaking)
     let waitStart = Date.now();
     while (!ttsActive && Date.now() - waitStart < 5000) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     
     if (!ttsActive) {
+      audioMonitor.stop();
       throw new Error('TTS not detected - agent may not be speaking');
     }
     
     console.log('[Test 2] TTS detected, agent is speaking');
     
+    // Wait a bit to ensure agent is actively speaking
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     // Step 3: Send user audio input while agent is speaking (barge-in)
     console.log('[Test 2] Sending barge-in audio input...');
     const bargeInStartTime = Date.now();
+    const lastChunkBeforeBargeIn = lastTTSChunkTime || Date.now();
     await callSimulator.sendAudioInput(callSid, "Wait, I have a question");
     
     // Step 4: Monitor for TTS halt
     let ttsHalted = false;
     let ttsHaltTime = null;
-    let lastTTSChunkTime = ttsChunks.length > 0 ? ttsChunks[ttsChunks.length - 1].timestamp : Date.now();
+    const haltDetectionStart = Date.now();
     
-    // Check if TTS stops within timeout
-    const haltTimeout = setTimeout(() => {
-      if (ttsChunks.length > 0) {
-        const timeSinceLastChunk = Date.now() - lastTTSChunkTime;
-        if (timeSinceLastChunk > 500) {
-          // No TTS chunks for 500ms - assume halted
-          ttsHalted = true;
-          ttsHaltTime = lastTTSChunkTime + 500;
-        }
-      }
-    }, 1000);
-    
-    // Monitor for TTS halt
-    while (!ttsHalted && Date.now() - bargeInStartTime < 1000) {
-      // Check if new TTS chunks are arriving
-      // In real implementation, we'd monitor WebSocket for TTS events
+    // Monitor for TTS halt - check if no new chunks arrive for >200ms
+    while (!ttsHalted && Date.now() - haltDetectionStart < 1000) {
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Simulate TTS halt detection (real implementation would check OpenAI Realtime events)
-      if (Date.now() - lastTTSChunkTime > 200) {
+      // Check if TTS has halted (no chunks for >200ms after barge-in)
+      const timeSinceLastChunk = lastTTSChunkTime ? (Date.now() - lastTTSChunkTime) : Infinity;
+      const timeSinceBargeIn = Date.now() - bargeInStartTime;
+      
+      // TTS should halt within 200ms of barge-in
+      if (timeSinceBargeIn > 200 && timeSinceLastChunk > 200) {
         ttsHalted = true;
-        ttsHaltTime = Date.now();
+        ttsHaltTime = lastTTSChunkTime || (bargeInStartTime + 200);
+        console.log(`[Test 2] TTS halted detected: ${timeSinceBargeIn}ms after barge-in`);
       }
     }
     
-    clearTimeout(haltTimeout);
     audioMonitor.stop();
     
     if (!ttsHalted || !ttsHaltTime) {

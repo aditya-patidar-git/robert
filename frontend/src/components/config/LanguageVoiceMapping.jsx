@@ -199,7 +199,7 @@ const LanguageVoiceMapping = ({
       }
       
       // Build full audio URL
-      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
+      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3002';
       const fullAudioUrl = audioUrl.startsWith('http') 
         ? audioUrl 
         : `${API_BASE}${audioUrl.startsWith('/') ? '' : '/'}${audioUrl}`;

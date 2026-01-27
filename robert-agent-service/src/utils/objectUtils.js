@@ -288,3 +288,169 @@ export function unflattenObject(obj) {
   
   return result;
 }
+
+/**
+ * Sanitize an object for JSON serialization.
+ * Removes non-serializable objects (WebSocket, Timeout, functions, circular references).
+ * 
+ * This is essential for syncing conversation state to Twilio Sync, which requires
+ * JSON-serializable data. Non-serializable objects are replaced with metadata or removed.
+ * 
+ * @param {*} obj - Object to sanitize
+ * @param {Object} options - Sanitization options
+ * @param {Set} [options.visited] - Set of visited objects (for circular reference detection)
+ * @param {number} [options.maxDepth=10] - Maximum depth to traverse
+ * @returns {*} Sanitized object safe for JSON.stringify
+ * 
+ * @example
+ * const obj = { ws: websocket, timer: setTimeout(...), data: 'safe' };
+ * sanitizeForJSON(obj);
+ * // { ws: null, timer: null, data: 'safe' }
+ */
+export function sanitizeForJSON(obj, options = {}) {
+  const { visited = new WeakSet(), maxDepth = 10, path = 'root' } = options;
+  
+  // Handle null and undefined
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  
+  // Handle primitives
+  if (typeof obj !== 'object') {
+    return obj;
+  }
+  
+  // Prevent infinite recursion
+  if (visited.has(obj)) {
+    console.log(`[sanitizeForJSON] Circular reference detected at path: ${path}`);
+    return '[Circular Reference]';
+  }
+  
+  // Check max depth
+  if (maxDepth <= 0) {
+    console.log(`[sanitizeForJSON] Max depth reached at path: ${path}`);
+    return '[Max Depth Reached]';
+  }
+  
+  // Handle Date objects - convert to ISO string
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+  
+  // Handle RegExp objects - convert to string
+  if (obj instanceof RegExp) {
+    return obj.toString();
+  }
+  
+  // Handle Error objects - extract message and stack
+  if (obj instanceof Error) {
+    return {
+      name: obj.name,
+      message: obj.message,
+      stack: obj.stack
+    };
+  }
+  
+  // Handle WebSocket objects - replace with metadata
+  // Check for WebSocket by checking for WebSocket-specific properties
+  if (obj && typeof obj === 'object' && 
+      (obj.constructor?.name === 'WebSocket' || 
+       (typeof obj.readyState !== 'undefined' && typeof obj.send === 'function' && typeof obj.close === 'function'))) {
+    console.log(`[sanitizeForJSON] WebSocket object detected at path: ${path}, replacing with metadata`);
+    return {
+      _type: 'WebSocket',
+      readyState: obj.readyState !== undefined ? obj.readyState : null,
+      url: obj.url || null
+    };
+  }
+  
+  // Handle Timeout/Interval objects - remove (cannot be serialized)
+  // IMPORTANT: Check constructor name FIRST before accessing any properties that might have circular references
+  // This must be done BEFORE marking as visited to avoid circular reference errors
+  try {
+    const constructorName = obj.constructor?.name;
+    if (constructorName === 'Timeout' || constructorName === 'Immediate') {
+      console.log(`[sanitizeForJSON] Timeout/Immediate object detected at path: ${path} (constructor: ${constructorName}), removing`);
+      return null;
+    }
+    
+    // Safely check for timer properties without accessing circular references
+    // Use hasOwnProperty or 'in' operator to check existence without triggering getters
+    if (typeof obj === 'object' && 
+        ('_idlePrev' in obj || '_idleNext' in obj || '_idleTimeout' in obj)) {
+      // This is likely a Timeout object - remove it without accessing circular properties
+      console.log(`[sanitizeForJSON] Timer-like object detected at path: ${path} (has _idlePrev/_idleNext/_idleTimeout), removing`);
+      return null;
+    }
+  } catch (error) {
+    // If checking for Timeout properties fails, assume it might be a Timeout and remove it
+    console.warn(`[sanitizeForJSON] Error checking for Timeout object at path: ${path}, removing to be safe:`, error.message);
+    return null;
+  }
+  
+  // Handle functions - remove (cannot be serialized)
+  if (typeof obj === 'function') {
+    console.log(`[sanitizeForJSON] Function detected at path: ${path}, removing`);
+    return null;
+  }
+  
+  // Mark as visited before processing nested objects
+  visited.add(obj);
+  
+  try {
+    // Handle arrays
+    if (Array.isArray(obj)) {
+      const sanitized = obj.map((item, index) => 
+        sanitizeForJSON(item, { visited, maxDepth: maxDepth - 1, path: `${path}[${index}]` })
+      );
+      return sanitized;
+    }
+    
+    // Handle plain objects
+    const sanitized = {};
+    
+    // Wrap Object.keys() in try-catch to handle objects with circular references in property enumeration
+    let keys;
+    try {
+      keys = Object.keys(obj);
+    } catch (error) {
+      console.error(`[sanitizeForJSON] Error enumerating keys at path: ${path}:`, error.message);
+      // If we can't enumerate keys, return a placeholder
+      return { _type: 'NonEnumerableObject', _error: 'Cannot enumerate properties' };
+    }
+    
+    for (const key of keys) {
+      // Skip private/internal properties that start with underscore (except _type which we use)
+      if (key.startsWith('_') && key !== '_type' && key !== '_lastUpdated') {
+        continue;
+      }
+      
+      try {
+        const value = obj[key];
+        const sanitizedValue = sanitizeForJSON(value, { 
+          visited, 
+          maxDepth: maxDepth - 1, 
+          path: `${path}.${key}` 
+        });
+        
+        // Only include non-null values (unless explicitly needed)
+        if (sanitizedValue !== null || key === '_type') {
+          sanitized[key] = sanitizedValue;
+        }
+      } catch (error) {
+        // If sanitization fails for a property, skip it
+        console.warn(`[sanitizeForJSON] Failed to sanitize property "${key}" at path: ${path}.${key}:`, error.message);
+        // Continue processing other properties
+      }
+    }
+    
+    return sanitized;
+  } catch (error) {
+    // If sanitization fails completely, return a placeholder
+    console.error(`[sanitizeForJSON] Critical error sanitizing object at path: ${path}:`, error.message);
+    return { _type: 'SanitizationError', _error: error.message, _path: path };
+  } finally {
+    // Note: WeakSet doesn't support delete, but that's fine - it's garbage collected
+    // The visited set is scoped to this call tree and will be cleaned up
+  }
+}

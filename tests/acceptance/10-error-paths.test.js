@@ -30,8 +30,11 @@ export async function runTest() {
     // Enable mocking
     openaiHelper.enableMocking();
     
-    // Mock OpenAI API to return 500
+    // Mock OpenAI API endpoints that may be called
+    // Note: Realtime API uses WebSocket, so we mock HTTP endpoints used by tools
+    // For Realtime API WebSocket errors, the system should handle them gracefully
     openaiHelper.mock5xxError('/v1/chat/completions', 500);
+    openaiHelper.mockRealtimeError(500); // Mock file search and vector store endpoints
     
     const call1Result = await callSimulator.initiateCall(`${TEST_NAME}_5xx`);
     const call1Sid = call1Result.callSid;

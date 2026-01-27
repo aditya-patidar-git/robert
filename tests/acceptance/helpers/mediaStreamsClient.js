@@ -17,6 +17,7 @@ class MediaStreamsClient {
     this.connectPromise = null;
     this.connectResolve = null;
     this.connectReject = null;
+    this.mediaCallbacks = []; // Store callbacks for media events
   }
 
   /**
@@ -49,6 +50,11 @@ class MediaStreamsClient {
           try {
             const message = JSON.parse(data.toString());
             this.handleMessage(message);
+            
+            // Also emit custom event for media messages
+            if (message.event === 'media') {
+              this.ws.emit('mediaMessage', message);
+            }
           } catch (error) {
             console.error(`[MediaStreamsClient] Error parsing message:`, error);
           }
@@ -108,8 +114,20 @@ class MediaStreamsClient {
         }
       }
     } else if (message.event === 'media') {
-      // Handle incoming audio (optional - for tests that need to receive audio)
-      // Currently not needed for Test 1
+      // Handle incoming audio - call registered callbacks
+      const track = message.media?.track;
+      const payload = message.media?.payload;
+      
+      if (payload) {
+        // Call all registered media callbacks
+        this.mediaCallbacks.forEach(callback => {
+          try {
+            callback(payload, track);
+          } catch (error) {
+            console.error(`[MediaStreamsClient] Error in media callback:`, error);
+          }
+        });
+      }
     } else if (message.event === 'stop') {
       console.log(`[MediaStreamsClient] Stream stopped for call ${this.callSid}`);
       this.connected = false;
@@ -158,6 +176,27 @@ class MediaStreamsClient {
     this.connectPromise = null;
     this.connectResolve = null;
     this.connectReject = null;
+  }
+
+  /**
+   * Register callback for media events
+   * @param {Function} callback - Callback function (payload, track) => void
+   */
+  onMedia(callback) {
+    if (typeof callback === 'function') {
+      this.mediaCallbacks.push(callback);
+    }
+  }
+
+  /**
+   * Remove media callback
+   * @param {Function} callback - Callback to remove
+   */
+  offMedia(callback) {
+    const index = this.mediaCallbacks.indexOf(callback);
+    if (index > -1) {
+      this.mediaCallbacks.splice(index, 1);
+    }
   }
 
   /**

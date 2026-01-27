@@ -2,11 +2,22 @@
   "logs": [],
   "recordings": [],
   "screenshots": [],
-  "metrics": {
-    "silenceDuration": 608
-  },
-  "errors": [],
-  "startTime": 1769089007944,
-  "endTime": 1769089015140,
-  "duration": 7196
+  "metrics": {},
+  "errors": [
+    {
+      "timestamp": "2026-01-27T09:57:32.189Z",
+      "message": "Call CA50632a68bbc073a2d4e171d7a4e10a91 was not answered within 5000ms",
+      "stack": "Error: Call CA50632a68bbc073a2d4e171d7a4e10a91 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:77:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/03-vad-thresholds.test.js:26:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
+      "error": "Error: Call CA50632a68bbc073a2d4e171d7a4e10a91 was not answered within 5000ms"
+    },
+    {
+      "timestamp": "2026-01-27T09:57:32.231Z",
+      "message": "Call CA50632a68bbc073a2d4e171d7a4e10a91 was not answered within 5000ms",
+      "stack": "Error: Call CA50632a68bbc073a2d4e171d7a4e10a91 was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:77:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/03-vad-thresholds.test.js:26:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
+      "error": "Error: Call CA50632a68bbc073a2d4e171d7a4e10a91 was not answered within 5000ms"
+    }
+  ],
+  "startTime": 1769507846513,
+  "endTime": 1769507852232,
+  "duration": 5719
 }

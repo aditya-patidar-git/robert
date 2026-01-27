@@ -42,6 +42,10 @@ initializeMetrics();
 // Initialize secrets manager and validate required secrets
 (async () => {
   try {
+    console.log('\n' + '='.repeat(80));
+    console.log('🚀 ROBERT AGENT SERVICE STARTING');
+    console.log('='.repeat(80) + '\n');
+    
     await secretsManager.initialize();
     console.log('✅ Secrets Manager initialized successfully');
     

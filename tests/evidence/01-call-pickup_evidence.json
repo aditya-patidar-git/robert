@@ -1,11 +1,11 @@
 {
   "logs": [
     {
-      "timestamp": "2026-01-22T13:36:28.473Z",
+      "timestamp": "2026-01-27T09:57:14.609Z",
       "data": {
         "step": "call_initiated",
-        "callSid": "CA4f846022c7aa90780f7f92ff80fa1462",
-        "timestamp": 1769088988473
+        "callSid": "CAbaefe28558004a7659f690599da63e1f",
+        "timestamp": 1769507834608
       }
     }
   ],
@@ -14,19 +14,19 @@
   "metrics": {},
   "errors": [
     {
-      "timestamp": "2026-01-22T13:36:38.483Z",
-      "message": "Greeting was not detected",
-      "stack": "Error: Greeting was not detected\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:67:13)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
-      "error": "Error: Greeting was not detected"
+      "timestamp": "2026-01-27T09:57:20.335Z",
+      "message": "Call CAbaefe28558004a7659f690599da63e1f was not answered within 5000ms",
+      "stack": "Error: Call CAbaefe28558004a7659f690599da63e1f was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:77:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:35:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
+      "error": "Error: Call CAbaefe28558004a7659f690599da63e1f was not answered within 5000ms"
     },
     {
-      "timestamp": "2026-01-22T13:36:38.536Z",
-      "message": "Greeting was not detected",
-      "stack": "Error: Greeting was not detected\n    at runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:67:13)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
-      "error": "Error: Greeting was not detected"
+      "timestamp": "2026-01-27T09:57:20.375Z",
+      "message": "Call CAbaefe28558004a7659f690599da63e1f was not answered within 5000ms",
+      "stack": "Error: Call CAbaefe28558004a7659f690599da63e1f was not answered within 5000ms\n    at CallSimulator.waitForAnswer (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/callSimulator.js:77:11)\n    at async runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/01-call-pickup.test.js:35:5)\n    at async TestHarness.runTest (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:97:7)\n    at async TestHarness.runTests (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/testHarness.js:133:22)\n    at async runTestSuite (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:71:19)\n    at async main (file:///C:/Users/AdityaPatidar/Documents/Emergent/robert/tests/acceptance/runAllTests.js:112:25)",
+      "error": "Error: Call CAbaefe28558004a7659f690599da63e1f was not answered within 5000ms"
     }
   ],
-  "startTime": 1769088986787,
-  "endTime": 1769088998536,
-  "duration": 11749
+  "startTime": 1769507833444,
+  "endTime": 1769507840375,
+  "duration": 6931
 }

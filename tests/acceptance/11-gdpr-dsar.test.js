@@ -11,6 +11,7 @@
 import TestBase from './helpers/testBase.js';
 import callSimulator from './callSimulator.js';
 import testConfig from './config/testConfig.js';
+import UrlBuilder from './helpers/urlBuilder.js';
 import axios from 'axios';
 import mongoose from 'mongoose';
 
@@ -44,7 +45,7 @@ export async function runTest() {
     
     // Step 2: Request DSAR export via API
     console.log('[Test 11] Requesting DSAR export...');
-    const baseURL = process.env.BASE_URL || 'http://localhost:3001';
+    const baseURL = UrlBuilder.getBaseUrl();
     
     try {
       const exportResponse = await axios.post(
@@ -168,7 +169,7 @@ export async function runTest() {
         
         // Delete call records
         await CallRecord.deleteMany({ from: testPhoneNumber });
-        await CallMemory.deleteMany({ phoneNumber: testPhoneNumber });
+        await CallMemory.deleteMany({ callerId: testPhoneNumber });
         
         console.log('[Test 11] ✓ Data deleted (direct DB operation)');
       } else {
@@ -192,7 +193,7 @@ export async function runTest() {
     }).lean();
     
     const remainingMemory = await CallMemory.find({ 
-      phoneNumber: testPhoneNumber 
+      callerId: testPhoneNumber 
     }).lean();
     
     if (remainingCallRecords.length > 0) {
@@ -211,6 +212,7 @@ export async function runTest() {
     console.log('[Test 11] Testing retention policy...');
     
     // Create a call record with old timestamp (beyond retention period)
+    const DEFAULT_RETENTION_DAYS = 90;
     const retentionDays = testConfig.retentionSettings?.transcriptRetention || DEFAULT_RETENTION_DAYS;
     const oldDate = new Date();
     oldDate.setDate(oldDate.getDate() - retentionDays - 1);

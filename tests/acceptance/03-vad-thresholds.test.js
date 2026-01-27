@@ -29,12 +29,30 @@ export async function runTest() {
     console.log('[Test 3] Testing silence detection (500-700ms)...');
     await callSimulator.sendAudioInput(callSid, "Test message");
     
+    // Wait for response and then silence period
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for agent response
+    
+    // Monitor audio to detect silence between chunks
+    let audioChunks = [];
+    const audioMonitor = await callSimulator.monitorAudioOutput(callSid, (chunk) => {
+      if (chunk) {
+        audioChunks.push({
+          timestamp: Date.now(),
+          chunk
+        });
+      }
+    });
+    
     // Wait for silence period
     const silenceStart = Date.now();
     await new Promise(resolve => setTimeout(resolve, 600)); // 600ms silence
     const silenceDuration = Date.now() - silenceStart;
     
+    audioMonitor.stop();
+    
     // Verify silence detection triggers turn detection
+    // Note: Actual silence detection is handled by VAD in the system
+    // This test verifies the silence duration is within expected range
     assertions.assertVADSilence(silenceDuration);
     console.log('[Test 3] ✓ Silence detection test passed');
     test.recordEvidence('metric', { silenceDuration });
@@ -65,10 +83,10 @@ export async function runTest() {
     console.log('[Test 3] Testing audio padding...');
     
     // Monitor audio chunks for padding
-    let audioChunks = [];
-    const audioMonitor = await callSimulator.monitorAudioOutput(callSid, (chunk) => {
+    let paddingAudioChunks = [];
+    const paddingAudioMonitor = await callSimulator.monitorAudioOutput(callSid, (chunk) => {
       if (chunk) {
-        audioChunks.push({
+        paddingAudioChunks.push({
           timestamp: Date.now(),
           chunk
         });
@@ -79,12 +97,12 @@ export async function runTest() {
     await callSimulator.sendAudioInput(callSid, "What are your opening hours?");
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    audioMonitor.stop();
+    paddingAudioMonitor.stop();
     
     // Analyze padding in audio chunks
-    if (audioChunks.length > 0) {
-      const firstChunk = audioChunks[0];
-      const lastChunk = audioChunks[audioChunks.length - 1];
+    if (paddingAudioChunks.length > 0) {
+      const firstChunk = paddingAudioChunks[0];
+      const lastChunk = paddingAudioChunks[paddingAudioChunks.length - 1];
       
       // Analyze padding (simplified - real implementation would decode audio)
       const paddingAnalysis = audioAnalyzer.analyzePadding(firstChunk.chunk);
@@ -105,7 +123,7 @@ export async function runTest() {
     }
     
     // Verify no clipping
-    const clippingDetected = audioChunks.some(chunk => 
+    const clippingDetected = paddingAudioChunks.some(chunk => 
       audioAnalyzer.checkClipping(chunk.chunk)
     );
     

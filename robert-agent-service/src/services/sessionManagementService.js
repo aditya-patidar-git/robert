@@ -206,7 +206,6 @@ class SessionManagementService {
 
     // Check if session already exists
     if (conversations[callSid]) {
-      console.log(`📝 [SESSION] Session ${callSid} already exists, updating lastActivityTime`);
       conversations[callSid].lastActivityTime = Date.now();
       // Sync to distributed state (fire-and-forget)
       this._syncToDistributed(callSid, conversations[callSid]);
@@ -238,9 +237,10 @@ class SessionManagementService {
    */
   _syncToDistributed(callSid, data) {
     if (this.useDistributedState) {
-      setConversation(callSid, data, this.sessionTTLSeconds).catch(err => {
-        console.warn(`[SESSION] Failed to sync ${callSid} to distributed state:`, err.message);
-      });
+      setConversation(callSid, data, this.sessionTTLSeconds)
+        .catch(err => {
+          console.warn(`[SESSION] Failed to sync ${callSid} to distributed state:`, err.message);
+        });
     }
   }
 
