@@ -16,6 +16,7 @@ import ToolRegistry from './toolRegistry.js';
 import ToolExecutor from './toolExecutor.js';
 import { getToolDefinitions } from './toolDefinitions.js';
 import { bookingStepTools } from './bookingSteps/index.js';
+import { cancellationStepTools } from './cancellationSteps/index.js';
 import { getToolsForContext } from '../services/toolFilterService.js';
 
 /**
@@ -65,11 +66,18 @@ class UnifiedToolExecutor {
       tools.set(toolName, toolImpl);
     }
     
+    // Register step-based cancellation tools
+    for (const [toolName, toolImpl] of Object.entries(cancellationStepTools)) {
+      tools.set(toolName, toolImpl);
+    }
+    
     this.toolRegistry.registerTools(tools);
     
-    // Log registered tools (excluding booking workflow tools)
+    // Log registered tools (excluding booking and cancellation workflow tools)
     const allTools = this.toolRegistry.getAvailableTools();
-    const publicTools = allTools.filter(toolName => !toolName.startsWith('booking_step_'));
+    const publicTools = allTools.filter(toolName => 
+      !toolName.startsWith('booking_step_') && !toolName.startsWith('cancellation_step_')
+    );
     console.log('📋 [TOOL EXECUTOR] Registered tools:', publicTools.join(', '));
   }
 

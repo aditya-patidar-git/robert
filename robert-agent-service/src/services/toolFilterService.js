@@ -91,7 +91,7 @@ const TOOL_SETS = {
     'transfer_call'
   ],
 
-  // Reschedule/cancellation workflow
+  // Reschedule/cancellation workflow (legacy - uses crm_browser)
   booking_modification: [
     'crm_browser',
     'kba_verification',
@@ -99,6 +99,25 @@ const TOOL_SETS = {
     'file_search',
     'email',
     'send_sms',
+    'transfer_call'
+  ],
+
+  // Cancellation workflow (step-based)
+  cancellation: [
+    'cancellation_step_verify_booking_intent',
+    'cancellation_step_authenticate',
+    'cancellation_step_determine_workflow',
+    'cancellation_step_navigate_contacts',
+    'cancellation_step_search_client',
+    'cancellation_step_select_client',
+    'cancellation_step_locate_booking',
+    'cancellation_step_confirm_cancellation',
+    'cancellation_step_initiate_cancellation',
+    'cancellation_step_fill_cancellation_form',
+    'cancellation_step_navigate_communication',
+    'cancellation_step_select_template',
+    'cancellation_step_send_confirmation',
+    'cancellation_step_voice_confirmation',
     'transfer_call'
   ],
 
@@ -267,7 +286,9 @@ export function getPhaseForIntent(intent) {
 
     // Modification intents
     'reschedule': 'booking_modification',
-    'cancel': 'booking_modification',
+    'cancel': 'cancellation',
+    'cancel_booking': 'cancellation',
+    'cancellation': 'cancellation',
     'change_booking': 'booking_modification',
 
     // Inquiry intents

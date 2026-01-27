@@ -997,7 +997,383 @@ After successful verification of all three fields, say: "You are successfully ve
       }
     },
     // Step-based booking tools (preferred over crm_browser.create_booking)
-    ...getStepBookingToolDefinitions()
+    ...getStepBookingToolDefinitions(),
+    // Step-based cancellation tools
+    ...getCancellationStepToolDefinitions()
+  ];
+}
+
+/**
+ * Get cancellation step tool definitions
+ * @returns {Array} Array of cancellation step tool definition objects
+ */
+function getCancellationStepToolDefinitions() {
+  return [
+    {
+      type: 'function',
+      name: 'cancellation_step_verify_booking_intent',
+      description: `Step 1: Verify caller has a current booking and explain cancellation policy. This is a voice-only step that requires caller interaction.
+
+Ask the caller: "Do you have a current booking with us?"
+- If they say "Yes": Explain cancellation policy and set verified: true, proceedToStep2: true
+- If they say "No": Set verified: false and do not proceed to Step 2
+
+Cancellation policy: "If you wish to cancel your (CBT), (ITM), (Gear Conversion), (Private Motorcycling lesson) you MUST provide a minimum of 3 (Three) full working days' notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within less than 3 (three) full working days will result in the entire paid fees."`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type being cancelled',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          verified: {
+            type: 'boolean',
+            description: 'Whether caller confirmed they have a booking (set after asking caller)'
+          },
+          proceedToStep2: {
+            type: 'boolean',
+            description: 'Whether to proceed to Step 2 (set to true if verified: true)'
+          }
+        },
+        required: ['courseType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_authenticate',
+      description: 'Step 2: Login to CRM system. Reuses booking authentication logic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          }
+        },
+        required: ['courseType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_determine_workflow',
+      description: `Step 3: Determine workflow type. For cancellation workflows, this always returns 'existing' since cancellation requires an existing booking. This is a voice-only step.
+
+Ask the caller: "Have you done training with us before?"
+- Always set workflowType to 'existing' for cancellation workflows`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          }
+        },
+        required: ['courseType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_navigate_contacts',
+      description: 'Step 4: Navigate to Contacts tab in CRM. Reuses booking navigation logic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_search_client',
+      description: 'Step 5: Search for client using smart search with fallback (mobile → email → name). Includes client verification. Reuses booking search logic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          },
+          customerMobile: {
+            type: 'string',
+            description: 'Customer mobile number (11 digits, UK format starting with 07)'
+          },
+          customerEmail: {
+            type: 'string',
+            description: 'Customer email address (used as fallback if mobile search fails)'
+          },
+          customerName: {
+            type: 'string',
+            description: 'Customer name (used as fallback if mobile and email searches fail)'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_select_client',
+      description: 'Step 6: Click on verified client name in search results to open their profile.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          },
+          clientName: {
+            type: 'string',
+            description: 'Verified client name (from Step 5)'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_locate_booking',
+      description: `Step 7: Find booking in "Bookings, credits, and debits" section of client profile. Validates booking date (must be in future, must meet 3-day notice requirement) and calculates cancellation fee.
+
+Ask the caller: "What date is your course booked for?"
+Then call this tool with the courseDate.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          },
+          courseDate: {
+            type: 'string',
+            description: 'Date of the course booking to cancel (ISO format or date string)'
+          }
+        },
+        required: ['courseType', 'workflowType', 'courseDate']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_confirm_cancellation',
+      description: `Step 8: Confirm cancellation with caller and explain fees. This is a voice-only step that requires caller confirmation.
+
+Explain the cancellation policy and fees from Step 7, then ask: "Would you like to proceed with the cancellation?"
+- If they say "Yes": Set confirmed: true
+- If they say "No": Set confirmed: false and do not proceed`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          },
+          bookingDetails: {
+            type: 'object',
+            description: 'Booking details from Step 7'
+          },
+          cancellationFee: {
+            type: 'number',
+            description: 'Cancellation fee amount from Step 7'
+          },
+          refundAmount: {
+            type: 'number',
+            description: 'Refund amount from Step 7'
+          },
+          confirmed: {
+            type: 'boolean',
+            description: 'Whether caller confirmed cancellation (set after asking caller)'
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_initiate_cancellation',
+      description: 'Step 9: Click on booking row and select "Cancel booking" from context menu to open cancellation form.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          },
+          courseDate: {
+            type: 'string',
+            description: 'Course date (from Step 7)'
+          }
+        },
+        required: ['courseType', 'workflowType', 'courseDate']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_fill_cancellation_form',
+      description: `Step 10: Fill cancellation form with reason, notes, fee amount, and submit.
+
+Fee amounts by course type:
+- CBT: £58.50
+- Executive CBT: £165.00
+- ITM/Gear Conversion/Private Lesson: £37.50`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          },
+          cancellationFee: {
+            type: 'number',
+            description: 'Cancellation fee amount (from Step 7)'
+          },
+          cancellationReason: {
+            type: 'string',
+            description: 'Reason for cancellation (default: "No longer needed")'
+          }
+        },
+        required: ['courseType', 'workflowType', 'cancellationFee']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_navigate_communication',
+      description: 'Step 11: Navigate to Communication tab in client profile.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_select_template',
+      description: 'Step 12: Select "Cancellation confirmation of course/session" template and click Preview.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_send_confirmation',
+      description: 'Step 13: Send cancellation confirmation email to client.',
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    },
+    {
+      type: 'function',
+      name: 'cancellation_step_voice_confirmation',
+      description: `Step 14: Confirm cancellation completion to caller. This is a voice-only step.
+
+Say to the caller: "Your booking has now been cancelled, and I have now sent you an email confirmation. Is there anything else that I can help you with?"
+- If they say "No": Thank them and end the call
+- If they say "Yes": Assist with additional queries`,
+      parameters: {
+        type: 'object',
+        properties: {
+          courseType: {
+            type: 'string',
+            description: 'Course type',
+            enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
+          },
+          workflowType: {
+            type: 'string',
+            description: 'Workflow type (always "existing" for cancellation)',
+            enum: ['existing']
+          }
+        },
+        required: ['courseType', 'workflowType']
+      }
+    }
   ];
 }
 

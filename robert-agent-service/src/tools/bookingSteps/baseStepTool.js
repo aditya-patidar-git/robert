@@ -25,8 +25,25 @@ function getToolNameForStep(courseType, workflowType, stepNumber) {
   
   if (!stepName) return null;
   
+  // Check if this is a cancellation step
+  const cancellationStepNames = [
+    'verifyBookingIntent',
+    'determineWorkflow',
+    'selectClient',
+    'locateBooking',
+    'confirmCancellation',
+    'initiateCancellation',
+    'fillCancellationForm',
+    'navigateCommunication',
+    'selectTemplate',
+    'sendCancellationConfirmation',
+    'voiceConfirmation'
+  ];
+  
+  const isCancellationStep = cancellationStepNames.includes(stepName);
+  
   // Map step names to tool names
-  const toolNameMap = {
+  const bookingToolNameMap = {
     'checkAvailability': 'booking_step_check_availability',
     'authenticate': 'booking_step_authenticate',
     'navigateContacts': 'booking_step_navigate_contacts',
@@ -43,7 +60,28 @@ function getToolNameForStep(courseType, workflowType, stepNumber) {
     'sendSMS': 'booking_step_send_sms'
   };
   
-  return toolNameMap[stepName] || null;
+  const cancellationToolNameMap = {
+    'verifyBookingIntent': 'cancellation_step_verify_booking_intent',
+    'authenticate': 'cancellation_step_authenticate',
+    'determineWorkflow': 'cancellation_step_determine_workflow',
+    'navigateContacts': 'cancellation_step_navigate_contacts',
+    'searchClient': 'cancellation_step_search_client',
+    'selectClient': 'cancellation_step_select_client',
+    'locateBooking': 'cancellation_step_locate_booking',
+    'confirmCancellation': 'cancellation_step_confirm_cancellation',
+    'initiateCancellation': 'cancellation_step_initiate_cancellation',
+    'fillCancellationForm': 'cancellation_step_fill_cancellation_form',
+    'navigateCommunication': 'cancellation_step_navigate_communication',
+    'selectTemplate': 'cancellation_step_select_template',
+    'sendCancellationConfirmation': 'cancellation_step_send_confirmation',
+    'voiceConfirmation': 'cancellation_step_voice_confirmation'
+  };
+  
+  if (isCancellationStep) {
+    return cancellationToolNameMap[stepName] || null;
+  }
+  
+  return bookingToolNameMap[stepName] || null;
 }
 
 export class BaseStepTool {

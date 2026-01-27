@@ -23,6 +23,14 @@ import { executeSendPaymentRequest } from './stepExecutors/sendPaymentRequest.js
 import { executeSendConfirmation } from './stepExecutors/sendConfirmation.js';
 import { executeSendTerms } from './stepExecutors/sendTerms.js';
 import { executeSendSMS } from './stepExecutors/sendSMS.js';
+// Cancellation step executors
+import { executeSelectClient } from './stepExecutors/executeSelectClient.js';
+import { executeLocateBooking } from './stepExecutors/executeLocateBooking.js';
+import { executeInitiateCancellation } from './stepExecutors/executeInitiateCancellation.js';
+import { executeFillCancellationForm } from './stepExecutors/executeFillCancellationForm.js';
+import { executeNavigateCommunication } from './stepExecutors/executeNavigateCommunication.js';
+import { executeSelectTemplate } from './stepExecutors/executeSelectTemplate.js';
+import { executeSendCancellationConfirmation } from './stepExecutors/executeSendCancellationConfirmation.js';
 
 export class StepExecutor {
   constructor(screenshotsDir = './screenshots') {
@@ -86,6 +94,28 @@ export class StepExecutor {
           break;
         case 'sendSMS':
           result = await executeSendSMS(page, args, sessionState, this.screenshotsDir);
+          break;
+        // Cancellation workflow steps
+        case 'selectClient':
+          result = await executeSelectClient(page, args, sessionState, this.screenshotsDir);
+          break;
+        case 'locateBooking':
+          result = await executeLocateBooking(page, args, sessionState, this.screenshotsDir);
+          break;
+        case 'initiateCancellation':
+          result = await executeInitiateCancellation(page, args, sessionState, this.screenshotsDir);
+          break;
+        case 'fillCancellationForm':
+          result = await executeFillCancellationForm(page, args, sessionState, this.screenshotsDir);
+          break;
+        case 'navigateCommunication':
+          result = await executeNavigateCommunication(page, args, sessionState, this.screenshotsDir);
+          break;
+        case 'selectTemplate':
+          result = await executeSelectTemplate(page, args, sessionState, this.screenshotsDir);
+          break;
+        case 'sendCancellationConfirmation':
+          result = await executeSendCancellationConfirmation(page, args, sessionState, this.screenshotsDir);
           break;
         default:
           throw new Error(`Unknown step name: ${stepName}`);
