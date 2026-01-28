@@ -21,13 +21,14 @@ export async function runTest() {
   try {
     await test.setup();
     
-    const testPhoneNumber = testConfig.testData.testClient.mobile;
-    const callerId = `+44${testPhoneNumber.replace(/^0/, '')}`;
+    const twilioNumber = testConfig.credentials.twilio.phoneNumber;
     
     // Call 1: Set a preference
+    // Use Twilio number for FROM (self-call creates inbound call)
+    // Both calls will use same FROM number - memory test will still work
     console.log('[Test 8] Call 1: Setting preference...');
     const call1Result = await callSimulator.initiateCall(TEST_NAME, {
-      from: callerId
+      // from defaults to Twilio number (verified number required for production credentials)
     });
     const call1Sid = call1Result.callSid;
     await callSimulator.waitForAnswer(call1Sid, testConfig.timeouts.callPickup);
@@ -47,13 +48,14 @@ export async function runTest() {
     await callSimulator.hangup(call1Sid);
     
     // Step 2: Verify CallMemory record created
+    // CallerId will be the Twilio number (FROM number in self-call)
     const CallMemory = mongoose.models.CallMemory ||
       (await import('../../robert-agent-service/src/database/models/CallMemory.js')).default;
     
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     const memoryRecord = await CallMemory.findOne({
-      callerId: testPhoneNumber
+      callerId: twilioNumber // Use Twilio number since that's the FROM number
     }).lean();
     
     if (!memoryRecord) {
@@ -64,11 +66,12 @@ export async function runTest() {
     test.recordEvidence('log', { memoryRecord });
     
     // Step 3: Call 2: Initiate call from same number
+    // Both calls use Twilio number (default) - memory test will verify persistence
     console.log('[Test 8] Call 2: Initiating call from same number...');
     await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate separate call
     
     const call2Result = await callSimulator.initiateCall(`${TEST_NAME}_call2`, {
-      from: callerId
+      // from defaults to Twilio number (same as call 1 - tests memory persistence)
     });
     const call2Sid = call2Result.callSid;
     await callSimulator.waitForAnswer(call2Sid, testConfig.timeouts.callPickup);

@@ -18,12 +18,34 @@ class CallSimulator {
 
   /**
    * Initiate a test call
+   * With test credentials: FROM magic number (+15005550006) TO Twilio number
+   * With production credentials: FROM verified caller ID (personal mobile) TO Twilio number
+   * The webhook URL will be set automatically by twilioHelper (required by Twilio API)
+   * 
+   * NOTE: Test credentials do NOT trigger webhooks - calls are simulated only
+   * NOTE: For production credentials, use VERIFIED_CALLER_ID env var (your verified personal mobile)
    */
   async initiateCall(testName, options = {}) {
+    const { usingTestCredentials, magicTestNumber, phoneNumber, verifiedCallerId } = testConfig.credentials.twilio;
+    
+    // Determine FROM number:
+    // - Test credentials: use magic number
+    // - Production with verified caller ID: use verified number
+    // - Production without verified caller ID: fallback to Twilio number (may fail if not allowed)
+    let defaultFrom;
+    if (usingTestCredentials) {
+      defaultFrom = magicTestNumber;
+    } else if (verifiedCallerId) {
+      defaultFrom = verifiedCallerId;
+    } else {
+      console.warn('[CallSimulator] ⚠️  No VERIFIED_CALLER_ID set - using Twilio number as FROM (may fail)');
+      defaultFrom = phoneNumber;
+    }
+    
     const {
-      from = testConfig.credentials.twilio.phoneNumber,
-      to = testConfig.credentials.twilio.testPhoneNumber,
-      webhookUrl = options.webhookUrl,
+      from = defaultFrom,
+      to = phoneNumber, // Always use Twilio number as TO
+      webhookUrl = null, // Optional: if not provided, defaults to inbound webhook
       record = true
     } = options;
 

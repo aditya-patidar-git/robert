@@ -40,22 +40,73 @@ class TwilioHelper {
 
   /**
    * Initiate a test call
+   * Note: Twilio API requires a 'url' parameter for ALL programmatic calls,
+   * even when calling TO your Twilio number (inbound calls).
+   * The console webhook config only applies to external callers, not API-created calls.
+   * 
+   * IMPORTANT: Test credentials do NOT trigger webhooks - calls are simulated only.
+   * Use production credentials to test actual inbound call webhooks.
    */
   async initiateCall(from, to, options = {}) {
     this.ensureInitialized();
 
     try {
-      const call = await this.client.calls.create({
-        from: from || testConfig.credentials.twilio.phoneNumber,
-        to: to || testConfig.credentials.twilio.testPhoneNumber,
-        url: options.webhookUrl || UrlBuilder.buildWebhookUrl('/api/inbound/handle-call'),
+      const { usingTestCredentials, magicTestNumber, phoneNumber, verifiedCallerId } = testConfig.credentials.twilio;
+      
+      // Determine if this is an inbound call (calling TO Twilio number)
+      const twilioNumber = phoneNumber;
+      const isInboundCall = to === twilioNumber || 
+                          (!to && !from) || // Both default to Twilio number = inbound
+                          (to && to === (process.env.TWILIO_NUMBER || '+442045726060'));
+
+      // Determine FROM number:
+      // - If explicitly provided, use it
+      // - Test credentials: use magic number
+      // - Production with verified caller ID: use verified number
+      // - Production without verified caller ID: fallback to Twilio number (may fail)
+      let defaultFrom;
+      if (from) {
+        defaultFrom = from; // Use explicitly provided FROM
+      } else if (usingTestCredentials) {
+        defaultFrom = magicTestNumber;
+      } else if (verifiedCallerId) {
+        defaultFrom = verifiedCallerId;
+      } else {
+        console.warn('[TwilioHelper] ⚠️  No VERIFIED_CALLER_ID set - using Twilio number as FROM (may fail)');
+        defaultFrom = twilioNumber;
+      }
+
+      // Build call parameters
+      const callParams = {
+        from: defaultFrom,
+        to: to || twilioNumber, // Default to Twilio number
         method: 'POST',
         statusCallback: options.statusCallback,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         statusCallbackMethod: 'POST',
         record: options.record !== false, // Record by default for tests
         ...options
-      });
+      };
+      
+      // Log which credentials and FROM number are being used
+      if (usingTestCredentials) {
+        console.log('[TwilioHelper] Using TEST credentials - webhooks will NOT be triggered');
+        console.log(`[TwilioHelper] Call: FROM ${defaultFrom} TO ${to || twilioNumber}`);
+      } else {
+        console.log('[TwilioHelper] Using PRODUCTION credentials - webhooks will be triggered');
+        console.log(`[TwilioHelper] Call: FROM ${defaultFrom} (verified caller ID) TO ${to || twilioNumber}`);
+      }
+
+      // Twilio API requires 'url' parameter for ALL programmatic calls
+      // Use provided webhookUrl, or default to inbound webhook for inbound calls
+      if (options.webhookUrl) {
+        callParams.url = options.webhookUrl;
+      } else {
+        // Default to inbound webhook URL (works for both inbound and outbound test calls)
+        callParams.url = UrlBuilder.buildWebhookUrl('/api/inbound/handle-call');
+      }
+
+      const call = await this.client.calls.create(callParams);
 
       return {
         callSid: call.sid,

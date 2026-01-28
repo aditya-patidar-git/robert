@@ -41,12 +41,40 @@ export const testConfig = {
 
   // Test credentials (from environment variables) - using getters for dynamic reading
   get credentials() {
+    // Detect if test credentials are available
+    const hasTestCredentials = process.env.TEST_AUTH_TOKEN && 
+                               (process.env.ACCOUNT_SID || process.env.TWILIO_ACCOUNT_SID);
+    
+    // Use test credentials if available, otherwise use production credentials
+    const accountSid = hasTestCredentials 
+      ? (process.env.ACCOUNT_SID || process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID)
+      : (process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID);
+    
+    const authToken = hasTestCredentials
+      ? process.env.TEST_AUTH_TOKEN
+      : process.env.TWILIO_AUTH_TOKEN;
+    
+    // Warn about test credentials limitations
+    if (hasTestCredentials) {
+      console.warn('[TestConfig] ⚠️  TEST CREDENTIALS DETECTED');
+      console.warn('[TestConfig] ⚠️  Webhooks will NOT be triggered with test credentials');
+      console.warn('[TestConfig] ⚠️  Calls are simulated only - no actual connections');
+      console.warn('[TestConfig] ⚠️  Use production credentials to test inbound webhooks');
+    }
+    
+    // Get verified caller ID (personal mobile number) for testing
+    // This should be a number verified in Twilio Console: https://console.twilio.com/us1/develop/phone-numbers/manage/verified
+    const verifiedCallerId = process.env.VERIFIED_CALLER_ID || process.env.TEST_CALLER_ID;
+    
     return {
       twilio: {
-        accountSid: process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID,
-        authToken: process.env.TWILIO_AUTH_TOKEN,
-        phoneNumber: process.env.TWILIO_NUMBER || '+442045726060',
-        testPhoneNumber: process.env.TEST_TWILIO_NUMBER || process.env.TWILIO_NUMBER || '+442045726060'
+        accountSid: accountSid,
+        authToken: authToken,
+        phoneNumber: process.env.TWILIO_NUMBER || '+442045726060', // TO number (your Twilio number)
+        verifiedCallerId: verifiedCallerId, // FROM number (your verified personal mobile)
+        testPhoneNumber: process.env.TEST_TWILIO_NUMBER || process.env.TWILIO_NUMBER || '+442045726060',
+        magicTestNumber: '+15005550006', // Twilio magic test number for automated inbound testing
+        usingTestCredentials: hasTestCredentials // Flag to indicate test mode
       },
       openai: {
         apiKey: process.env.OPENAI_API_KEY

@@ -23,12 +23,13 @@ export async function runTest() {
   try {
     await test.setup();
     
-    const testPhoneNumber = testConfig.testData.testClient.mobile;
+    const twilioNumber = testConfig.credentials.twilio.phoneNumber;
     
     // Step 1: Create test call with data
+    // Use Twilio number for FROM (self-call creates inbound call)
     console.log('[Test 11] Creating test call with data...');
     const callResult = await callSimulator.initiateCall(TEST_NAME, {
-      from: `+44${testPhoneNumber.replace(/^0/, '')}`
+      // from defaults to Twilio number (verified number required for production credentials)
     });
     const callSid = callResult.callSid;
     await callSimulator.waitForAnswer(callSid, testConfig.timeouts.callPickup);
@@ -50,7 +51,7 @@ export async function runTest() {
     try {
       const exportResponse = await axios.post(
         `${baseURL}/api/gdpr/export`,
-        { phoneNumber: testPhoneNumber },
+        { phoneNumber: twilioNumber }, // Use Twilio number (FROM number in self-call)
         {
           headers: {
             'Content-Type': 'application/json'
@@ -146,7 +147,7 @@ export async function runTest() {
     try {
       const deleteResponse = await axios.post(
         `${baseURL}/api/gdpr/delete`,
-        { phoneNumber: testPhoneNumber },
+        { phoneNumber: twilioNumber }, // Use Twilio number (FROM number in self-call)
         {
           headers: {
             'Content-Type': 'application/json'
@@ -167,9 +168,9 @@ export async function runTest() {
         const CallMemory = mongoose.models.CallMemory ||
           (await import('../../robert-agent-service/src/database/models/CallMemory.js')).default;
         
-        // Delete call records
-        await CallRecord.deleteMany({ from: testPhoneNumber });
-        await CallMemory.deleteMany({ callerId: testPhoneNumber });
+        // Delete call records (using Twilio number as callerId/from)
+        await CallRecord.deleteMany({ from: twilioNumber });
+        await CallMemory.deleteMany({ callerId: twilioNumber });
         
         console.log('[Test 11] ✓ Data deleted (direct DB operation)');
       } else {
@@ -187,13 +188,13 @@ export async function runTest() {
     
     const remainingCallRecords = await CallRecord.find({ 
       $or: [
-        { from: testPhoneNumber },
+        { from: twilioNumber }, // Use Twilio number (FROM number in self-call)
         { callSid }
       ]
     }).lean();
     
     const remainingMemory = await CallMemory.find({ 
-      callerId: testPhoneNumber 
+      callerId: twilioNumber // Use Twilio number (callerId in self-call)
     }).lean();
     
     if (remainingCallRecords.length > 0) {

@@ -28,8 +28,10 @@ export async function runTest() {
     await test.setup();
     
     const testClient = crmData.testClients[0];
+    // Use Twilio number for FROM (self-call creates inbound call)
+    // Test client mobile is used for CRM lookup, not as caller ID
     const callResult = await callSimulator.initiateCall(TEST_NAME, {
-      from: `+44${testClient.mobile.replace(/^0/, '')}`
+      // from defaults to Twilio number (verified number required for production credentials)
     });
     const callSid = callResult.callSid;
     await callSimulator.waitForAnswer(callSid, testConfig.timeouts.callPickup);
