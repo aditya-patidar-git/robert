@@ -36,71 +36,164 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
   try {
     console.log(`🔍 [LOCATE_BOOKING] Looking for booking on date: ${courseDate}, course type: ${courseType}`);
     
-    // Scroll to "Bookings, credits, and debits" section
+    // Work within contactEdit_iframe context (should already be set from Step 6)
+    console.log('🔄 [LOCATE_BOOKING] Switching to contactEdit_iframe context...');
+    const clientDetailsIframe = page.frameLocator('#contactEdit_iframe');
+    
+    // Wait for iframe to be ready
+    await page.waitForTimeout(2000);
+    
+    // Scroll to "Bookings, credits, and debits" section inside iframe
     console.log(`📜 [LOCATE_BOOKING] Scrolling to "Bookings, credits, and debits" section...`);
-    const bookingsSection = page.getByText('Bookings, credits, and debits');
-    await bookingsSection.scrollIntoViewIfNeeded();
+    const bookingsHeading = clientDetailsIframe.locator('h1.jqx_formBoilerPlateText.jqx_formHeading.jqx_underline:has-text("Bookings, credits and debits")');
+    await bookingsHeading.scrollIntoViewIfNeeded();
     await page.waitForTimeout(2000);
     
-    // Wait for bookings table to be visible
-    await page.waitForSelector('tr', { timeout: 10000 });
-    await page.waitForTimeout(2000);
+    // Find the bookings table: #contactBookingGrid_page → table.jqx_quickGridTable
+    console.log('🔍 [LOCATE_BOOKING] Finding bookings table...');
+    const bookingsTable = clientDetailsIframe.locator('#contactBookingGrid_page table.jqx_quickGridTable');
+    await bookingsTable.waitFor({ state: 'visible', timeout: 10000 });
+    await page.waitForTimeout(1000);
     
-    // Find booking row matching courseDate
-    // The course date should be in a table row (tr)
-    // Format: Look for rows containing the date
-    const bookingRows = page.locator('tr');
+    // Find all booking rows (excluding cancelled ones)
+    // Filter: tr.jqx_quickGridRow:not(.jqx_cancelled_booking)
+    // Also filter by data-isinfuture="Y" and empty data-jcd_cancellation_date
+    const bookingRows = bookingsTable.locator('tr.jqx_quickGridRow:not(.jqx_cancelled_booking)');
     const rowCount = await bookingRows.count();
+    
+    console.log(`📊 [LOCATE_BOOKING] Found ${rowCount} active booking rows`);
+    
+    // Parse courseDate to match different date formats
+    const targetDate = new Date(courseDate);
+    const targetDateOnly = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    
+    // Helper function to parse Course Date button text (format: "Mon 30 Mar 2026 09:00")
+    const parseCourseDateButton = (buttonText) => {
+      if (!buttonText) return null;
+      // Format: "Mon 30 Mar 2026 09:00"
+      // Extract date part: "30 Mar 2026"
+      const dateMatch = buttonText.match(/(\d{1,2})\s+(\w{3})\s+(\d{4})/);
+      if (dateMatch) {
+        const day = parseInt(dateMatch[1]);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = monthNames.indexOf(dateMatch[2]);
+        const year = parseInt(dateMatch[3]);
+        if (month !== -1) {
+          return new Date(year, month, day);
+        }
+      }
+      return null;
+    };
     
     let bookingFound = false;
     let bookingDetails = null;
     let bookingRow = null;
+    let extractedPrice = null;
     
-    // Parse courseDate to match different date formats
-    const dateObj = new Date(courseDate);
-    const dateStr = dateObj.toLocaleDateString('en-GB'); // DD/MM/YYYY format
-    const dateStrUS = dateObj.toLocaleDateString('en-US'); // MM/DD/YYYY format
-    const dateStrISO = dateObj.toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    console.log(`🔍 [LOCATE_BOOKING] Searching for dates: ${dateStr}, ${dateStrUS}, ${dateStrISO}`);
-    
+    // Iterate through booking rows to find matching date
     for (let i = 0; i < rowCount; i++) {
       const row = bookingRows.nth(i);
-      const rowText = await row.textContent();
       
-      // Check if row contains the date in any format
-      if (rowText && (
-        rowText.includes(dateStr) || 
-        rowText.includes(dateStrUS) || 
-        rowText.includes(dateStrISO) ||
-        rowText.includes(courseDate)
-      )) {
-        // Found a row with the date - extract booking details
-        bookingRow = row;
-        bookingFound = true;
+      // Check data attributes first
+      const isInFuture = await row.getAttribute('data-isinfuture');
+      const cancellationDate = await row.getAttribute('data-jcd_cancellation_date');
+      
+      // Skip if already cancelled or not in future
+      if (isInFuture !== 'Y' || (cancellationDate && cancellationDate.trim() !== '')) {
+        continue;
+      }
+      
+      // Get Course Date column (4th column, index 3)
+      const cells = row.locator('td');
+      const courseDateCell = cells.nth(3); // 4th column (0-indexed)
+      
+      // Check if Course Date cell has a button (id starts with "ChangeDate_")
+      const courseDateButton = courseDateCell.locator('button[id^="ChangeDate_"]');
+      const buttonCount = await courseDateButton.count();
+      
+      if (buttonCount > 0) {
+        // Extract date from button text
+        const buttonText = await courseDateButton.first().textContent();
+        const parsedDate = parseCourseDateButton(buttonText);
         
-        // Extract booking details from row
-        const cells = row.locator('td');
-        const cellCount = await cells.count();
-        
-        bookingDetails = {
-          courseDate: courseDate,
-          courseType: courseType,
-          rowIndex: i
-        };
-        
-        // Try to extract additional details from cells
-        if (cellCount > 0) {
-          // Course date column (usually first or second column)
-          const dateCell = cells.nth(0);
-          const dateText = await dateCell.textContent();
-          if (dateText) {
-            bookingDetails.displayDate = dateText.trim();
+        if (parsedDate) {
+          // Compare dates (ignoring time)
+          const parsedDateOnly = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
+          
+          if (parsedDateOnly.getTime() === targetDateOnly.getTime()) {
+            // Found matching booking!
+            bookingRow = row;
+            bookingFound = true;
+            
+            // Extract booking details from data attributes
+            const bookingId = await row.getAttribute('data-jcd_booking_id');
+            const courseName = await row.getAttribute('data-etp_name');
+            
+            // Extract price from Price column (5th column, index 4)
+            const priceCell = cells.nth(4); // 5th column
+            const priceText = await priceCell.textContent();
+            // Price format: "£125.00" - extract number
+            const priceMatch = priceText?.match(/£?([\d,]+\.?\d*)/);
+            if (priceMatch) {
+              extractedPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+            }
+            
+            bookingDetails = {
+              courseDate: courseDate,
+              courseType: courseType,
+              rowIndex: i,
+              bookingId: bookingId,
+              courseName: courseName,
+              displayDate: buttonText,
+              extractedPrice: extractedPrice
+            };
+            
+            console.log(`✅ [LOCATE_BOOKING] Found booking row at index ${i}`);
+            console.log(`   Booking ID: ${bookingId}`);
+            console.log(`   Course Name: ${courseName}`);
+            console.log(`   Course Date: ${buttonText}`);
+            console.log(`   Price: £${extractedPrice || 'N/A'}`);
+            break;
           }
         }
-        
-        console.log(`✅ [LOCATE_BOOKING] Found booking row at index ${i}`);
-        break;
+      } else {
+        // Fallback: Course Date might be plain text (for cancelled bookings that slipped through)
+        const courseDateText = await courseDateCell.textContent();
+        if (courseDateText) {
+          // Try to parse plain text date
+          const parsedDate = parseCourseDateButton(courseDateText);
+          if (parsedDate) {
+            const parsedDateOnly = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
+            if (parsedDateOnly.getTime() === targetDateOnly.getTime()) {
+              // Found matching booking
+              bookingRow = row;
+              bookingFound = true;
+              
+              const bookingId = await row.getAttribute('data-jcd_booking_id');
+              const courseName = await row.getAttribute('data-etp_name');
+              
+              const priceCell = cells.nth(4);
+              const priceText = await priceCell.textContent();
+              const priceMatch = priceText?.match(/£?([\d,]+\.?\d*)/);
+              if (priceMatch) {
+                extractedPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+              }
+              
+              bookingDetails = {
+                courseDate: courseDate,
+                courseType: courseType,
+                rowIndex: i,
+                bookingId: bookingId,
+                courseName: courseName,
+                displayDate: courseDateText,
+                extractedPrice: extractedPrice
+              };
+              
+              console.log(`✅ [LOCATE_BOOKING] Found booking row at index ${i} (plain text date)`);
+              break;
+            }
+          }
+        }
       }
     }
     
@@ -112,7 +205,7 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
       };
     }
     
-    // Validate date is in future
+    // Validate date is in future (already checked via data-isinfuture="Y", but double-check)
     const bookingDate = new Date(courseDate);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -132,21 +225,25 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
     // Check if meets 3-day notice requirement
     const meetsNoticeRequirement = workingDays > 3;
     
-    // Calculate cancellation fee
-    // Default booking price - will need to extract from booking if available
-    // For now, use course-specific defaults
-    let bookingPrice = 125; // Default
-    if (courseType === 'CBT' || courseType === 'Compulsory Basic Training') {
-      bookingPrice = 195; // CBT price
-    } else if (courseType === 'CBT Executive' || courseType === 'CBT Executive 1-2-1') {
-      bookingPrice = 550; // Executive CBT price
-    } else if (courseType === 'ITM' || courseType === 'Introduction to Motorcycling') {
-      bookingPrice = 125; // ITM price
+    // Calculate cancellation fee using extracted price or fallback to course-specific defaults
+    let bookingPrice = extractedPrice;
+    if (!bookingPrice || bookingPrice === 0) {
+      // Fallback to course-specific defaults if price extraction failed
+      bookingPrice = 125; // Default
+      if (courseType === 'CBT' || courseType === 'Compulsory Basic Training') {
+        bookingPrice = 195; // CBT price
+      } else if (courseType === 'CBT Executive' || courseType === 'CBT Executive 1-2-1') {
+        bookingPrice = 550; // Executive CBT price
+      } else if (courseType === 'ITM' || courseType === 'Introduction to Motorcycling') {
+        bookingPrice = 125; // ITM price
+      }
+      console.log(`⚠️ [LOCATE_BOOKING] Could not extract price, using default: £${bookingPrice}`);
     }
     
     const feeResult = feeCalculationService.calculateCancellationFee(courseDate, bookingPrice);
     
     console.log(`💰 [LOCATE_BOOKING] Cancellation fee calculation:`);
+    console.log(`   Booking Price: £${bookingPrice.toFixed(2)}`);
     console.log(`   Working days until booking: ${workingDays}`);
     console.log(`   Meets 3-day requirement: ${meetsNoticeRequirement}`);
     console.log(`   Cancellation fee: £${feeResult.fee.toFixed(2)}`);
@@ -161,13 +258,15 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
         ...bookingDetails,
         bookingDate: courseDate,
         courseType: courseType,
+        bookingPrice: bookingPrice,
         workingDaysUntilBooking: workingDays,
         meetsNoticeRequirement: meetsNoticeRequirement
       },
       cancellationFee: feeResult.fee,
       refundAmount: feeResult.refundAmount,
       feePolicy: feeResult.policy,
-      meetsNoticeRequirement: meetsNoticeRequirement
+      meetsNoticeRequirement: meetsNoticeRequirement,
+      bookingRow: bookingRow ? { rowIndex: bookingDetails.rowIndex } : null // Store row reference for next step
     };
     
   } catch (error) {

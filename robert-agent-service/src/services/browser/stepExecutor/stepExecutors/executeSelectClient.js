@@ -39,37 +39,49 @@ export async function executeSelectClient(page, args, sessionState, screenshotsD
     await clientLink.waitFor({ state: 'visible', timeout: 10000 });
     await clientLink.click();
     
-    // Wait for page to navigate to client profile
-    await page.waitForTimeout(5000);
-    await page.waitForLoadState('networkidle');
+    // Wait for contactEdit_iframe to appear after clicking client name
+    // The client profile page loads in contactEdit_iframe
+    console.log('🔄 [SELECT_CLIENT] Waiting for contactEdit_iframe to appear...');
+    await page.waitForTimeout(3000); // Give time for iframe to load
     
-    // Verify we're on the client profile page
-    // Look for "Bookings, credits, and debits" section or profile indicators
-    const profileIndicators = [
-      page.getByText('Bookings, credits, and debits'),
-      page.locator('text=/Contact details/i'),
-      page.locator('text=/Profile/i')
-    ];
+    // Check if contactEdit_iframe exists
+    const contactEditIframeExists = await page.locator('#contactEdit_iframe').count();
+    if (contactEditIframeExists === 0) {
+      console.log('⚠️ [SELECT_CLIENT] contactEdit_iframe not found, waiting longer...');
+      await page.waitForTimeout(2000);
+    }
     
-    let profileOpened = false;
-    for (const indicator of profileIndicators) {
-      const count = await indicator.count();
-      if (count > 0) {
-        profileOpened = true;
-        break;
+    // Switch to contactEdit_iframe for client profile
+    const clientDetailsIframe = page.frameLocator('#contactEdit_iframe');
+    
+    // Wait for the client profile page to load in the iframe
+    console.log('⏳ [SELECT_CLIENT] Waiting for client profile page to load in iframe...');
+    await page.waitForTimeout(2000);
+    
+    // Verify we're on the client profile page by checking for the heading
+    // Heading selector: <h1 class="jqx_formBoilerPlateText jqx_formHeading jqx_underline"><span>Bookings, credits and debits</span></h1>
+    console.log('🔍 [SELECT_CLIENT] Verifying profile opened using heading selector...');
+    try {
+      await clientDetailsIframe.locator('h1.jqx_formBoilerPlateText.jqx_formHeading.jqx_underline:has-text("Bookings, credits and debits")').waitFor({ 
+        state: 'visible', 
+        timeout: 15000 
+      });
+      console.log('✅ [SELECT_CLIENT] Profile heading found in contactEdit_iframe');
+    } catch (e) {
+      // Fallback: try with different text matching
+      console.log('⚠️ [SELECT_CLIENT] Heading not found with exact selector, trying alternative...');
+      try {
+        await clientDetailsIframe.locator('h1:has-text("Bookings, credits and debits")').waitFor({ 
+          state: 'visible', 
+          timeout: 10000 
+        });
+        console.log('✅ [SELECT_CLIENT] Profile heading found with alternative selector');
+      } catch (e2) {
+        throw new Error('Client profile page did not load. Could not find "Bookings, credits and debits" heading in contactEdit_iframe.');
       }
     }
     
-    if (!profileOpened) {
-      // Try waiting a bit more
-      await page.waitForTimeout(3000);
-      const retryIndicator = page.getByText('Bookings, credits, and debits');
-      profileOpened = await retryIndicator.count() > 0;
-    }
-    
-    if (!profileOpened) {
-      throw new Error('Client profile page did not load. Could not find profile indicators.');
-    }
+    const profileOpened = true;
     
     console.log(`✅ [SELECT_CLIENT] Client profile opened successfully`);
     

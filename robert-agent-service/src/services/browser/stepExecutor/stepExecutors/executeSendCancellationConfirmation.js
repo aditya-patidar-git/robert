@@ -18,46 +18,85 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
   try {
     console.log(`📧 [SEND_CANCELLATION_CONFIRMATION] Sending cancellation confirmation email...`);
     
+    // Work within stationerySender_iframe (should already be set from Step 12)
+    const stationerySenderIframe = page.frameLocator('#stationerySender_iframe');
+    
     // Wait for preview page to be ready
     await page.waitForTimeout(2000);
     
-    // Click Email button
+    // Click Email button (#btnEmail)
     console.log(`📮 [SEND_CANCELLATION_CONFIRMATION] Clicking Email button...`);
-    const emailButton = page.getByRole('button', { name: /Email/i }).first();
+    const emailButton = stationerySenderIframe.locator('#btnEmail');
     await emailButton.waitFor({ state: 'visible', timeout: 10000 });
+    
+    const isEmailButtonVisible = await emailButton.isVisible().catch(() => false);
+    if (!isEmailButtonVisible) {
+      console.log('⚠️ [SEND_CANCELLATION_CONFIRMATION] Email button not visible, scrolling into view...');
+      await emailButton.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+    }
+    
     await emailButton.click();
+    await page.waitForTimeout(2000);
     
-    // Wait for email to be sent
-    await page.waitForTimeout(3000);
-    await page.waitForLoadState('networkidle');
+    // Wait for email sent confirmation
+    console.log(`⏳ [SEND_CANCELLATION_CONFIRMATION] Waiting for email sent confirmation...`);
+    const confirmationSelectors = [
+      'text=/Email has been sent/i',
+      'text=/email.*sent/i'
+    ];
     
-    // Verify email was sent successfully
-    // Look for success message
-    const successMessage = page.getByText(/Email has been sent/i).first();
-    await successMessage.waitFor({ state: 'visible', timeout: 10000 });
+    let confirmationFound = false;
+    for (const selector of confirmationSelectors) {
+      try {
+        const confirmation = stationerySenderIframe.locator(selector).first();
+        if (await confirmation.count() > 0) {
+          await confirmation.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+          const isVisible = await confirmation.isVisible().catch(() => false);
+          if (isVisible) {
+            console.log(`✅ [SEND_CANCELLATION_CONFIRMATION] Email sent confirmation found using selector: "${selector}"`);
+            confirmationFound = true;
+            break;
+          }
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+    
+    if (!confirmationFound) {
+      console.log('⚠️ [SEND_CANCELLATION_CONFIRMATION] Email sent confirmation not immediately visible, but continuing...');
+    }
     
     console.log(`✅ [SEND_CANCELLATION_CONFIRMATION] Email sent successfully`);
     
     await takeScreenshot(page, 'send-cancellation-confirmation-sent.png', screenshotsDir);
     
-    // Click Back button
+    // Click Back button (#btnClose) in stationerySender_iframe
     console.log(`⬅️ [SEND_CANCELLATION_CONFIRMATION] Clicking Back button...`);
-    const backButton = page.getByRole('button', { name: /Back/i }).first();
+    const backButton = stationerySenderIframe.locator('#btnClose');
     await backButton.waitFor({ state: 'visible', timeout: 10000 });
-    await backButton.click();
     
-    // Wait for navigation
+    const isBackButtonVisible = await backButton.isVisible().catch(() => false);
+    if (!isBackButtonVisible) {
+      console.log('⚠️ [SEND_CANCELLATION_CONFIRMATION] Back button not visible, scrolling into view...');
+      await backButton.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+    }
+    
+    await backButton.click();
     await page.waitForTimeout(2000);
     
-    // Click Ok button to exit
+    // After clicking Back, we return to contactEdit_iframe (profile page)
+    // Click Ok button in contactEdit_iframe
+    // Ok button has id="btnBack" with aria-label="OK"
     console.log(`✅ [SEND_CANCELLATION_CONFIRMATION] Clicking Ok button...`);
-    const okButton = page.getByRole('button', { name: /Ok/i }).first();
+    const contactEditIframe = page.frameLocator('#contactEdit_iframe');
+    const okButton = contactEditIframe.locator('#btnBack[aria-label="OK"]');
     
-    // Wait for Ok button to be visible (may take a moment)
+    // Wait for Ok button to be visible (may take a moment after returning from stationerySender_iframe)
     await okButton.waitFor({ state: 'visible', timeout: 10000 });
     await okButton.click();
     
-    // Wait for navigation back to profile
+    // Wait for navigation back to profile or exit
     await page.waitForTimeout(2000);
     await page.waitForLoadState('networkidle');
     

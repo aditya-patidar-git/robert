@@ -18,72 +18,104 @@ export async function executeSelectTemplate(page, args, sessionState, screenshot
   try {
     console.log(`📄 [SELECT_TEMPLATE] Selecting cancellation confirmation template...`);
     
-    // Wait for page to be ready
-    await page.waitForTimeout(2000);
+    // Wait for stationerySender_iframe to appear (after Step 11)
+    console.log('⏳ [SELECT_TEMPLATE] Waiting for stationerySender_iframe...');
+    let stationerySenderIframeExists = false;
+    for (let i = 0; i < 10; i++) {
+      stationerySenderIframeExists = await page.locator('#stationerySender_iframe').count() > 0;
+      if (stationerySenderIframeExists) {
+        try {
+          const stationerySenderIframe = page.frameLocator('#stationerySender_iframe');
+          const testLocator = stationerySenderIframe.locator('body').first();
+          await testLocator.waitFor({ state: 'attached', timeout: 3000 });
+          console.log('✅ [SELECT_TEMPLATE] Found stationerySender_iframe');
+          break;
+        } catch (iframeError) {
+          console.log(`⚠️ [SELECT_TEMPLATE] Iframe detected but not loaded yet, retrying (${i + 1}/10)...`);
+          if (i < 9) await page.waitForTimeout(2000);
+        }
+      } else {
+        if (i < 9) {
+          console.log(`⏳ [SELECT_TEMPLATE] StationerySender iframe not found, retrying (${i + 1}/10)...`);
+          await page.waitForTimeout(2000);
+        }
+      }
+    }
     
-    // Click on "Send one of the standard letters to the contact" button
-    console.log(`📧 [SELECT_TEMPLATE] Clicking "Send one of the standard letters" button...`);
-    const sendLetterButton = page.getByRole('button', { name: /Send one of the standard letters/i }).first();
-    await sendLetterButton.waitFor({ state: 'visible', timeout: 10000 });
-    await sendLetterButton.click();
+    if (!stationerySenderIframeExists) {
+      throw new Error('Could not find stationerySender_iframe after Step 11');
+    }
+    
+    const stationerySenderIframe = page.frameLocator('#stationerySender_iframe');
     
     // Wait for template list to load
-    await page.waitForTimeout(3000);
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
     
-    // Scroll to find "Correspondence letter" section
+    // Scroll to "Correspondence letter" section (if needed)
     console.log(`📜 [SELECT_TEMPLATE] Looking for "Correspondence letter" section...`);
-    const correspondenceSection = page.getByText(/Correspondence letter/i).first();
+    const correspondenceSection = stationerySenderIframe.locator('text=/Correspondence letter/i');
     await correspondenceSection.scrollIntoViewIfNeeded();
     await page.waitForTimeout(2000);
     
-    // Find and click "Cancellation confirmation of course/session" link
-    console.log(`🔗 [SELECT_TEMPLATE] Clicking "Cancellation confirmation" link...`);
-    const cancellationLink = page.getByRole('link', { name: /Cancellation confirmation of course\/session/i }).first();
+    // Find template grid
+    console.log(`🔍 [SELECT_TEMPLATE] Finding template grid...`);
+    const gridContainer = stationerySenderIframe.locator('#stationeryGrid_page');
+    await gridContainer.waitFor({ state: 'visible', timeout: 10000 });
     
-    await cancellationLink.waitFor({ state: 'visible', timeout: 10000 });
-    await cancellationLink.click();
+    // Find all template rows
+    const templateRows = gridContainer.locator('tr.jqx_quickGridRow');
+    const rowCount = await templateRows.count();
     
-    // Wait for template to load
-    await page.waitForTimeout(2000);
+    if (rowCount === 0) {
+      throw new Error('No template rows found in #stationeryGrid_page');
+    }
     
-    // Click Preview button
-    console.log(`👁️ [SELECT_TEMPLATE] Clicking Preview button...`);
-    const previewButton = page.getByRole('button', { name: /Preview/i }).first();
-    await previewButton.waitFor({ state: 'visible', timeout: 10000 });
-    await previewButton.click();
+    console.log(`📊 [SELECT_TEMPLATE] Found ${rowCount} template rows, searching for "Cancellation confirmation of course/session"...`);
     
-    // Wait for preview to load
-    await page.waitForTimeout(3000);
-    await page.waitForLoadState('networkidle');
+    // Search for "Cancellation confirmation of course/session" template
+    const templateName = 'Cancellation confirmation of course/session';
+    let matchingRow = null;
     
-    // Verify template is selected and preview is shown
-    // Look for preview indicators (client name, email button, etc.)
-    const previewIndicators = [
-      page.getByRole('button', { name: /Email/i }),
-      page.getByText(/Preview/i),
-      page.locator('text=/client/i')
-    ];
-    
-    let templateSelected = false;
-    for (const indicator of previewIndicators) {
-      const count = await indicator.count();
-      if (count > 0) {
-        templateSelected = true;
+    for (let i = 0; i < rowCount; i++) {
+      const row = templateRows.nth(i);
+      const rowText = await row.textContent();
+      const normalizedRowText = rowText ? rowText.trim() : '';
+      
+      // Check for exact match or partial match
+      if (normalizedRowText.includes(templateName) || templateName.includes(normalizedRowText)) {
+        console.log(`✅ [SELECT_TEMPLATE] Found matching template at row ${i + 1}: "${normalizedRowText.substring(0, 100)}..."`);
+        matchingRow = row;
         break;
       }
     }
     
-    if (!templateSelected) {
-      // Try waiting a bit more
-      await page.waitForTimeout(2000);
-      const retryIndicator = page.getByRole('button', { name: /Email/i });
-      templateSelected = await retryIndicator.count() > 0;
+    if (!matchingRow) {
+      throw new Error(`Could not find template: "${templateName}" in stationery grid`);
     }
     
-    if (!templateSelected) {
-      throw new Error('Template preview did not load. Could not find preview indicators.');
+    // Click on the matching template row
+    console.log(`🖱️ [SELECT_TEMPLATE] Clicking template row...`);
+    await matchingRow.click();
+    await page.waitForTimeout(2000);
+    
+    // Click Preview button (#btnPreview)
+    console.log(`👁️ [SELECT_TEMPLATE] Clicking Preview button...`);
+    const previewButton = stationerySenderIframe.locator('#btnPreview');
+    await previewButton.waitFor({ state: 'visible', timeout: 10000 });
+    
+    const isVisible = await previewButton.isVisible().catch(() => false);
+    if (!isVisible) {
+      console.log('⚠️ [SELECT_TEMPLATE] Preview button not visible, scrolling into view...');
+      await previewButton.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
     }
+    
+    await previewButton.click();
+    await page.waitForTimeout(3000);
+    
+    // Verify preview is shown (check for Email button #btnEmail)
+    console.log(`🔍 [SELECT_TEMPLATE] Verifying preview is shown...`);
+    const emailButton = stationerySenderIframe.locator('#btnEmail');
+    await emailButton.waitFor({ state: 'visible', timeout: 10000 });
     
     console.log(`✅ [SELECT_TEMPLATE] Template selected and preview shown successfully`);
     
