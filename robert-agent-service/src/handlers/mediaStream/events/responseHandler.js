@@ -4,6 +4,7 @@ import conversationQualityService from '../../../services/conversationQualitySer
 import audioDiagnosticService from '../../../services/audioDiagnosticService.js';
 import { MemoryManager } from '../utils/index.js';
 import { conversations } from '../../../shared/state.js';
+import testClientRegistry from '../../../services/testClientRegistry.js';
 // Audio conversion removed - OpenAI is configured for g711_ulaw, we trust the configuration
 
 /**
@@ -34,21 +35,15 @@ export class ResponseHandler {
     
     console.log(`📝 [${this.state.callSid}] Response created - ID: ${this.state.activeResponseId}, modalities: ${JSON.stringify(event.response?.modalities || [])}, isResponding: ${this.state.isResponding}`);
     
-    // CRITICAL DEBUG: Log detailed response information to diagnose audio issues
     const responseModalities = event.response?.modalities || [];
     const hasAudioModality = responseModalities.includes('audio');
-    console.log(`🔍 [${this.state.callSid}] Response creation details:`);
-    console.log(`   - Response ID: ${this.state.activeResponseId}`);
-    console.log(`   - Modalities: ${JSON.stringify(responseModalities)}`);
-    console.log(`   - Has audio modality: ${hasAudioModality}`);
-    console.log(`   - Explicit response requested: ${this.state.explicitResponseRequested}`);
     if (!hasAudioModality) {
-      console.warn(`⚠️ [${this.state.callSid}] WARNING: Response created WITHOUT audio modality! This will prevent audio generation.`);
+      console.warn(`⚠️ [${this.state.callSid}] Response created WITHOUT audio modality!`);
     }
     
     // Check if response has errors
     if (event.response?.error) {
-      console.error(`❌ [${this.state.callSid}] Response created with error:`, JSON.stringify(event.response.error, null, 2));
+      console.error(`❌ [${this.state.callSid}] Response created with error:`, event.response.error);
     }
     
     // Track in diagnostic service (non-intrusive, optional)
@@ -157,6 +152,11 @@ export class ResponseHandler {
     // Track outbound audio separately
     this.state.outboundAudioChunkCount++;
     
+    // DIAGNOSTIC: Log first audio chunk from OpenAI
+    if (this.state.outboundAudioChunkCount === 1) {
+      console.log(`🎵 [${this.state.callSid}] FIRST audio chunk received from OpenAI (response: ${currentResponseId || 'unknown'})`);
+    }
+    
     // Track in diagnostic service (non-intrusive, optional)
     audioDiagnosticService.trackAudioDelta(this.state.callSid, event);
     
@@ -250,6 +250,24 @@ export class ResponseHandler {
       this.state.outboundAudioBuffer = this.state.outboundAudioBuffer.slice(frameSize);
       this.state.lastOutboundSendTime = Date.now();
       
+      // Track frames sent for diagnostic summary
+      if (!this.state.audioFramesSentCount) {
+        this.state.audioFramesSentCount = 0;
+        this.state.firstAudioFrameTime = Date.now();
+      }
+      this.state.audioFramesSentCount++;
+      
+      // DIAGNOSTIC: Log first audio frame sent to Twilio
+      if (this.state.audioFramesSentCount === 1) {
+        console.log(`📤 [${this.state.callSid}] FIRST audio frame sent to Twilio (${frameSize} bytes, streamSid: ${this.state.streamSid})`);
+      }
+      
+      // DIAGNOSTIC: Log summary every 50 frames (~1 second of audio)
+      if (this.state.audioFramesSentCount % 50 === 0) {
+        const elapsed = Date.now() - this.state.firstAudioFrameTime;
+        console.log(`📊 [${this.state.callSid}] Audio pipeline: ${this.state.audioFramesSentCount} frames sent to Twilio (~${Math.round(elapsed/1000)}s)`);
+      }
+      
       const mediaMessage = {
         event: 'media',
         streamSid: this.state.streamSid,
@@ -262,6 +280,12 @@ export class ResponseHandler {
       const messageJson = JSON.stringify(mediaMessage);
       
       this.ws.send(messageJson);
+      
+      // CRITICAL: Forward outbound audio to test clients for acceptance testing
+      const callSidForForward = this.state.callSidForForwarding || this.state.callSid;
+      if (callSidForForward) {
+        testClientRegistry.forwardEvent(callSidForForward, mediaMessage);
+      }
       
       return true;
     } catch (err) {

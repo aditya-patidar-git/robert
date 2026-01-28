@@ -20,21 +20,15 @@ export class ConnectionManager {
    * Validate WebSocket connection
    */
   validateConnection() {
-    console.log('🔌 [DEBUG] Media Stream WebSocket connection received');
-    console.log('🔌 [DEBUG] WebSocket type:', typeof this.ws);
-    console.log('🔌 [DEBUG] WebSocket readyState:', this.ws?.readyState, '(OPEN=1, CLOSING=2, CLOSED=3)');
-    console.log('🔌 [DEBUG] Request object:', this.req ? 'present' : 'missing');
-    
     if (!this.ws) {
-      console.error('❌ [DEBUG] WebSocket is null or undefined');
+      console.error('❌ WebSocket is null or undefined');
       return false;
     }
     
     if (this.ws.readyState !== WebSocket.OPEN && this.ws.readyState !== 0) {
-      console.warn(`⚠️ [DEBUG] WebSocket not in OPEN state: ${this.ws.readyState}`);
+      console.warn(`⚠️ WebSocket not in OPEN state: ${this.ws.readyState}`);
     }
     
-    console.log('🔌 Media Stream WebSocket connection received');
     return true;
   }
 
@@ -118,9 +112,8 @@ export class ConnectionManager {
    * Setup error and close handlers
    */
   setupErrorHandlers(onError, onClose) {
-    // Add error handler early
     this.ws.on('error', (err) => {
-      console.error('❌ [DEBUG] Twilio WebSocket error (early):', err);
+      console.error('❌ Twilio WebSocket error:', err.message);
       this.errorCount++;
       if (this.errorCount >= this.MAX_ERROR_COUNT) {
         onError('twilio_error_early');
@@ -128,7 +121,6 @@ export class ConnectionManager {
     });
     
     this.ws.on('close', (code, reason) => {
-      console.log(`🔌 [DEBUG] Twilio WebSocket closed - code: ${code}, reason: ${reason}`);
       if (!this.isClosed) {
         onClose('twilio_close_early', code, reason);
       }
@@ -142,8 +134,6 @@ export class ConnectionManager {
     this.startTimeout = setTimeout(() => {
       if (!this.setupComplete) {
         console.error('❌ Timeout waiting for start event');
-        console.error('❌ [DEBUG] WebSocket state at timeout:', this.ws.readyState);
-        console.error('❌ [DEBUG] isClosed:', this.isClosed);
         onTimeout();
       }
     }, 10000);

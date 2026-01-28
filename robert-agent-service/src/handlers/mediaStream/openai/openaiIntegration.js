@@ -504,7 +504,7 @@ export class OpenAIIntegration {
       
       // Set OpenAI ready with connection manager reference
       this.state.setOpenAIReady(openaiWs, this.connectionManager);
-      realtimeClients[this.state.callSid] = { twilioWs: this.ws, openaiWs, streamSid: this.state.streamSid };
+      realtimeClients[this.state.callSid] = { twilioWs: this.ws, openaiWs, streamSid: this.state.streamSid, connectionManager: this.connectionManager };
       
       // Ensure transcript and language are set
       if (!conversations[this.state.callSid].transcript) {

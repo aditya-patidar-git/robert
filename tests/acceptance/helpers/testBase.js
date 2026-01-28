@@ -58,6 +58,12 @@ export class TestBase {
     if (testConfig.database.cleanupAfterTest) {
       await dbCleaner.cleanup();
     }
+    
+    // Wait for final cleanup to complete (allows WebSocket close, Twilio termination, etc.)
+    console.log(`[TEARDOWN] Waiting for final cleanup to complete...`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    console.log(`[TEARDOWN] Test ${this.testName} cleanup complete`);
   }
 
   /**

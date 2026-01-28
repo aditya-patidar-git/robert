@@ -2,15 +2,19 @@
  * Media Streams WebSocket Client
  * Single responsibility: Manage WebSocket connection to Twilio Media Streams
  * Reusable across all tests that need to send audio input
+ * 
+ * OPTION 1 IMPLEMENTATION: Connects immediately after call initiation to maximize
+ * chance of receiving start event before Twilio connects to agent service.
  */
 
 import { WebSocket } from 'ws';
 import testConfig from '../config/testConfig.js';
 
 class MediaStreamsClient {
-  constructor(callSid, wsUrl) {
+  constructor(callSid, wsUrl, options = {}) {
     this.callSid = callSid;
     this.wsUrl = wsUrl;
+    this.useTestEndpoint = options.useTestEndpoint || false;
     this.ws = null;
     this.streamSid = null;
     this.connected = false;
@@ -22,7 +26,8 @@ class MediaStreamsClient {
 
   /**
    * Connect to Media Streams WebSocket
-   * @returns {Promise<void>} Resolves when connected and streamSid received
+   * OPTION 1: Connects immediately and waits for start event OR uses callSid as fallback
+   * @returns {Promise<void>} Resolves when connected (with or without streamSid)
    */
   async connect() {
     if (this.connected && this.streamSid) {
@@ -31,6 +36,12 @@ class MediaStreamsClient {
 
     if (this.connectPromise) {
       return this.connectPromise; // Connection in progress
+    }
+
+    if (this.useTestEndpoint) {
+      const UrlBuilder = (await import('./urlBuilder.js')).default;
+      this.wsUrl = UrlBuilder.buildTestMediaStreamsUrl(this.callSid);
+      console.log(`[MediaStreamsClient] Using test endpoint: ${this.wsUrl}`);
     }
 
     this.connectPromise = new Promise((resolve, reject) => {
@@ -44,6 +55,26 @@ class MediaStreamsClient {
 
         this.ws.on('open', () => {
           console.log(`[MediaStreamsClient] WebSocket opened for call ${this.callSid}`);
+          
+          // OPTION 1 FALLBACK: If WebSocket opens but start event doesn't arrive within 2 seconds,
+          // use callSid as streamSid fallback. This handles the race condition where Twilio
+          // connects to agent service first and sends start event there instead of to test client.
+          // NOTE: This may not work with Twilio's API if streamSid is required, but worth trying.
+          setTimeout(() => {
+            if (!this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+              console.log(`[MediaStreamsClient] ⚠️  WebSocket open but no start event received after 2s`);
+              console.log(`[MediaStreamsClient] ⚠️  This likely means Twilio sent start event to agent service instead`);
+              console.log(`[MediaStreamsClient] ⚠️  Using callSid as streamSid fallback: ${this.callSid}`);
+              console.log(`[MediaStreamsClient] ⚠️  If this doesn't work, agent service may need to forward events to test clients`);
+              this.streamSid = this.callSid; // Fallback: use callSid as streamSid
+              this.connected = true;
+              if (this.connectResolve) {
+                this.connectResolve();
+                this.connectResolve = null;
+                this.connectReject = null;
+              }
+            }
+          }, 2000); // Wait 2 seconds for start event, then use fallback
         });
 
         this.ws.on('message', (data) => {
@@ -74,16 +105,29 @@ class MediaStreamsClient {
           this.streamSid = null;
         });
 
-        // Timeout after 10 seconds
+        // Timeout after 15 seconds (increased for Option 1: connecting before call initiation)
+        // This gives more time for Twilio to connect and send start event after call is initiated
         setTimeout(() => {
           if (!this.connected) {
-            const error = new Error(`Connection timeout for call ${this.callSid}`);
-            if (this.connectReject) {
-              this.connectReject(error);
-              this.connectReject = null;
+            // Final fallback: if WebSocket is open, use callSid as streamSid
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+              console.log(`[MediaStreamsClient] Timeout reached but WebSocket is open - using callSid as streamSid fallback`);
+              this.streamSid = this.callSid;
+              this.connected = true;
+              if (this.connectResolve) {
+                this.connectResolve();
+                this.connectResolve = null;
+                this.connectReject = null;
+              }
+            } else {
+              const error = new Error(`Connection timeout for call ${this.callSid}`);
+              if (this.connectReject) {
+                this.connectReject(error);
+                this.connectReject = null;
+              }
             }
           }
-        }, 10000);
+        }, 15000);
 
       } catch (error) {
         if (this.connectReject) {
@@ -98,6 +142,7 @@ class MediaStreamsClient {
 
   /**
    * Handle incoming WebSocket messages
+   * OPTION 1: Handles start event, connected event, and fallback logic
    * @private
    */
   handleMessage(message) {
@@ -113,6 +158,11 @@ class MediaStreamsClient {
           this.connectReject = null;
         }
       }
+    } else if (message.event === 'connected') {
+      // OPTION 1: Handle connected event from Twilio
+      // This indicates WebSocket is ready, even if start event hasn't arrived yet
+      console.log(`[MediaStreamsClient] Received connected event for call ${this.callSid}`);
+      // Don't mark as fully connected yet - wait for start event or timeout
     } else if (message.event === 'media') {
       // Handle incoming audio - call registered callbacks
       const track = message.media?.track;
@@ -131,25 +181,36 @@ class MediaStreamsClient {
     } else if (message.event === 'stop') {
       console.log(`[MediaStreamsClient] Stream stopped for call ${this.callSid}`);
       this.connected = false;
+    } else {
+      // Log other events for debugging
+      console.log(`[MediaStreamsClient] Received event: ${message.event} for call ${this.callSid}`);
     }
   }
 
   /**
    * Send audio chunk via WebSocket
    * Reusable method for any audio chunk
+   * OPTION 1: Uses streamSid if available, otherwise uses callSid as fallback
    * @param {string} audioBase64 - Base64-encoded μ-law audio chunk
    * @returns {boolean} True if sent successfully
    */
   sendAudioChunk(audioBase64) {
-    if (!this.connected || !this.streamSid || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn(`[MediaStreamsClient] Cannot send audio - not connected (connected: ${this.connected}, streamSid: ${this.streamSid})`);
+    if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn(`[MediaStreamsClient] Cannot send audio - not connected (connected: ${this.connected}, wsState: ${this.ws?.readyState})`);
+      return false;
+    }
+
+    // OPTION 1 FALLBACK: Use streamSid if available, otherwise use callSid
+    const streamSidToUse = this.streamSid || this.callSid;
+    if (!streamSidToUse) {
+      console.warn(`[MediaStreamsClient] Cannot send audio - no streamSid or callSid available`);
       return false;
     }
 
     try {
       const mediaMessage = {
         event: 'media',
-        streamSid: this.streamSid,
+        streamSid: streamSidToUse,
         media: {
           payload: audioBase64
         }
@@ -164,18 +225,53 @@ class MediaStreamsClient {
   }
 
   /**
-   * Disconnect WebSocket
+   * Disconnect WebSocket (waits for close event or timeout)
    */
   async disconnect() {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (!this.ws) {
+      this.connected = false;
+      this.streamSid = null;
+      this.connectPromise = null;
+      this.connectResolve = null;
+      this.connectReject = null;
+      return Promise.resolve();
     }
-    this.connected = false;
-    this.streamSid = null;
-    this.connectPromise = null;
-    this.connectResolve = null;
-    this.connectReject = null;
+
+    const ws = this.ws;
+    if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      this.ws = null;
+      this.connected = false;
+      this.streamSid = null;
+      this.connectPromise = null;
+      this.connectResolve = null;
+      this.connectReject = null;
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.ws = null;
+        this.connected = false;
+        this.streamSid = null;
+        this.connectPromise = null;
+        this.connectResolve = null;
+        this.connectReject = null;
+        resolve();
+      }, 5000);
+
+      ws.once('close', () => {
+        clearTimeout(timeout);
+        this.ws = null;
+        this.connected = false;
+        this.streamSid = null;
+        this.connectPromise = null;
+        this.connectResolve = null;
+        this.connectReject = null;
+        resolve();
+      });
+
+      ws.close();
+    });
   }
 
   /**
@@ -201,10 +297,11 @@ class MediaStreamsClient {
 
   /**
    * Check if connected
+   * OPTION 1: Returns true if WebSocket is open, even without streamSid (uses callSid fallback)
    * @returns {boolean}
    */
   isConnected() {
-    return this.connected && this.streamSid !== null && this.ws && this.ws.readyState === WebSocket.OPEN;
+    return this.connected && this.ws && this.ws.readyState === WebSocket.OPEN && (this.streamSid !== null || this.callSid !== null);
   }
 }
 

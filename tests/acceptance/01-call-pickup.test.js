@@ -128,7 +128,9 @@ export async function runTest() {
     console.log('[Test 1] ✓ Language switch test completed');
     
     // Cleanup
+    console.log('[Test 1] Cleaning up call...');
     await callSimulator.hangup(callSid);
+    console.log('[Test 1] Call cleanup complete');
     
     await test.teardown();
     

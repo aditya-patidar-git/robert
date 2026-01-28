@@ -138,6 +138,13 @@ class TestHarness {
         console.log('[TestHarness] Stopping test suite due to failure');
         break;
       }
+      
+      // Add delay between tests to ensure cleanup completes
+      // TODO: Remove after validating test 1 works correctly
+      if (results.length === 1) {
+        console.log('[TestHarness] Waiting 2 seconds before next test (cleanup delay)...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
     
     return results;

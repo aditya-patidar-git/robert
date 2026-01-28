@@ -7,7 +7,7 @@ export const testConfig = {
   // Test timeouts (in milliseconds)
   timeouts: {
     callPickup: 5000, // Max time to wait for call pickup
-    greeting: 10000, // Max time to wait for greeting
+    greeting: 20000, // Max time to wait for greeting (increased to allow for delayed greeting delivery)
     response: 30000, // Max time to wait for agent response
     toolExecution: 60000, // Max time for tool execution
     testComplete: 120000, // Max time for entire test

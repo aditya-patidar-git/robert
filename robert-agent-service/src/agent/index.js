@@ -10,11 +10,12 @@ dotenv.config({ path: join(__dirname, '../../.env') });
 // Now import everything else
 import express from 'express';
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import twilioClient from '../utils/twilioClient.js';
 import cors from 'cors';
 import configManager from './configManager.js';
 import { handleMediaStreamConnection } from '../handlers/mediaStream/index.js';
+import { handleTestClientConnection } from '../handlers/mediaStream/testClientHandler.js';
 import { makeCall, aiIntro, getAllCalls, handleIncomingCall } from '../handlers/callHandlers.js';
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
@@ -103,7 +104,7 @@ const pendingCalls = new Map(); // phoneNumber -> timestamp
 
 // Add error handler to WebSocket server
 wss.on('error', (error) => {
-  console.error('❌ [DEBUG] WebSocket server error:', error);
+  console.error('❌ WebSocket server error:', error.message);
 });
 
 // Middleware
@@ -225,52 +226,50 @@ app.get('/test-websocket', (_, res) => {
 
 // WebSocket upgrade
 server.on('upgrade', (req, socket, head) => {
-  console.log('🔌 [DEBUG] WebSocket upgrade request received');
-  console.log('🔌 [DEBUG] Request URL:', req.url);
-  console.log('🔌 [DEBUG] Request method:', req.method);
-  console.log('🔌 [DEBUG] Request headers:', {
-    'upgrade': req.headers.upgrade,
-    'connection': req.headers.connection,
-    'sec-websocket-key': req.headers['sec-websocket-key'] ? 'present' : 'missing',
-    'host': req.headers.host
-  });
-  
   if (req.url === '/media-stream' || req.url.startsWith('/media-stream?')) {
-    console.log('✅ [DEBUG] URL matches /media-stream, handling upgrade...');
     try {
       wss.handleUpgrade(req, socket, head, ws => {
-        console.log('✅ [DEBUG] WebSocket upgrade completed, emitting connection event');
-        console.log('✅ [DEBUG] WebSocket readyState:', ws.readyState, '(OPEN=1)');
-        // CRITICAL FIX: Attach request object to WebSocket so it can be passed to handler
+        // Attach request object to WebSocket so it can be passed to handler
         ws._req = req;
-        wss.emit('connection', ws, req); // Pass req as second parameter
+        wss.emit('connection', ws, req);
       });
     } catch (error) {
-      console.error('❌ [DEBUG] Error during WebSocket upgrade:', error);
-      console.error('❌ [DEBUG] Error stack:', error.stack);
+      console.error('❌ Error during WebSocket upgrade:', error.message);
+      socket.destroy();
+    }
+  } else if (req.url === '/media-stream-test' || req.url.startsWith('/media-stream-test?')) {
+    try {
+      wss.handleUpgrade(req, socket, head, ws => {
+        ws._req = req;
+        wss.emit('test-connection', ws, req);
+      });
+    } catch (error) {
+      console.error('❌ Error during test client WebSocket upgrade:', error.message);
       socket.destroy();
     }
   } else {
-    console.log('❌ [DEBUG] URL does not match /media-stream');
-    console.log('❌ [DEBUG] Expected: /media-stream or /media-stream?..., Got:', req.url);
     socket.destroy();
   }
 });
 
 wss.on('connection', (twilioWs, req) => {
-  console.log('Twilio WebSocket connected');
   try {
-    // CRITICAL FIX: Use request object from parameter or attached to WebSocket
     const requestObj = req || twilioWs._req || {};
-    console.log('📞 [DEBUG] About to call handleMediaStreamConnection');
-    console.log('📞 [DEBUG] Request URL:', requestObj.url);
-    console.log('📞 [DEBUG] WebSocket readyState:', twilioWs?.readyState);
-    console.log('📞 [DEBUG] WebSocket type:', typeof twilioWs);
-    handleMediaStreamConnection(twilioWs, requestObj); // Pass actual request object
-    console.log('✅ [DEBUG] handleMediaStreamConnection called successfully');
+    handleMediaStreamConnection(twilioWs, requestObj);
   } catch (error) {
-    console.error('❌ [DEBUG] Error calling handleMediaStreamConnection:', error);
-    console.error('❌ [DEBUG] Error stack:', error.stack);
+    console.error('❌ Error calling handleMediaStreamConnection:', error.message);
+  }
+});
+
+wss.on('test-connection', (testWs, req) => {
+  try {
+    const requestObj = req || testWs._req || {};
+    handleTestClientConnection(testWs, requestObj);
+  } catch (error) {
+    console.error('❌ Error calling handleTestClientConnection:', error.message);
+    if (testWs.readyState === 0 || testWs.readyState === 1) {
+      testWs.close(1011, 'Internal server error');
+    }
   }
 });
 
@@ -284,6 +283,8 @@ app.get('/api/outbound/recording/:callSid', proxyRecording);
 
 // API Routes - Inbound
 app.post('/api/inbound/incoming-call', handleIncomingCall);
+// Alias for backward compatibility (some test helpers may use this)
+app.post('/api/inbound/handle-call', handleIncomingCall);
 app.post('/api/inbound/call-status', callStatus);
 app.post('/api/inbound/recording-status', recordingStatus);
 app.get('/api/inbound/recording/:callSid', proxyRecording);
@@ -537,14 +538,9 @@ app.get('/call', async (req, res) => {
     );
 
     if (!call) {
-      console.error('❌ [DEBUG] Failed to create call');
-      // Remove from pending on failure
       pendingCalls.delete(to);
       return res.status(500).send('Failed to create call');
     }
-
-    console.log(`✅ [DEBUG] Twilio call created - SID: ${call.sid}, Status: ${call.status}, Method: ${method}`);
-    console.log(`📋 [DEBUG] Media Stream WebSocket will connect to: ${wsUrl}?callSid=${call.sid}`);
     
     // Remove from pending after successful creation (call will be tracked by callSid)
     pendingCalls.delete(to);
@@ -598,9 +594,44 @@ server.listen(PORT, async () => {
   console.log(`CALL NOW → http://localhost:${PORT}/call?to=+918120523400\n`);
 });
 
+/**
+ * Clean up all active Media Stream connections on shutdown.
+ * Stops ping intervals and closes WebSockets so pong logs stop immediately.
+ */
+async function cleanupAllActiveConnections() {
+  const { realtimeClients } = await import('../shared/state.js');
+  const callSids = Object.keys(realtimeClients);
+
+  if (callSids.length === 0) return;
+
+  console.log(`Cleaning up ${callSids.length} active connection(s)...`);
+
+  for (const callSid of callSids) {
+    const client = realtimeClients[callSid];
+    if (client?.connectionManager) {
+      client.connectionManager.cleanup();
+    }
+    if (client?.openaiWs) {
+      if (client.openaiWs.readyState === WebSocket.OPEN) {
+        client.openaiWs.close(1000, 'Server shutting down');
+      }
+    }
+    if (client?.twilioWs) {
+      if (client.twilioWs.readyState === WebSocket.OPEN) {
+        client.twilioWs.close(1000, 'Server shutting down');
+      }
+    }
+  }
+
+  for (const key of Object.keys(realtimeClients)) {
+    delete realtimeClients[key];
+  }
+}
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  await cleanupAllActiveConnections();
   scheduler.stop();
   await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
   configManager.destroy();
@@ -612,6 +643,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  await cleanupAllActiveConnections();
   scheduler.stop();
   await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
   configManager.destroy();

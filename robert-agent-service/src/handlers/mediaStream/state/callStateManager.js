@@ -39,6 +39,8 @@ export class CallStateManager {
     this.outboundAudioBuffer = null;  // Buffer for pacing audio chunks (Buffer object)
     this.lastOutboundSendTime = 0;  // Last time we sent an audio frame
     this.outboundAudioPacer = null;  // Interval timer for sending frames at correct rate
+    this.audioFramesSentCount = 0;  // Track total frames sent for diagnostics
+    this.firstAudioFrameTime = null;  // Timestamp of first audio frame sent
     this.callStartTime = Date.now();
     this.startTimeout = null;
     this.durationTimer = null;

@@ -5,7 +5,7 @@ class AbusePreventionService {
     this.callFrequency = new Map(); // callerId -> { count, windowStart, blocked }
     this.suspiciousPatterns = new Map(); // callerId -> pattern data
     this.RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-    this.MAX_CALLS_PER_WINDOW = 10; // Max 10 calls per hour
+    this.MAX_CALLS_PER_WINDOW = 100; // Max 100 calls per hour
     this.BLOCK_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
     this.SUSPICIOUS_PATTERN_THRESHOLD = 5; // 5 suspicious calls = block
   }

@@ -103,7 +103,8 @@ class TwilioHelper {
         callParams.url = options.webhookUrl;
       } else {
         // Default to inbound webhook URL (works for both inbound and outbound test calls)
-        callParams.url = UrlBuilder.buildWebhookUrl('/api/inbound/handle-call');
+        // Must match the route defined in agent service: /api/inbound/incoming-call
+        callParams.url = UrlBuilder.buildWebhookUrl('/api/inbound/incoming-call');
       }
 
       const call = await this.client.calls.create(callParams);

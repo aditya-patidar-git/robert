@@ -49,10 +49,24 @@ const ALL_TESTS = [
   test12
 ];
 
+/** Get tests to run: filter by --test=NAME if provided */
+function getTestsToRun() {
+  const testArg = process.argv.find(arg => arg.startsWith('--test='));
+  if (!testArg) return ALL_TESTS;
+  const testName = testArg.replace('--test=', '').trim();
+  const filtered = ALL_TESTS.filter(t => t.name === testName);
+  if (filtered.length === 0) {
+    console.warn(`[TestRunner] No test named "${testName}", running all tests.`);
+    return ALL_TESTS;
+  }
+  console.log(`[TestRunner] Running single test: ${testName}`);
+  return filtered;
+}
+
 /**
  * Run all tests once
  */
-async function runTestSuite(runNumber) {
+async function runTestSuite(runNumber, tests = ALL_TESTS) {
   console.log(`\n${'='.repeat(60)}`);
   console.log(`Running Acceptance Test Suite - Run ${runNumber}`);
   console.log(`${'='.repeat(60)}\n`);
@@ -68,7 +82,7 @@ async function runTestSuite(runNumber) {
   await dbCleaner.cleanup();
   
   // Run all tests
-  const results = await testHarness.runTests(ALL_TESTS.map(test => ({
+  const results = await testHarness.runTests(tests.map(test => ({
     name: test.name,
     fn: test.fn,
     stopOnFailure: false
@@ -103,68 +117,93 @@ async function runTestSuite(runNumber) {
  */
 async function main() {
   const startTime = Date.now();
-  
+  const testsToRun = getTestsToRun();
+  const singleTest = testsToRun.length === 1;
+
   try {
     console.log('Acceptance Test Suite Runner');
     console.log('=============================\n');
     
-    // Run tests twice as required
-    const run1Results = await runTestSuite(1);
-    
-    // Wait a bit between runs
-    console.log('\nWaiting 5 seconds before second run...\n');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    const run2Results = await runTestSuite(2);
-    
+    if (singleTest) {
+      console.log(`[TestRunner] Single test mode: Running test "${testsToRun[0].name}" once only\n`);
+    } else {
+      console.log(`[TestRunner] Full suite mode: Running ${testsToRun.length} tests twice\n`);
+    }
+
+    // Run tests once (or twice if full suite)
+    const run1Results = await runTestSuite(1, testsToRun);
+
+    let run2Results = null;
+    if (!singleTest) {
+      // Wait a bit between runs
+      console.log('\nWaiting 5 seconds before second run...\n');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      run2Results = await runTestSuite(2, testsToRun);
+    } else {
+      console.log('\n[TestRunner] Single test mode: Skipping second run\n');
+    }
+
     // Combine results
-    const allResults = {
-      run1: run1Results,
-      run2: run2Results,
-      overall: {
-        total: run1Results.summary.total + run2Results.summary.total,
-        passed: run1Results.summary.passed + run2Results.summary.passed,
-        failed: run1Results.summary.failed + run2Results.summary.failed,
-        duration: Date.now() - startTime
-      }
-    };
-    
+    const allResults = run2Results
+      ? {
+          run1: run1Results,
+          run2: run2Results,
+          overall: {
+            total: run1Results.summary.total + run2Results.summary.total,
+            passed: run1Results.summary.passed + run2Results.summary.passed,
+            failed: run1Results.summary.failed + run2Results.summary.failed,
+            duration: Date.now() - startTime
+          }
+        }
+      : {
+          run1: run1Results,
+          run2: { summary: { total: 0, passed: 0, failed: 0, passRate: '0%' }, results: [] },
+          overall: {
+            total: run1Results.summary.total,
+            passed: run1Results.summary.passed,
+            failed: run1Results.summary.failed,
+            duration: Date.now() - startTime
+          }
+        };
+
     // Generate reports
     console.log('\n[TestRunner] Generating test reports...');
     const htmlReportPath = await reportGenerator.generateHTMLReport(allResults);
     const jsonReportPath = await reportGenerator.generateJSONReport(allResults);
-    
+
     console.log(`[TestRunner] HTML Report: ${htmlReportPath}`);
     console.log(`[TestRunner] JSON Report: ${jsonReportPath}`);
-    
+
     // Generate evidence packs
     console.log('\n[TestRunner] Generating evidence packs...');
     const evidencePack1 = await evidencePackGenerator.generateEvidencePack(run1Results, 1);
-    const evidencePack2 = await evidencePackGenerator.generateEvidencePack(run2Results, 2);
-    
     console.log(`[TestRunner] Evidence Pack 1: ${evidencePack1}`);
-    console.log(`[TestRunner] Evidence Pack 2: ${evidencePack2}`);
-    
+    if (run2Results) {
+      const evidencePack2 = await evidencePackGenerator.generateEvidencePack(run2Results, 2);
+      console.log(`[TestRunner] Evidence Pack 2: ${evidencePack2}`);
+    }
+
     // Final summary
     console.log(`\n${'='.repeat(60)}`);
     console.log('Final Test Results');
     console.log(`${'='.repeat(60)}`);
     console.log(`Run 1: ${run1Results.summary.passed}/${run1Results.summary.total} passed (${run1Results.summary.passRate})`);
-    console.log(`Run 2: ${run2Results.summary.passed}/${run2Results.summary.total} passed (${run2Results.summary.passRate})`);
+    if (run2Results) {
+      console.log(`Run 2: ${run2Results.summary.passed}/${run2Results.summary.total} passed (${run2Results.summary.passRate})`);
+    }
     console.log(`Overall: ${allResults.overall.passed}/${allResults.overall.total} passed`);
     console.log(`${'='.repeat(60)}\n`);
-    
-    // Check if all tests passed both runs
-    const allPassed = run1Results.summary.failed === 0 && run2Results.summary.failed === 0;
-    
+
+    // Check if all tests passed
+    const allPassed = run1Results.summary.failed === 0 && (!run2Results || run2Results.summary.failed === 0);
+
     if (allPassed) {
-      console.log('✓ All tests passed 100% in both runs!');
+      console.log('✓ All tests passed!');
       process.exit(0);
     } else {
       console.error('✗ Some tests failed. Review reports and evidence packs.');
       process.exit(1);
     }
-    
   } catch (error) {
     console.error('\n[TestRunner] Fatal error:', error);
     console.error(error.stack);

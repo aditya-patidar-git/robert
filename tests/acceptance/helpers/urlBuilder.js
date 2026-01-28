@@ -37,11 +37,11 @@ class UrlBuilder {
 
   /**
    * Build webhook URL for Twilio call handling
-   * @param {string} endpoint - API endpoint (e.g., '/api/inbound/handle-call')
+   * @param {string} endpoint - API endpoint (e.g., '/api/inbound/incoming-call')
    * @param {Object} options - Options
    * @returns {string} Full webhook URL
    */
-  static buildWebhookUrl(endpoint = '/api/inbound/handle-call', options = {}) {
+  static buildWebhookUrl(endpoint = '/api/inbound/incoming-call', options = {}) {
     const baseUrl = this.getBaseUrl(options);
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     return `${baseUrl}${cleanEndpoint}`;
@@ -59,6 +59,20 @@ class UrlBuilder {
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     
     return `${wsProtocol}://${wsHost}/media-stream?callSid=${callSid}`;
+  }
+
+  /**
+   * Build Media Streams WebSocket URL for test clients.
+   * Test clients connect to /media-stream-test to receive forwarded events.
+   * @param {string} callSid - Call SID
+   * @param {Object} options - Options
+   * @returns {string} WebSocket URL for test client
+   */
+  static buildTestMediaStreamsUrl(callSid, options = {}) {
+    const baseUrl = this.getBaseUrl(options);
+    const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
+    const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    return `${wsProtocol}://${wsHost}/media-stream-test?callSid=${callSid}`;
   }
 
   /**

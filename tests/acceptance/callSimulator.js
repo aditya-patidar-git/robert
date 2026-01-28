@@ -24,6 +24,9 @@ class CallSimulator {
    * 
    * NOTE: Test credentials do NOT trigger webhooks - calls are simulated only
    * NOTE: For production credentials, use VERIFIED_CALLER_ID env var (your verified personal mobile)
+   * 
+   * OPTION 1 IMPLEMENTATION: Connects Media Streams client BEFORE initiating call
+   * so test client receives start event when Twilio connects.
    */
   async initiateCall(testName, options = {}) {
     const { usingTestCredentials, magicTestNumber, phoneNumber, verifiedCallerId } = testConfig.credentials.twilio;
@@ -50,6 +53,8 @@ class CallSimulator {
     } = options;
 
     try {
+      // OPTION 1: Initiate call first to get callSid, then IMMEDIATELY connect Media Streams client
+      // This ensures test client connects as early as possible to receive start event
       const callResult = await twilioHelper.initiateCall(from, to, {
         webhookUrl,
         record,
@@ -57,6 +62,24 @@ class CallSimulator {
       });
 
       const callSid = callResult.callSid;
+      
+      // IMMEDIATELY connect Media Streams client with real callSid
+      // Connect synchronously to ensure connection starts before Twilio connects
+      // This maximizes chance of receiving start event (though there's still a race condition)
+      console.log(`[CallSimulator] Immediately connecting Media Streams client for call ${callSid}...`);
+      const wsUrl = twilioHelper.getMediaStreamsUrl(callSid);
+      const client = new MediaStreamsClient(callSid, wsUrl, { useTestEndpoint: true });
+      
+      // Store client immediately
+      this.mediaStreamsClients.set(callSid, client);
+      
+      // Start connecting immediately (don't await - let it connect in background)
+      // The connection will wait for start event with increased timeout
+      client.connect().catch(err => {
+        console.warn(`[CallSimulator] Media Streams initial connection attempt failed: ${err.message}`);
+        console.warn(`[CallSimulator] Will retry when getMediaStreamsClient is called`);
+      });
+      
       this.activeCalls.set(callSid, {
         testName,
         callSid,
@@ -102,6 +125,7 @@ class CallSimulator {
   /**
    * Get or create Media Streams client for a call
    * @private
+   * OPTION 1: Reuses connection created during initiateCall() if available
    */
   async getMediaStreamsClient(callSid) {
     if (this.mediaStreamsClients.has(callSid)) {
@@ -109,13 +133,23 @@ class CallSimulator {
       if (client.isConnected()) {
         return client;
       }
-      // Reconnect if disconnected
-      await client.disconnect();
+      // If not connected yet, wait for connection to complete
+      // This handles the case where connection was started in initiateCall() but start event hasn't arrived yet
+      try {
+        await client.connect();
+        return client;
+      } catch (error) {
+        // If connection failed, try reconnecting
+        console.warn(`[CallSimulator] Existing Media Streams client connection failed, reconnecting...`);
+        await client.disconnect();
+      }
     }
 
-    // Get WebSocket URL for this call
+    // Fallback: Create new connection if not already created during initiateCall()
+    // This should rarely happen with Option 1 implementation
+    console.log(`[CallSimulator] Creating new Media Streams client for call ${callSid} (fallback)`);
     const wsUrl = twilioHelper.getMediaStreamsUrl(callSid);
-    const client = new MediaStreamsClient(callSid, wsUrl);
+    const client = new MediaStreamsClient(callSid, wsUrl, { useTestEndpoint: true });
     
     // Connect to Media Streams
     await client.connect();
@@ -189,18 +223,36 @@ class CallSimulator {
   }
 
   /**
-   * Hang up call
+   * Hang up call (waits for WebSocket close and Twilio termination)
    */
   async hangup(callSid) {
     try {
-      // Disconnect Media Streams client if exists
+      // Disconnect Media Streams client first (waits for close)
       if (this.mediaStreamsClients.has(callSid)) {
         const client = this.mediaStreamsClients.get(callSid);
         await client.disconnect();
         this.mediaStreamsClients.delete(callSid);
       }
-      
+
+      // Hang up via Twilio API
       await twilioHelper.hangupCall(callSid);
+
+      // Wait for call to actually terminate (status = 'completed')
+      const startTime = Date.now();
+      const maxWait = 10000; // 10 seconds max
+      while (Date.now() - startTime < maxWait) {
+        const call = await twilioHelper.getCall(callSid);
+        if (call.status === 'completed') {
+          console.log(`[CallSimulator] Call ${callSid} terminated (status: completed)`);
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 500)); // Poll every 500ms
+      }
+
+      // Allow test client registry cleanup on agent side
+      console.log(`[CallSimulator] Waiting for test client registry cleanup for call ${callSid}...`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       this.activeCalls.delete(callSid);
       return true;
     } catch (error) {

@@ -367,20 +367,7 @@ export const handleIncomingCall = async (req, res) => {
         // Recording should be handled via Twilio API (like outbound calls) instead of TwiML verb
         const wsUrl = buildMediaStreamsWsUrl(CallSid);
         
-        console.log(`\n📞 [${CallSid}] ========== GENERATING MEDIA STREAMS TWIML ==========`);
-        console.log(`   📊 Configuration:`);
-        console.log(`      - CallSid: ${CallSid}`);
-        console.log(`      - From: ${From}`);
-        console.log(`      - To: ${To}`);
-        console.log(`      - WebSocket URL: ${wsUrl}`);
-        console.log(`      - Use Connect verb: true (REQUIRED for bidirectional)`);
-        console.log(`      - Track: inbound_track (REQUIRED for <Connect> verb - Twilio Error 31941)`);
-        
-        const twiml = generateMediaStreamsTwiML(wsUrl, { useConnect: true }); // CRITICAL: Use Connect for inbound calls
-        
-        console.log(`   📋 Generated TwiML:`);
-        console.log(`      ${twiml.replace(/\n/g, '\n      ')}`);
-        console.log(`   ✅ TwiML generated successfully\n`);
+        const twiml = generateMediaStreamsTwiML(wsUrl, { useConnect: true });
 
         span.setStatus({ code: SpanStatusCode.OK });
         span.end();
