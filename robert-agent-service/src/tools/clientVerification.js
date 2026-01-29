@@ -5,6 +5,7 @@ import {
   isMaxAttemptsExceeded,
   getMaxAttemptsExceededMessage,
   getFieldMismatchMessage,
+  getTelephoneLastFourDigitsPrompt,
   markClientVerified,
   getVerificationPrompt,
   getPostcodePrompt,
@@ -104,13 +105,15 @@ class ClientVerificationTool {
             fullName: null,
             postcode: null,
             telephoneNumber: null
-          }
+          },
+          askedLastFourDigitsForTelephone: false
         };
       }
 
       const verificationState = conversation.verificationState;
       const currentField = verificationState.currentField;
       const verifiedFields = verificationState.verifiedFields;
+      const workflowContext = conversation.workflowContext || 'booking';
 
       // Helper functions for validation (extracted for reusability)
       const normalizeForComparison = (str) => {
@@ -175,7 +178,7 @@ class ClientVerificationTool {
               success: false,
               verified: false,
               maxAttemptsExceeded: true,
-              message: getMaxAttemptsExceededMessage(),
+              message: getMaxAttemptsExceededMessage(workflowContext),
               attempts: conversation.verificationAttempts
             };
           }
@@ -231,7 +234,7 @@ class ClientVerificationTool {
               success: false,
               verified: false,
               maxAttemptsExceeded: true,
-              message: getMaxAttemptsExceededMessage(),
+              message: getMaxAttemptsExceededMessage(workflowContext),
               attempts: conversation.verificationAttempts
             };
           }
@@ -308,23 +311,44 @@ class ClientVerificationTool {
             requiresBookingContinuation: isBookingContext || undefined,
             nextStepTool: nextStepTool || undefined,
             requiresExplicitConfirmation: true,
-            requiresImmediateNextStep: false
+            requiresImmediateNextStep: false,
+            offerUpdatePhone: true,
+            offerUpdatePhoneInstruction: 'Ask the caller: "Would you like us to update your telephone number to the one you just provided?" If they say yes, collect their new UK mobile (11 digits starting with 07) and call the update_customer tool with telephoneNumber set to the new number and customerEmail or customerMobile to identify the customer.'
           };
         } else {
-          // TelephoneNumber mismatch - increment attempts and ask again
+          // TelephoneNumber mismatch - first offer last-four-digits confirmation per doc (A)
+          if (!verificationState.askedLastFourDigitsForTelephone) {
+            verificationState.askedLastFourDigitsForTelephone = true;
+            const lastFour = storedTelephone.slice(-4);
+            const lastFourPrompt = getTelephoneLastFourDigitsPrompt(lastFour);
+            console.log(`❌ [${callSid}] Telephone mismatch - asking for last four digits confirmation`);
+            return {
+              success: false,
+              verified: false,
+              missingFields: ['telephoneNumber'],
+              verifiedFields: ['fullName', 'postcode'],
+              currentField: 'telephoneNumber',
+              offerLastFourDigitsConfirmation: true,
+              lastFourDigits: lastFour,
+              message: lastFourPrompt,
+              instruction: `Use the exact message: "${lastFourPrompt}". Then call client_verification again with fullName="${verificationState.verifiedValues.fullName}", postcode="${verificationState.verifiedValues.postcode}", and telephoneNumber when caller provides the full number.`,
+              requiresImmediateContinuation: true
+            };
+          }
+
           incrementVerificationAttempt(conversation, 'telephoneNumber');
           console.log(`❌ [${callSid}] Telephone number mismatch: stored="${storedTelephone}", provided="${providedTelephone}"`);
-          
+
           if (isMaxAttemptsExceeded(conversation)) {
             return {
               success: false,
               verified: false,
               maxAttemptsExceeded: true,
-              message: getMaxAttemptsExceededMessage(),
+              message: getMaxAttemptsExceededMessage(workflowContext),
               attempts: conversation.verificationAttempts
             };
           }
-          
+
           return {
             success: false,
             verified: false,

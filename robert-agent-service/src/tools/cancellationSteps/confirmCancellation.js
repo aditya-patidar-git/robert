@@ -7,6 +7,7 @@ import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
 import { getStepNumber } from '../../services/browser/stepConfiguration.js';
+import { TERMS_DISCLAIMER } from '../../config/cancellationPhrases.js';
 
 export class ConfirmCancellationStep extends BaseStepTool {
   getStepName() {
@@ -91,8 +92,8 @@ export class ConfirmCancellationStep extends BaseStepTool {
       return {
         success: false,
         requiresUserInput: true,
-        message: `If you wish to cancel your booking, you MUST provide a minimum of 3 full working days' notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within less than 3 full working days will result in the entire paid fees. ${feeMessage} Would you like to proceed with the cancellation?`,
-        prompt: 'Explain the cancellation policy and fees, then ask: "Would you like to proceed with the cancellation?" If they say yes, set confirmed: true. If they say no, set confirmed: false.'
+        message: `If you wish to cancel your booking, you MUST provide a minimum of 3 full working days' notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within less than 3 full working days will result in the entire paid fees. ${TERMS_DISCLAIMER} ${feeMessage} Would you like to proceed with the cancellation?`,
+        prompt: 'Explain the cancellation policy and fees, mention the Terms URL, then ask: "Would you like to proceed with the cancellation?" If they say yes, set confirmed: true. If they say no, set confirmed: false.'
       };
 
     } catch (error) {

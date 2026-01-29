@@ -5,6 +5,8 @@ import { conversations } from '../../shared/state.js';
 import { getRecordingConsent, updateRecordingConsent, conversationExists } from '../../shared/conversationStateAccessor.js';
 import promptService from '../../services/promptService.js';
 import consentInstructionBuilder from '../../services/consentInstructionBuilder.js';
+import { getIntentFromTranscript } from '../../services/intentFromTranscript.js';
+import { getPhaseForIntent } from '../../services/toolFilterService.js';
 
 /**
  * Tool Coordinator
@@ -15,6 +17,7 @@ export class ToolCoordinator {
     this.state = stateManager;
     this.openaiWs = openaiWs;
     this.ws = ws;
+    this.openaiIntegration = null;
     
     // Initialize handlers
     const memoryManager = new MemoryManager(stateManager);
@@ -320,6 +323,13 @@ export class ToolCoordinator {
   }
 
   /**
+   * Set OpenAI integration reference (for phase/tool updates)
+   */
+  setOpenAIIntegration(openaiIntegration) {
+    this.openaiIntegration = openaiIntegration;
+  }
+
+  /**
    * Update OpenAI WebSocket reference (called after connection is established)
    */
   setOpenAIWebSocket(openaiWs) {
@@ -419,6 +429,18 @@ export class ToolCoordinator {
           
           const transcriptionResult = await this.transcriptionHandler.handleTranscriptionCompleted(event);
           const transcriptionItemId = event.item_id; // Link to committed segment
+          
+          const transcriptText = event.transcript || '';
+          const callSid = this.state.callSid;
+          if (transcriptText.trim() && this.openaiIntegration && this.openaiIntegration.getCurrentWorkflowPhase?.() !== 'cancellation' && conversations[callSid]?.workflowContext !== 'cancellation') {
+            const intent = getIntentFromTranscript(transcriptText);
+            const phase = intent ? getPhaseForIntent(intent) : null;
+            if (phase === 'cancellation') {
+              if (!conversations[callSid]) conversations[callSid] = {};
+              conversations[callSid].workflowContext = 'cancellation';
+              this.openaiIntegration.updateToolsForPhase('cancellation');
+            }
+          }
           
           // CRITICAL DIAGNOSTIC: Log transcription processing result
           console.log(`📝 [${this.state.callSid}] Transcription processing result:`);

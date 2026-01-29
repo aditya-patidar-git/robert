@@ -103,8 +103,9 @@ class ToolExecutionService {
       conversations[callId] = {};
     }
 
-    // Store client details from CRM browser tool
-    if (toolName === 'crm_browser' && executionResult.success && executionResult.result) {
+    // Store client details from CRM/browser tools
+    const crmToolNames = ['update_customer', 'reschedule_booking'];
+    if (crmToolNames.includes(toolName) && executionResult.success && executionResult.result) {
       if (executionResult.result.clientDetails) {
         conversations[callId].clientDetails = executionResult.result.clientDetails;
       }

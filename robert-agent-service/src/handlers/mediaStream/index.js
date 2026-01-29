@@ -169,9 +169,10 @@ export const handleMediaStreamConnection = (ws, req) => {
                 return;
             }
             
-            // Update tool coordinator with OpenAI WebSocket
+            // Update tool coordinator with OpenAI WebSocket and integration reference
             if (setupResult?.openaiWs) {
                 toolCoordinator.setOpenAIWebSocket(setupResult.openaiWs);
+                toolCoordinator.setOpenAIIntegration(openaiIntegration);
                 // Set OpenAI ready with connection manager reference for robust sending
                 const connectionManager = openaiIntegration?.connectionManager || null;
                 stateManager.setOpenAIReady(setupResult.openaiWs, connectionManager);
@@ -446,10 +447,11 @@ export const handleMediaStreamConnection = (ws, req) => {
                             if (!updateData.summary && conversation.transcript.length > 0) {
                                 try {
                                     const summaryService = (await import('../../services/summaryService.js')).default;
-                                    updateData.summary = await summaryService.generateCallSummary(
+                                    const summary = await summaryService.generateCallSummary(
                                         conversation.transcript,
                                         { callSid: stateManager.callSid, from: conversation.from, to: conversation.to }
                                     );
+                                    updateData.summary = typeof summary === 'object' && summary !== null ? JSON.stringify(summary) : summary;
                                 } catch (summaryError) {
                                     console.warn(`⚠️ [${stateManager.callSid}] Could not generate summary:`, summaryError.message);
                                     updateData.summary = `Call transcript with ${conversation.transcript.length} exchanges.`;

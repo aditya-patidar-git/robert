@@ -7,6 +7,7 @@ import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { validateToolParameters } from '../utils/toolSchemaValidator.js';
 import { recordToolMetrics } from '../services/metricsService.js';
 import ToolConfig from '../database/models/ToolConfig.js';
+import { setCancellationContext } from '../config/cancellationPhrases.js';
 
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 
@@ -104,7 +105,11 @@ class ToolExecutor {
     const startTime = Date.now();
     const callSid = callContext.callSid || 'unknown';
     const phoneNumber = callContext.phoneNumber || 'unknown';
-    
+
+    if (toolName.startsWith('cancellation_step_')) {
+      setCancellationContext(callSid);
+    }
+
     // Create span for tool execution
     const span = tracer.startSpan(`tool.execute.${toolName}`, {
       attributes: {
@@ -224,8 +229,9 @@ class ToolExecutor {
       
       // 4. Increase timeout for browser automation tools - they need more time
       // Only if no tool-specific timeout, no per-tool maxTime, and not using global timeout override
-      if (toolName === 'crm_browser' && toolSpecificTimeout === null && !toolConfig.maxTime) {
-        timeout = Math.max(timeout, 360000); // At least 360 seconds (6 minutes) for browser operations
+      const browserToolNames = ['update_customer', 'reschedule_booking'];
+      if (browserToolNames.includes(toolName) && toolSpecificTimeout === null && !toolConfig.maxTime) {
+        timeout = Math.max(timeout, 360000);
         console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
       }
       // ==========================================

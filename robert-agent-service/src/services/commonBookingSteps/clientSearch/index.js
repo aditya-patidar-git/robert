@@ -4,6 +4,7 @@ import { extractClientDetails } from './extractClientDetails.js';
 import { verifyClientMatch } from './verifyClientMatch.js';
 import { getVerificationPrompt } from '../../verificationService.js';
 import { conversations } from '../../../shared/state.js';
+import { buildNameSearchStrings, NAME_SEARCH_RETRY_PROMPT } from './nameSearch.js';
 import { 
   validateUKMobile, 
   normalizeUKMobile, 
@@ -18,13 +19,13 @@ import {
  * Handles mobile search with 3-attempt retry logic and client verification
  * 
  * @param {Page} page - Playwright page object
- * @param {string} searchType - 'mobile' or 'email' - type of search to perform
+ * @param {string} searchType - 'mobile' | 'email' | 'name' - type of search to perform
  * @param {string} searchValue - Mobile number or email address to search for
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} [email] - Optional email address to use when Smart search is selected
  * @param {string} [clientPostcode] - Optional postcode for verification when multiple results appear
  * @param {string} [callSid] - Call SID for conversation state tracking
- * @returns {Promise<{found: boolean, clientDetails?: object, requiresVerification: boolean, verificationPrompt?: string, retryPrompt?: string, requiresPostcodeVerification?: boolean, error?: string}>}
+ * @returns {Promise<{found: boolean, clientDetails?: object, requiresVerification: boolean, verificationPrompt?: string, retryPrompt?: string, nextSearchType?: string, requiresPostcodeVerification?: boolean, error?: string}>}
  */
 export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir, email = null, clientPostcode = null, callSid = null) {
   try {
@@ -57,23 +58,13 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         trackMobileSearchAttempt(conversation, normalizedMobile);
         const attemptCount = getMobileSearchAttemptCount(conversation);
         
-        // Check if mobile search is exhausted (3 attempts)
+        // Only return without searching when mobile search exhausted (3 attempts)
         if (isMobileSearchExhausted(conversation)) {
           return {
             found: false,
             requiresVerification: false,
-            retryPrompt: getMobileSearchRetryPrompt(3), // Ask for email
+            retryPrompt: getMobileSearchRetryPrompt(3),
             error: 'Mobile search exhausted after 3 attempts'
-          };
-        }
-        
-        // If not first attempt, return retry prompt
-        if (attemptCount > 1) {
-          return {
-            found: false,
-            requiresVerification: false,
-            retryPrompt: getMobileSearchRetryPrompt(attemptCount),
-            error: `Mobile search attempt ${attemptCount} failed`
           };
         }
       }
@@ -122,26 +113,45 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     // Select Smart search
     await selectSmartSearch(iframe, page, screenshotsDir);
     
-    // Determine final search value (Smart search always uses email)
+    // Determine final search value and type
     let finalSearchValue = searchValue;
     let finalSearchType = searchType;
-    
-    if (email) {
+    let nameSearchFallback = null;
+
+    if (searchType === 'name') {
+      const { primary, fallback } = buildNameSearchStrings(searchValue);
+      finalSearchValue = primary;
+      nameSearchFallback = fallback;
+      console.log(`🔍 [CLIENT SEARCH] Name search: primary="${primary}", fallback=${fallback || 'none'}`);
+    } else if (email) {
       finalSearchValue = email;
       finalSearchType = 'email';
       console.log(`🔍 [CLIENT SEARCH] Smart search selected - using email: ${email}`);
     } else if (searchType === 'mobile') {
       console.warn(`⚠️ [CLIENT SEARCH] Smart search selected but no email provided - using mobile number (this may not work correctly)`);
     }
-    
+
     // Execute search
     await executeSearch(iframe, page, finalSearchValue, screenshotsDir);
-    
+
     // Find matching client row
-    const matchResult = await findMatchingClientRow(iframe, finalSearchType, finalSearchValue, email);
-    
+    let matchResult = await findMatchingClientRow(iframe, finalSearchType, finalSearchValue, email);
+
+    if (!matchResult && searchType === 'name' && nameSearchFallback) {
+      await executeSearch(iframe, page, nameSearchFallback, screenshotsDir);
+      matchResult = await findMatchingClientRow(iframe, finalSearchType, nameSearchFallback, email);
+    }
+
     if (!matchResult) {
-      // No match found
+      if (searchType === 'email') {
+        return {
+          found: false,
+          requiresVerification: false,
+          retryPrompt: NAME_SEARCH_RETRY_PROMPT,
+          nextSearchType: 'name',
+          error: 'Email search found no client - ask for full name'
+        };
+      }
       if (searchType === 'mobile' && conversation) {
         const attemptCount = getMobileSearchAttemptCount(conversation);
         if (attemptCount < 3) {
@@ -153,7 +163,6 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           };
         }
       }
-      
       return {
         found: false,
         requiresVerification: false,

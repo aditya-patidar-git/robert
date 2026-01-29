@@ -175,11 +175,12 @@ export const callStatus = async (req, res) => {
                     { callSid: CallSid, from: From, to: To }
                 );
                 
-                // Update CallRecord with summary
+                // Update CallRecord with summary (schema expects string)
+                const summaryForDb = typeof summary === 'object' && summary !== null ? JSON.stringify(summary) : summary;
                 try {
                     await CallRecord.findOneAndUpdate(
                         { callSid: CallSid },
-                        { $set: { summary: summary } },
+                        { $set: { summary: summaryForDb } },
                         { upsert: true }
                     );
                 } catch (summaryUpdateError) {

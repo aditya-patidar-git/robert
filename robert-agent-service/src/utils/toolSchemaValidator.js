@@ -272,15 +272,35 @@ const bookingStepSendPaymentRequestSchema = z.object({
   termsAcceptedBeforeSend: z.boolean().optional()
 });
 
+const updateCustomerSchema = z.object({
+  customerEmail: z.string().email().optional(),
+  customerMobile: z.string().optional(),
+  telephoneNumber: z.string().optional(),
+  email: z.string().email().optional(),
+  postcode: z.string().optional(),
+  firstName: z.string().optional(),
+  surname: z.string().optional(),
+  address: z.string().optional()
+}).refine(data => data.customerEmail || data.customerMobile, { message: 'customerEmail or customerMobile required' })
+  .refine(data => data.telephoneNumber || data.email || data.postcode || data.firstName || data.surname || data.address, { message: 'At least one update field required' });
+
+const rescheduleBookingSchema = z.object({
+  bookingReference: z.string().min(1),
+  newDate: z.string().min(1),
+  newTime: z.string().optional(),
+  newLocation: z.string().optional(),
+  customerEmail: z.string().email().optional(),
+  customerMobile: z.string().optional()
+}).refine(data => data.customerEmail || data.customerMobile, { message: 'customerEmail or customerMobile required' });
+
 // Schema map for all tools
 const toolSchemas = {
   web_search: webSearchSchema,
-  calendar: calendarSchema,
   email: emailSchema,
   send_sms: sendSMSSchema,
   generate_reference_id: generateReferenceIdSchema,
-  crm: crmSchema,
-  crm_browser: crmBrowserSchema,
+  update_customer: updateCustomerSchema,
+  reschedule_booking: rescheduleBookingSchema,
   payments: paymentsSchema,
   file_search: fileSearchSchema,
   transfer_call: transferCallSchema,

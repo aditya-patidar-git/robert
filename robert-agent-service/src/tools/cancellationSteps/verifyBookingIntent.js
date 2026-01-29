@@ -6,6 +6,7 @@
 import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
 import { STEP_NAMES, getStepNumber } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
+import { PROCEED_DECLINED_MESSAGE, TERMS_DISCLAIMER } from '../../config/cancellationPhrases.js';
 
 export class VerifyBookingIntentStep extends BaseStepTool {
   getStepName() {
@@ -64,6 +65,16 @@ export class VerifyBookingIntentStep extends BaseStepTool {
         };
       }
 
+      // Caller has a booking but declined to proceed
+      if (verified === true && proceedToStep2 === false) {
+        return {
+          success: false,
+          verified: true,
+          proceedToStep2: false,
+          message: PROCEED_DECLINED_MESSAGE
+        };
+      }
+
       // If verified is false, caller doesn't have a booking
       if (verified === false) {
         return {
@@ -79,7 +90,7 @@ export class VerifyBookingIntentStep extends BaseStepTool {
         success: false,
         requiresUserInput: true,
         message: 'Do you have a current booking with us?',
-        prompt: 'Please ask the caller: "Do you have a current booking with us?" If they say yes, explain the cancellation policy and set verified: true, proceedToStep2: true. If they say no, set verified: false.'
+        prompt: `Please ask the caller: "Do you have a current booking with us?" If they say yes, explain the cancellation policy and say: "${TERMS_DISCLAIMER}" Then ask: "Would you like to proceed?" If they say yes, set verified: true, proceedToStep2: true. If they say no to proceed, set verified: true, proceedToStep2: false. If they say no to having a booking, set verified: false.`
       };
 
     } catch (error) {

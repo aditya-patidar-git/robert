@@ -3,6 +3,8 @@
  * Handles client verification attempts (7 per field) and prompt generation
  */
 
+import { UNVERIFIED_CANCELLATION_MESSAGE } from '../config/cancellationPhrases.js';
+
 /**
  * Get the exact verification prompt per CRM module requirements
  * Split into three separate questions asked sequentially
@@ -72,12 +74,27 @@ export function getFieldMismatchMessage(field) {
   return messages[field] || `The ${field} you provided does not match our records.`;
 }
 
+const MAX_ATTEMPTS_BOOKING_MESSAGE = "Unfortunately, I am unable to gain access to your existing customer profile with us; however, I can create a new profile with us for you. Would you like me to proceed in creating a new customer profile with us?";
+
 /**
  * Get max attempts exceeded message per CRM module requirements
+ * @param {string} [context] - 'booking' | 'cancellation' | undefined (defaults to booking)
  * @returns {string} - Exact message when max attempts exceeded
  */
-export function getMaxAttemptsExceededMessage() {
-  return "Unfortunately, I am unable to gain access to your existing customer profile with us; however, I can create a new profile with us for you. Would you like me to proceed in creating a new customer profile with us?";
+export function getMaxAttemptsExceededMessage(context) {
+  if (context === 'cancellation') {
+    return UNVERIFIED_CANCELLATION_MESSAGE;
+  }
+  return MAX_ATTEMPTS_BOOKING_MESSAGE;
+}
+
+/**
+ * Get telephone last-four-digits confirmation prompt per CRM doc (A)
+ * @param {string} lastFour - Last 4 digits of the number on file
+ * @returns {string} - Exact prompt
+ */
+export function getTelephoneLastFourDigitsPrompt(lastFour) {
+  return `Could you please confirm the full telephone number of the telephone number that we have on file for you that ends with ${lastFour || 'those digits'}?`;
 }
 
 /**

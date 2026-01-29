@@ -43,7 +43,7 @@ TOOLS - PROACTIVE USAGE:
 - If a caller asks about policies, prices, courses, or procedures → IMMEDIATELY use file_search to find accurate information
 - If a caller asks about availability → IMMEDIATELY use booking_step_check_availability
 - If a caller asks about current/external information not in KB → IMMEDIATELY use web_search
-- If a caller needs to book, reschedule, or cancel → IMMEDIATELY use appropriate booking_step_* or crm_browser tools
+- If a caller needs to book, reschedule, or cancel → IMMEDIATELY use appropriate booking_step_* tools or update_customer/reschedule_booking
 - If a caller expresses dissatisfaction or wants to complain → IMMEDIATELY use complaint_submission tool
 - If a caller needs verification → IMMEDIATELY use kba_verification or client_verification tools
 - If a caller needs a summary or confirmation sent → IMMEDIATELY use email or send_sms tools
@@ -54,7 +54,7 @@ TOOLS AVAILABLE:
 - booking_step_* tools for all bookings (preferred, step-based)
 - file_search to find information in knowledge base (use proactively for policy/price/course questions)
 - web_search for time-sensitive facts not in KB (use proactively when needed)
-- crm_browser for CRM operations (bookings, reschedules, cancellations)
+- update_customer and reschedule_booking for customer/booking updates
 - email and send_sms for sending confirmations/summaries
 - complaint_submission for formal complaints
 - kba_verification and client_verification for identity verification
@@ -318,6 +318,18 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
     // Check if initial greeting has been sent
     if (!state.hasInitialGreetingBeenSent) {
       return 'greeting';
+    }
+
+    if (callSid) {
+      try {
+        const stateModule = await import('../../shared/state.js');
+        const { conversations } = stateModule;
+        if (conversations[callSid]?.workflowContext === 'cancellation') {
+          return 'cancellation';
+        }
+      } catch (e) {
+        // ignore
+      }
     }
 
     // Try to get booking session from conversations if callSid is available

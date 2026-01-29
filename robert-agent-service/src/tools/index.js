@@ -1,10 +1,9 @@
 import webSearchTool from './webSearch.js';
-import calendarTool from './calendar.js';
 import emailTool from './email.js';
 import sendSMSTool from './sendSMS.js';
 import generateReferenceIdTool from './generateReferenceId.js';
-import crmTool from './crm.js';
-import crmBrowserTool from './crmBrowserTool.js';
+import updateCustomerTool from './updateCustomer.js';
+import rescheduleBookingTool from './rescheduleBooking.js';
 import paymentsTool from './payments.js';
 import fileSearchTool from './fileSearch.js';
 import transferCallTool from './transferCall.js';
@@ -47,12 +46,11 @@ class UnifiedToolExecutor {
     // Register tool implementations
     const tools = new Map([
       ['web_search', webSearchTool],
-      ['calendar', calendarTool],
       ['email', emailTool],
       ['send_sms', sendSMSTool],
       ['generate_reference_id', generateReferenceIdTool],
-      ['crm', crmTool],
-      ['crm_browser', crmBrowserTool],
+      ['update_customer', updateCustomerTool],
+      ['reschedule_booking', rescheduleBookingTool],
       ['payments', paymentsTool],
       ['file_search', fileSearchTool],
       ['transfer_call', transferCallTool],

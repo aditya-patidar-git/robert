@@ -7,6 +7,7 @@ import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
 import { getStepNumber } from '../../services/browser/stepConfiguration.js';
+import { GOODBYE_CANCELLATION } from '../../config/cancellationPhrases.js';
 
 export class VoiceConfirmationStep extends BaseStepTool {
   getStepName() {
@@ -56,7 +57,8 @@ export class VoiceConfirmationStep extends BaseStepTool {
         success: true,
         cancellationComplete: true,
         message: 'Your booking has now been cancelled, and I have now sent you an email confirmation. Is there anything else that I can help you with?',
-        prompt: 'Say to the caller: "Your booking has now been cancelled, and I have now sent you an email confirmation. Is there anything else that I can help you with?" If they say "No", thank them and end the call. If they say "Yes", assist with additional queries.'
+        goodbyeMessage: GOODBYE_CANCELLATION,
+        prompt: `Say to the caller: "Your booking has now been cancelled, and I have now sent you an email confirmation. Is there anything else that I can help you with?" If they say "No", say exactly: "${GOODBYE_CANCELLATION}" If they say "Yes", assist with additional queries.`
       };
 
     } catch (error) {

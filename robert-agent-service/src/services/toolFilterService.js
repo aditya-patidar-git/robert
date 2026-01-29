@@ -40,8 +40,7 @@ const TOOL_SETS = {
   booking_start: [
     'booking_step_check_availability',
     'file_search',
-    'transfer_call',
-    'calendar' // Legacy tool, delegates to booking_step_check_availability
+    'transfer_call'
   ],
 
   // Booking workflow - after availability, authentication
@@ -91,9 +90,10 @@ const TOOL_SETS = {
     'transfer_call'
   ],
 
-  // Reschedule/cancellation workflow (legacy - uses crm_browser)
+  // Reschedule / update customer workflow
   booking_modification: [
-    'crm_browser',
+    'reschedule_booking',
+    'update_customer',
     'kba_verification',
     'client_verification',
     'file_search',
@@ -109,6 +109,7 @@ const TOOL_SETS = {
     'cancellation_step_determine_workflow',
     'cancellation_step_navigate_contacts',
     'cancellation_step_search_client',
+    'client_verification',
     'cancellation_step_select_client',
     'cancellation_step_locate_booking',
     'cancellation_step_confirm_cancellation',
@@ -146,8 +147,8 @@ const TOOL_SETS = {
 
   // CRM operations (admin/update)
   crm_operations: [
-    'crm',
-    'crm_browser',
+    'update_customer',
+    'reschedule_booking',
     'kba_verification',
     'client_verification',
     'transfer_call'
@@ -169,14 +170,12 @@ const CONTEXTUAL_TOOLS = {
 
   // Add CRM tools when admin operations are needed
   adminAccess: [
-    'crm',
-    'crm_browser'
+    'update_customer',
+    'reschedule_booking'
   ],
 
   // Add legacy tools when backward compatibility is needed
   legacyMode: [
-    'calendar',
-    'crm',
     'payments'
   ]
 };

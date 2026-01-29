@@ -487,40 +487,38 @@ export function getToolDefinitions() {
     },
     {
       type: 'function',
-      name: 'calendar',
-      description: `⚠️ LEGACY TOOL: Delegates to booking_step_check_availability for real-time availability checking.
-      
-For availability checking, this tool delegates to booking_step_check_availability which uses browser automation to check CRM availability pages.
-- check_availability: Requires courseType parameter (defaults to "CBT" if not provided). Returns real-time availability from CRM.
-- book_slot: Not supported - bookings must go through complete booking workflow using booking_step_* tools or crm_browser.
-
-RECOMMENDED: Use booking_step_check_availability directly for better control and features.`,
+      name: 'update_customer',
+      description: 'Update customer record fields (telephone, email, postcode, name, address). Requires customerEmail or customerMobile to locate the customer. At least one field to update must be provided (telephoneNumber, email, postcode, firstName, surname, or address).',
       parameters: {
         type: 'object',
         properties: {
-          action: {
-            type: 'string',
-            enum: ['check_availability', 'book_slot'],
-            description: 'Action to perform'
-          },
-          courseType: {
-            type: 'string',
-            description: 'Course type for availability check (required for check_availability, defaults to "CBT" if not provided). Examples: "CBT", "ITM", "Private Lesson", "Gear Conversion"'
-          },
-          date: {
-            type: 'string',
-            description: 'Preferred date for availability check (optional)'
-          },
-          time: {
-            type: 'string',
-            description: 'Preferred time for availability check (optional)'
-          },
-          duration: {
-            type: 'number',
-            description: 'Duration in minutes (optional)'
-          }
+          customerEmail: { type: 'string', description: 'Customer email to locate the customer (provide one of customerEmail or customerMobile)' },
+          customerMobile: { type: 'string', description: 'Customer mobile to locate the customer (provide one of customerEmail or customerMobile)' },
+          telephoneNumber: { type: 'string', description: 'New telephone/mobile number to set' },
+          email: { type: 'string', description: 'New email address to set' },
+          postcode: { type: 'string', description: 'New postcode to set' },
+          firstName: { type: 'string', description: 'New first name to set' },
+          surname: { type: 'string', description: 'New surname to set' },
+          address: { type: 'string', description: 'New address to set' }
         },
-        required: ['action']
+        required: []
+      }
+    },
+    {
+      type: 'function',
+      name: 'reschedule_booking',
+      description: 'Reschedule an existing booking to a new date/time/location. Requires bookingReference and newDate. At least one of customerEmail or customerMobile is required to locate the booking.',
+      parameters: {
+        type: 'object',
+        properties: {
+          bookingReference: { type: 'string', description: 'Booking reference (e.g. BK-2025-ABC123)' },
+          newDate: { type: 'string', description: 'New date (ISO or DD/MM/YYYY)' },
+          newTime: { type: 'string', description: 'New time (HH:MM, optional)' },
+          newLocation: { type: 'string', description: 'New location (optional)' },
+          customerEmail: { type: 'string', description: 'Customer email to locate the booking' },
+          customerMobile: { type: 'string', description: 'Customer mobile to locate the booking' }
+        },
+        required: ['bookingReference', 'newDate']
       }
     },
     {
@@ -590,227 +588,6 @@ RECOMMENDED: Use booking_step_check_availability directly for better control and
     },
     {
       type: 'function',
-      name: 'crm',
-      description: `⚠️ LEGACY TOOL: Delegates to crm_browser tool for all CRM operations.
-      
-All CRM operations use browser automation (Playwright) with dry-run → diff → confirmation → commit flow.
-- get_customer: Delegates to crm_browser task "search_client". Requires customerId or data with searchType/searchValue.
-- update_customer: Delegates to crm_browser task "update_customer". Requires customerId and updateData.
-- create_booking: Delegates to crm_browser task "create_booking". Requires booking data.
-
-RECOMMENDED: Use crm_browser tool directly for better control, error handling, and access to all CRM features.`,
-      parameters: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['get_customer', 'update_customer', 'create_booking'],
-            description: 'CRM action to perform'
-          },
-          customerId: {
-            type: 'string',
-            description: 'Customer ID (required for update_customer, optional for get_customer)'
-          },
-          data: {
-            type: 'object',
-            description: 'Data for the action. For get_customer: {searchType: "mobile"|"email"|"id", searchValue: "..."}. For update_customer: updateData object. For create_booking: booking data object.'
-          }
-        },
-        required: ['action']
-      }
-    },
-    {
-      type: 'function',
-      name: 'crm_browser',
-      description: `Perform CRM tasks using browser automation (bookings, reschedules, cancellations, customer updates, availability checks).
-
-⚠️ DEPRECATION NOTICE: The "create_booking" task is DEPRECATED. Use booking_step_* tools instead for all new bookings.
-These step-based tools provide better state management, resumable workflows, and improved error handling.
-The create_booking task will be removed in a future version.
-
-CRITICAL ITM (Introduction to Motorcycling) BOOKING FLOW - MUST FOLLOW THIS ORDER:
-1. FIRST: Call with task: "check_availability" and args: {courseType: "Introduction to Motorcycling"} to get available slots
-2. Present all available slots to the caller and ask for preferences (date, time, location, instructor)
-3. Agree on a specific slot with the caller
-4. OPTIONAL: Ask "Have you done training with us before?" BEFORE calling create_booking. If you ask this question, you MUST include workflowType: "existing" or "new" in the create_booking call based on the caller's answer.
-5. THEN: Call with task: "create_booking" and args: {courseType: "Introduction to Motorcycling", agreedSlot: <selected slot>, workflowType: "existing" or "new" (if you asked earlier), ...}
-6. If you did NOT ask the question earlier AND the tool returns requiresWorkflowType: true, THEN ask "Have you done training with us before?" and call create_booking again with workflowType: "existing" or "new"
-7. IMPORTANT: If you ask "Have you done training with us before?" at any point, you MUST include workflowType in the create_booking call. Do NOT call create_booking without workflowType if you already asked the question.
-
-CRITICAL: TERMS AND CONDITIONS ACCEPTANCE (TIMING IS STRICT):
-- 🚨 CRITICAL PROHIBITION: NEVER include termsAccepted in create_booking calls until AFTER card details are filled
-- 🚨 NEVER include termsAccepted before navigating to Diaries tab
-- 🚨 NEVER include termsAccepted before selecting booking options
-- 🚨 NEVER include termsAccepted before contact lookup
-- 🚨 NEVER include termsAccepted before payment step
-- 🚨 NEVER include termsAccepted in continuation calls for preferences (bikeType, etc.)
-- 🚨 NEVER include termsAccepted in continuation calls for verification
-- 🚨 NEVER include termsAccepted in ANY create_booking call before the payment step
-
-- CRITICAL TIMING: Ask for terms acceptance AFTER card details are filled, but BEFORE clicking "Make booking" button
-- The booking flow order is STRICT: Availability → Login → Workflow Type → Find Client → Diaries Tab → Booking Options → Contact Details → Payment (fill card details) → TERMS ACCEPTANCE (ask here ONLY) → Click "Make booking"
-- DO NOT ask for terms before Diaries tab
-- DO NOT ask for terms before selecting booking options
-- DO NOT ask for terms before contact lookup
-- DO NOT ask for terms before payment step
-- DO NOT ask for terms before card details are filled
-- Read the terms from the system prompt (valid UK licence, appropriate footwear, denim jeans/motorcycle trousers, arrive on time, 30% cancellation fee, Terms & Conditions)
-- Ask "Do you agree with the statements that I have just made?"
-- If client says "yes" → Include termsAccepted: true in the FINAL create_booking call (ONLY after card details are filled, just before clicking "Make booking")
-- If client says "no" → Address concerns, ask again. If still no, offer human transfer. If refused, terminate call.
-- If no response → System defaults to termsAccepted: true to allow booking to proceed
-- 🚨 CRITICAL: The ONLY time to include termsAccepted is in the FINAL create_booking call AFTER card details are filled, just before clicking "Make booking" button
-
-For all other courses (CBT, Private Lesson, etc.):
-- Follow standard booking flow
-- For create_booking, courseType is required
-- For reschedule_booking and cancel_booking, bookingReference and customerEmail/customerMobile are required
-- For update_customer, customerEmail/customerMobile and at least one field to update are required
-- For check_availability, courseType is required
-
-This tool opens a browser and performs the actual CRM operations.`,
-      parameters: {
-        type: 'object',
-        properties: {
-          task: {
-            type: 'string',
-            enum: ['create_booking', 'reschedule_booking', 'cancel_booking', 'update_customer', 'check_availability'],
-            description: 'Type of CRM task to perform'
-          },
-          args: {
-            type: 'object',
-            properties: {
-              courseType: {
-                type: 'string',
-                enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion', 'TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders', 'Full Licence Assessment', 'Full Motorcycle Licence Assessment'],
-                description: 'Required for create_booking and check_availability: Type of course to book or check availability for'
-              },
-              customerEmail: {
-                type: 'string',
-                description: 'Customer email address (optional - will be collected during booking if not provided)'
-              },
-              customerPhone: {
-                type: 'string',
-                description: 'Customer phone number (optional - will be collected during booking if not provided)'
-              },
-              preferredDate: {
-                type: 'string',
-                description: 'Preferred booking date'
-              },
-              preferredTime: {
-                type: 'string',
-                description: 'Preferred booking time'
-              },
-              location: {
-                type: 'string',
-                description: 'Preferred training location'
-              },
-              bikeType: {
-                type: 'string',
-                description: 'Bike type preference (e.g., "125cc automatic", "50cc automatic", "125cc manual", "500cc restricted", "600cc")'
-              },
-              cbtType: {
-                type: 'string',
-                enum: ['standard', 'renewal'],
-                description: 'For CBT courses: "standard" for new riders, "renewal" for existing CBT holders'
-              },
-              duration: {
-                type: 'string',
-                enum: ['2', '3', '4'],
-                description: 'For Gear Conversion: duration in hours ("2", "3", or "4")'
-              },
-              bookingReference: {
-                type: 'string',
-                description: 'Booking reference (alphanumeric code like "BK-2025-ABC123") for reschedule or cancellation tasks. Required for reschedule_booking and cancel_booking.'
-              },
-              newDate: {
-                type: 'string',
-                description: 'New date for rescheduling (ISO format or DD/MM/YYYY). Required for reschedule_booking.'
-              },
-              newTime: {
-                type: 'string',
-                description: 'New time for rescheduling (HH:MM format). Optional for reschedule_booking.'
-              },
-              newLocation: {
-                type: 'string',
-                description: 'New location for rescheduling. Optional for reschedule_booking.'
-              },
-              reason: {
-                type: 'string',
-                description: 'Reason for cancellation. Optional for cancel_booking.'
-              },
-              customerMobile: {
-                type: 'string',
-                description: 'Customer mobile number. Used for finding customer for reschedule/cancel/update operations.'
-              },
-              email: {
-                type: 'string',
-                description: 'New email address for customer updates. Used for update_customer task.'
-              },
-              mobile: {
-                type: 'string',
-                description: 'New mobile number for customer updates. Used for update_customer task.'
-              },
-              postcode: {
-                type: 'string',
-                description: 'New postcode for customer updates. Used for update_customer task.'
-              },
-              firstName: {
-                type: 'string',
-                description: 'New first name for customer updates. Used for update_customer task.'
-              },
-              surname: {
-                type: 'string',
-                description: 'New surname for customer updates. Used for update_customer task.'
-              },
-              address: {
-                type: 'string',
-                description: 'New address for customer updates. Used for update_customer task.'
-              },
-              workflowType: {
-                type: 'string',
-                enum: ['existing', 'new'],
-                description: 'Workflow type: "existing" for clients who have trained with us before, "new" for new clients. Required for ITM bookings after availability check.'
-              },
-              agreedSlot: {
-                type: 'object',
-                description: 'The specific slot that was agreed upon with the caller. Should include date, time, location, and optionally instructor. Used to skip availability check.',
-                properties: {
-                  date: { type: 'string', description: 'Date of the slot (ISO format or date string)' },
-                  time: { type: 'string', description: 'Time of the slot (HH:MM format)' },
-                  location: { type: 'string', description: 'Location of the slot' },
-                  instructor: { type: 'string', description: 'Instructor name (optional)' },
-                  price: { type: 'string', description: 'Price of the slot (optional)' }
-                }
-              },
-              selectedSlot: {
-                type: 'object',
-                description: 'Alternative name for agreedSlot - the selected slot from availability check.',
-                properties: {
-                  date: { type: 'string', description: 'Date of the slot (ISO format or date string)' },
-                  time: { type: 'string', description: 'Time of the slot (HH:MM format)' },
-                  location: { type: 'string', description: 'Location of the slot' },
-                  instructor: { type: 'string', description: 'Instructor name (optional)' },
-                  price: { type: 'string', description: 'Price of the slot (optional)' }
-                }
-              },
-              termsAccepted: {
-                type: 'boolean',
-                description: 'Whether the client has accepted the terms and conditions. You MUST ask the client to accept terms before payment. Read the terms: valid UK licence requirement, appropriate footwear, denim jeans/motorcycle trousers, arrive on time, 30% cancellation fee, and Terms & Conditions. Ask "Do you agree with the statements that I have just made?" If client says "yes", set this to true. If client says "no" or asks questions, address them and ask again. If still no agreement, offer human transfer. If no response is received, default to true to allow booking to proceed.'
-              },
-              instructor: {
-                type: 'string',
-                description: 'Preferred instructor name (optional)'
-              }
-            },
-            required: []
-          }
-        },
-        required: ['task', 'args']
-      }
-    },
-    {
-      type: 'function',
       name: 'payments',
       description: `⚠️ LEGACY TOOL: Provides guidance for payment processing. Direct payment processing is not supported in v1.
       
@@ -824,7 +601,7 @@ For booking payments:
 - Use booking_step_send_payment_request (send payment link via email/SMS)
 
 For refunds:
-- Use crm_browser tool with task "issue_refund" (if permitted by policy) after identity verification
+- Follow the appropriate refund process after identity verification (if permitted by policy)
 
 This tool returns guidance messages directing to the appropriate tools.`,
       parameters: {
@@ -942,8 +719,8 @@ This tool returns guidance messages directing to the appropriate tools.`,
 3. THIRD: After postcode is verified, ask for telephone number using: "Thank you. Finally, could you please confirm your telephone number?"
    - Call this tool with fullName, postcode (already verified) AND telephoneNumber parameter
    - Wait for verification result
-   - If verified, verification is complete
-   - If mismatch, use the exact error message provided and ask again (up to 7 attempts)
+   - If verified, verification is complete; if the tool returns offerUpdatePhone: true, ask "Would you like us to update your telephone number to the new one?" and if yes collect new UK mobile and call the update_customer tool with telephoneNumber and customerEmail or customerMobile
+   - If mismatch: when the tool returns a "last four digits" confirmation prompt, use that exact message to ask the caller to confirm the number on file; otherwise use the exact error message provided and ask again (up to 7 attempts)
 
 🚨 CRITICAL SECURITY RULE: You MUST ONLY use values that the caller ACTUALLY SPOKE in this conversation. DO NOT use values from stored client details, CRM data, or conversation context. Extract ONLY what the caller says.
 
@@ -952,7 +729,9 @@ This tool returns guidance messages directing to the appropriate tools.`,
 - Postcode mismatch: "Unfortunately, the post code that you have provided does not match the one that we hold on file for you; have you changed your address, or have you perhaps previously provided a different postcode to us?"
 - Telephone mismatch: "Unfortunately, the telephone number that you have provided does not match the one that we hold on file for you; have you changed your telephone number or have you ever provided us with an alternative telephone number?"
 
-After successful verification of all three fields, say: "You are successfully verified. Would you like to proceed with your booking? Please say yes or no." and wait for confirmation.`,
+After successful verification of all three fields, say: "You are successfully verified. Would you like to proceed with your booking? Please say yes or no." and wait for confirmation.
+
+WARNING: Never disclose any personal information from our clients found in the system to the caller (GDPR).`,
       parameters: {
         type: 'object',
         properties: {
@@ -996,7 +775,7 @@ After successful verification of all three fields, say: "You are successfully ve
         required: ['complaintText']
       }
     },
-    // Step-based booking tools (preferred over crm_browser.create_booking)
+    // Step-based booking tools
     ...getStepBookingToolDefinitions(),
     // Step-based cancellation tools
     ...getCancellationStepToolDefinitions()
@@ -1015,7 +794,7 @@ function getCancellationStepToolDefinitions() {
       description: `Step 1: Verify caller has a current booking and explain cancellation policy. This is a voice-only step that requires caller interaction.
 
 Ask the caller: "Do you have a current booking with us?"
-- If they say "Yes": Explain cancellation policy and set verified: true, proceedToStep2: true
+- If they say "Yes": Explain the cancellation policy, then say the standard Terms disclaimer (Full Terms & Conditions are available on our website). Then ask "Would you like to proceed?" If they say Yes, set verified: true, proceedToStep2: true. If they say No, set verified: true, proceedToStep2: false and say exactly: "Ok, thank you. Is there anything else that I can help you with?" and do not proceed to Step 2.
 - If they say "No": Set verified: false and do not proceed to Step 2
 
 Cancellation policy: "If you wish to cancel your (CBT), (ITM), (Gear Conversion), (Private Motorcycling lesson) you MUST provide a minimum of 3 (Three) full working days' notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within less than 3 (three) full working days will result in the entire paid fees."`,
@@ -1103,7 +882,7 @@ Ask the caller: "Have you done training with us before?"
     {
       type: 'function',
       name: 'cancellation_step_search_client',
-      description: 'Step 5: Search for client using smart search with fallback (mobile → email → name). Includes client verification. Reuses booking search logic.',
+      description: `Step 5: Search for client using smart search with fallback (mobile → email → name). Includes client verification. Reuses booking search logic. If email search fails, ask "Could you please tell me your full name?" and call again with customerName; name search uses first 3 letters of first name + space + first 3 of last name (or middle 3 if no match). WARNING: Never disclose any personal information from our clients found in the system to the caller (GDPR).`,
       parameters: {
         type: 'object',
         properties: {
@@ -1191,7 +970,7 @@ Then call this tool with the courseDate.`,
       name: 'cancellation_step_confirm_cancellation',
       description: `Step 8: Confirm cancellation with caller and explain fees. This is a voice-only step that requires caller confirmation.
 
-Explain the cancellation policy and fees from Step 7, then ask: "Would you like to proceed with the cancellation?"
+Mention the Terms URL when explaining the policy (Full Terms & Conditions are available on our website). Explain the cancellation policy and fees from Step 7, then ask: "Would you like to proceed with the cancellation?"
 - If they say "Yes": Set confirmed: true
 - If they say "No": Set confirmed: false and do not proceed`,
       parameters: {
@@ -1355,7 +1134,7 @@ Fee amounts by course type:
       description: `Step 14: Confirm cancellation completion to caller. This is a voice-only step.
 
 Say to the caller: "Your booking has now been cancelled, and I have now sent you an email confirmation. Is there anything else that I can help you with?"
-- If they say "No": Thank them and end the call
+- If they say "No": Say exactly: "Thank you for calling Universal Motorcycle Training, we look forward to hearing from you again soon."
 - If they say "Yes": Assist with additional queries`,
       parameters: {
         type: 'object',
