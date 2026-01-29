@@ -15,7 +15,18 @@ import sipService from "../services/sipService.js";
 import toolExecutionService from "../services/toolExecutionService.js";
 import { HTTPResultSubmitter } from "../services/toolResultSubmitter.js";
 import CallRecord from "../database/models/CallRecord.js";
+import HandoverRecord from "../database/models/HandoverRecord.js";
 import { generateSipRoutingTwiML, generateMinimalTwiML } from "../utils/twimlGenerator.js";
+
+function escapeTwiMLText(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 import WebSocket from "ws";
 
 // Store active SIP call WebSocket connections
@@ -646,10 +657,42 @@ export const handleSipCallHandler = async (req, res) => {
   } catch (error) {
     console.error(`❌ [SIP] Error handling SIP call handler:`, error);
     console.error(`❌ [SIP] Error stack:`, error.stack);
-    // Return minimal TwiML even on error to prevent call failure
     const twiml = generateMinimalTwiML();
     res.type('text/xml');
     res.send(twiml);
+  }
+};
+
+/**
+ * GET /api/sip/agent-call-handler?originalCallSid=...
+ * Twilio requests this URL when the outbound call to the agent connects.
+ * Returns TwiML: Say handover summary then Dial agent into same conference as caller.
+ */
+export const handleAgentCallHandler = async (req, res) => {
+  try {
+    const originalCallSid = req.query.originalCallSid;
+    if (!originalCallSid) {
+      console.error(`❌ [SIP] agent-call-handler: missing originalCallSid`);
+      res.type('text/xml');
+      res.send('<Response><Say>Transfer configuration error. Please try again.</Say><Hangup/></Response>');
+      return;
+    }
+    const record = await HandoverRecord.findOne({ callSid: originalCallSid }).sort({ createdAt: -1 }).lean();
+    if (!record || !record.conferenceName) {
+      console.error(`❌ [SIP] agent-call-handler: no HandoverRecord or conferenceName for ${originalCallSid}`);
+      res.type('text/xml');
+      res.send('<Response><Say>Transfer setup not found. Please try again.</Say><Hangup/></Response>');
+      return;
+    }
+    const sayText = escapeTwiMLText(record.handoverSummary || 'Incoming transfer from Robert.');
+    const twiml = `<Response><Say>${sayText}</Say><Dial><Conference>${escapeTwiMLText(record.conferenceName)}</Conference></Dial></Response>`;
+    res.type('text/xml');
+    res.send(twiml);
+    console.log(`✅ [SIP] agent-call-handler: TwiML returned for originalCallSid=${originalCallSid}, conference=${record.conferenceName}`);
+  } catch (error) {
+    console.error(`❌ [SIP] agent-call-handler:`, error);
+    res.type('text/xml');
+    res.send('<Response><Say>An error occurred. Please try again.</Say><Hangup/></Response>');
   }
 };
 

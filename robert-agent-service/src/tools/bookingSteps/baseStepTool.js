@@ -13,78 +13,60 @@ import configManager from '../../agent/configManager.js';
 import { conversations } from '../../shared/state.js';
 import { storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from '../../services/commonBookingSteps/slotStorageUtils.js';
 
+const bookingToolNameMap = {
+  'checkAvailability': 'booking_step_check_availability',
+  'authenticate': 'booking_step_authenticate',
+  'navigateContacts': 'booking_step_navigate_contacts',
+  'searchClient': 'booking_step_search_client',
+  'selectSession': 'booking_step_select_session',
+  'selectBookingOptions': 'booking_step_select_booking_options',
+  'createNewContact': 'booking_step_create_new_contact',
+  'lookupContact': 'booking_step_lookup_contact',
+  'fillContactDetails': 'booking_step_fill_contact_details',
+  'processPayment': 'booking_step_process_payment',
+  'sendPaymentRequest': 'booking_step_send_payment_request',
+  'sendConfirmation': 'booking_step_send_confirmation',
+  'sendTerms': 'booking_step_send_terms',
+  'sendSMS': 'booking_step_send_sms'
+};
+
+const cancellationToolNameMap = {
+  'verifyBookingIntent': 'cancellation_step_verify_booking_intent',
+  'authenticate': 'cancellation_step_authenticate',
+  'determineWorkflow': 'cancellation_step_determine_workflow',
+  'navigateContacts': 'cancellation_step_navigate_contacts',
+  'searchClient': 'cancellation_step_search_client',
+  'selectClient': 'cancellation_step_select_client',
+  'locateBooking': 'cancellation_step_locate_booking',
+  'confirmCancellation': 'cancellation_step_confirm_cancellation',
+  'initiateCancellation': 'cancellation_step_initiate_cancellation',
+  'fillCancellationForm': 'cancellation_step_fill_cancellation_form',
+  'navigateCommunication': 'cancellation_step_navigate_communication',
+  'selectTemplate': 'cancellation_step_select_template',
+  'sendCancellationConfirmation': 'cancellation_step_send_confirmation',
+  'voiceConfirmation': 'cancellation_step_voice_confirmation'
+};
+
 /**
- * Helper function to map step numbers to tool names
+ * Map step numbers to tool names; uses workflow context so shared steps (e.g. authenticate, navigateContacts) get the correct prefix.
  * @param {string} courseType - Course type
  * @param {string} workflowType - Workflow type ('existing' or 'new')
  * @param {number} stepNumber - Step number
+ * @param {boolean} [isCancellationWorkflow=false] - True when the current tool is a cancellation step
  * @returns {string|null} Tool name or null if not found
  */
-function getToolNameForStep(courseType, workflowType, stepNumber) {
+function getToolNameForStep(courseType, workflowType, stepNumber, isCancellationWorkflow = false) {
   const stepName = getStepName(courseType, workflowType, stepNumber);
-  
   if (!stepName) return null;
-  
-  // Check if this is a cancellation step
-  const cancellationStepNames = [
-    'verifyBookingIntent',
-    'determineWorkflow',
-    'selectClient',
-    'locateBooking',
-    'confirmCancellation',
-    'initiateCancellation',
-    'fillCancellationForm',
-    'navigateCommunication',
-    'selectTemplate',
-    'sendCancellationConfirmation',
-    'voiceConfirmation'
-  ];
-  
-  const isCancellationStep = cancellationStepNames.includes(stepName);
-  
-  // Map step names to tool names
-  const bookingToolNameMap = {
-    'checkAvailability': 'booking_step_check_availability',
-    'authenticate': 'booking_step_authenticate',
-    'navigateContacts': 'booking_step_navigate_contacts',
-    'searchClient': 'booking_step_search_client',
-    'selectSession': 'booking_step_select_session',
-    'selectBookingOptions': 'booking_step_select_booking_options',
-    'createNewContact': 'booking_step_create_new_contact',
-    'lookupContact': 'booking_step_lookup_contact',
-    'fillContactDetails': 'booking_step_fill_contact_details',
-    'processPayment': 'booking_step_process_payment',
-    'sendPaymentRequest': 'booking_step_send_payment_request',
-    'sendConfirmation': 'booking_step_send_confirmation',
-    'sendTerms': 'booking_step_send_terms',
-    'sendSMS': 'booking_step_send_sms'
-  };
-  
-  const cancellationToolNameMap = {
-    'verifyBookingIntent': 'cancellation_step_verify_booking_intent',
-    'authenticate': 'cancellation_step_authenticate',
-    'determineWorkflow': 'cancellation_step_determine_workflow',
-    'navigateContacts': 'cancellation_step_navigate_contacts',
-    'searchClient': 'cancellation_step_search_client',
-    'selectClient': 'cancellation_step_select_client',
-    'locateBooking': 'cancellation_step_locate_booking',
-    'confirmCancellation': 'cancellation_step_confirm_cancellation',
-    'initiateCancellation': 'cancellation_step_initiate_cancellation',
-    'fillCancellationForm': 'cancellation_step_fill_cancellation_form',
-    'navigateCommunication': 'cancellation_step_navigate_communication',
-    'selectTemplate': 'cancellation_step_select_template',
-    'sendCancellationConfirmation': 'cancellation_step_send_confirmation',
-    'voiceConfirmation': 'cancellation_step_voice_confirmation'
-  };
-  
-  if (isCancellationStep) {
-    return cancellationToolNameMap[stepName] || null;
-  }
-  
-  return bookingToolNameMap[stepName] || null;
+  const map = isCancellationWorkflow ? cancellationToolNameMap : bookingToolNameMap;
+  return map[stepName] || null;
 }
 
 export class BaseStepTool {
+  get isCancellationWorkflow() {
+    return false;
+  }
+
   constructor() {
     this.stepExecutor = new StepExecutor();
     // Initialize browser manager
@@ -302,6 +284,11 @@ export class BaseStepTool {
           sessionStateManager.setSessionDetails(callSid, result.sessionDetails);
         }
 
+        // Store booking details if provided (from locateBooking step)
+        if (result.bookingDetails) {
+          sessionStateManager.setBookingDetails(callSid, result.bookingDetails);
+        }
+
         // CRITICAL FIX: Store availability data in conversation for Step 1 (check_availability)
         // This ensures Step 6 (select_session) can retrieve sessionDetails even if no slot was initially selected
         if (stepNumber === 1 && (result.allSlots || result.selectedSlot || result.sessionDetails)) {
@@ -371,7 +358,7 @@ export class BaseStepTool {
 
     // If no current step, must start from step 1
     if (currentStep === null && stepNumber !== 1) {
-      const requiredToolName = getToolNameForStep(courseType, workflowType, 1);
+      const requiredToolName = getToolNameForStep(courseType, workflowType, 1, this.isCancellationWorkflow);
       return {
         valid: false,
         error: `Booking session not started. Please start with step 1 (checkAvailability).`,
@@ -388,7 +375,7 @@ export class BaseStepTool {
       // CRITICAL: For ALL courses, Step 2 (authenticate) MUST complete before ANY subsequent step can be called
       // This prevents asking workflow type (Step 3) or any other step before authentication completes
       if (currentStep < 2 && stepNumber > 2) {
-        const requiredToolName = getToolNameForStep(courseType, workflowType, 2);
+        const requiredToolName = getToolNameForStep(courseType, workflowType, 2, this.isCancellationWorkflow);
         return {
           valid: false,
           error: `Cannot execute step ${stepNumber}. Step 2 (authenticate) must complete first. Current step is ${currentStep}. Please call booking_step_authenticate first and wait for success: true.`,
@@ -406,7 +393,7 @@ export class BaseStepTool {
       // This validation ensures workflow type question is not asked before authentication
       const isStep3 = stepNumber === 3;
       if (isStep3 && currentStep < 2) {
-        const requiredToolName = getToolNameForStep(courseType, workflowType, 2);
+        const requiredToolName = getToolNameForStep(courseType, workflowType, 2, this.isCancellationWorkflow);
         return {
           valid: false,
           error: `Cannot execute step 3 (workflow type). Step 2 (authenticate) must complete first. Current step is ${currentStep}. Please call booking_step_authenticate first and wait for success: true.`,
@@ -468,17 +455,77 @@ export class BaseStepTool {
       }
       
       if (stepNumber < currentStep) {
-        const requiredToolName = getToolNameForStep(courseType, workflowType, currentStep + 1);
-        return {
-          valid: false,
-          error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,
-          currentStep,
-          requiresStep: currentStep + 1,
-          requiresTool: requiredToolName,
-          autoRetryInstruction: requiredToolName 
-            ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
-            : `CRITICAL: You MUST continue with step ${currentStep + 1} without waiting for user input.`
-        };
+        // CRITICAL STEPS that are prerequisites and can be safely retried after timeout
+        const criticalPrerequisiteSteps = [2]; // Step 2: authenticate
+        
+        // Check if this is a critical prerequisite step that can be retried
+        const isCriticalStep = criticalPrerequisiteSteps.includes(stepNumber);
+        
+        if (isCriticalStep) {
+          // Check step history to see if this step previously failed
+          const stepHistory = session?.stepHistory || [];
+          const previousAttempt = stepHistory.find(h => h.step === stepNumber);
+          const previousFailed = previousAttempt && (
+            !previousAttempt.result?.success || 
+            previousAttempt.result?.error?.includes('timeout') ||
+            previousAttempt.result?.error?.includes('Timeout') ||
+            previousAttempt.result?.error?.includes('failed')
+          );
+          
+          // Check if any subsequent steps that depend on this step have succeeded
+          // For step 2 (authenticate), step 4+ require browser auth, so if they succeeded, step 2 worked
+          const dependentStepsSucceeded = stepHistory.some(h => 
+            h.step > stepNumber && 
+            h.step >= 4 && // Steps 4+ require browser authentication
+            h.result?.success === true
+          );
+          
+          if (previousFailed && !dependentStepsSucceeded) {
+            console.log(`✅ [${callSid}] Allowing retry of critical step ${stepNumber} - previous attempt failed and no dependent steps succeeded`);
+            // Allow retry - don't block
+            // Note: Concurrent execution protection is handled by activeToolExecutions check in toolExecutionService
+          } else if (dependentStepsSucceeded) {
+            // Dependent steps succeeded, so this step probably worked despite timeout
+            console.log(`⚠️ [${callSid}] Blocking retry of step ${stepNumber} - dependent steps have succeeded, indicating step likely completed`);
+            const requiredToolName = getToolNameForStep(courseType, workflowType, currentStep + 1, this.isCancellationWorkflow);
+            return {
+              valid: false,
+              error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Step ${stepNumber} likely completed successfully (dependent steps succeeded). Please continue from step ${currentStep + 1}.`,
+              currentStep,
+              requiresStep: currentStep + 1,
+              requiresTool: requiredToolName,
+              autoRetryInstruction: requiredToolName 
+                ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+                : `CRITICAL: You MUST continue with step ${currentStep + 1} without waiting for user input.`
+            };
+          } else {
+            // No previous failure recorded or no history - block retry to be safe
+            const requiredToolName = getToolNameForStep(courseType, workflowType, currentStep + 1, this.isCancellationWorkflow);
+            return {
+              valid: false,
+              error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,
+              currentStep,
+              requiresStep: currentStep + 1,
+              requiresTool: requiredToolName,
+              autoRetryInstruction: requiredToolName 
+                ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+                : `CRITICAL: You MUST continue with step ${currentStep + 1} without waiting for user input.`
+            };
+          }
+        } else {
+          // Not a critical step - block retry
+          const requiredToolName = getToolNameForStep(courseType, workflowType, currentStep + 1, this.isCancellationWorkflow);
+          return {
+            valid: false,
+            error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,
+            currentStep,
+            requiresStep: currentStep + 1,
+            requiresTool: requiredToolName,
+            autoRetryInstruction: requiredToolName 
+              ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
+              : `CRITICAL: You MUST continue with step ${currentStep + 1} without waiting for user input.`
+          };
+        }
       }
       
       // CRITICAL FIX: Prevent calling selectBookingOptions (STEP 7) before selectSession (STEP 6) completes
@@ -491,7 +538,7 @@ export class BaseStepTool {
         // Check if selectSession has been completed
         const selectSessionStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_SESSION);
         if (selectSessionStepNumber !== null && currentStep < selectSessionStepNumber) {
-          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber);
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber, this.isCancellationWorkflow);
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber} (selectBookingOptions). You must first complete step ${selectSessionStepNumber} (selectSession). Please call booking_step_select_session first.`,
@@ -515,7 +562,7 @@ export class BaseStepTool {
         // Check if selectSession has been completed
         const selectSessionStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_SESSION);
         if (selectSessionStepNumber !== null && currentStep < selectSessionStepNumber) {
-          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber);
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber, this.isCancellationWorkflow);
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber} (createNewContact). You must first complete step ${selectSessionStepNumber} (selectSession). Please call booking_step_select_session first.`,
@@ -532,7 +579,7 @@ export class BaseStepTool {
         // Check if selectBookingOptions has been completed
         const selectBookingOptionsStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_BOOKING_OPTIONS);
         if (selectBookingOptionsStepNumber !== null && currentStep < selectBookingOptionsStepNumber) {
-          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber);
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber, this.isCancellationWorkflow);
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber} (createNewContact). You must first complete step ${selectBookingOptionsStepNumber} (selectBookingOptions). Please call booking_step_select_booking_options first.`,
@@ -556,7 +603,7 @@ export class BaseStepTool {
         // Check if selectBookingOptions has been completed
         const selectBookingOptionsStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.SELECT_BOOKING_OPTIONS);
         if (selectBookingOptionsStepNumber !== null && currentStep < selectBookingOptionsStepNumber) {
-          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber);
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber, this.isCancellationWorkflow);
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber} (lookupContact). You must first complete step ${selectBookingOptionsStepNumber} (selectBookingOptions). Please call booking_step_select_booking_options first.`,
@@ -579,7 +626,7 @@ export class BaseStepTool {
         // Check if lookupContact has been completed
         const lookupContactStepNumber = getStepNumber(courseType, workflowType, STEP_NAMES.LOOKUP_CONTACT);
         if (lookupContactStepNumber !== null && currentStep < lookupContactStepNumber) {
-          const requiredToolName = getToolNameForStep(courseType, workflowType, lookupContactStepNumber);
+          const requiredToolName = getToolNameForStep(courseType, workflowType, lookupContactStepNumber, this.isCancellationWorkflow);
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber} (fillContactDetails). You must first complete step ${lookupContactStepNumber} (lookupContact). Please call booking_step_lookup_contact first.`,
@@ -635,7 +682,7 @@ export class BaseStepTool {
         if (stepNumber === selectSessionStepNumber && currentStep === 2 && isStep3Skippable) {
           // Allow skipping Step 3 to go to Step 4
         } else if (stepNumber === selectBookingOptionsStepNumber && currentStep < selectSessionStepNumber) {
-          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber);
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectSessionStepNumber, this.isCancellationWorkflow);
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber} (selectBookingOptions). You must first complete step ${selectSessionStepNumber} (selectSession). Please call booking_step_select_session first.`,
@@ -648,7 +695,7 @@ export class BaseStepTool {
               : `CRITICAL: You MUST complete step ${selectSessionStepNumber} (selectSession) without waiting for user input.`
           };
         } else if (stepNumber === createNewContactStepNumber && currentStep < selectBookingOptionsStepNumber) {
-          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber);
+          const requiredToolName = getToolNameForStep(courseType, workflowType, selectBookingOptionsStepNumber, this.isCancellationWorkflow);
           return {
             valid: false,
             error: `Cannot execute step ${stepNumber} (createNewContact). You must first complete step ${selectBookingOptionsStepNumber} (selectBookingOptions). Please call booking_step_select_booking_options first.`,
@@ -664,7 +711,7 @@ export class BaseStepTool {
       }
       
       if (stepNumber > currentStep + 1 && !isStep3Skippable && !canSkipNonExistentStep) {
-        const requiredToolName = getToolNameForStep(courseType, workflowType, currentStep + 1);
+        const requiredToolName = getToolNameForStep(courseType, workflowType, currentStep + 1, this.isCancellationWorkflow);
         return {
           valid: false,
           error: `Cannot skip to step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,

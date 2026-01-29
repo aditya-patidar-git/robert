@@ -3,19 +3,23 @@
  * Step 8: Voice-only step to confirm cancellation and explain fees
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
 import { getStepNumber } from '../../services/browser/stepConfiguration.js';
 import { TERMS_DISCLAIMER } from '../../config/cancellationPhrases.js';
 
-export class ConfirmCancellationStep extends BaseStepTool {
+export class ConfirmCancellationStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.CONFIRM_CANCELLATION;
   }
 
   getRequiredPreferences() {
     return []; // Booking details and fees come from previous step
+  }
+
+  getTimeout() {
+    return 60000; // 60 seconds
   }
 
   /**

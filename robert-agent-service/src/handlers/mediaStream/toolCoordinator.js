@@ -432,14 +432,52 @@ export class ToolCoordinator {
           
           const transcriptText = event.transcript || '';
           const callSid = this.state.callSid;
-          if (transcriptText.trim() && this.openaiIntegration && this.openaiIntegration.getCurrentWorkflowPhase?.() !== 'cancellation' && conversations[callSid]?.workflowContext !== 'cancellation') {
+          let intentDetected = false;
+          
+          console.log(`🔍 [${callSid}] INTENT DETECTION DEBUG:`);
+          console.log(`   - transcriptText: "${transcriptText}"`);
+          console.log(`   - transcriptText.trim(): "${transcriptText.trim()}"`);
+          console.log(`   - transcriptText.trim() length: ${transcriptText.trim().length}`);
+          console.log(`   - openaiIntegration exists: ${!!this.openaiIntegration}`);
+          
+          if (transcriptText.trim() && this.openaiIntegration) {
             const intent = getIntentFromTranscript(transcriptText);
             const phase = intent ? getPhaseForIntent(intent) : null;
-            if (phase === 'cancellation') {
+            const currentPhase = this.openaiIntegration.getCurrentWorkflowPhase?.();
+            const wfCtx = conversations[callSid]?.workflowContext;
+            
+            console.log(`   - intent detected: ${intent || 'null'}`);
+            console.log(`   - phase mapped: ${phase || 'null'}`);
+            console.log(`   - currentPhase: ${currentPhase || 'null'}`);
+            console.log(`   - workflowContext: ${wfCtx || 'null'}`);
+            console.log(`   - phase === 'cancellation': ${phase === 'cancellation'}`);
+            console.log(`   - currentPhase !== 'cancellation': ${currentPhase !== 'cancellation'}`);
+            console.log(`   - wfCtx !== 'cancellation': ${wfCtx !== 'cancellation'}`);
+            console.log(`   - All cancellation conditions met: ${phase === 'cancellation' && currentPhase !== 'cancellation' && wfCtx !== 'cancellation'}`);
+            
+            if (phase === 'cancellation' && currentPhase !== 'cancellation' && wfCtx !== 'cancellation') {
               if (!conversations[callSid]) conversations[callSid] = {};
               conversations[callSid].workflowContext = 'cancellation';
-              this.openaiIntegration.updateToolsForPhase('cancellation');
+              console.log(`🎯 [${callSid}] Cancellation intent detected: "${transcriptText}" - updating tools and workflow phase`);
+              const toolsUpdated = this.openaiIntegration.updateToolsForPhase('cancellation');
+              if (toolsUpdated) {
+                intentDetected = true;
+                console.log(`✅ [${callSid}] Cancellation tools updated - agent will use cancellation_step_verify_booking_intent first`);
+              }
+            } else if (phase === 'booking_start' && currentPhase !== 'booking_start' && wfCtx !== 'booking') {
+              if (!conversations[callSid]) conversations[callSid] = {};
+              conversations[callSid].workflowContext = 'booking';
+              console.log(`🎯 [${callSid}] Booking intent detected: "${transcriptText}" - updating tools and workflow phase`);
+              const toolsUpdated = this.openaiIntegration.updateToolsForPhase('booking_start');
+              if (toolsUpdated) {
+                intentDetected = true;
+                console.log(`✅ [${callSid}] Booking tools updated`);
+              }
+            } else {
+              console.log(`   - No intent action taken (conditions not met)`);
             }
+          } else {
+            console.log(`   - Intent detection skipped: transcriptText.trim()=${!!transcriptText.trim()}, openaiIntegration=${!!this.openaiIntegration}`);
           }
           
           // CRITICAL DIAGNOSTIC: Log transcription processing result

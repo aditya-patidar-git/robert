@@ -3,10 +3,10 @@
  * Step 9: Click booking row → "Cancel booking" from context menu
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 
-export class InitiateCancellationStep extends BaseStepTool {
+export class InitiateCancellationStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.INITIATE_CANCELLATION;
   }
@@ -16,7 +16,7 @@ export class InitiateCancellationStep extends BaseStepTool {
   }
 
   getTimeout() {
-    return 30000; // 30 seconds for clicking and opening context menu
+    return 60000; // 60 seconds for clicking and opening context menu
   }
 }
 

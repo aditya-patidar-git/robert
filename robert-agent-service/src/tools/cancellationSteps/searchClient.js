@@ -3,10 +3,10 @@
  * Step 5: Search and verify existing client (reuses booking_step_search_client)
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 
-export class CancellationSearchClientStep extends BaseStepTool {
+export class CancellationSearchClientStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.SEARCH_CLIENT;
   }

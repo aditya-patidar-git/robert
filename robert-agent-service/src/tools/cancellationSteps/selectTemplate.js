@@ -3,10 +3,10 @@
  * Step 12: Select "Cancellation confirmation of course/session" template
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 
-export class SelectTemplateStep extends BaseStepTool {
+export class SelectTemplateStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.SELECT_TEMPLATE;
   }
@@ -16,7 +16,7 @@ export class SelectTemplateStep extends BaseStepTool {
   }
 
   getTimeout() {
-    return 30000; // 30 seconds for selecting template and preview
+    return 60000; // 60 seconds for selecting template and preview
   }
 }
 

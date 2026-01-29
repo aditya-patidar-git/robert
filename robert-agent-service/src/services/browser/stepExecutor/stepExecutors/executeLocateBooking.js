@@ -52,7 +52,7 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
     // Find the bookings table: #contactBookingGrid_page → table.jqx_quickGridTable
     console.log('🔍 [LOCATE_BOOKING] Finding bookings table...');
     const bookingsTable = clientDetailsIframe.locator('#contactBookingGrid_page table.jqx_quickGridTable');
-    await bookingsTable.waitFor({ state: 'visible', timeout: 10000 });
+    await bookingsTable.waitFor({ state: 'visible', timeout: 30000 });
     await page.waitForTimeout(1000);
     
     // Find all booking rows (excluding cancelled ones)

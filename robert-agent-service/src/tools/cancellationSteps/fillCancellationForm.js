@@ -3,10 +3,10 @@
  * Step 10: Fill cancellation form fields and submit
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 
-export class FillCancellationFormStep extends BaseStepTool {
+export class FillCancellationFormStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.FILL_CANCELLATION_FORM;
   }
@@ -16,7 +16,7 @@ export class FillCancellationFormStep extends BaseStepTool {
   }
 
   getTimeout() {
-    return 45000; // 45 seconds for filling form and submitting
+    return 60000; // 60 seconds for filling form and submitting
   }
 }
 

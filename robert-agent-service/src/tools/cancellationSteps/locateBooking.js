@@ -3,10 +3,10 @@
  * Step 7: Find booking in "Bookings, credits, and debits" section and validate date
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 
-export class LocateBookingStep extends BaseStepTool {
+export class LocateBookingStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.LOCATE_BOOKING;
   }

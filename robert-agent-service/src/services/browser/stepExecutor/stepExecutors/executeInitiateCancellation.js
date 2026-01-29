@@ -134,7 +134,7 @@ export async function executeInitiateCancellation(page, args, sessionState, scre
     // Wait for context menu dropdown to appear (on main page, not inside iframe)
     console.log(`⏳ [INITIATE_CANCELLATION] Waiting for context menu dropdown...`);
     const contextMenu = page.locator('.dx-overlay-content.dx-inner-overlay.dx-context-menu.dx-menu-base');
-    await contextMenu.waitFor({ state: 'visible', timeout: 10000 });
+    await contextMenu.waitFor({ state: 'visible', timeout: 30000 });
     await page.waitForTimeout(500);
     
     // Find and click "Cancel booking" option
@@ -149,11 +149,11 @@ export async function executeInitiateCancellation(page, args, sessionState, scre
     
     // Verify cancellation form is open by checking for contactCancelBooking_iframe
     const cancelBookingIframe = page.locator('#contactCancelBooking_iframe');
-    await cancelBookingIframe.waitFor({ state: 'attached', timeout: 10000 });
+    await cancelBookingIframe.waitFor({ state: 'attached', timeout: 30000 });
     
     // Also verify form fields are visible inside the iframe
     const cancelBookingIframeLocator = page.frameLocator('#contactCancelBooking_iframe');
-    await cancelBookingIframeLocator.locator('#presetReason').waitFor({ state: 'visible', timeout: 10000 });
+    await cancelBookingIframeLocator.locator('#presetReason').waitFor({ state: 'visible', timeout: 30000 });
     
     console.log(`✅ [INITIATE_CANCELLATION] Cancellation form opened successfully`);
     

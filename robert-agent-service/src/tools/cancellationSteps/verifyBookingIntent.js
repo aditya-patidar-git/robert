@@ -3,18 +3,22 @@
  * Step 1: Voice-only step to verify caller has a booking and explain cancellation policy
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES, getStepNumber } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
 import { PROCEED_DECLINED_MESSAGE, TERMS_DISCLAIMER } from '../../config/cancellationPhrases.js';
 
-export class VerifyBookingIntentStep extends BaseStepTool {
+export class VerifyBookingIntentStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.VERIFY_BOOKING_INTENT;
   }
 
   getRequiredPreferences() {
     return []; // No preferences required - this is a voice conversation step
+  }
+
+  getTimeout() {
+    return 60000; // 60 seconds
   }
 
   /**

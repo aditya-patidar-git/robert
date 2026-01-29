@@ -272,6 +272,88 @@ const bookingStepSendPaymentRequestSchema = z.object({
   termsAcceptedBeforeSend: z.boolean().optional()
 });
 
+const cancellationStepVerifyBookingIntentSchema = z.object({
+  courseType: courseTypeEnum,
+  verified: z.boolean().optional(),
+  proceedToStep2: z.boolean().optional()
+});
+
+const cancellationStepAuthenticateSchema = z.object({
+  courseType: courseTypeEnum
+});
+
+const cancellationStepDetermineWorkflowSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']).optional()
+});
+
+const cancellationStepNavigateContactsSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing'])
+});
+
+const cancellationStepSearchClientSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']),
+  customerMobile: z.string().optional(),
+  customerEmail: z.string().email().optional(),
+  customerName: z.string().optional()
+});
+
+const cancellationStepSelectClientSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']),
+  clientName: z.string().optional()
+});
+
+const cancellationStepLocateBookingSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']),
+  courseDate: z.string()
+});
+
+const cancellationStepConfirmCancellationSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']),
+  bookingDetails: z.record(z.any()).optional(),
+  cancellationFee: z.number().optional(),
+  refundAmount: z.number().optional(),
+  confirmed: z.boolean().optional()
+});
+
+const cancellationStepInitiateCancellationSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']),
+  courseDate: z.string()
+});
+
+const cancellationStepFillCancellationFormSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing']),
+  cancellationFee: z.number(),
+  cancellationReason: z.string().optional()
+});
+
+const cancellationStepNavigateCommunicationSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing'])
+});
+
+const cancellationStepSelectTemplateSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing'])
+});
+
+const cancellationStepSendConfirmationSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing'])
+});
+
+const cancellationStepVoiceConfirmationSchema = z.object({
+  courseType: courseTypeEnum,
+  workflowType: z.enum(['existing'])
+});
+
 const updateCustomerSchema = z.object({
   customerEmail: z.string().email().optional(),
   customerMobile: z.string().optional(),
@@ -321,7 +403,21 @@ const toolSchemas = {
   booking_step_send_payment_request: bookingStepSendPaymentRequestSchema,
   booking_step_send_confirmation: bookingStepSendConfirmationSchema,
   booking_step_send_terms: bookingStepSendTermsSchema,
-  booking_step_send_sms: bookingStepSendSMSSchema
+  booking_step_send_sms: bookingStepSendSMSSchema,
+  cancellation_step_verify_booking_intent: cancellationStepVerifyBookingIntentSchema,
+  cancellation_step_authenticate: cancellationStepAuthenticateSchema,
+  cancellation_step_determine_workflow: cancellationStepDetermineWorkflowSchema,
+  cancellation_step_navigate_contacts: cancellationStepNavigateContactsSchema,
+  cancellation_step_search_client: cancellationStepSearchClientSchema,
+  cancellation_step_select_client: cancellationStepSelectClientSchema,
+  cancellation_step_locate_booking: cancellationStepLocateBookingSchema,
+  cancellation_step_confirm_cancellation: cancellationStepConfirmCancellationSchema,
+  cancellation_step_initiate_cancellation: cancellationStepInitiateCancellationSchema,
+  cancellation_step_fill_cancellation_form: cancellationStepFillCancellationFormSchema,
+  cancellation_step_navigate_communication: cancellationStepNavigateCommunicationSchema,
+  cancellation_step_select_template: cancellationStepSelectTemplateSchema,
+  cancellation_step_send_confirmation: cancellationStepSendConfirmationSchema,
+  cancellation_step_voice_confirmation: cancellationStepVoiceConfirmationSchema
 };
 
 /**

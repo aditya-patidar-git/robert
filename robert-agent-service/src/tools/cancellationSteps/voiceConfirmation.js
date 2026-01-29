@@ -3,19 +3,23 @@
  * Step 14: Voice-only step to confirm cancellation completion
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
 import { getStepNumber } from '../../services/browser/stepConfiguration.js';
 import { GOODBYE_CANCELLATION } from '../../config/cancellationPhrases.js';
 
-export class VoiceConfirmationStep extends BaseStepTool {
+export class VoiceConfirmationStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.VOICE_CONFIRMATION;
   }
 
   getRequiredPreferences() {
     return []; // No preferences required - this is a voice conversation step
+  }
+
+  getTimeout() {
+    return 60000; // 60 seconds
   }
 
   /**

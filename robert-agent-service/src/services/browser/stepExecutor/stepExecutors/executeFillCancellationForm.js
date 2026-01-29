@@ -43,7 +43,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     
     // Wait for form to be loaded
     await page.waitForTimeout(2000);
-    await cancelBookingIframe.locator('#presetReason').waitFor({ state: 'visible', timeout: 10000 });
+    await cancelBookingIframe.locator('#presetReason').waitFor({ state: 'visible', timeout: 30000 });
     
     // 1. Select reason for cancelling dropdown (#presetReason)
     console.log(`📋 [FILL_CANCELLATION_FORM] Selecting cancellation reason...`);
@@ -51,7 +51,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     
     // For DevExtreme dropdowns, click the dropdown button to open it
     const reasonDropdownButton = reasonDropdown.locator('.dx-dropdowneditor-button');
-    await reasonDropdownButton.waitFor({ state: 'visible', timeout: 10000 });
+    await reasonDropdownButton.waitFor({ state: 'visible', timeout: 30000 });
     await reasonDropdownButton.click();
     await page.waitForTimeout(500);
     
@@ -85,7 +85,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     console.log(`💰 [FILL_CANCELLATION_FORM] Setting charge for cancellation...`);
     const chargeDropdown = cancelBookingIframe.locator('#cancellationCharge');
     const chargeDropdownButton = chargeDropdown.locator('.dx-dropdowneditor-button');
-    await chargeDropdownButton.waitFor({ state: 'visible', timeout: 10000 });
+    await chargeDropdownButton.waitFor({ state: 'visible', timeout: 30000 });
     await chargeDropdownButton.click();
     await page.waitForTimeout(500);
     
@@ -143,7 +143,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     // 6. Click "Cancel now" button (#btnBack)
     console.log(`✅ [FILL_CANCELLATION_FORM] Submitting cancellation form...`);
     const cancelNowButton = cancelBookingIframe.locator('#btnBack[aria-label="Cancel now"]');
-    await cancelNowButton.waitFor({ state: 'visible', timeout: 10000 });
+    await cancelNowButton.waitFor({ state: 'visible', timeout: 30000 });
     await cancelNowButton.click();
     
     // Wait for cancellation to process
@@ -159,7 +159,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     try {
       // Check for "Bookings, credits, and debits" heading in contactEdit_iframe
       const bookingsHeading = clientDetailsIframe.locator('h1.jqx_formBoilerPlateText.jqx_formHeading.jqx_underline:has-text("Bookings, credits and debits")');
-      await bookingsHeading.waitFor({ state: 'visible', timeout: 10000 });
+      await bookingsHeading.waitFor({ state: 'visible', timeout: 30000 });
       cancellationSuccessful = true;
       console.log(`✅ [FILL_CANCELLATION_FORM] Returned to profile page - cancellation successful`);
     } catch (e) {

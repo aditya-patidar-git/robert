@@ -3,10 +3,10 @@
  * Step 6: Click verified client name to open profile
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 
-export class SelectClientStep extends BaseStepTool {
+export class SelectClientStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.SELECT_CLIENT;
   }
@@ -16,7 +16,7 @@ export class SelectClientStep extends BaseStepTool {
   }
 
   getTimeout() {
-    return 30000; // 30 seconds for clicking and navigating to profile
+    return 60000; // 60 seconds for clicking and navigating to profile
   }
 }
 

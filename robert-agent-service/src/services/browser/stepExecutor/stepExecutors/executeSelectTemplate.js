@@ -60,7 +60,7 @@ export async function executeSelectTemplate(page, args, sessionState, screenshot
     // Find template grid
     console.log(`🔍 [SELECT_TEMPLATE] Finding template grid...`);
     const gridContainer = stationerySenderIframe.locator('#stationeryGrid_page');
-    await gridContainer.waitFor({ state: 'visible', timeout: 10000 });
+    await gridContainer.waitFor({ state: 'visible', timeout: 30000 });
     
     // Find all template rows
     const templateRows = gridContainer.locator('tr.jqx_quickGridRow');
@@ -115,7 +115,7 @@ export async function executeSelectTemplate(page, args, sessionState, screenshot
     // Verify preview is shown (check for Email button #btnEmail)
     console.log(`🔍 [SELECT_TEMPLATE] Verifying preview is shown...`);
     const emailButton = stationerySenderIframe.locator('#btnEmail');
-    await emailButton.waitFor({ state: 'visible', timeout: 10000 });
+    await emailButton.waitFor({ state: 'visible', timeout: 30000 });
     
     console.log(`✅ [SELECT_TEMPLATE] Template selected and preview shown successfully`);
     

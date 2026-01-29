@@ -165,6 +165,11 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       instructions += `\n\nCRITICAL RULES:\n- NEVER say "Booking confirmed" unless paymentCompleted: true in tool result\n- Terms acceptance ONLY after payment confirmed, before final "Make booking" click\n- For existing clients: Use email from booking_step_search_client result ONLY`;
     }
 
+    // Add critical rules if in cancellation flow
+    if (workflowPhase === 'cancellation') {
+      instructions += `\n\nCRITICAL CANCELLATION RULES:\n- MUST start with cancellation_step_verify_booking_intent - ask "Do you have a current booking with us?" FIRST\n- NEVER ask for booking reference, email, or phone number before Step 1\n- NEVER use client_verification before cancellation_step_search_client finds a client (Step 5)\n- Follow steps sequentially - do NOT skip steps`;
+    }
+
     // Add tool-specific context if tool is active
     if (activeTool) {
       instructions += `\n\nCurrent tool: ${activeTool}. Follow tool result guidance and proceed to next step automatically.`;
@@ -210,7 +215,10 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       'pay': 'booking_payment',
       'complete': 'booking_completion',
       'completion': 'booking_completion',
-      'done': 'booking_completion'
+      'done': 'booking_completion',
+      'cancel': 'cancellation',
+      'cancellation': 'cancellation',
+      'cancel_booking': 'cancellation'
     };
     
     return phaseMap[phase] || phase;
@@ -326,6 +334,9 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
         const { conversations } = stateModule;
         if (conversations[callSid]?.workflowContext === 'cancellation') {
           return 'cancellation';
+        }
+        if (conversations[callSid]?.workflowContext === 'booking') {
+          return 'booking_start';
         }
       } catch (e) {
         // ignore

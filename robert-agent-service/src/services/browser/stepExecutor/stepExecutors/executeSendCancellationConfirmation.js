@@ -27,7 +27,7 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
     // Click Email button (#btnEmail)
     console.log(`📮 [SEND_CANCELLATION_CONFIRMATION] Clicking Email button...`);
     const emailButton = stationerySenderIframe.locator('#btnEmail');
-    await emailButton.waitFor({ state: 'visible', timeout: 10000 });
+    await emailButton.waitFor({ state: 'visible', timeout: 30000 });
     
     const isEmailButtonVisible = await emailButton.isVisible().catch(() => false);
     if (!isEmailButtonVisible) {
@@ -50,7 +50,7 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
       try {
         const confirmation = stationerySenderIframe.locator(selector).first();
         if (await confirmation.count() > 0) {
-          await confirmation.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+          await confirmation.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
           const isVisible = await confirmation.isVisible().catch(() => false);
           if (isVisible) {
             console.log(`✅ [SEND_CANCELLATION_CONFIRMATION] Email sent confirmation found using selector: "${selector}"`);
@@ -93,7 +93,7 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
     const okButton = contactEditIframe.locator('#btnBack[aria-label="OK"]');
     
     // Wait for Ok button to be visible (may take a moment after returning from stationerySender_iframe)
-    await okButton.waitFor({ state: 'visible', timeout: 10000 });
+    await okButton.waitFor({ state: 'visible', timeout: 30000 });
     await okButton.click();
     
     // Wait for navigation back to profile or exit

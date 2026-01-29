@@ -492,25 +492,33 @@ export class ResponseHandler {
       const textTokens = event.response?.usage?.output_token_details?.text_tokens || 
                         event.response?.usage?.output_text_tokens || 0;
       
-      // Check for OpenAI refusal response (0 audio tokens despite audio modality)
       const hasAudioModality = event.response?.modalities?.includes('audio') || false;
-      const isRefusalResponse = audioTokens === 0 && hasAudioModality && textTokens > 0;
-      
-      // Extract response text to check for refusal patterns AND add to transcript
       const outputItems = event.response?.output || [];
       let responseText = '';
-      let fullResponseText = ''; // Full text for transcript (not lowercased)
+      let fullResponseText = '';
       if (outputItems && outputItems.length > 0) {
         const textItems = outputItems.filter(item => item.type === 'message' && item.content);
         if (textItems.length > 0) {
-          fullResponseText = textItems.map(item => 
+          fullResponseText = textItems.map(item =>
             item.content.map(c => c.type === 'text' ? c.text : '').join('')
           ).join(' ').trim();
           responseText = fullResponseText.toLowerCase();
         }
       }
-      
-      // Add agent response to conversation transcript
+
+      const refusalPatterns = [
+        "i'm sorry, but i'm not able to continue",
+        "i'm sorry, it seems like there was an error",
+        "i can't continue",
+        "i cannot continue",
+        "i'm not able to",
+        "i am not able to",
+        "i cannot assist",
+        "i can't assist"
+      ];
+      const isRefusalText = refusalPatterns.some(pattern => responseText.includes(pattern));
+      const isRefusalResponse = audioTokens === 0 && hasAudioModality && textTokens > 0 && isRefusalText;
+
       if (fullResponseText && status === 'completed') {
         if (conversations[this.state.callSid]) {
           conversations[this.state.callSid].transcript.push({
@@ -521,14 +529,6 @@ export class ResponseHandler {
           console.log(`📝 [${this.state.callSid}] Added agent response to transcript: "${fullResponseText.substring(0, 50)}${fullResponseText.length > 50 ? '...' : ''}"`);
         }
       }
-      
-      const refusalPatterns = [
-        "i'm sorry, but i'm not able to continue",
-        "i'm sorry, it seems like there was an error",
-        "i can't continue",
-        "i cannot continue"
-      ];
-      const isRefusalText = refusalPatterns.some(pattern => responseText.includes(pattern));
       
       console.log(`✅ [${this.state.callSid}] Response done - ID: ${responseId}, status: ${status}`);
       console.log(`   📊 Tokens: audio=${audioTokens}, text=${textTokens}`);

@@ -3,18 +3,22 @@
  * Step 3: Voice-only step - always returns 'existing' for cancellation workflows
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
 import { getStepNumber } from '../../services/browser/stepConfiguration.js';
 
-export class DetermineWorkflowStep extends BaseStepTool {
+export class DetermineWorkflowStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.DETERMINE_WORKFLOW;
   }
 
   getRequiredPreferences() {
     return []; // No preferences required - this is a voice conversation step
+  }
+
+  getTimeout() {
+    return 60000; // 60 seconds
   }
 
   /**

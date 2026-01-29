@@ -432,7 +432,7 @@ function isCancellationWorkflow(courseType) {
  * @param {string} stepName - Step name
  * @returns {boolean} True if cancellation step
  */
-function isCancellationStep(stepName) {
+export function isCancellationStep(stepName) {
   const cancellationStepNames = [
     STEP_NAMES.VERIFY_BOOKING_INTENT,
     STEP_NAMES.DETERMINE_WORKFLOW,

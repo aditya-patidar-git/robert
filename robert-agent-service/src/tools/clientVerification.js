@@ -14,26 +14,7 @@ import {
   getMissingFieldsPrompt
 } from '../services/verificationService.js';
 import sessionStateManager from '../services/browser/sessionStateManager.js';
-
-/**
- * Get step name from step number (for step-based tools)
- * @param {number} stepNumber - Step number
- * @returns {string} Step name
- */
-function getStepName(stepNumber) {
-  const stepMap = {
-    1: 'authenticate',
-    2: 'authenticate', // Step 2 is also authenticate
-    3: 'determine_workflow_type',
-    4: 'select_session',
-    5: 'select_booking_options',
-    6: 'search_client', // or create_new_contact for new workflow
-    7: 'fill_contact_details',
-    8: 'fill_contact_details', // Step 8 is also fill_contact_details
-    9: 'process_payment'
-  };
-  return stepMap[stepNumber] || 'select_session';
-}
+import { getStepName, isCancellationStep } from '../services/browser/stepConfiguration.js';
 
 class ClientVerificationTool {
   /**
@@ -285,10 +266,23 @@ class ClientVerificationTool {
           
           console.log(`✅ [${callSid}] Client verification successful - all three fields verified sequentially`);
           
+          // Check if we're in a cancellation workflow
+          let isCancellationWorkflow = false;
+          try {
+            const currentStep = sessionStateManager.getCurrentStep(callSid);
+            const session = sessionStateManager.getSession(callSid);
+            if (currentStep !== null && session?.courseType) {
+              const stepName = getStepName(session.courseType, session.workflowType || 'existing', currentStep);
+              isCancellationWorkflow = isCancellationStep(stepName);
+            }
+          } catch (error) {
+            console.warn(`⚠️ [${callSid}] Could not check workflow type:`, error.message);
+          }
+          
           // Check if we're in a booking context
           const isBookingContext = !!conversation?.clientDetails;
           let nextStepTool = null;
-          if (isBookingContext) {
+          if (isBookingContext && !isCancellationWorkflow) {
             try {
               const currentStep = sessionStateManager.getCurrentStep(callSid);
               if (currentStep !== null && currentStep < 4) {
@@ -299,14 +293,18 @@ class ClientVerificationTool {
             }
           }
           
-          if (!nextStepTool && isBookingContext) {
+          if (!nextStepTool && isBookingContext && !isCancellationWorkflow) {
             nextStepTool = 'booking_step_select_session';
           }
+          
+          const verificationMessage = isCancellationWorkflow
+            ? 'You are successfully verified. Would you like to proceed with cancelling your booking? Please say yes or no.'
+            : 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.';
           
           return {
             success: true,
             verified: true,
-            message: 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.',
+            message: verificationMessage,
             verifiedFields: ['fullName', 'postcode', 'telephoneNumber'],
             requiresBookingContinuation: isBookingContext || undefined,
             nextStepTool: nextStepTool || undefined,
@@ -367,10 +365,28 @@ class ClientVerificationTool {
       // If we reach here, all fields should be verified
       if (verifiedFields.fullName && verifiedFields.postcode && verifiedFields.telephoneNumber) {
         markClientVerified(conversation);
+        
+        // Check if we're in a cancellation workflow
+        let isCancellationWorkflow = false;
+        try {
+          const currentStep = sessionStateManager.getCurrentStep(callSid);
+          const session = sessionStateManager.getSession(callSid);
+          if (currentStep !== null && session?.courseType) {
+            const stepName = getStepName(session.courseType, session.workflowType || 'existing', currentStep);
+            isCancellationWorkflow = isCancellationStep(stepName);
+          }
+        } catch (error) {
+          console.warn(`⚠️ [${callSid}] Could not check workflow type:`, error.message);
+        }
+        
+        const verificationMessage = isCancellationWorkflow
+          ? 'You are successfully verified. Would you like to proceed with cancelling your booking? Please say yes or no.'
+          : 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.';
+        
         return {
           success: true,
           verified: true,
-          message: 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.',
+          message: verificationMessage,
           verifiedFields: ['fullName', 'postcode', 'telephoneNumber'],
           requiresExplicitConfirmation: true
         };

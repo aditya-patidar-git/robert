@@ -164,6 +164,66 @@ AUTOMATIC CONTINUATION: After payment tools complete, IMMEDIATELY proceed to nex
 
 AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS, IMMEDIATELY confirm completion with the caller. Do NOT wait for prompts.`,
 
+  cancellation: `You're handling a cancellation request. CRITICAL WORKFLOW ORDER - FOLLOW THESE STEPS SEQUENTIALLY:
+
+🚨 MANDATORY FIRST STEP: You MUST start with cancellation_step_verify_booking_intent. DO NOT ask for booking reference, email, or any other details yet.
+
+STEP 1: cancellation_step_verify_booking_intent
+- Ask the caller: "Do you have a current booking with us?"
+- If they say "Yes": Explain the cancellation policy (3 full working days' notice, 30% admin fee, etc.) and provide the Terms & Conditions disclaimer. Then ask "Would you like to proceed?"
+  - If they say "Yes" to proceed: Set verified: true, proceedToStep2: true and say "I'll now login to the system to find your profile. Please bear with me a moment."
+  - If they say "No" to proceed: Set verified: true, proceedToStep2: false and say exactly: "Ok, thank you. Is there anything else that I can help you with?" Do NOT proceed further.
+- If they say "No" (no booking): Set verified: false and engage in conversation without proceeding to Step 2.
+
+STEP 2: cancellation_step_authenticate (automatic login - no questions)
+
+STEP 3: cancellation_step_determine_workflow
+- Ask: "Have you done training with us before?"
+- Based on response, set workflowType: 'existing' or 'new'
+
+STEP 4: cancellation_step_navigate_contacts (automatic - no questions)
+
+STEP 5: cancellation_step_search_client
+- Ask: "I will attempt to locate your profile in our systems. Therefore, may I please have your full mobile number?"
+- Try mobile number first, then email if not found, then name search if still not found
+- Follow fallback logic: if not found, ask to repeat number, try alternative phone, then ask for email, then ask for full name
+
+STEP 6: client_verification (ONLY after cancellation_step_search_client finds a client)
+- Ask caller to confirm: (1) full name, (2) postcode, (3) telephone number
+- Verify these match what's in CRM
+- DO NOT use client_verification before Step 5 completes successfully
+
+STEP 7: cancellation_step_select_client (automatic after verification - no questions)
+
+STEP 8: cancellation_step_locate_booking
+- Ask: "What date is your course booked for?"
+- Find the booking and calculate cancellation fee
+
+STEP 9: cancellation_step_confirm_cancellation
+- Present cancellation fee and refund amount
+- Explain policy again and ask: "Would you like to proceed with the cancellation?"
+
+STEP 10: cancellation_step_initiate_cancellation (automatic - no questions)
+
+STEP 11: cancellation_step_fill_cancellation_form (automatic - no questions)
+
+STEP 12: cancellation_step_navigate_communication (automatic - no questions)
+
+STEP 13: cancellation_step_select_template (automatic - no questions)
+
+STEP 14: cancellation_step_send_confirmation (automatic - no questions)
+
+STEP 15: cancellation_step_voice_confirmation
+- Say: "Your booking has now been cancelled, and I have now sent you an email confirmation. Is there anything else that I can help you with?"
+
+CRITICAL RULES:
+- NEVER ask for booking reference or email BEFORE Step 1
+- NEVER use client_verification before cancellation_step_search_client finds a client
+- Follow steps sequentially - do NOT skip steps
+- After each step completes, IMMEDIATELY proceed to the next step. Do NOT wait for prompts.
+
+AUTOMATIC CONTINUATION: After any cancellation_step tool completes successfully, IMMEDIATELY acknowledge and proceed to the next step. Do NOT wait for the caller to prompt you.`,
+
   default: `Respond naturally to the caller's question. Be helpful and concise. Do not generate code, JSON, or technical output - only natural spoken responses.
 
 🚨 PROACTIVE TOOL USAGE: Use tools automatically whenever they're needed to provide accurate answers:

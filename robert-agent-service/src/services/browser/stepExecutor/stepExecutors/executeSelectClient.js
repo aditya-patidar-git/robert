@@ -25,30 +25,37 @@ export async function executeSelectClient(page, args, sessionState, screenshotsD
   }
 
   try {
-    console.log(`👤 [SELECT_CLIENT] Clicking on client name: ${clientName}`);
+    console.log(`👤 [SELECT_CLIENT] Checking if client profile is already open...`);
     
-    // Wait for search results to be visible
-    await page.waitForSelector('tr', { timeout: 10000 });
-    await page.waitForTimeout(2000);
-    
-    // Click on the client name link in search results
-    // The client name should be in a table row (tr) or link
-    const clientLink = page.locator(`tr:has-text("${clientName}")`).first();
-    
-    // Wait for the link to be visible
-    await clientLink.waitFor({ state: 'visible', timeout: 10000 });
-    await clientLink.click();
-    
-    // Wait for contactEdit_iframe to appear after clicking client name
-    // The client profile page loads in contactEdit_iframe
-    console.log('🔄 [SELECT_CLIENT] Waiting for contactEdit_iframe to appear...');
-    await page.waitForTimeout(3000); // Give time for iframe to load
-    
-    // Check if contactEdit_iframe exists
+    // Check if contactEdit_iframe already exists (profile already open from searchClient step)
     const contactEditIframeExists = await page.locator('#contactEdit_iframe').count();
-    if (contactEditIframeExists === 0) {
-      console.log('⚠️ [SELECT_CLIENT] contactEdit_iframe not found, waiting longer...');
+    if (contactEditIframeExists > 0) {
+      console.log('✅ [SELECT_CLIENT] Client profile already open in contactEdit_iframe, skipping search results click');
+    } else {
+      // Profile not open yet - need to click on search results
+      console.log(`👤 [SELECT_CLIENT] Clicking on client name in search results: ${clientName}`);
+      
+      // Wait for search results to be visible
+      await page.waitForSelector('tr', { timeout: 30000 });
       await page.waitForTimeout(2000);
+      
+      // Click on the client name link in search results
+      const clientLink = page.locator(`tr:has-text("${clientName}")`).first();
+      
+      // Wait for the link to be visible
+      await clientLink.waitFor({ state: 'visible', timeout: 30000 });
+      await clientLink.click();
+      
+      // Wait for contactEdit_iframe to appear after clicking client name
+      console.log('🔄 [SELECT_CLIENT] Waiting for contactEdit_iframe to appear...');
+      await page.waitForTimeout(3000);
+      
+      // Verify contactEdit_iframe exists
+      const iframeExists = await page.locator('#contactEdit_iframe').count();
+      if (iframeExists === 0) {
+        console.log('⚠️ [SELECT_CLIENT] contactEdit_iframe not found, waiting longer...');
+        await page.waitForTimeout(2000);
+      }
     }
     
     // Switch to contactEdit_iframe for client profile
@@ -64,7 +71,7 @@ export async function executeSelectClient(page, args, sessionState, screenshotsD
     try {
       await clientDetailsIframe.locator('h1.jqx_formBoilerPlateText.jqx_formHeading.jqx_underline:has-text("Bookings, credits and debits")').waitFor({ 
         state: 'visible', 
-        timeout: 15000 
+        timeout: 30000 
       });
       console.log('✅ [SELECT_CLIENT] Profile heading found in contactEdit_iframe');
     } catch (e) {
@@ -73,7 +80,7 @@ export async function executeSelectClient(page, args, sessionState, screenshotsD
       try {
         await clientDetailsIframe.locator('h1:has-text("Bookings, credits and debits")').waitFor({ 
           state: 'visible', 
-          timeout: 10000 
+          timeout: 30000 
         });
         console.log('✅ [SELECT_CLIENT] Profile heading found with alternative selector');
       } catch (e2) {

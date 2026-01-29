@@ -9,6 +9,9 @@
  * @module toolFilterService
  */
 
+/** Tools available in every phase (advisory filtering; execution uses full registry). */
+const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search'];
+
 /**
  * Tool sets organized by workflow phase.
  * Each phase has a curated list of tools appropriate for that context.
@@ -217,16 +220,13 @@ export function getToolsForContext(phase, additionalContext = {}) {
     return null;
   }
   
-  // Create a Set for deduplication
   const toolSet = new Set(baseTools);
-  
-  // Add contextual tools based on conditions
+  ALWAYS_AVAILABLE_TOOLS.forEach(tool => toolSet.add(tool));
   for (const [condition, tools] of Object.entries(CONTEXTUAL_TOOLS)) {
     if (additionalContext[condition]) {
       tools.forEach(tool => toolSet.add(tool));
     }
   }
-  
   return Array.from(toolSet);
 }
 
@@ -313,8 +313,8 @@ export function getPhaseForIntent(intent) {
   return intentToPhase[intent] || 'general_inquiry';
 }
 
-// Export for testing
 export const _internal = {
   TOOL_SETS,
-  CONTEXTUAL_TOOLS
+  CONTEXTUAL_TOOLS,
+  ALWAYS_AVAILABLE_TOOLS
 };

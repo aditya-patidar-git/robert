@@ -3,10 +3,10 @@
  * Step 11: Navigate to Communication tab
  */
 
-import { BaseStepTool } from '../bookingSteps/baseStepTool.js';
+import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 
-export class NavigateCommunicationStep extends BaseStepTool {
+export class NavigateCommunicationStep extends CancellationBaseStepTool {
   getStepName() {
     return STEP_NAMES.NAVIGATE_COMMUNICATION;
   }

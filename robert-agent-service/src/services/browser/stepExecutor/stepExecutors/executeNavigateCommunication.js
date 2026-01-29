@@ -56,7 +56,7 @@ export async function executeNavigateCommunication(page, args, sessionState, scr
     // Wait for dropdown context menu to appear (may appear on main page, not in iframe)
     console.log('⏳ [NAVIGATE_COMMUNICATION] Waiting for Communication dropdown menu...');
     const communicationDropdown = page.locator('.dx-overlay-content.dx-inner-overlay.dx-context-menu.dx-menu-base');
-    await communicationDropdown.waitFor({ state: 'visible', timeout: 10000 });
+    await communicationDropdown.waitFor({ state: 'visible', timeout: 30000 });
     await page.waitForTimeout(500);
     
     // Find and click "Send one of the standard letters to the contact" option
