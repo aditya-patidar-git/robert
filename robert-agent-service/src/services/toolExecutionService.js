@@ -208,6 +208,7 @@ class ToolExecutionService {
       progressCallback = null
     } = options;
 
+    const toolExecutionStartTime = Date.now();
     console.log(`\n🔧 [${callSid || callId}] ========================================`);
     console.log(`🔧 [${callSid || callId}] TOOL INVOCATION DETECTED`);
     console.log(`🔧 [${callSid || callId}] Tool: ${toolName}`);
@@ -215,6 +216,10 @@ class ToolExecutionService {
     console.log(`🔧 [${callSid || callId}] Tool Call ID: ${toolCallId}`);
     console.log(`🔧 [${callSid || callId}] Phone: ${phoneNumber || 'unknown'}`);
     console.log(`🔧 [${callSid || callId}] Raw Arguments: ${args || '{}'}`);
+    if (toolName === 'file_search') {
+      console.log(`🔍 [TEST-4] [${callSid || callId}] FILE_SEARCH TOOL CALLED - timestamp: ${toolExecutionStartTime}`);
+      console.log(`🔍 [TEST-4] [${callSid || callId}] Tool call ID: ${toolCallId}`);
+    }
 
     // Parse arguments
     let parameters;
@@ -335,6 +340,18 @@ class ToolExecutionService {
 
       // Extract actual tool result (toolExecutor wraps it in { success, result, executionTime })
       const toolResult = executionResult.result || executionResult;
+      
+      if (toolName === 'file_search') {
+        const totalExecutionTime = Date.now() - toolExecutionStartTime;
+        console.log(`🔍 [TEST-4] [${callSid || callId}] FILE_SEARCH EXECUTION COMPLETE:`);
+        console.log(`   - Execution time: ${executionTime}ms`);
+        console.log(`   - Total time (including overhead): ${totalExecutionTime}ms`);
+        console.log(`   - Success: ${executionResult.success !== false}`);
+        if (toolResult && toolResult.results) {
+          console.log(`   - Results count: ${toolResult.results.length}`);
+          console.log(`   - Citations: ${toolResult.citations ? toolResult.citations.join(', ') : 'N/A'}`);
+        }
+      }
 
       // ========== FILE_SEARCH FAILURE → WEB_SEARCH FALLBACK ==========
       if (toolName === 'file_search' && toolResult && toolResult.validationFailed === true) {

@@ -439,11 +439,21 @@ export class TranscriptionHandler {
    * Handle speech_stopped event
    */
   async handleSpeechStopped(event) {
+    const speechStoppedTimestamp = Date.now();
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
     const speechContinuation = conversationBehaviorConfig?.conversationFlow?.speechContinuation;
     
+    console.log(`🔍 [TEST-3] [${this.state.callSid}] SPEECH_STOPPED EVENT - timestamp: ${speechStoppedTimestamp}`);
+    console.log(`🔍 [TEST-3] [${this.state.callSid}] VAD silence detection triggered`);
+    
     // Track when speech stopped
-    this.state.speechStoppedTime = Date.now();
+    this.state.speechStoppedTime = speechStoppedTimestamp;
+    
+    // Calculate silence duration if we have speech start time
+    if (this.state.userSpeechStartedTime > 0) {
+      const speechDuration = speechStoppedTimestamp - this.state.userSpeechStartedTime;
+      console.log(`🔍 [TEST-3] [${this.state.callSid}] Speech duration: ${speechDuration}ms`);
+    }
     
     // Handle interruption case
     if (this.state.isInterrupted) {

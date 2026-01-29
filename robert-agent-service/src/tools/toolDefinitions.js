@@ -940,16 +940,15 @@ Ask the caller: "Have you done training with us before?"
     {
       type: 'function',
       name: 'cancellation_step_locate_booking',
-      description: `Step 7: Find booking in "Bookings, credits, and debits" section of client profile. Validates booking date (must be in future, must meet 3-day notice requirement) and calculates cancellation fee.
+      description: `Step 7: Find booking in "Bookings, credits, and debits" section of client profile. Validates booking date (must be in future) and course type, then calculates cancellation fee.
 
-Ask the caller: "What date is your course booked for?"
-Then call this tool with the courseDate.`,
+Always use the course type the caller stated (e.g. "Introduction to Motorcycling" or "ITM", or "CBT")—do not default to CBT. Ask the caller: "What date is your course booked for?" then call this tool with courseDate (DD/MM/YYYY) and the same courseType the caller gave earlier.`,
       parameters: {
         type: 'object',
         properties: {
           courseType: {
             type: 'string',
-            description: 'Course type',
+            description: 'Course type as stated by the caller (required). Use exactly what they said, e.g. Introduction to Motorcycling, ITM, CBT—do not substitute a default.',
             enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
           },
           workflowType: {
@@ -959,7 +958,7 @@ Then call this tool with the courseDate.`,
           },
           courseDate: {
             type: 'string',
-            description: 'Date of the course booking to cancel (ISO format or date string)'
+            description: 'Date of the course booking to cancel. Use DD/MM/YYYY format (e.g. 27/03/2026).'
           }
         },
         required: ['courseType', 'workflowType', 'courseDate']

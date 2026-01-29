@@ -131,9 +131,9 @@ export async function executeInitiateCancellation(page, args, sessionState, scre
     await bookingRow.click();
     await page.waitForTimeout(1000);
     
-    // Wait for context menu dropdown to appear (on main page, not inside iframe)
+    // Wait for context menu dropdown (rendered in same document as grid, inside iframe)
     console.log(`⏳ [INITIATE_CANCELLATION] Waiting for context menu dropdown...`);
-    const contextMenu = page.locator('.dx-overlay-content.dx-inner-overlay.dx-context-menu.dx-menu-base');
+    const contextMenu = clientDetailsIframe.locator('.dx-overlay-content.dx-inner-overlay.dx-context-menu.dx-menu-base');
     await contextMenu.waitFor({ state: 'visible', timeout: 30000 });
     await page.waitForTimeout(500);
     

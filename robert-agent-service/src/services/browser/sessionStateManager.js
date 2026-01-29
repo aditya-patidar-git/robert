@@ -285,7 +285,11 @@ class SessionStateManager {
 
     // Sync to Twilio Sync asynchronously (fire-and-forget for performance)
     // This ensures state is available across instances without blocking
-    updateConversation(callSid, { bookingSession: session }).catch(error => {
+    // CRITICAL: Exclude pageRef from sync (Playwright Page objects cannot be serialized)
+    // Create a sanitized copy without pageRef for Twilio Sync
+    const { pageRef, ...sessionForSync } = session;
+    
+    updateConversation(callSid, { bookingSession: sessionForSync }).catch(error => {
       console.warn(`[SESSION] Failed to sync bookingSession to Twilio Sync for ${callSid}:`, error.message);
     });
   }

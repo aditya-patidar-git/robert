@@ -31,7 +31,7 @@ export async function executeNavigateCommunication(page, args, sessionState, scr
     
     // Try multiple selector approaches
     try {
-      communicationMenuItem = clientDetailsIframe.locator('#contactMenu .dx-menu-item-text:has-text("Communication")');
+      communicationMenuItem = clientDetailsIframe.locator('#contactMenu span.dx-menu-item-text:has-text("Communication")');
       await communicationMenuItem.waitFor({ state: 'visible', timeout: 5000 });
       console.log('✅ [NAVIGATE_COMMUNICATION] Found Communication menu item using selector 1');
     } catch (e) {
@@ -53,9 +53,8 @@ export async function executeNavigateCommunication(page, args, sessionState, scr
     await communicationMenuItem.click();
     await page.waitForTimeout(1000);
     
-    // Wait for dropdown context menu to appear (may appear on main page, not in iframe)
     console.log('⏳ [NAVIGATE_COMMUNICATION] Waiting for Communication dropdown menu...');
-    const communicationDropdown = page.locator('.dx-overlay-content.dx-inner-overlay.dx-context-menu.dx-menu-base');
+    const communicationDropdown = clientDetailsIframe.locator('.dx-overlay-wrapper .dx-overlay-content.dx-inner-overlay.dx-context-menu.dx-menu-base');
     await communicationDropdown.waitFor({ state: 'visible', timeout: 30000 });
     await page.waitForTimeout(500);
     

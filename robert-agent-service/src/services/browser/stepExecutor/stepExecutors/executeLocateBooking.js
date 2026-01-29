@@ -62,11 +62,48 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
     const rowCount = await bookingRows.count();
     
     console.log(`📊 [LOCATE_BOOKING] Found ${rowCount} active booking rows`);
-    
-    // Parse courseDate to match different date formats
-    const targetDate = new Date(courseDate);
-    const targetDateOnly = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-    
+
+    const parseCourseDateInput = (str) => {
+      if (!str || typeof str !== 'string') return null;
+      const trimmed = str.trim();
+      const dmy = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      if (dmy) {
+        const day = parseInt(dmy[1], 10);
+        const month = parseInt(dmy[2], 10) - 1;
+        const year = parseInt(dmy[3], 10);
+        if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
+          const d = new Date(year, month, day);
+          if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) return d;
+        }
+      }
+      const iso = new Date(trimmed);
+      return !isNaN(iso.getTime()) ? iso : null;
+    };
+
+    const targetDateOnly = parseCourseDateInput(courseDate);
+    if (!targetDateOnly || isNaN(targetDateOnly.getTime())) {
+      return {
+        success: false,
+        error: `Invalid course date format: ${courseDate}. Use DD/MM/YYYY.`,
+        retryPrompt: 'Could you confirm the course date in day, month and year?'
+      };
+    }
+
+    const courseTypeAliases = {
+      'Introduction to Motorcycling': ['ITM', 'Introduction to Motorcycling'],
+      'ITM': ['ITM', 'Introduction to Motorcycling'],
+      'Compulsory Basic Training': ['CBT', 'Compulsory Basic Training'],
+      'CBT': ['CBT', 'Compulsory Basic Training'],
+      'CBT Executive 1-2-1': ['CBT Executive', 'CBT Executive 1-2-1'],
+      'CBT Executive': ['CBT Executive', 'CBT Executive 1-2-1']
+    };
+    const matchesCourseType = (requestedType, rowCourseName) => {
+      if (!rowCourseName || !requestedType) return false;
+      const normalized = (rowCourseName || '').trim();
+      const aliases = courseTypeAliases[requestedType] || [requestedType];
+      return aliases.some(a => normalized.toLowerCase().includes(a.toLowerCase()));
+    };
+
     // Helper function to parse Course Date button text (format: "Mon 30 Mar 2026 09:00")
     const parseCourseDateButton = (buttonText) => {
       if (!buttonText) return null;
@@ -121,14 +158,16 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
           const parsedDateOnly = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
           
           if (parsedDateOnly.getTime() === targetDateOnly.getTime()) {
-            // Found matching booking!
+            const courseName = await row.getAttribute('data-etp_name');
+            if (!matchesCourseType(courseType, courseName)) {
+              console.log(`⏭️ [LOCATE_BOOKING] Row ${i} date matches but course type mismatch: requested="${courseType}", row="${courseName}"`);
+              continue;
+            }
             bookingRow = row;
             bookingFound = true;
-            
-            // Extract booking details from data attributes
+
             const bookingId = await row.getAttribute('data-jcd_booking_id');
-            const courseName = await row.getAttribute('data-etp_name');
-            
+
             // Extract price from Price column (5th column, index 4)
             const priceCell = cells.nth(4); // 5th column
             const priceText = await priceCell.textContent();
@@ -165,13 +204,16 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
           if (parsedDate) {
             const parsedDateOnly = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
             if (parsedDateOnly.getTime() === targetDateOnly.getTime()) {
-              // Found matching booking
+              const courseName = await row.getAttribute('data-etp_name');
+              if (!matchesCourseType(courseType, courseName)) {
+                console.log(`⏭️ [LOCATE_BOOKING] Row ${i} (plain) date matches but course type mismatch: requested="${courseType}", row="${courseName}"`);
+                continue;
+              }
               bookingRow = row;
               bookingFound = true;
-              
+
               const bookingId = await row.getAttribute('data-jcd_booking_id');
-              const courseName = await row.getAttribute('data-etp_name');
-              
+
               const priceCell = cells.nth(4);
               const priceText = await priceCell.textContent();
               const priceMatch = priceText?.match(/£?([\d,]+\.?\d*)/);
@@ -200,17 +242,17 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
     if (!bookingFound) {
       return {
         success: false,
-        error: `Booking not found for date ${courseDate}. Please verify the date with the caller.`,
-        retryPrompt: 'I could not find a booking for that date. Could you please confirm the exact date of your course?'
+        error: `Booking not found for date ${courseDate} and course type "${courseType}". Please verify the date and course with the caller.`,
+        retryPrompt: 'I could not find a booking for that date and course. Could you confirm the exact date and which course (e.g. Introduction to Motorcycling or CBT)?'
       };
     }
-    
+
     // Validate date is in future (already checked via data-isinfuture="Y", but double-check)
-    const bookingDate = new Date(courseDate);
+    const bookingDate = new Date(targetDateOnly);
+    bookingDate.setHours(0, 0, 0, 0);
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    bookingDate.setHours(0, 0, 0, 0);
-    
+
     if (bookingDate < now) {
       return {
         success: false,
@@ -240,7 +282,8 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
       console.log(`⚠️ [LOCATE_BOOKING] Could not extract price, using default: £${bookingPrice}`);
     }
     
-    const feeResult = feeCalculationService.calculateCancellationFee(courseDate, bookingPrice);
+    const bookingDateIso = `${targetDateOnly.getFullYear()}-${String(targetDateOnly.getMonth() + 1).padStart(2, '0')}-${String(targetDateOnly.getDate()).padStart(2, '0')}`;
+    const feeResult = feeCalculationService.calculateCancellationFee(bookingDateIso, bookingPrice);
     
     console.log(`💰 [LOCATE_BOOKING] Cancellation fee calculation:`);
     console.log(`   Booking Price: £${bookingPrice.toFixed(2)}`);

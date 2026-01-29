@@ -551,7 +551,9 @@ export class ToolCoordinator {
           break;
           
         case 'input_audio_buffer.speech_stopped':
+          console.log(`🔍 [TEST-3] [${this.state.callSid}] SPEECH_STOPPED EVENT RECEIVED - routing to handler`);
           const speechStoppedResult = await this.transcriptionHandler.handleSpeechStopped(event);
+          console.log(`🔍 [TEST-3] [${this.state.callSid}] SPEECH_STOPPED HANDLED - result type: ${speechStoppedResult?.type || 'null'}`);
           // Handle process_transcriptions return value
           if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
             const transcriptions = speechStoppedResult.transcriptions || [];

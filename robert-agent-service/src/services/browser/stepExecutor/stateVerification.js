@@ -12,7 +12,9 @@
  */
 export async function verifyBrowserStateBefore(page, stepName, sessionState) {
   // Basic checks - can be enhanced with step-specific verification
-  if (!page || page.isClosed()) {
+  // Safety check: Verify page is a valid Playwright Page object before calling isClosed()
+  const isValidPage = page && typeof page === 'object' && typeof page.isClosed === 'function';
+  if (!isValidPage || page.isClosed()) {
     throw new Error('Page is closed or not available');
   }
 
@@ -37,7 +39,9 @@ export async function verifyBrowserStateAfter(page, stepName, result) {
   }
 
   // Basic check - page should still be open
-  if (page.isClosed()) {
+  // Safety check: Verify page is a valid Playwright Page object before calling isClosed()
+  const isValidPage = page && typeof page === 'object' && typeof page.isClosed === 'function';
+  if (!isValidPage || page.isClosed()) {
     throw new Error(`Page was closed after ${stepName} execution`);
   }
 }

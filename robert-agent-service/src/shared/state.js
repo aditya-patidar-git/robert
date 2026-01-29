@@ -119,19 +119,33 @@ export async function initializeDistributedState() {
  * @returns {Promise<Object|null>} Conversation data or null
  */
 export async function getConversation(callSid) {
-  // Try distributed state first
+  const localConversation = conversations[callSid];
+  const localPageRef = localConversation?.bookingSession?.pageRef;
+
   try {
     const distributed = await distributedStateService.getSession(callSid);
     if (distributed) {
-      // Sync to local cache
-      conversations[callSid] = distributed;
-      return distributed;
+      const merged = { ...distributed };
+
+      if (localPageRef && distributed.bookingSession) {
+        merged.bookingSession = {
+          ...distributed.bookingSession,
+          pageRef: localPageRef
+        };
+      } else if (localPageRef && localConversation?.bookingSession) {
+        merged.bookingSession = {
+          ...localConversation.bookingSession,
+          ...distributed.bookingSession
+        };
+      }
+
+      conversations[callSid] = merged;
+      return merged;
     }
   } catch (error) {
     console.warn(`[State] Error getting distributed conversation ${callSid}:`, error.message);
   }
-  
-  // Fall back to local memory
+
   return conversations[callSid] || null;
 }
 
@@ -167,16 +181,40 @@ export async function setConversation(callSid, data, ttl = undefined) {
  * @returns {Promise<boolean>} True if successful
  */
 export async function updateConversation(callSid, updates, ttl = undefined) {
-  // Get existing conversation
+  const local = conversations[callSid];
+  const localPageRef = local?.bookingSession?.pageRef;
+  const localClientDetails = local?.clientDetails;
+  const localClientVerified = local?.clientVerified;
+  const localClientVerifiedAt = local?.clientVerifiedAt;
+  const localVerificationMethod = local?.verificationMethod;
+  const localVerificationState = local?.verificationState;
+
   const existing = await getConversation(callSid) || {};
-  
-  // Merge updates
   const merged = {
     ...existing,
     ...updates,
     _lastUpdated: new Date().toISOString()
   };
-  
+
+  if (merged.bookingSession && localPageRef) {
+    merged.bookingSession.pageRef = localPageRef;
+  }
+  if (localClientDetails) {
+    merged.clientDetails = localClientDetails;
+  }
+  if (localClientVerified !== undefined) {
+    merged.clientVerified = localClientVerified;
+  }
+  if (localClientVerifiedAt != null) {
+    merged.clientVerifiedAt = localClientVerifiedAt;
+  }
+  if (localVerificationMethod != null) {
+    merged.verificationMethod = localVerificationMethod;
+  }
+  if (localVerificationState != null && typeof localVerificationState === 'object') {
+    merged.verificationState = localVerificationState;
+  }
+
   return setConversation(callSid, merged, ttl);
 }
 

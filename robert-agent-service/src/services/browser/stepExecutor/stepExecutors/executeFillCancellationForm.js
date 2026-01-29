@@ -88,20 +88,24 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     await chargeDropdownButton.waitFor({ state: 'visible', timeout: 30000 });
     await chargeDropdownButton.click();
     await page.waitForTimeout(500);
-    
-    // Select "Yes" option
-    const yesOption = page.locator('.dx-list-item:has-text("Yes")').first();
+
+    const yesOption = cancelBookingIframe.locator('.dx-list-item:has-text("Yes")').first();
     try {
-      await yesOption.waitFor({ state: 'visible', timeout: 5000 });
+      await yesOption.waitFor({ state: 'visible', timeout: 8000 });
       await yesOption.click();
     } catch (e) {
-      // Fallback: Try using the input field directly
-      console.log('⚠️ [FILL_CANCELLATION_FORM] Yes option not found, trying input field...');
+      console.log('⚠️ [FILL_CANCELLATION_FORM] Yes option not found in iframe, trying input field...');
       const chargeInput = chargeDropdown.locator('input.dx-texteditor-input');
       await chargeInput.fill('Yes');
-      await page.keyboard.press('Enter');
+      await page.waitForTimeout(300);
+      const yesOptionPage = page.locator('.dx-list-item:has-text("Yes")').first();
+      if (await yesOptionPage.count() > 0) {
+        await yesOptionPage.click();
+      } else {
+        await page.keyboard.press('Enter');
+      }
     }
-    await page.waitForTimeout(1000); // Wait for conditional fields to appear
+    await page.waitForTimeout(1000);
     
     // 4. Set charge amount (#chargeAmount) - conditional, only visible when charge="Yes"
     console.log(`💷 [FILL_CANCELLATION_FORM] Setting cancellation fee amount...`);
@@ -122,7 +126,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     
     // Wait for amount field to appear (conditional field)
     const amountField = cancelBookingIframe.locator('#chargeAmount input.dx-texteditor-input');
-    await amountField.waitFor({ state: 'visible', timeout: 5000 });
+    await amountField.waitFor({ state: 'visible', timeout: 12000 });
     await amountField.clear();
     await amountField.fill(finalFeeAmount);
     await page.waitForTimeout(1000);
@@ -140,15 +144,13 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
       // For now, leave as is and let form validation handle it
     }
     
-    // 6. Click "Cancel now" button (#btnBack)
-    console.log(`✅ [FILL_CANCELLATION_FORM] Submitting cancellation form...`);
-    const cancelNowButton = cancelBookingIframe.locator('#btnBack[aria-label="Cancel now"]');
-    await cancelNowButton.waitFor({ state: 'visible', timeout: 30000 });
-    await cancelNowButton.click();
-    
-    // Wait for cancellation to process
-    await page.waitForTimeout(5000);
-    await page.waitForLoadState('networkidle');
+    // 6. Click "Back to previous screen" (#btnCancel) - in main page #mainArea / #bottomToolbar, not in iframe
+    console.log(`✅ [FILL_CANCELLATION_FORM] Clicking Back to previous screen...`);
+    const backButton = page.locator('#btnCancel[aria-label="Back to previous screen"]');
+    await backButton.waitFor({ state: 'visible', timeout: 30000 });
+    await backButton.click();
+
+    await page.waitForTimeout(3000);
     
     // Verify cancellation was successful
     // Check if we're back on the profile page (contactEdit_iframe)

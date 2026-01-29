@@ -743,8 +743,14 @@ export class OpenAIIntegration {
         console.log(`   - voice: ${config.voice.id}`);
         console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
         console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
+        console.log(`🔍 [TEST-3] [${this.state.callSid}] VAD CONFIGURATION:`);
+        console.log(`   - threshold: ${initialThreshold}s (${config.vadThreshold}ms)`);
+        console.log(`   - prefix_padding_ms: ${config.startPadding}ms (target: 250ms)`);
+        console.log(`   - silence_duration_ms: ${config.endPadding}ms (target: 500-700ms)`);
+        console.log(`   - turn_detection type: server_vad`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
           console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
+          console.log(`🔍 [TEST-3] [${this.state.callSid}] Auto-calibration will update threshold after ${this.state.CALIBRATION_DURATION_MS}ms`);
         }
       } catch (err) {
         this.state.incrementErrorCount();

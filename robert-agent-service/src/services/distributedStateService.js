@@ -18,6 +18,7 @@
 import twilioSyncService from './twilioSyncService.js';
 import crypto from 'crypto';
 import { sanitizeForJSON } from '../utils/objectUtils.js';
+import { isNetworkError } from '../utils/isRetryableError.js';
 
 class DistributedStateService {
   constructor() {
@@ -39,6 +40,9 @@ class DistributedStateService {
     
     // Cache metadata for staleness tracking
     this.cacheMetadata = new Map();
+    
+    // Track network errors per call to avoid log spam
+    this._networkErrorLoggedForCall = new Set();
     
     // Initialization promise
     this.initPromise = null;
@@ -237,13 +241,20 @@ class DistributedStateService {
         return true;
       } catch (error) {
         const duration = Date.now() - startTime;
-        console.error(`[DIST-VERBOSE] [${callSid}] ❌ Error setting session in Sync after ${duration}ms:`, {
-          message: error.message,
-          code: error.code,
-          status: error.status,
-          stack: error.stack?.split('\n').slice(0, 10).join('\n')
-        });
-        console.error(`[DistributedState] Error setting session ${callSid} in Sync:`, error.message);
+        if (isNetworkError(error)) {
+          if (!this._networkErrorLoggedForCall.has(callSid)) {
+            console.warn(`[DistributedState] Network error setting session ${callSid} in Sync (will use local cache only):`, error.message);
+            this._networkErrorLoggedForCall.add(callSid);
+          }
+        } else {
+          console.error(`[DIST-VERBOSE] [${callSid}] ❌ Error setting session in Sync after ${duration}ms:`, {
+            message: error.message,
+            code: error.code,
+            status: error.status,
+            stack: error.stack?.split('\n').slice(0, 10).join('\n')
+          });
+          console.error(`[DistributedState] Error setting session ${callSid} in Sync:`, error.message);
+        }
         // Continue with local cache only
         return true;
       }

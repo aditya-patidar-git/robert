@@ -34,15 +34,23 @@ class FileSearchTool {
     }
 
     try {
+      const searchStartTime = Date.now();
       console.log(`🔍 [${callContext.callSid || 'unknown'}] Searching knowledge base: "${query}"`);
+      console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] FILE_SEARCH START - timestamp: ${searchStartTime}`);
+      console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] Query: "${query}"`);
+      console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] Vector store ID: ${this.vectorStoreId || 'NOT CONFIGURED'}`);
 
       // Get OpenAI client (lazy initialization)
       const openai = getOpenAIClient();
 
       // Get vector store
+      const vectorStoreRetrieveStart = Date.now();
       const vectorStore = await openai.vectorStores.retrieve(this.vectorStoreId);
+      const vectorStoreRetrieveTime = Date.now() - vectorStoreRetrieveStart;
+      console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] Vector store retrieved in ${vectorStoreRetrieveTime}ms`);
 
       if (!vectorStore) {
+        console.error(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] ERROR - Vector store not found`);
         throw new Error('Vector store not found');
       }
 
@@ -54,13 +62,17 @@ class FileSearchTool {
       // Add file filtering if specified
       if (files && Array.isArray(files) && files.length > 0) {
         searchParams.file_ids = files;
+        console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] File filter applied: ${files.length} file(s)`);
       }
 
       // Perform the search
+      const searchExecuteStart = Date.now();
       const searchResults = await openai.vectorStores.search(
         this.vectorStoreId,
         searchParams
       );
+      const searchExecuteTime = Date.now() - searchExecuteStart;
+      console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] Search executed in ${searchExecuteTime}ms`);
 
       // Process results
       const results = (searchResults.data || []).map(result => ({
@@ -73,6 +85,11 @@ class FileSearchTool {
       }));
 
       console.log(`✅ [${callContext.callSid || 'unknown'}] Found ${results.length} results for query: "${query}"`);
+      console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] SEARCH RESULTS:`);
+      console.log(`   - Total results: ${results.length}`);
+      results.forEach((result, index) => {
+        console.log(`   - Result ${index + 1}: ${result.fileName} (score: ${result.similarityScore.toFixed(3)}, fileId: ${result.fileId})`);
+      });
 
       // Get uncertainty gate configuration from AIConfig
       const aiConfig = configManager.getAIConfig();
@@ -130,11 +147,22 @@ class FileSearchTool {
           // Use validated passages only (filtered by threshold)
           const validatedResults = validation.passages;
           console.log(`✅ [${callContext.callSid || 'unknown'}] Uncertainty gate passed. Using ${validatedResults.length} validated passages (confidence: ${validation.confidence.toFixed(2)})`);
+          console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] UNCERTAINTY GATE PASSED:`);
+          console.log(`   - Confidence: ${validation.confidence.toFixed(3)} (threshold: ${uncertaintyConfig.confidenceThreshold || 0.8})`);
+          console.log(`   - Validated passages: ${validatedResults.length}`);
+          console.log(`   - Citations: ${validatedResults.map(r => r.fileName || r.filename || 'Unknown').join(', ')}`);
 
           // Track provenance (async, don't wait for it)
           this.trackProvenance(query, validatedResults, callContext).catch(err => {
             console.warn(`⚠️ [${callContext.callSid || 'unknown'}] Failed to track provenance:`, err.message);
           });
+
+          const totalSearchTime = Date.now() - searchStartTime;
+          console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] FILE_SEARCH COMPLETE - Total time: ${totalSearchTime}ms`);
+          console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] RETURNING RESULTS:`);
+          console.log(`   - Query: "${query}"`);
+          console.log(`   - Results count: ${validatedResults.length}`);
+          console.log(`   - Citations: ${validatedResults.map(r => r.fileName || r.filename || 'Unknown').join(', ')}`);
 
           return {
             query: query,
@@ -159,6 +187,13 @@ class FileSearchTool {
       this.trackProvenance(query, results, callContext).catch(err => {
         console.warn(`⚠️ [${callContext.callSid || 'unknown'}] Failed to track provenance:`, err.message);
       });
+
+      const totalSearchTime = Date.now() - searchStartTime;
+      console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] FILE_SEARCH COMPLETE - Total time: ${totalSearchTime}ms`);
+      console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] RETURNING RESULTS:`);
+      console.log(`   - Query: "${query}"`);
+      console.log(`   - Results count: ${results.length}`);
+      console.log(`   - Citations: ${results.map(r => r.fileName).join(', ')}`);
 
       return {
         query: query,

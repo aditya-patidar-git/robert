@@ -16,6 +16,7 @@
 
 import twilio from 'twilio';
 import { isPlaceholder, validateTwilioSyncConfig, logValidationResult } from '../utils/configValidator.js';
+import { isNetworkError } from '../utils/isRetryableError.js';
 
 class TwilioSyncService {
   constructor() {
@@ -289,12 +290,20 @@ class TwilioSyncService {
           
           return true;
         } catch (createError) {
-          console.error(`[TwilioSyncService] Error creating session ${callSid}:`, createError.message);
+          if (isNetworkError(createError)) {
+            console.warn(`[TwilioSyncService] Network error creating session ${callSid}:`, createError.message);
+          } else {
+            console.error(`[TwilioSyncService] Error creating session ${callSid}:`, createError.message);
+          }
           throw createError;
         }
       }
       
-      console.error(`[TwilioSyncService] Error setting session ${callSid}:`, error.message);
+      if (isNetworkError(error)) {
+        console.warn(`[TwilioSyncService] Network error setting session ${callSid}:`, error.message);
+      } else {
+        console.error(`[TwilioSyncService] Error setting session ${callSid}:`, error.message);
+      }
       throw error;
     }
   }

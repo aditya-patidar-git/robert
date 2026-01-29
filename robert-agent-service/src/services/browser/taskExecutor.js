@@ -328,7 +328,9 @@ export class TaskExecutor {
     } finally {
       // ALWAYS clean up pages and execution lock, even on error
       try {
-        if (page && !page.isClosed()) {
+        // Safety check: Verify page is a valid Playwright Page object before calling isClosed()
+        const isValidPage = page && typeof page === 'object' && typeof page.isClosed === 'function';
+        if (isValidPage && !page.isClosed()) {
           // CRITICAL: Do NOT close the authenticated page - we need to keep it open for session persistence
           const authenticatedPage = this.browserManager.getAuthenticatedPage();
           if (page === authenticatedPage) {

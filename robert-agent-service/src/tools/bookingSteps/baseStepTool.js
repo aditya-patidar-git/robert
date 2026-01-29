@@ -801,43 +801,60 @@ export class BaseStepTool {
     // Check if we have a stored page reference
     let page = sessionStateManager.getBrowserSession(callSid);
     
-    if (page && !page.isClosed()) {
+    // Safety check: Verify page is a valid Playwright Page object before calling isClosed()
+    // pageRef may be null or invalid if retrieved from Twilio Sync (non-serializable objects are removed)
+    const isValidPage = page && typeof page === 'object' && typeof page.isClosed === 'function';
+    
+    if (isValidPage && !page.isClosed()) {
       console.log(`✅ [${this.getStepName()}] Reusing existing browser page`);
       return page;
     }
 
-    // Get page from browser manager
-    console.log(`🌐 [${this.getStepName()}] Getting browser session from BrowserManager`);
+    // Page not found or invalid - create a new callSid-specific page
+    console.log(`🌐 [${this.getStepName()}] Creating new browser page for callSid ${callSid}`);
     
     // Get authenticated context
     const context = await this.browserManager.getContext();
     
-    // Get or create authenticated page
-    const authenticatedPage = this.browserManager.getAuthenticatedPage();
-    if (authenticatedPage && !authenticatedPage.isClosed()) {
-      page = authenticatedPage;
-    } else {
-      // Create new page from context
-      page = await context.newPage();
-      await page.goto('https://takeabyte.co.uk/InContact', { 
-        waitUntil: 'domcontentloaded',
-        timeout: 30000 
-      });
-      await page.waitForTimeout(2000);
-      
-      // Check if redirected to login
-      const currentUrl = page.url();
-      if (currentUrl.includes('/Account/Login')) {
-        // Need to login
-        const { loginToCRM } = await import('../../services/commonBookingSteps/index.js');
-        await loginToCRM(page, this.crmCredentials, './screenshots');
-      } else {
-        // Store as authenticated page
-        this.browserManager.setAuthenticatedPage(page);
+    // Always create a new callSid-specific page (don't reuse shared authenticatedPage)
+    page = await context.newPage();
+    await page.goto('https://takeabyte.co.uk/InContact', { 
+      waitUntil: 'domcontentloaded',
+      timeout: 30000 
+    });
+    await page.waitForTimeout(2000);
+    
+    // Check if redirected to login
+    const currentUrl = page.url();
+    if (currentUrl.includes('/Account/Login')) {
+      // Need to login
+      const { loginToCRM } = await import('../../services/commonBookingSteps/index.js');
+      await loginToCRM(page, this.crmCredentials, './screenshots');
+    }
+    
+    // Restore state based on current step
+    const currentStep = sessionStateManager.getCurrentStep(callSid);
+    if (currentStep !== null && currentStep >= 4) {
+      // Step 4+ means we should be on Contacts page
+      console.log(`🔄 [${this.getStepName()}] Restoring Contacts page state (current step: ${currentStep})`);
+      try {
+        await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
+        const contactsTab = page.locator('h3.list-menu-item-heading:has-text("Contacts")').first();
+        await contactsTab.click();
+        await page.waitForTimeout(8000);
+        await page.waitForLoadState('networkidle');
+        await page.waitForSelector('#contactLookup_iframe', { state: 'attached', timeout: 30000 });
+        await page.waitForFunction(() => {
+          const iframe = document.querySelector('#contactLookup_iframe');
+          return iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete';
+        }, { timeout: 30000 });
+        console.log(`✅ [${this.getStepName()}] Contacts page restored`);
+      } catch (error) {
+        console.warn(`⚠️ [${this.getStepName()}] Failed to restore Contacts page:`, error.message);
       }
     }
 
-    // Store page reference in session
+    // Store page reference in session (callSid-specific)
     sessionStateManager.setBrowserSession(callSid, page);
 
     return page;

@@ -363,24 +363,33 @@ export class ResponseHandler {
     const stopStartTime = Date.now();
     
     console.log(`🛑 [${this.state.callSid}] immediatelyStopAudio() called - starting barge-in process`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] TTS HALT START - timestamp: ${stopStartTime}`);
     
     // Stop audio pacer immediately
+    const pacerStopTime = Date.now();
     this.stopAudioPacer();
+    const pacerStopDuration = Date.now() - pacerStopTime;
     console.log(`🛑 [${this.state.callSid}] Audio pacer stopped`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] Audio pacer stopped in ${pacerStopDuration}ms`);
     
     // Clear audio buffer immediately to prevent any buffered audio from being sent
+    const bufferClearStartTime = Date.now();
+    let bufferSize = 0;
     if (this.state.outboundAudioBuffer) {
-      const bufferSize = this.state.outboundAudioBuffer.length;
+      bufferSize = this.state.outboundAudioBuffer.length;
       this.state.outboundAudioBuffer = null;
       this.state.lastOutboundSendTime = 0;
       
       if (bufferSize > 0) {
         console.log(`🛑 [${this.state.callSid}] Cleared ${bufferSize} bytes of buffered audio during barge-in`);
+        console.log(`🔍 [TEST-2] [${this.state.callSid}] Buffer cleared: ${bufferSize} bytes in ${Date.now() - bufferClearStartTime}ms`);
       } else {
         console.log(`🛑 [${this.state.callSid}] Audio buffer was already empty`);
+        console.log(`🔍 [TEST-2] [${this.state.callSid}] Buffer was empty - no clear needed`);
       }
     } else {
       console.log(`🛑 [${this.state.callSid}] No audio buffer to clear`);
+      console.log(`🔍 [TEST-2] [${this.state.callSid}] No buffer exists - nothing to clear`);
     }
     
     // CRITICAL: Use Twilio's native "clear" message for immediate barge-in
@@ -435,12 +444,18 @@ export class ResponseHandler {
     
     const stopTime = Date.now() - stopStartTime;
     console.log(`⚡ [${this.state.callSid}] Audio stopped at Twilio level in ${stopTime}ms`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] TTS HALT COMPLETE - Total halt time: ${stopTime}ms (target: <200ms)`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] TTS halt breakdown:`);
+    console.log(`   - Audio pacer stop: ${pacerStopDuration}ms`);
+    console.log(`   - Buffer clear: ${bufferSize > 0 ? 'cleared ' + bufferSize + ' bytes' : 'no buffer'}`);
+    console.log(`   - Twilio clear message: ${wsExists && wsIsOpen && streamSidExists && callIsOpen ? 'sent' : 'skipped'}`);
     
     // Track barge-in response time for metrics
     if (this.state.interruptionStartTime > 0) {
       const bargeInResponseTime = Date.now() - this.state.interruptionStartTime;
       conversationQualityService.trackBargeInResponseTime(this.state.callSid, bargeInResponseTime);
       console.log(`📊 [${this.state.callSid}] Barge-in response time: ${bargeInResponseTime}ms`);
+      console.log(`🔍 [TEST-2] [${this.state.callSid}] METRIC - TTS halt time: ${stopTime}ms`);
     }
   }
 

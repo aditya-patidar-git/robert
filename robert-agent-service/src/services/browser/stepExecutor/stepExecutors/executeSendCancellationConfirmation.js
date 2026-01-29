@@ -86,11 +86,9 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
     await page.waitForTimeout(2000);
     
     // After clicking Back, we return to contactEdit_iframe (profile page)
-    // Click Ok button in contactEdit_iframe
-    // Ok button has id="btnBack" with aria-label="OK"
+    // OK button is in main page: #mainArea > #bottomToolbar > #btnBack (sibling of iframe, not inside it)
     console.log(`✅ [SEND_CANCELLATION_CONFIRMATION] Clicking Ok button...`);
-    const contactEditIframe = page.frameLocator('#contactEdit_iframe');
-    const okButton = contactEditIframe.locator('#btnBack[aria-label="OK"]');
+    const okButton = page.locator('#bottomToolbar #btnBack');
     
     // Wait for Ok button to be visible (may take a moment after returning from stationerySender_iframe)
     await okButton.waitFor({ state: 'visible', timeout: 30000 });
