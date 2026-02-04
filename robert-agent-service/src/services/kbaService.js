@@ -189,13 +189,7 @@ class KBAService {
    */
   requiresKBA(toolName, parameters) {
     const kbaRequiredTools = ['update_customer', 'reschedule_booking', 'transfer_call'];
-    if (!kbaRequiredTools.includes(toolName)) {
-      return false;
-    }
-    if (toolName === 'update_customer' || toolName === 'reschedule_booking') {
-      return true;
-    }
-    return false;
+    return kbaRequiredTools.includes(toolName);
   }
 
   /**

@@ -4,21 +4,31 @@
   "description": "Robert AI Voice Platform - Root package for test dependencies",
   "type": "module",
   "scripts": {
-    "test:acceptance": "node tests/acceptance/runAllTests.js",
-    "test:acceptance:single": "node tests/acceptance"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/unit",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integration",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:acceptance": "node tests/evidence/collectEvidence.js"
   },
-  "keywords": ["voice-agent", "testing"],
+  "keywords": [
+    "voice-agent",
+    "testing"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "dotenv": "^17.2.2",
+    "@jest/globals": "^30.2.0",
+    "archiver": "^7.0.1",
+    "axios": "^1.7.7",
+    "dotenv": "^17.2.3",
+    "jest": "^30.2.0",
+    "mongodb-memory-server": "^11.0.1",
+    "mongoose": "^8.18.1",
     "nock": "^13.5.0",
     "p-limit": "^5.0.0",
-    "archiver": "^7.0.1",
-    "twilio": "^5.10.0",
-    "mongoose": "^8.18.1",
-    "axios": "^1.7.7",
     "playwright": "^1.56.1",
+    "twilio": "^5.10.0",
     "ws": "^8.18.0"
   }
 }
