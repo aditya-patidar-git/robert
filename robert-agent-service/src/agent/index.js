@@ -1,13 +1,6 @@
-// Load .env FIRST before any other imports that might need env vars
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+// Load .env first so process.env is set before any module (e.g. tools) is evaluated
+import './loadEnv.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-dotenv.config({ path: join(__dirname, '../../.env') });
-
-// Now import everything else
 import express from 'express';
 import { createServer } from 'http';
 import WebSocket, { WebSocketServer } from 'ws';
