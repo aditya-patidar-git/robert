@@ -14,10 +14,11 @@ class AuthService extends BaseService {
   }
 
   /**
-   * Login user with email/password
+   * Login user with email/password (and optional OTP when MFA is enabled)
    * @param {Object} credentials - Login credentials
    * @param {string} credentials.email - User email
    * @param {string} credentials.password - User password
+   * @param {string} [credentials.otp] - OTP when MFA is required
    * @returns {Promise<Object>} Login response with token
    */
   async login(credentials) {
@@ -41,6 +42,18 @@ class AuthService extends BaseService {
    */
   async register(userData) {
     return this.post('/signup', userData);
+  }
+
+  async sendLoginOtp(credentials) {
+    return this.post('/send-otp', { email: credentials.email, password: credentials.password });
+  }
+
+  async invalidateLoginOtp(email) {
+    return this.post('/invalidate-login-otp', { email });
+  }
+
+  async sendSignupOtp(email) {
+    return this.post('/send-signup-otp', { email });
   }
 
   /**

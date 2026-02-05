@@ -3,26 +3,103 @@ import { hashPassword, verifyPassword } from "../utils/hash.js";
 import { generateToken } from "../utils/jwt.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { createAuditLog } from "./auditLogController.js";
+import { createOtpForEmail, getAndClearOtp, clearOtp } from "../services/otpStore.js";
+import emailService from "../services/emailService.js";
 
-// POST /auth/signup
+// POST /auth/send-otp - Send OTP to email for MFA login
+export const sendOtp = async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+        return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    const isValid = await verifyPassword(user.passwordHash, password);
+    if (!isValid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    if (user.status !== "active") {
+        return res.status(403).json({ message: "User is not active" });
+    }
+
+    if (!user.mfaEnabled) {
+        return res.status(400).json({ message: "Two-factor authentication is not enabled for this account" });
+    }
+
+    const otp = createOtpForEmail(user.email);
+    const result = await emailService.sendLoginOtp(user.email, otp);
+    if (!result.success) {
+        return res.status(500).json({ message: "Failed to send OTP. Please try again." });
+    }
+
+    res.json({ message: "OTP sent to your email" });
+};
+
+// POST /auth/invalidate-login-otp - Invalidate MFA OTP (e.g. on page refresh)
+export const invalidateLoginOtp = async (req, res) => {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string' || !email.trim()) {
+        return res.status(400).json({ message: "Email is required" });
+    }
+    clearOtp(email.trim().toLowerCase());
+    res.json({ message: "OK" });
+};
+
+// POST /auth/send-signup-otp - Send OTP for email verification during signup
+export const sendSignupOtp = async (req, res) => {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string' || !email.trim()) {
+        return res.status(400).json({ message: "Email is required" });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+        return res.status(400).json({ message: "Email already registered" });
+    }
+    const otp = createOtpForEmail(normalizedEmail);
+    const result = await emailService.sendSignupOtp(normalizedEmail, otp);
+    if (!result.success) {
+        return res.status(500).json({ message: "Failed to send verification code. Please try again." });
+    }
+    res.json({ message: "Verification code sent to your email" });
+};
+
+// POST /auth/signup - Create user after OTP verification
 export const signup = async (req, res) => {
-    const { email, username, password } = req.body;
+    const { email, username, password, otp } = req.body;
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ email });
+    if (!email || !username || !password) {
+        return res.status(400).json({ message: "Email, username and password are required" });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) return res.status(400).json({ message: "Email already registered" });
+
+    if (!otp || typeof otp !== 'string' || otp.trim().length === 0) {
+        return res.status(400).json({ message: "Verification code is required" });
+    }
+    const storedOtp = getAndClearOtp(normalizedEmail);
+    if (!storedOtp || storedOtp !== otp.trim()) {
+        return res.status(400).json({ message: "Invalid or expired verification code" });
+    }
 
     const passwordHash = await hashPassword(password);
 
     await User.create({
-        email,
-        username,
+        email: normalizedEmail,
+        username: username.trim(),
         passwordHash,
-        role: "admin",     // default role for self-registration
-        status: "pending"  // needs approval by admin
+        role: "admin",
+        status: "active"
     });
 
-    res.status(201).json({ message: "User registered successfully. Await admin approval." });
+    res.status(201).json({ message: "User registered successfully. You can now log in." });
 };
 
 // POST /auth/login
@@ -68,6 +145,25 @@ export const login = async (req, res) => {
             req
         });
         return res.status(403).json({ message: `User is not active. Current status: ${user.status}` });
+    }
+
+    if (user.mfaEnabled) {
+        const { otp } = req.body;
+        if (!otp || typeof otp !== 'string' || otp.trim().length === 0) {
+            return res.status(403).json({ mfaRequired: true, message: "OTP required" });
+        }
+        const storedOtp = getAndClearOtp(user.email);
+        if (!storedOtp || storedOtp !== otp.trim()) {
+            await createAuditLog({
+                actorId: user._id,
+                action: 'auth.login_failed',
+                targetType: 'user',
+                targetId: user._id.toString(),
+                diff: { reason: 'invalid_or_expired_otp' },
+                req
+            });
+            return res.status(401).json({ message: "Invalid or expired OTP" });
+        }
     }
 
     const { token } = generateToken(user);
@@ -201,7 +297,7 @@ export const changePassword = async (req, res) => {
     }
 };
 
-// PATCH /auth/mfa - Toggle MFA (placeholder for future implementation)
+// PATCH /auth/mfa - Toggle MFA
 export const toggleMFA = async (req, res) => {
     try {
         const { mfaEnabled } = req.body;
@@ -211,10 +307,19 @@ export const toggleMFA = async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
 
-        // For now, just return success (MFA implementation would go here)
-        res.json({ 
+        user.mfaEnabled = mfaEnabled === true;
+        await user.save();
+
+        res.json({
             message: "MFA settings updated",
-            mfaEnabled: mfaEnabled || false
+            user: {
+                id: user._id,
+                email: user.email,
+                username: user.username,
+                role: user.role,
+                status: user.status,
+                mfaEnabled: user.mfaEnabled
+            }
         });
     } catch (error) {
         res.status(500).json({ message: "Server error" });

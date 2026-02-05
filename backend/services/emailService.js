@@ -146,6 +146,18 @@ class EmailService {
       };
     }
   }
+
+  async sendLoginOtp(to, otp) {
+    const subject = 'Your login verification code';
+    const text = `Your one-time verification code is: ${otp}\n\nThis code is valid for 10 minutes. Do not share it with anyone.`;
+    return this.sendEmail({ to, subject, text });
+  }
+
+  async sendSignupOtp(to, otp) {
+    const subject = 'Verify your email – Robert Voice Agent';
+    const text = `Your verification code is: ${otp}\n\nThis code is valid for 10 minutes. Use it to complete your registration.`;
+    return this.sendEmail({ to, subject, text });
+  }
 }
 
 export default new EmailService();

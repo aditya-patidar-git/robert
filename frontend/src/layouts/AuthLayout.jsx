@@ -1,12 +1,10 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Box, ThemeProvider } from '@mui/material';
-import { useAuth } from '../context/AuthContext';
 import getTheme from '../theme';
 
 const AuthLayout = () => {
-  const { theme } = useAuth();
-  const muiTheme = getTheme(theme);
+  const muiTheme = getTheme('light');
 
   return (
     <ThemeProvider theme={muiTheme}>

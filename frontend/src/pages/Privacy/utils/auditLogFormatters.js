@@ -27,8 +27,8 @@ export const formatEventTypeLabel = (eventType) => {
     'user.update': 'User Updated',
     'user.delete': 'User Deleted',
     'user.approve': 'User Approved',
-    'user.block': 'User Blocked',
-    'user.exclude': 'User Excluded',
+    'user.block': 'User Suspended',
+    'user.exclude': 'User Suspended',
     
     // Auth Events
     'auth.login': 'Login',
@@ -328,17 +328,17 @@ const formatUserApprove = (data) => {
 };
 
 const formatUserBlock = (data) => {
-  if (!data) return 'User blocked';
+  if (!data) return 'User suspended';
   const parts = [];
   if (data.email) parts.push(maskEmail(data.email));
   if (data.reason) parts.push(`Reason: ${data.reason}`);
-  return parts.length > 0 ? `Blocked user: ${parts.join(' | ')}` : 'User blocked';
+  return parts.length > 0 ? `Suspended user: ${parts.join(' | ')}` : 'User suspended';
 };
 
 const formatUserExclude = (data) => {
-  if (!data) return 'User excluded (permanent ban)';
-  if (data.email) return `Excluded user: ${maskEmail(data.email)}`;
-  return 'User excluded (permanent ban)';
+  if (!data) return 'User suspended';
+  if (data.email) return `Suspended user: ${maskEmail(data.email)}`;
+  return 'User suspended';
 };
 
 const formatAuthLogin = (data) => {
