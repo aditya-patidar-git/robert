@@ -287,9 +287,26 @@ class TwilioSyncService {
             .services(this.syncServiceSid)
             .syncMaps(this.sessionsMapSid)
             .syncMapItems.create({ key: callSid, data, ttl });
-          
+
           return true;
         } catch (createError) {
+          if (createError.code === 54208 || createError.status === 409) {
+            try {
+              await this.client.sync.v1
+                .services(this.syncServiceSid)
+                .syncMaps(this.sessionsMapSid)
+                .syncMapItems(callSid)
+                .update({ data, ttl });
+              return true;
+            } catch (updateErr) {
+              if (isNetworkError(updateErr)) {
+                console.warn(`[TwilioSyncService] Network error updating session ${callSid}:`, updateErr.message);
+              } else {
+                console.error(`[TwilioSyncService] Error updating session ${callSid}:`, updateErr.message);
+              }
+              throw updateErr;
+            }
+          }
           if (isNetworkError(createError)) {
             console.warn(`[TwilioSyncService] Network error creating session ${callSid}:`, createError.message);
           } else {

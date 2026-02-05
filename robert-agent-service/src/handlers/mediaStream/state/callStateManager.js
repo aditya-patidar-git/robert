@@ -42,6 +42,7 @@ export class CallStateManager {
     this.audioFramesSentCount = 0;  // Track total frames sent for diagnostics
     this.firstAudioFrameTime = null;  // Timestamp of first audio frame sent
     this.callStartTime = Date.now();
+    this.pickupLatencyStartTime = null;  // Set on start event for pickup→first-greeting timing
     this.startTimeout = null;
     this.durationTimer = null;
     
@@ -136,6 +137,10 @@ export class CallStateManager {
     // Event waiting promises for race condition fixes
     this.pendingSessionUpdatePromise = null;
     this.pendingItemCreatePromise = null;
+
+    // Pre-connection message queue: flush when WebSocket becomes ready (avoids "Cannot send - WebSocket not ready")
+    this.preConnectionMessageQueue = [];
+    this.MAX_PRE_CONNECTION_QUEUE = 200;
   }
 
   /**
@@ -149,12 +154,36 @@ export class CallStateManager {
   }
 
   /**
-   * Mark OpenAI connection as ready
+   * Mark OpenAI connection as ready and flush any messages queued before connection
    */
   setOpenAIReady(openaiWs, connectionManager = null) {
     this.openaiWs = openaiWs;
     this.openaiReady = true;
     this.openaiConnectionManager = connectionManager;
+    this.flushPreConnectionQueue();
+  }
+
+  /**
+   * Flush messages queued before WebSocket was ready (called from setOpenAIReady)
+   */
+  flushPreConnectionQueue() {
+    if (this.preConnectionMessageQueue.length === 0) return;
+    const target = this.openaiConnectionManager || this.openaiWs;
+    const isOpen = this.openaiWs && this.openaiWs.readyState === 1;
+    if (!target || !isOpen) return;
+    while (this.preConnectionMessageQueue.length > 0) {
+      const { message, options } = this.preConnectionMessageQueue.shift();
+      if (this.openaiConnectionManager) {
+        this.openaiConnectionManager.send(message, options);
+      } else {
+        try {
+          const msgStr = typeof message === 'string' ? message : JSON.stringify(message);
+          this.openaiWs.send(msgStr);
+        } catch (err) {
+          console.error(`❌ [${this.callSid}] Error flushing queued message:`, err.message);
+        }
+      }
+    }
   }
 
   /**
@@ -165,19 +194,16 @@ export class CallStateManager {
    * @returns {boolean} True if sent successfully
    */
   sendToOpenAI(message, options = {}) {
-    // CRITICAL FIX: Don't send if call is closed
     if (this.isClosed) {
       console.warn(`⚠️ [${this.callSid}] Cannot send message - call is closed`);
       return false;
     }
-    
-    // Use connection manager if available (provides queuing, keep-alive, quality monitoring)
+
     if (this.openaiConnectionManager) {
       return this.openaiConnectionManager.send(message, options);
     }
-    
-    // Fallback to direct send if connection manager not available
-    if (this.openaiWs && this.openaiWs.readyState === 1) { // 1 = OPEN
+
+    if (this.openaiWs && this.openaiWs.readyState === 1) {
       try {
         const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
         this.openaiWs.send(messageStr);
@@ -187,8 +213,11 @@ export class CallStateManager {
         return false;
       }
     }
-    
-    console.warn(`⚠️ [${this.callSid}] Cannot send message - WebSocket not ready (readyState: ${this.openaiWs?.readyState})`);
+
+    if (this.preConnectionMessageQueue.length < this.MAX_PRE_CONNECTION_QUEUE) {
+      this.preConnectionMessageQueue.push({ message, options });
+      return true;
+    }
     return false;
   }
 
@@ -205,6 +234,7 @@ export class CallStateManager {
   markClosed() {
     this.isClosed = true;
     this.accepting = false;
+    this.preConnectionMessageQueue = [];
   }
 
   /**
@@ -234,6 +264,13 @@ export class CallStateManager {
    */
   hasMaxErrors() {
     return this.errorCount >= this.MAX_ERROR_COUNT;
+  }
+
+  /**
+   * Elapsed ms since start event (for pickup-latency logging). Returns null if not set.
+   */
+  pickupLatencyMs() {
+    return this.pickupLatencyStartTime != null ? Date.now() - this.pickupLatencyStartTime : null;
   }
 
   /**

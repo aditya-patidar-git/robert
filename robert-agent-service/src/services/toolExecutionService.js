@@ -531,9 +531,7 @@ class ToolExecutionService {
         const webSearchResult = toolResult;
         
         // Check if web_search returned empty results or failed
-        const hasNoResults = !webSearchResult.results || 
-                            webSearchResult.results.length === 0 || 
-                            (webSearchResult.totalResults !== undefined && webSearchResult.totalResults === 0);
+        const hasNoResults = !webSearchResult.results || webSearchResult.results.length === 0;
         
         const hasError = executionResult.success === false || webSearchResult.error;
         

@@ -12,7 +12,7 @@ export const integrationConfig = {
     );
   },
   timeouts: {
-    callPickup: 5000,
+    callPickup: 15000,
     greeting: 20000,
     bargeInHalt: 5000,
     transfer: 30000,

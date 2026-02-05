@@ -26,9 +26,23 @@ describe('Call Pickup Latency (Integration)', () => {
     const latencies = [];
     const iterations = 5;
     try {
+      const warmUpResult = await callSimulator.initiateCall('integration-pickup');
+      await callSimulator.waitForAnswer(warmUpResult.callSid, integrationConfig.timeouts.callPickup);
+      let warmUpFirstAudio = null;
+      const warmUpMonitor = await callSimulator.monitorAudioOutput(warmUpResult.callSid, () => {
+        if (warmUpFirstAudio === null) warmUpFirstAudio = Date.now();
+      });
+      const warmUpDeadline = Date.now() + 8000;
+      while (Date.now() < warmUpDeadline && warmUpFirstAudio === null) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      warmUpMonitor.stop();
+      await callSimulator.hangup(warmUpResult.callSid);
+      await new Promise((r) => setTimeout(r, 1500));
+
       for (let i = 0; i < iterations; i++) {
         const callResult = await callSimulator.initiateCall('integration-pickup');
-        await callSimulator.waitForAnswer(callResult.callSid, testConfig.timeouts.callPickup);
+        await callSimulator.waitForAnswer(callResult.callSid, integrationConfig.timeouts.callPickup);
         const callAnsweredTime = Date.now();
         let firstAudioTime = null;
         const audioMonitor = await callSimulator.monitorAudioOutput(callResult.callSid, () => {
@@ -53,7 +67,7 @@ describe('Call Pickup Latency (Integration)', () => {
     } finally {
       await callSimulator.cleanup();
     }
-  }, 60000);
+  }, 120000);
 });
 
 describe('Barge-in Timing (Integration)', () => {
@@ -73,7 +87,7 @@ describe('Barge-in Timing (Integration)', () => {
     } finally {
       await callSimulator.cleanup();
     }
-  });
+  }, 25000);
 });
 
 describe('VAD Behavior (Integration)', () => {

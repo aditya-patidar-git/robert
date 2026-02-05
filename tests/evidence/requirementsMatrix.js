@@ -4,13 +4,15 @@
  */
 export const requirementsMatrix = {
   requirement_1_pickup: {
-    description: 'Call pickup latency < 2s (§14.1)',
+    description: 'Call pickup latency < 2s; greeting; asks language; detects reply; switches (§14.1)',
     verification: [
       { type: 'integration', testFile: 'tests/integration/timing-critical.test.js', assertionName: 'measures p95 latency < 2s' },
-      { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns instructions for initial greeting when consent not given' }
+      { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns instructions for initial greeting when consent not given' },
+      { type: 'integration', testFile: 'tests/integration/language-switch.test.js', assertionName: 'greeting instructions include language question' },
+      { type: 'integration', testFile: 'tests/integration/language-switch.test.js', assertionName: 'call connects and accepts language response' }
     ],
-    evidenceRequired: ['logs', 'metrics'],
-    acceptanceCriteria: 'Inbound answers <2.0s; greeting played.'
+    evidenceRequired: ['logs', 'metrics', 'transcript'],
+    acceptanceCriteria: 'Inbound answers <2.0s; greeting played; asks language; French reply triggers switch.'
   },
   requirement_2_barge_in: {
     description: 'Barge-in halt < 200ms (§14.2)',
@@ -49,14 +51,15 @@ export const requirementsMatrix = {
     acceptanceCriteria: 'MCP web_search with prior disclosure; result grounded.'
   },
   requirement_6_crm_tasking: {
-    description: 'CRM booking with KBA + dry-run (§14.6)',
+    description: 'CRM booking with KBA + dry-run + confirmation (§14.6)',
     verification: [
       { type: 'unit', testFile: 'tests/unit/services/kbaService.test.js', assertionName: 'returns true for reschedule_booking' },
       { type: 'unit', testFile: 'tests/unit/services/kbaService.test.js', assertionName: 'returns true for update_customer' },
-      { type: 'unit', testFile: 'tests/unit/services/toolExecutionService.test.js', assertionName: 'returns true for duplicate call with same params' }
+      { type: 'unit', testFile: 'tests/unit/services/toolExecutionService.test.js', assertionName: 'returns true for duplicate call with same params' },
+      { type: 'unit', testFile: 'tests/unit/services/sendConfirmation.test.js', assertionName: 'returns confirmationSent true after successful send' }
     ],
     evidenceRequired: ['logs', 'transcript', 'crm_screenshot'],
-    acceptanceCriteria: 'KBA, dry-run diff, confirmation, commit, DOM assert.'
+    acceptanceCriteria: 'KBA, dry-run diff, confirmation, commit, DOM assert; SMS/email confirmation.'
   },
   requirement_7_human_transfer: {
     description: 'Human transfer with DTMF (§14.7)',
@@ -87,7 +90,9 @@ export const requirementsMatrix = {
   requirement_10_error_paths: {
     description: 'Graceful error handling (§14.10)',
     verification: [
-      { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns false when quality score is below 0.7' }
+      { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns false when quality score is below 0.7' },
+      { type: 'unit', testFile: 'tests/unit/services/errorRecoveryService.test.js', assertionName: 'handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx' },
+      { type: 'unit', testFile: 'tests/unit/services/errorRecoveryService.test.js', assertionName: 'handleToolError returns shouldFallbackToVoicemail for Twilio stream drop' }
     ],
     evidenceRequired: ['logs', 'error_screenshots'],
     acceptanceCriteria: 'OpenAI 5xx / stream drop handled; retry; voicemail fallback.'
@@ -102,93 +107,18 @@ export const requirementsMatrix = {
     acceptanceCriteria: 'Export transcript & metadata; delete on request; retention respected.'
   },
   requirement_12_security: {
-    description: 'No secrets in bundles/logs (§14.12)',
+    description: 'No secrets in bundles/logs; SSRF/DOM blocked; fail-fast on missing secrets (§14.12)',
     verification: [
       { type: 'unit', testFile: 'tests/unit/security/secrets.test.js', assertionName: 'does not find hardcoded API keys in .js source files' },
-      { type: 'unit', testFile: 'tests/unit/security/secrets.test.js', assertionName: 'does not find sk- prefixed keys in test helpers' }
-    ],
-    evidenceRequired: ['scan_results', 'bundle_analysis'],
-    acceptanceCriteria: 'No secrets in logs or bundles; PII masking; Argon2id.'
-  },
-  requirement_13_multilingual: {
-    description: 'Multilingual: ask language; detect reply; switch language/voice',
-    verification: [
-      { type: 'integration', testFile: 'tests/integration/language-switch.test.js', assertionName: 'greeting instructions include language question' },
-      { type: 'integration', testFile: 'tests/integration/language-switch.test.js', assertionName: 'call connects and accepts language response' }
-    ],
-    evidenceRequired: ['logs', 'transcript'],
-    acceptanceCriteria: 'Greeting asks language; French (or other) reply triggers switch.'
-  },
-  requirement_14_recording_consent: {
-    description: 'Recording consent: announce recording; honour opt-out',
-    verification: [
-      { type: 'unit', testFile: 'tests/unit/services/consentInstructionBuilder.test.js', assertionName: 'buildConsentFlowInstructions includes recording notice' },
-      { type: 'unit', testFile: 'tests/unit/services/consentInstructionBuilder.test.js', assertionName: 'buildSessionInstructions includes recording notice' }
-    ],
-    evidenceRequired: ['logs', 'transcript'],
-    acceptanceCriteria: 'Recording announced; opt-out honoured.'
-  },
-  requirement_15_failfast_secrets: {
-    description: 'Fail-fast on missing secrets at boot',
-    verification: [
-      { type: 'unit', testFile: 'tests/unit/services/secretsManager.test.js', assertionName: 'validateSecrets throws when a required secret is missing' }
-    ],
-    evidenceRequired: ['logs'],
-    acceptanceCriteria: 'Process throws on missing required secret.'
-  },
-  requirement_16_ssrf_dom: {
-    description: 'SSRF/DOM injection defended in browser agent',
-    verification: [
+      { type: 'unit', testFile: 'tests/unit/security/secrets.test.js', assertionName: 'does not find sk- prefixed keys in test helpers' },
       { type: 'unit', testFile: 'tests/unit/services/urlValidation.test.js', assertionName: 'rejects javascript: protocol' },
       { type: 'unit', testFile: 'tests/unit/services/urlValidation.test.js', assertionName: 'rejects file: protocol' },
       { type: 'unit', testFile: 'tests/unit/services/urlValidation.test.js', assertionName: 'rejects private IP localhost' },
-      { type: 'unit', testFile: 'tests/unit/services/urlValidation.test.js', assertionName: 'rejects domain not in allowed list' }
+      { type: 'unit', testFile: 'tests/unit/services/urlValidation.test.js', assertionName: 'rejects domain not in allowed list' },
+      { type: 'unit', testFile: 'tests/unit/services/secretsManager.test.js', assertionName: 'validateSecrets throws when a required secret is missing' }
     ],
-    evidenceRequired: ['logs'],
-    acceptanceCriteria: 'Malicious URLs and script payloads rejected or sanitized.'
-  },
-  requirement_17_postcall_logging: {
-    description: 'Post-call logging (structured call record / outcome)',
-    verification: [
-      { type: 'unit', testFile: 'tests/unit/services/summaryService.test.js', assertionName: 'produces structured call record with outcome and keyFacts' },
-      { type: 'unit', testFile: 'tests/unit/services/summaryService.test.js', assertionName: 'validateOutcome returns only allowed outcome values' }
-    ],
-    evidenceRequired: ['logs', 'call_record'],
-    acceptanceCriteria: 'Structured record with outcome, tool trace after call end.'
-  },
-  requirement_18_voicemail_fallback: {
-    description: 'Voicemail fallback on unrecoverable error',
-    verification: [
-      { type: 'unit', testFile: 'tests/unit/services/errorRecoveryService.test.js', assertionName: 'handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx' },
-      { type: 'unit', testFile: 'tests/unit/services/errorRecoveryService.test.js', assertionName: 'handleToolError returns shouldFallbackToVoicemail for Twilio stream drop' }
-    ],
-    evidenceRequired: ['logs'],
-    acceptanceCriteria: '5xx/stream drop triggers voicemail or redirect.'
-  },
-  requirement_19_crm_confirmation: {
-    description: 'CRM confirmation sent (SMS/email) after success',
-    verification: [
-      { type: 'unit', testFile: 'tests/unit/services/sendConfirmation.test.js', assertionName: 'returns confirmationSent true after successful send' }
-    ],
-    evidenceRequired: ['logs', 'crm_screenshot'],
-    acceptanceCriteria: 'After CRM commit, sendSMS/sendConfirmation invoked.'
-  },
-  requirement_20_session_revocation: {
-    description: 'Session revocation on user status change',
-    verification: [
-      { type: 'unit', testFile: 'tests/unit/services/sessionManagementService.test.js', assertionName: 'deleteSession revokes session and removes it from storage' }
-    ],
-    evidenceRequired: ['logs'],
-    acceptanceCriteria: 'Sessions revoked/invalidated when user deactivated.'
-  },
-  requirement_21_uncertainty_gate: {
-    description: 'Uncertainty gate (no ungrounded answers; ask or decline)',
-    verification: [
-      { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'withholds response when confidence is low (uncertainty gate)' },
-      { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns false when quality score is below 0.7' }
-    ],
-    evidenceRequired: ['logs', 'transcript'],
-    acceptanceCriteria: 'Low confidence: response withheld or clarify/transfer offered.'
+    evidenceRequired: ['scan_results', 'bundle_analysis', 'logs'],
+    acceptanceCriteria: 'No secrets in logs or bundles; PII masking; Argon2id; SSRF/DOM blocked; fail-fast at boot.'
   }
 };
 

@@ -25,11 +25,14 @@ describe('Language switch (Integration)', () => {
   it('call connects and accepts language response', async () => {
     if (!shouldRun) return;
     const { default: callSimulator } = await import('./helpers/callSimulator.js');
-    const { default: testConfig } = await import('./helpers/config/testConfig.js');
     const callResult = await callSimulator.initiateCall('integration-language');
-    await callSimulator.waitForAnswer(callResult.callSid, testConfig.timeouts.callPickup);
-    await callSimulator.sendAudioInput(callResult.callSid, 'English', { language: 'en' });
-    await new Promise(r => setTimeout(r, 2000));
-    await callSimulator.hangup(callResult.callSid);
-  });
+    try {
+      await callSimulator.waitForAnswer(callResult.callSid, integrationConfig.timeouts.callPickup);
+      await callSimulator.sendAudioInput(callResult.callSid, 'English', { language: 'en' });
+      await new Promise(r => setTimeout(r, 2000));
+      await callSimulator.hangup(callResult.callSid);
+    } finally {
+      await callSimulator.cleanup();
+    }
+  }, 25000);
 });

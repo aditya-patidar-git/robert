@@ -8,6 +8,7 @@
  */
 
 import { WebSocket } from 'ws';
+import UrlBuilder from './urlBuilder.js';
 import testConfig from './config/testConfig.js';
 
 class MediaStreamsClient {
@@ -43,9 +44,8 @@ class MediaStreamsClient {
     }
 
     if (this.useTestEndpoint) {
-      const UrlBuilder = (await import('./urlBuilder.js')).default;
       this.wsUrl = UrlBuilder.buildTestMediaStreamsUrl(this.callSid);
-      console.log(`[MediaStreamsClient] Using test endpoint: ${this.wsUrl}`);
+      if (!this._teardown) console.log(`[MediaStreamsClient] Using test endpoint: ${this.wsUrl}`);
     }
 
     this.connectPromise = new Promise((resolve, reject) => {
@@ -53,23 +53,17 @@ class MediaStreamsClient {
       this.connectReject = reject;
 
       try {
-        console.log(`[MediaStreamsClient] Connecting to ${this.wsUrl} for call ${this.callSid}`);
-        
+        if (!this._teardown) console.log(`[MediaStreamsClient] Connecting to ${this.wsUrl} for call ${this.callSid}`);
         this.ws = new WebSocket(this.wsUrl);
 
         this.ws.on('open', () => {
-          console.log(`[MediaStreamsClient] WebSocket opened for call ${this.callSid}`);
-          
-          // OPTION 1 FALLBACK: If WebSocket opens but start event doesn't arrive within 2 seconds,
-          // use callSid as streamSid fallback. This handles the race condition where Twilio
-          // connects to agent service first and sends start event there instead of to test client.
+          if (!this._teardown) console.log(`[MediaStreamsClient] WebSocket opened for call ${this.callSid}`);
           this._startFallbackTimer = setTimeout(() => {
             this._startFallbackTimer = null;
             if (!this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
-              console.log(`[MediaStreamsClient] ⚠️  WebSocket open but no start event received after 2s`);
-              console.log(`[MediaStreamsClient] ⚠️  This likely means Twilio sent start event to agent service instead`);
-              console.log(`[MediaStreamsClient] ⚠️  Using callSid as streamSid fallback: ${this.callSid}`);
-              console.log(`[MediaStreamsClient] ⚠️  If this doesn't work, agent service may need to forward events to test clients`);
+              if (!this._teardown) {
+                console.log(`[MediaStreamsClient] ⚠️  WebSocket open but no start event after 2s, using callSid as streamSid: ${this.callSid}`);
+              }
               this.streamSid = this.callSid; // Fallback: use callSid as streamSid
               this.connected = true;
               if (this.connectResolve) {
@@ -91,7 +85,7 @@ class MediaStreamsClient {
               this.ws.emit('mediaMessage', message);
             }
           } catch (error) {
-            console.error(`[MediaStreamsClient] Error parsing message:`, error);
+            if (!this._teardown) console.error(`[MediaStreamsClient] Error parsing message:`, error);
           }
         });
 
@@ -116,7 +110,7 @@ class MediaStreamsClient {
           this._connectTimeout = null;
           if (!this.connected) {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-              console.log(`[MediaStreamsClient] Timeout reached but WebSocket is open - using callSid as streamSid fallback`);
+              if (!this._teardown) console.log(`[MediaStreamsClient] Timeout reached but WebSocket open - using callSid as streamSid`);
               this.streamSid = this.callSid;
               this.connected = true;
               if (this.connectResolve) {
@@ -153,7 +147,7 @@ class MediaStreamsClient {
   handleMessage(message) {
     if (message.event === 'start') {
       this.streamSid = message.start?.streamSid;
-      console.log(`[MediaStreamsClient] Received streamSid: ${this.streamSid} for call ${this.callSid}`);
+      if (!this._teardown) console.log(`[MediaStreamsClient] Received streamSid: ${this.streamSid} for call ${this.callSid}`);
       
       if (this.streamSid) {
         this.connected = true;
@@ -164,10 +158,7 @@ class MediaStreamsClient {
         }
       }
     } else if (message.event === 'connected') {
-      // OPTION 1: Handle connected event from Twilio
-      // This indicates WebSocket is ready, even if start event hasn't arrived yet
-      console.log(`[MediaStreamsClient] Received connected event for call ${this.callSid}`);
-      // Don't mark as fully connected yet - wait for start event or timeout
+      if (!this._teardown) console.log(`[MediaStreamsClient] Received connected event for call ${this.callSid}`);
     } else if (message.event === 'media') {
       // Handle incoming audio - call registered callbacks
       const track = message.media?.track;
@@ -179,15 +170,14 @@ class MediaStreamsClient {
           try {
             callback(payload, track);
           } catch (error) {
-            console.error(`[MediaStreamsClient] Error in media callback:`, error);
+            if (!this._teardown) console.error(`[MediaStreamsClient] Error in media callback:`, error);
           }
         });
       }
     } else if (message.event === 'stop') {
-      console.log(`[MediaStreamsClient] Stream stopped for call ${this.callSid}`);
+      if (!this._teardown) console.log(`[MediaStreamsClient] Stream stopped for call ${this.callSid}`);
       this.connected = false;
-    } else {
-      // Log other events for debugging
+    } else if (!this._teardown) {
       console.log(`[MediaStreamsClient] Received event: ${message.event} for call ${this.callSid}`);
     }
   }
@@ -201,14 +191,12 @@ class MediaStreamsClient {
    */
   sendAudioChunk(audioBase64) {
     if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn(`[MediaStreamsClient] Cannot send audio - not connected (connected: ${this.connected}, wsState: ${this.ws?.readyState})`);
+      if (!this._teardown) console.warn(`[MediaStreamsClient] Cannot send audio - not connected`);
       return false;
     }
-
-    // OPTION 1 FALLBACK: Use streamSid if available, otherwise use callSid
     const streamSidToUse = this.streamSid || this.callSid;
     if (!streamSidToUse) {
-      console.warn(`[MediaStreamsClient] Cannot send audio - no streamSid or callSid available`);
+      if (!this._teardown) console.warn(`[MediaStreamsClient] Cannot send audio - no streamSid or callSid`);
       return false;
     }
 
@@ -224,7 +212,7 @@ class MediaStreamsClient {
       this.ws.send(JSON.stringify(mediaMessage));
       return true;
     } catch (error) {
-      console.error(`[MediaStreamsClient] Error sending audio chunk:`, error);
+      if (!this._teardown) console.error(`[MediaStreamsClient] Error sending audio chunk:`, error);
       return false;
     }
   }

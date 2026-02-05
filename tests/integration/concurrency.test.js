@@ -19,24 +19,28 @@ describe('Concurrency (Load Test)', () => {
     if (!shouldRun) console.warn('Skipping: set RUN_INTEGRATION_TESTS=1 and Twilio env to run');
   });
 
-  it('handles 20 simultaneous calls', async () => {
-    if (!shouldRun) return;
-    const { default: callSimulator } = await import('./helpers/callSimulator.js');
-    const n = Math.min(integrationConfig.concurrency.numCalls, 5);
-    const latencies = [];
-    const start = Date.now();
-    try {
-      const promises = Array.from({ length: n }, () =>
-        callSimulator.initiateCall('integration-concurrency').then((r) => {
-          latencies.push(Date.now() - start);
-          return r;
-        })
-      );
-      await Promise.all(promises);
-      const p95 = calculateP95(latencies);
-      expect(p95).toBeLessThan(integrationConfig.thresholds.p95LatencyConcurrency + 10000);
-    } finally {
-      await callSimulator.cleanup();
-    }
-  });
+  it(
+    'handles 20 simultaneous calls',
+    async () => {
+      if (!shouldRun) return;
+      const { default: callSimulator } = await import('./helpers/callSimulator.js');
+      const n = Math.min(integrationConfig.concurrency.numCalls, 20);
+      const latencies = [];
+      const start = Date.now();
+      try {
+        const promises = Array.from({ length: n }, () =>
+          callSimulator.initiateCall('integration-concurrency').then((r) => {
+            latencies.push(Date.now() - start);
+            return r;
+          })
+        );
+        await Promise.all(promises);
+        const p95 = calculateP95(latencies);
+        expect(p95).toBeLessThan(integrationConfig.thresholds.p95LatencyConcurrency + 10000);
+      } finally {
+        await callSimulator.cleanup();
+      }
+    },
+    integrationConfig.timeouts.concurrency
+  );
 });

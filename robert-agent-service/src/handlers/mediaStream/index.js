@@ -109,11 +109,15 @@ export const handleMediaStreamConnection = (ws, req) => {
             stateManager.streamSid = streamSid;
             // Store callSid for forwarding (URL callSid matches test client registration)
             stateManager.callSidForForwarding = callSidForForwarding;
+            stateManager.pickupLatencyStartTime = Date.now();
+            stateManager.phoneNumber = phoneNumber;
+
+            const latency = () => stateManager.pickupLatencyMs();
+            console.log(`[PICKUP_LATENCY] [${callSidFromStartEvent}] T0 start_event_received 0ms`);
             
             // Initialize audio diagnostics (non-intrusive, optional)
             const audioDiagnosticService = (await import('../../services/audioDiagnosticService.js')).default;
             audioDiagnosticService.initializeCall(callSidFromStartEvent);
-            stateManager.phoneNumber = phoneNumber;
             
             console.log(`📞 Start event - callSid: ${callSidFromStartEvent}, phoneNumber: ${phoneNumber}`);
 
@@ -154,6 +158,7 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Initialize tool coordinator
             toolCoordinator = new ToolCoordinator(stateManager, null, ws); // openaiWs will be set after setup
             
+            console.log(`[PICKUP_LATENCY] [${callSid}] T1 setup_openai_start ${latency()}ms`);
             // Setup OpenAI connection
             const setupResult = await openaiIntegration.setupOpenAI();
             if (setupResult?.error) {
@@ -177,6 +182,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                 const connectionManager = openaiIntegration?.connectionManager || null;
                 stateManager.setOpenAIReady(setupResult.openaiWs, connectionManager);
             }
+            console.log(`[PICKUP_LATENCY] [${callSid}] T2 openai_ready ${latency()}ms`);
             
             // Audio processing will start automatically when first audio arrives
             // via processIncomingAudio() method
@@ -184,26 +190,28 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Memory consent will be checked after initial greeting completes
             // (moved to responseHandler.handleResponseDone to avoid blocking conversation start)
             
-            // Start recording for inbound calls (consent is checked by recording service)
-            // Recording is started via Twilio API since <Record> TwiML verb conflicts with Media Streams
+            // Start recording for inbound calls (once per call; consent checked by recording service)
             try {
-                const conversation = conversations[callSid];
-                if (recordingService.shouldRecordCall(conversation)) {
+                const conversation = conversations[callSid] || {};
+                if (!conversation.recordingStarted && recordingService.shouldRecordCall(conversation)) {
                     const callbackUrl = recordingService.getRecordingCallbackUrl('inbound');
                     const recordingResult = await recordingService.startCallRecording(callSid, {
                         statusCallbackUrl: callbackUrl
                     });
-                    
+                    if (recordingResult.success || recordingResult.error === 'already_recording') {
+                        if (!conversations[callSid]) conversations[callSid] = {};
+                        conversations[callSid].recordingStarted = true;
+                        console.log(`[PICKUP_LATENCY] [${callSid}] T3 recording_started ${latency()}ms`);
+                    }
                     if (recordingResult.success) {
                         console.log(`🎙️ [${callSid}] Recording started for inbound call`);
                     } else if (recordingResult.error !== 'already_recording') {
                         console.warn(`⚠️ [${callSid}] Could not start recording: ${recordingResult.message}`);
                     }
-                } else {
+                } else if (!conversation.recordingStarted) {
                     console.log(`🔇 [${callSid}] Recording skipped - consent not given`);
                 }
             } catch (recordingError) {
-                // Don't fail the call if recording fails - it's not critical
                 console.warn(`⚠️ [${callSid}] Recording setup error (non-blocking):`, recordingError.message);
             }
             

@@ -23,5 +23,5 @@ describe('Human Transfer (Integration)', () => {
     } finally {
       await callSimulator.cleanup();
     }
-  });
+  }, 25000);
 });

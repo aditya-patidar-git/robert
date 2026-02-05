@@ -242,13 +242,11 @@ export class OpenAIIntegration {
    */
   sendToOpenAI(message, options = {}) {
     const messageObj = typeof message === 'string' ? message : JSON.stringify(message);
-    
-    // Use connection manager if available (provides queuing, keep-alive, quality monitoring)
+
     if (this.connectionManager) {
       return this.connectionManager.send(messageObj, options);
     }
-    
-    // Fallback to direct send if connection manager not initialized
+
     if (this.state.openaiWs && this.state.openaiWs.readyState === WebSocket.OPEN) {
       try {
         this.state.openaiWs.send(messageObj);
@@ -258,9 +256,8 @@ export class OpenAIIntegration {
         return false;
       }
     }
-    
-    console.warn(`⚠️ [${this.state.callSid}] Cannot send message - WebSocket not ready (readyState: ${this.state.openaiWs?.readyState})`);
-    return false;
+
+    return this.state.sendToOpenAI(messageObj, options);
   }
 
   /**
@@ -269,8 +266,9 @@ export class OpenAIIntegration {
   async setupOpenAI() {
     if (this.state.setupComplete || this.state.isClosed) return;
     this.state.markSetupComplete();
-    
+    const latency = () => this.state.pickupLatencyMs();
     try {
+      console.log(`[PICKUP_LATENCY] [${this.state.callSid}] setup_openai_enter ${latency() ?? 0}ms`);
       console.log(`🚀 Setting up OpenAI connection for call: ${this.state.callSid}`);
       
       // OPTIMIZATION: Reduced logging verbosity - only validate and log errors
@@ -451,6 +449,7 @@ export class OpenAIIntegration {
       }
       
       // Use model from database configuration, fallback to default if not available
+      console.log(`[PICKUP_LATENCY] [${this.state.callSid}] session_config_built ${latency()}ms`);
       const modelId = config.model?.id || 'gpt-4o-realtime-preview';
       const openaiUrl = `wss://api.openai.com/v1/realtime?model=${modelId}`;
       console.log(`📋 [${this.state.callSid}] Using model from config: ${modelId}`);
@@ -477,8 +476,10 @@ export class OpenAIIntegration {
       
       let openaiWs;
       try {
+        console.log(`[PICKUP_LATENCY] [${this.state.callSid}] openai_ws_connect_start ${latency()}ms`);
         console.log(`🔌 [${this.state.callSid}] Attempting WebSocket connection...`);
         openaiWs = await this.createWebSocketWithRetry(openaiUrl, headers, 3, 1000);
+        console.log(`[PICKUP_LATENCY] [${this.state.callSid}] openai_ws_connected ${latency()}ms`);
         console.log(`✅ [${this.state.callSid}] OpenAI WebSocket connected successfully`);
         
         // Initialize connection manager for robust connection handling (keep-alive, queuing, quality monitoring)
@@ -504,6 +505,7 @@ export class OpenAIIntegration {
       
       // Set OpenAI ready with connection manager reference
       this.state.setOpenAIReady(openaiWs, this.connectionManager);
+      console.log(`[PICKUP_LATENCY] [${this.state.callSid}] openai_ready_set ${latency()}ms`);
       realtimeClients[this.state.callSid] = { twilioWs: this.ws, openaiWs, streamSid: this.state.streamSid, connectionManager: this.connectionManager };
       
       // Ensure transcript and language are set
@@ -579,6 +581,7 @@ export class OpenAIIntegration {
           
           // Use robust send method with connection manager support
           this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
+          console.log(`[PICKUP_LATENCY] [${this.state.callSid}] session_update_sent ${this.state.pickupLatencyMs()}ms`);
           console.log(`📤 Sent session.update with config and ${tools.length} tools (phase: ${this.currentWorkflowPhase}) for call: ${this.state.callSid}`);
           console.log(`🔍 [${this.state.callSid}] Session config details:`);
           console.log(`   - input_audio_format: g711_ulaw`);

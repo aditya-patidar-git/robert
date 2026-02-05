@@ -77,10 +77,10 @@ export class BargeInHandler {
     const isAudioActivelyPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio;
     
     // FALLBACK: Check recent audio timestamps (audio might still be buffered even after response.done clears activeResponseId)
-    // Use shorter windows (2-3 seconds) to avoid false positives after agent finishes speaking
-    // CRITICAL: Remove hasActiveResponse requirement - response.done clears activeResponseId but audio may still be playing
-    const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 3000; // 3 seconds window
-    const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 2000; // 2 seconds window
+    // Extended windows (10–12s) so barge-in stays active while Twilio is still playing long responses
+    // CRITICAL: response.done clears activeResponseId but Twilio can have 20–30s of audio in pipeline
+    const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 12000; // 12 seconds
+    const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 10000; // 10 seconds
     
     const isAudioPlaying = isAudioActivelyPlaying || hasRecentAudio || hasRecentResponseCompletion;
     

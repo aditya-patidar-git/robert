@@ -259,6 +259,8 @@ export class ResponseHandler {
       
       // DIAGNOSTIC: Log first audio frame sent to Twilio
       if (this.state.audioFramesSentCount === 1) {
+        const ms = this.state.pickupLatencyMs();
+        console.log(`[PICKUP_LATENCY] [${this.state.callSid}] first_audio_to_twilio ${ms != null ? ms : '?'}ms (target <5000ms)`);
         console.log(`📤 [${this.state.callSid}] FIRST audio frame sent to Twilio (${frameSize} bytes, streamSid: ${this.state.streamSid})`);
       }
       

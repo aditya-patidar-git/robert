@@ -14,12 +14,14 @@ const integrationResultsPath = path.join(__dirname, 'integration-results.json');
 
 const jestBin = 'node --experimental-vm-modules node_modules/jest/bin/jest.js';
 
+const JEST_TIMEOUT_MS = 120000;
+
 async function runJest(testPath, outputPath) {
   const cmd = `${jestBin} ${testPath} --json --outputFile=${outputPath}`;
   try {
-    execSync(cmd, { stdio: 'inherit', cwd: path.resolve(__dirname, '../..') });
+    execSync(cmd, { stdio: 'inherit', cwd: path.resolve(__dirname, '../..'), timeout: JEST_TIMEOUT_MS });
   } catch (err) {
-    // Jest exits non-zero on failure; we still ingest results
+    // Jest exits non-zero on failure or timeout; we still ingest results and generate pack
   }
 }
 

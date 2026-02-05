@@ -313,11 +313,13 @@ export const handleIncomingCall = async (req, res) => {
                     incrementActiveCalls({ entry_path: entryPath });
                 }
                 
-                // Set recording consent early for inbound SIP calls
-                await setInboundCallConsent(CallSid, 'SIP');
-                
+                // Set recording consent asynchronously so TwiML can be sent immediately (reduces pickup latency)
+                setInboundCallConsent(CallSid, 'SIP').catch(err => {
+                    console.error(`[CallHandler] Error setting inbound consent for SIP call ${CallSid}:`, err.message);
+                });
+
                 console.log(`📞 [${CallSid}] Inbound call routed via SIP to: ${sipEndpoint}`);
-                
+
                 // Return TwiML with SIP routing
                 const twiml = generateSipRoutingTwiML(sipEndpoint);
                 span.setStatus({ code: SpanStatusCode.OK });
@@ -356,9 +358,10 @@ export const handleIncomingCall = async (req, res) => {
             incrementActiveCalls({ entry_path: entryPath });
         }
 
-        // Set recording consent early for inbound calls
-        // This ensures consent is set before recording webhook arrives and before WebSocket connects
-        await setInboundCallConsent(CallSid, entryPath);
+        // Set recording consent asynchronously so TwiML can be sent immediately (reduces pickup latency)
+        setInboundCallConsent(CallSid, entryPath).catch(err => {
+            console.error(`[CallHandler] Error setting inbound consent for ${CallSid}:`, err.message);
+        });
 
         // Generate Media Streams TwiML WITH Connect verb for bidirectional streaming
         // NOTE: <Start><Stream> is UNIDIRECTIONAL (receive only) - cannot send audio back!
