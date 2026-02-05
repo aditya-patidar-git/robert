@@ -58,4 +58,32 @@ describe('Security', () => {
       expect(content).not.toMatch(/sk-[a-zA-Z0-9]{30,}/);
     }
   });
+
+  it('does not find secrets in front-end bundle', () => {
+    const bundleDir = path.join(repoRoot, 'frontend/build');
+    if (!fs.existsSync(bundleDir)) return;
+    function walk(dir, ext, out = []) {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory() && e.name !== 'node_modules' && !e.name.startsWith('.')) {
+          walk(full, ext, out);
+        } else if (e.isFile() && (ext === null || e.name.endsWith(ext))) {
+          out.push(full);
+        }
+      }
+      return out;
+    }
+    const files = walk(bundleDir, '.js');
+    const violations = [];
+    for (const file of files) {
+      const content = fs.readFileSync(file, 'utf8');
+      for (const pattern of SECRET_PATTERNS) {
+        if (pattern.test(content)) {
+          violations.push({ file, pattern: pattern.toString() });
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
 });

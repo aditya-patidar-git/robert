@@ -1,6 +1,7 @@
 /**
  * Integration test: Concurrency / Load (Test 9).
  * Requires real Twilio. Skip when credentials or RUN_INTEGRATION_TESTS not set.
+ * No cross-talk is verified by manual/observability; each call uses distinct Media Streams and call SID.
  */
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import { integrationConfig } from './config/integrationConfig.js';
@@ -36,7 +37,7 @@ describe('Concurrency (Load Test)', () => {
         );
         await Promise.all(promises);
         const p95 = calculateP95(latencies);
-        expect(p95).toBeLessThan(integrationConfig.thresholds.p95LatencyConcurrency + 10000);
+        expect(p95).toBeLessThan(integrationConfig.thresholds.p95LatencyConcurrency);
       } finally {
         await callSimulator.cleanup();
       }
