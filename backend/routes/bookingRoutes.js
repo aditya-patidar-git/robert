@@ -1,7 +1,6 @@
 import express from "express";
 import {
     createBooking,
-    rescheduleBooking,
     updateCustomer,
     verifyOperation,
     trackCRMBooking,
@@ -12,7 +11,6 @@ const router = express.Router();
 
 // Standard booking operations
 router.post("/create", createBooking);
-router.post("/reschedule", rescheduleBooking);
 router.post("/update", updateCustomer);
 router.post("/verify", verifyOperation);
 

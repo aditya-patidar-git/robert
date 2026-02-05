@@ -140,16 +140,14 @@ export class ToolCoordinator {
         hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent
       });
 
-      if (isInitialGreeting) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        if (!this.openaiWs || this.openaiWs.readyState !== 1) {
-          console.error(`❌ [${this.state.callSid}] WebSocket closed during preparation`);
-          this.state.isResponding = false;
-          this.state.explicitResponseRequested = false;
-          return;
-        }
+      if (isInitialGreeting && (!this.openaiWs || this.openaiWs.readyState !== 1)) {
+        console.error(`❌ [${this.state.callSid}] WebSocket closed during preparation`);
+        this.state.isResponding = false;
+        this.state.explicitResponseRequested = false;
+        this.state.releaseResponseLock();
+        return;
       }
-      
+
       // Step 2: ALWAYS disable tools before creating response
       // CRITICAL FIX: Tools are set to 'auto' in session setup, so we MUST disable them
       // to prevent tool calls during greeting (which causes JSON/URL output instead of speech)
@@ -160,22 +158,25 @@ export class ToolCoordinator {
           tool_choice: 'none'
         }
       }));
-      
-      // Wait for session.updated event confirmation
-      try {
-        await this.waitForSessionUpdate(10000);
-        console.log(`✅ [${this.state.callSid}] Session update confirmed - tools disabled`);
-      } catch (err) {
-        console.error(`❌ [${this.state.callSid}] Session update timeout:`, err.message);
-        console.warn(`⚠️ [${this.state.callSid}] Continuing without session update confirmation`);
+
+      if (isInitialGreeting) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      } else {
+        try {
+          await this.waitForSessionUpdate(10000);
+          console.log(`✅ [${this.state.callSid}] Session update confirmed - tools disabled`);
+        } catch (err) {
+          console.error(`❌ [${this.state.callSid}] Session update timeout:`, err.message);
+          console.warn(`⚠️ [${this.state.callSid}] Continuing without session update confirmation`);
+        }
       }
-      
-      // Verify WebSocket is still open
+
       if (!this.openaiWs || this.openaiWs.readyState !== 1) {
         console.error(`❌ [${this.state.callSid}] WebSocket closed after session.update`);
+        this.state.releaseResponseLock();
         return;
       }
-      
+
       // Step 3: Create response - PHASE 1: Include contextual instructions in response.create
       // Contextual instructions prevent model from falling back to full prompt (which causes code generation)
       const responseCreatePayload = {
@@ -543,10 +544,7 @@ export class ToolCoordinator {
     
     if (!this.state.hasInitialGreetingBeenSent && !this.state.isResponding && this.state.activeResponseId === null) {
       try {
-        // OPTIMIZATION: Reduced delay from 800ms to 200ms
-        // OpenAI Realtime API typically needs minimal time after session.update
-        // The 200ms delay ensures the session is ready while minimizing latency
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 50));
         
         // Double-check WebSocket is still open after delay
         if (this.state.isClosed || !this.openaiWs || this.openaiWs.readyState !== 1) {

@@ -27,27 +27,6 @@ export const createBooking = async (req, res) => {
     }
 };
 
-// Reschedule Booking
-export const rescheduleBooking = async (req, res) => {
-    try {
-        const { booking_id, new_date_time } = req.body;
-        const booking = await Booking.findById(booking_id);
-        if (!booking) return res.status(404).json({ status: "error", message: "Booking not found" });
-
-        booking.date_time = new_date_time;
-        booking.status = "rescheduled";
-        await booking.save();
-
-        res.json({
-            status: "success",
-            confirmation_message: "Booking rescheduled successfully"
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ status: "error", message: "Internal server error" });
-    }
-};
-
 // Update Customer
 export const updateCustomer = async (req, res) => {
     try {

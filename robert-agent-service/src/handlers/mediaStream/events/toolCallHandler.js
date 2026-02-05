@@ -67,7 +67,7 @@ export class ToolCallHandler {
     }
     
     // Create progress callback for browser operations
-    const progressCallback = (['update_customer', 'reschedule_booking'].includes(name)) ? (progress) => {
+    const progressCallback = (['update_customer'].includes(name)) ? (progress) => {
       if (progress && progress.message && this.openaiWs && this.openaiWs.readyState === 1) {
         progressIndicatorService.sendProgressUpdate(this.state.callSid, progress.message, this.openaiWs);
       }

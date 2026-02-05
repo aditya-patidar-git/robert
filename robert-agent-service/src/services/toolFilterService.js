@@ -93,9 +93,8 @@ const TOOL_SETS = {
     'transfer_call'
   ],
 
-  // Reschedule / update customer workflow
+  // Update customer workflow
   booking_modification: [
-    'reschedule_booking',
     'update_customer',
     'kba_verification',
     'client_verification',
@@ -151,7 +150,6 @@ const TOOL_SETS = {
   // CRM operations (admin/update)
   crm_operations: [
     'update_customer',
-    'reschedule_booking',
     'kba_verification',
     'client_verification',
     'transfer_call'
@@ -173,8 +171,7 @@ const CONTEXTUAL_TOOLS = {
 
   // Add CRM tools when admin operations are needed
   adminAccess: [
-    'update_customer',
-    'reschedule_booking'
+    'update_customer'
   ],
 
   // Add legacy tools when backward compatibility is needed
@@ -284,7 +281,6 @@ export function getPhaseForIntent(intent) {
     'availability': 'booking_start',
 
     // Modification intents
-    'reschedule': 'booking_modification',
     'cancel': 'cancellation',
     'cancel_booking': 'cancellation',
     'cancellation': 'cancellation',

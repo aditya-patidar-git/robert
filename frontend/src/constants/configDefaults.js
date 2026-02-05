@@ -96,7 +96,6 @@ export const MCP_TOOLS_DEFAULTS = {
 // CRM Tasks Defaults
 export const CRM_TASKS_DEFAULTS = {
   createBooking: { enabled: true, requireConfirmation: true },
-  reschedule: { enabled: true, requireConfirmation: true },
   cancel: { enabled: true, requireConfirmation: true },
   updateRecord: { enabled: true, requireConfirmation: false },
   issueRefund: { enabled: false, requireConfirmation: true },

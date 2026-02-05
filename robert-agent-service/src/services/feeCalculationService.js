@@ -1,6 +1,6 @@
 /**
  * Fee Calculation Service
- * Calculates cancellation and reschedule fees based on T&Cs
+ * Calculates cancellation fees based on T&Cs
  */
 
 class FeeCalculationService {
@@ -90,65 +90,7 @@ class FeeCalculationService {
       throw new Error(`Failed to calculate cancellation fee: ${error.message}`);
     }
   }
-  
-  /**
-   * Calculate reschedule fee
-   * Note: Reschedule fees may vary by course type - check T&Cs for specific policies
-   * @param {string} bookingDate - Original booking date
-   * @param {string} newBookingDate - New booking date
-   * @param {number} bookingPrice - Original booking price in GBP
-   * @param {string} courseType - Course type (optional, for course-specific policies)
-   * @returns {Object} Fee calculation result
-   */
-  calculateRescheduleFee(bookingDate, newBookingDate, bookingPrice, courseType = null) {
-    try {
-      const originalDate = new Date(bookingDate);
-      const newDate = new Date(newBookingDate);
-      const now = new Date();
-      
-      // Calculate working days between now and original booking
-      const workingDaysUntilOriginal = this.calculateWorkingDays(now, originalDate);
-      
-      console.log(`💰 [FEE CALC] Reschedule calculation:`);
-      console.log(`   Original Booking Date: ${originalDate.toLocaleDateString('en-GB')}`);
-      console.log(`   New Booking Date: ${newDate.toLocaleDateString('en-GB')}`);
-      console.log(`   Working Days Until Original Booking: ${workingDaysUntilOriginal}`);
-      console.log(`   Original Price: £${bookingPrice.toFixed(2)}`);
-      
-      // Default policy: No reschedule fee if rescheduled more than 3 working days before original booking
-      // Some courses may have different policies - this is a default implementation
-      if (workingDaysUntilOriginal > 3) {
-        console.log(`   Reschedule Fee: £0.00 (rescheduled more than 3 working days before)`);
-        
-        return {
-          fee: 0,
-          feePercentage: 0,
-          policy: 'No reschedule fee (rescheduled more than 3 working days before original booking)',
-          workingDaysUntilOriginalBooking: workingDaysUntilOriginal,
-          note: 'Reschedule fees may vary by course type. Please check specific T&Cs.'
-        };
-      } else {
-        // Less than 3 working days - may incur a fee
-        // Default: 10% reschedule fee (this may need to be adjusted based on actual T&Cs)
-        const rescheduleFee = bookingPrice * 0.10;
-        
-        console.log(`   Reschedule Fee (10%): £${rescheduleFee.toFixed(2)}`);
-        console.log(`   Policy: 10% reschedule fee (rescheduled less than 3 working days before)`);
-        
-        return {
-          fee: rescheduleFee,
-          feePercentage: 10,
-          policy: '10% reschedule fee (rescheduled less than 3 working days before original booking)',
-          workingDaysUntilOriginalBooking: workingDaysUntilOriginal,
-          note: 'Reschedule fees may vary by course type. Please check specific T&Cs.'
-        };
-      }
-    } catch (error) {
-      console.error('❌ [FEE CALC] Error calculating reschedule fee:', error);
-      throw new Error(`Failed to calculate reschedule fee: ${error.message}`);
-    }
-  }
-  
+
   /**
    * Extract price from booking details
    * @param {string|number} price - Price string (e.g., "£125.00") or number

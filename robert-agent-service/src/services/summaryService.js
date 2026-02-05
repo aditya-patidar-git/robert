@@ -46,7 +46,7 @@ ${transcriptText}
 
 Generate a JSON object with the following structure:
 {
-  "purpose": "1-2 sentence description of why the caller contacted (e.g., 'Caller wanted to reschedule their CBT booking from Tuesday to Thursday')",
+  "purpose": "1-2 sentence description of why the caller contacted (e.g., 'Caller wanted to cancel their CBT booking')",
   "outcome": "One of: resolved, escalated, needs-follow-up, voicemail, error",
   "nextSteps": "Brief description of any follow-up actions needed (empty string if none)",
   "keyFacts": ["fact1", "fact2", ...] // Array of important facts (max 5), with PII masked (e.g., use 'customer' instead of names, 'email@domain.com' -> 'e***@domain.com')

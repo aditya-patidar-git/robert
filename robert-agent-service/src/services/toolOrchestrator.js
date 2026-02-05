@@ -49,7 +49,7 @@ class ToolOrchestrator {
     }
 
     // Use Responses API for specific complex tools (CRM operations, multi-step bookings)
-    const complexToolNames = ['update_customer', 'reschedule_booking'];
+    const complexToolNames = ['update_customer'];
     if (toolCalls && toolCalls.some(tc => complexToolNames.includes(tc.function?.name))) {
       return true;
     }

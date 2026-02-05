@@ -22,7 +22,7 @@ const sampleKBFiles = [
   },
   {
     title: "Booking Terms and Conditions",
-    content: "Terms and Conditions for Universal Motorcycle Training bookings: 1) All bookings require full payment in advance, 2) Cancellations must be made 48 hours before the course date for full refund, 3) No-shows will forfeit the full course fee, 4) Rescheduling is allowed up to 24 hours before the course, 5) Weather-related cancellations will be rescheduled at no extra cost, 6) Students must bring valid driving licence and appropriate clothing, 7) Course completion certificates are valid for 2 years.",
+    content: "Terms and Conditions for Universal Motorcycle Training bookings: 1) All bookings require full payment in advance, 2) Cancellations must be made 48 hours before the course date for full refund, 3) No-shows will forfeit the full course fee, 4) Weather-related cancellations may be rebooked at no extra cost, 5) Students must bring valid driving licence and appropriate clothing, 6) Course completion certificates are valid for 2 years.",
     filename: "booking-tcs-2025.txt",
     originalName: "Booking Terms and Conditions.txt",
     fileType: "text/plain",

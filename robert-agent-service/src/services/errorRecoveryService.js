@@ -14,8 +14,7 @@ class ErrorRecoveryService {
       'openai': 'openai',
       'file_search': 'openai',
       'web_search': 'brave',
-      'update_customer': 'crm',
-      'reschedule_booking': 'crm'
+      'update_customer': 'crm'
     };
   }
 
@@ -109,7 +108,7 @@ class ErrorRecoveryService {
     }
 
     // Tool-specific messages
-    if (toolName === 'update_customer' || toolName === 'reschedule_booking') {
+    if (toolName === 'update_customer') {
       return "I'm having trouble accessing the booking system. Please try again or I can help you with something else.";
     }
 
@@ -250,7 +249,7 @@ class ErrorRecoveryService {
   suggestAlternatives(callSid, failedTool) {
     const alternatives = [];
 
-    if (failedTool === 'update_customer' || failedTool === 'reschedule_booking') {
+    if (failedTool === 'update_customer') {
       alternatives.push("I can help you find information another way.");
       alternatives.push("Would you like to try again, or can I help you with something else?");
     } else if (failedTool === 'web_search') {

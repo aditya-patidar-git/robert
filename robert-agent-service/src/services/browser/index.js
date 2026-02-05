@@ -260,11 +260,6 @@ class BrowserAgentService {
   // DEPRECATED: Legacy createBooking method removed - use booking_step_* tools instead
   // createBooking is blocked in crmBrowserTool.js
 
-  async rescheduleBooking(page, args, auditId) {
-    const { rescheduleBooking } = await import('./tasks/rescheduleBooking.js');
-    return await rescheduleBooking(page, args, auditId, this.screenshotsDir);
-  }
-
   async cancelBooking(page, args, auditId) {
     const { cancelBooking } = await import('./tasks/cancelBooking.js');
     return await cancelBooking(page, args, auditId, this.screenshotsDir);

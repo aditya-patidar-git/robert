@@ -151,7 +151,7 @@ export const booking_reminder = {
     email += `- Arrive 15 minutes before your scheduled time\n`;
     email += `- Bring all required documents\n`;
     email += `- Wear appropriate clothing\n\n`;
-    email += `If you need to reschedule or cancel, please contact us as soon as possible.\n\n`;
+    email += `If you need to cancel, please contact us as soon as possible.\n\n`;
     email += `Best regards,\n`;
     email += `Universal Motorcycle Training\n`;
     
@@ -199,7 +199,7 @@ export const booking_reminder = {
         <li>Wear appropriate clothing</li>
       </ul>
       
-      <p>If you need to reschedule or cancel, please contact us as soon as possible.</p>
+      <p>If you need to cancel, please contact us as soon as possible.</p>
       <p>Best regards,<br>Universal Motorcycle Training</p>
     </div>
   </div>

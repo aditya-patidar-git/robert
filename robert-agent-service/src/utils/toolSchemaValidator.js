@@ -92,7 +92,7 @@ const crmBrowserArgsSchema = z.object({
 });
 
 const crmBrowserSchema = z.object({
-  task: z.enum(['create_booking', 'reschedule_booking', 'cancel_booking', 'update_customer', 'check_availability']),
+  task: z.enum(['create_booking', 'cancel_booking', 'update_customer', 'check_availability']),
   args: crmBrowserArgsSchema
 });
 
@@ -366,15 +366,6 @@ const updateCustomerSchema = z.object({
 }).refine(data => data.customerEmail || data.customerMobile, { message: 'customerEmail or customerMobile required' })
   .refine(data => data.telephoneNumber || data.email || data.postcode || data.firstName || data.surname || data.address, { message: 'At least one update field required' });
 
-const rescheduleBookingSchema = z.object({
-  bookingReference: z.string().min(1),
-  newDate: z.string().min(1),
-  newTime: z.string().optional(),
-  newLocation: z.string().optional(),
-  customerEmail: z.string().email().optional(),
-  customerMobile: z.string().optional()
-}).refine(data => data.customerEmail || data.customerMobile, { message: 'customerEmail or customerMobile required' });
-
 // Schema map for all tools
 const toolSchemas = {
   web_search: webSearchSchema,
@@ -382,7 +373,6 @@ const toolSchemas = {
   send_sms: sendSMSSchema,
   generate_reference_id: generateReferenceIdSchema,
   update_customer: updateCustomerSchema,
-  reschedule_booking: rescheduleBookingSchema,
   payments: paymentsSchema,
   file_search: fileSearchSchema,
   transfer_call: transferCallSchema,

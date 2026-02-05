@@ -9,7 +9,7 @@ const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 const TASK_CONFIG_MAP = {
   'cancel_booking': 'cancel',
   'create_booking': 'createBooking',
-  // check_availability and reschedule_booking don't need config checks (always allowed)
+  // check_availability doesn't need config checks (always allowed)
 };
 
 /**
@@ -163,7 +163,7 @@ export class TaskExecutor {
         context = await this.browserManager.getPublicContext();
         shouldCloseContext = true; // Mark this context for cleanup since it's not the pooled one
       } else {
-        // For other tasks (create_booking, reschedule, cancel, update_customer), use authenticated context
+        // For other tasks (create_booking, cancel, update_customer), use authenticated context
         context = await this.browserManager.getContext(reportProgress);
       }
       
@@ -383,8 +383,6 @@ export class TaskExecutor {
       }
       
       switch (task) {
-        case 'reschedule_booking':
-          return await taskHandlers.dryRunRescheduleBooking(page, args, auditId, this.screenshotsDir);
         case 'cancel_booking':
           return await taskHandlers.dryRunCancelBooking(page, args, auditId, this.screenshotsDir);
         case 'update_customer':
@@ -405,8 +403,6 @@ export class TaskExecutor {
   async executeActualTask(page, task, args, auditId) {
     try {
       switch (task) {
-        case 'reschedule_booking':
-          return await taskHandlers.rescheduleBooking(page, args, auditId, this.screenshotsDir);
         case 'cancel_booking':
           return await taskHandlers.cancelBooking(page, args, auditId, this.screenshotsDir);
         case 'update_customer':

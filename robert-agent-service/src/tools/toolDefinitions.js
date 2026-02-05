@@ -506,23 +506,6 @@ export function getToolDefinitions() {
     },
     {
       type: 'function',
-      name: 'reschedule_booking',
-      description: 'Reschedule an existing booking to a new date/time/location. Requires bookingReference and newDate. At least one of customerEmail or customerMobile is required to locate the booking.',
-      parameters: {
-        type: 'object',
-        properties: {
-          bookingReference: { type: 'string', description: 'Booking reference (e.g. BK-2025-ABC123)' },
-          newDate: { type: 'string', description: 'New date (ISO or DD/MM/YYYY)' },
-          newTime: { type: 'string', description: 'New time (HH:MM, optional)' },
-          newLocation: { type: 'string', description: 'New location (optional)' },
-          customerEmail: { type: 'string', description: 'Customer email to locate the booking' },
-          customerMobile: { type: 'string', description: 'Customer mobile to locate the booking' }
-        },
-        required: ['bookingReference', 'newDate']
-      }
-    },
-    {
-      type: 'function',
       name: 'email',
       description: 'Send and manage emails',
       parameters: {

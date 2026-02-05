@@ -17,7 +17,7 @@ export async function performPolicyCheck(fileSearchTool, courseType, callContext
 
     // Query KB for relevant policies
     const queries = [
-      `Terms and Conditions for ${courseType} bookings, cancellations, reschedules, and fees`,
+      `Terms and Conditions for ${courseType} bookings, cancellations, and fees`,
       `Prerequisites and requirements for ${courseType} course including documents, attire, and licence checks`,
       `Cancellation and refund policy for ${courseType}`
     ];

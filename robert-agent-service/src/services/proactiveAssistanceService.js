@@ -204,7 +204,7 @@ class ProactiveAssistanceService {
     if (hasBooking) {
       suggestions.push({
         type: 'follow_up',
-        message: "I can also help you with rescheduling or cancelling bookings if needed.",
+        message: "I can also help you with cancelling bookings if needed.",
         confidence: 0.5
       });
     }

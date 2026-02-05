@@ -3,7 +3,6 @@ import emailTool from './email.js';
 import sendSMSTool from './sendSMS.js';
 import generateReferenceIdTool from './generateReferenceId.js';
 import updateCustomerTool from './updateCustomer.js';
-import rescheduleBookingTool from './rescheduleBooking.js';
 import paymentsTool from './payments.js';
 import fileSearchTool from './fileSearch.js';
 import transferCallTool from './transferCall.js';
@@ -50,7 +49,6 @@ class UnifiedToolExecutor {
       ['send_sms', sendSMSTool],
       ['generate_reference_id', generateReferenceIdTool],
       ['update_customer', updateCustomerTool],
-      ['reschedule_booking', rescheduleBookingTool],
       ['payments', paymentsTool],
       ['file_search', fileSearchTool],
       ['transfer_call', transferCallTool],

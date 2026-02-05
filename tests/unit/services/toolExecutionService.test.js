@@ -14,13 +14,13 @@ describe('ToolExecutionService', () => {
     });
 
     it('returns object as-is when given object', () => {
-      const args = { task: 'reschedule', date: '2025-02-10' };
+      const args = { task: 'update_customer', customerEmail: 'test@example.com' };
       expect(toolExecutionService.parseArguments(args)).toEqual(args);
     });
 
     it('parses valid JSON string', () => {
-      const args = toolExecutionService.parseArguments('{"task":"reschedule","date":"2025-02-10"}');
-      expect(args).toEqual({ task: 'reschedule', date: '2025-02-10' });
+      const args = toolExecutionService.parseArguments('{"task":"update_customer","customerEmail":"test@example.com"}');
+      expect(args).toEqual({ task: 'update_customer', customerEmail: 'test@example.com' });
     });
 
     it('throws on invalid JSON string', () => {

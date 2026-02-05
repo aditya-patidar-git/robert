@@ -17,7 +17,6 @@ export { validateAge } from './validateAge.js';
 export { takeScreenshot, extractLocationIdentifier, extractPriceFromBooking, saveAuditLog, ensureDirectories } from './utils.js';
 export { findBooking } from './findBooking.js';
 export { checkAvailabilityAndNoteDetails, getAvailabilityUrl, selectBestMatchingSlot } from './checkAvailability.js';
-export { rescheduleBooking } from './rescheduleBooking.js';
 export { cancelBooking } from './cancelBooking.js';
 export { updateCustomer } from './updateCustomer.js';
 export { matchSlotToAvailableSlots, storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from './slotStorageUtils.js';

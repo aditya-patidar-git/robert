@@ -395,7 +395,7 @@ class ConfigManager {
 
   /**
    * Check if a CRM task is enabled
-   * @param {string} taskName - Task name: 'createBooking', 'reschedule', 'cancel', 'updateRecord', 'issueRefund'
+   * @param {string} taskName - Task name: 'createBooking', 'cancel', 'updateRecord', 'issueRefund'
    * @returns {boolean} - True if task is enabled (defaults to true if no config)
    */
   isCRMTaskEnabled(taskName) {

@@ -229,7 +229,7 @@ class ToolExecutor {
       
       // 4. Increase timeout for browser automation tools - they need more time
       // Only if no tool-specific timeout, no per-tool maxTime, and not using global timeout override
-      const browserToolNames = ['update_customer', 'reschedule_booking'];
+      const browserToolNames = ['update_customer'];
       if (browserToolNames.includes(toolName) && toolSpecificTimeout === null && !toolConfig.maxTime) {
         timeout = Math.max(timeout, 360000);
         console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
