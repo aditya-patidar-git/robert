@@ -1,6 +1,7 @@
 /**
  * Integration test: Human Transfer (Test 7).
  * Requires real Twilio. Skip when credentials or RUN_INTEGRATION_TESTS not set.
+ * DTMF capture is exercised; full bridge success (caller hears human) is manual/stub-only.
  */
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import { integrationConfig } from './config/integrationConfig.js';
@@ -19,9 +20,11 @@ describe('Human Transfer (Integration)', () => {
     const callResult = await callSimulator.initiateCall('integration-transfer');
     try {
       await callSimulator.waitForAnswer(callResult.callSid, integrationConfig.timeouts.callPickup);
-      expect(true).toBe(true);
+      await callSimulator.sendDTMF(callResult.callSid, '1');
+      await new Promise((r) => setTimeout(r, 2000));
+      await callSimulator.hangup(callResult.callSid);
     } finally {
       await callSimulator.cleanup();
     }
-  }, 25000);
+  }, integrationConfig.timeouts.transfer);
 });

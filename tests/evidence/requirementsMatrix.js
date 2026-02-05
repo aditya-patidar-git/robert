@@ -1,6 +1,9 @@
 /**
  * Requirements matrix: maps 12 §14 acceptance criteria to verification steps (unit/integration tests).
  * Aggregator matches by testFile (path) and assertionName (Jest fullName contains this).
+ *
+ * Manual or infeasible in automation: bridge success (Req 7, manual); no cross-talk (Req 9, manual);
+ * OpenAI 5xx simulation (Req 10, unit only); citation/announcement in speech (Req 4/5, need artefact API).
  */
 export const requirementsMatrix = {
   requirement_1_pickup: {
@@ -37,7 +40,8 @@ export const requirementsMatrix = {
   requirement_4_kb_retrieval: {
     description: 'KB retrieval with citation (§14.4)',
     verification: [
-      { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns instructions for subsequent response' }
+      { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns instructions for subsequent response' },
+      { type: 'integration', testFile: 'tests/integration/kb-retrieval.test.js', assertionName: 'completes call and receives outbound audio when asking policy question' }
     ],
     evidenceRequired: ['logs', 'transcript'],
     acceptanceCriteria: 'File Search returns correct passage; cited in speech.'
@@ -45,7 +49,7 @@ export const requirementsMatrix = {
   requirement_5_web_search: {
     description: 'Web search with announcement (§14.5)',
     verification: [
-      { type: 'unit', testFile: 'tests/unit/services/kbaService.test.js', assertionName: 'returns false for web_search' }
+      { type: 'integration', testFile: 'tests/integration/web-search.test.js', assertionName: 'completes call and receives outbound audio when asking time-sensitive question' }
     ],
     evidenceRequired: ['logs', 'transcript'],
     acceptanceCriteria: 'MCP web_search with prior disclosure; result grounded.'
@@ -73,7 +77,8 @@ export const requirementsMatrix = {
     description: 'Cross-call memory with consent (§14.8)',
     verification: [
       { type: 'unit', testFile: 'tests/unit/services/memoryService.test.js', assertionName: 'stores call summary and retrieves previous calls' },
-      { type: 'unit', testFile: 'tests/unit/services/memoryService.test.js', assertionName: 'recalls preferences across calls' }
+      { type: 'unit', testFile: 'tests/unit/services/memoryService.test.js', assertionName: 'recalls preferences across calls' },
+      { type: 'integration', testFile: 'tests/integration/memory.test.js', assertionName: 'call 2 receives outbound audio after preference set in call 1' }
     ],
     evidenceRequired: ['logs', 'database_snapshot'],
     acceptanceCriteria: 'Preference set in call 1; recalled in call 2 after consent.'
@@ -91,7 +96,8 @@ export const requirementsMatrix = {
     verification: [
       { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns false when quality score is below 0.7' },
       { type: 'unit', testFile: 'tests/unit/services/errorRecoveryService.test.js', assertionName: 'handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx' },
-      { type: 'unit', testFile: 'tests/unit/services/errorRecoveryService.test.js', assertionName: 'handleToolError returns shouldFallbackToVoicemail for Twilio stream drop' }
+      { type: 'unit', testFile: 'tests/unit/services/errorRecoveryService.test.js', assertionName: 'handleToolError returns shouldFallbackToVoicemail for Twilio stream drop' },
+      { type: 'integration', testFile: 'tests/integration/error-paths.test.js', assertionName: 'call completes or cleans up after stream drop' }
     ],
     evidenceRequired: ['logs', 'error_screenshots'],
     acceptanceCriteria: 'OpenAI 5xx / stream drop handled; retry; voicemail fallback.'
@@ -100,7 +106,8 @@ export const requirementsMatrix = {
     description: 'DSAR export/delete (§14.11)',
     verification: [
       { type: 'unit', testFile: 'tests/unit/services/gdprService.test.js', assertionName: 'returns export structure with requestId and data' },
-      { type: 'unit', testFile: 'tests/unit/services/gdprService.test.js', assertionName: 'processes export action' }
+      { type: 'unit', testFile: 'tests/unit/services/gdprService.test.js', assertionName: 'processes export action' },
+      { type: 'integration', testFile: 'tests/integration/gdpr.test.js', assertionName: 'exportDSARData returns structure with transcript and metadata' }
     ],
     evidenceRequired: ['logs', 'export_file', 'deletion_proof'],
     acceptanceCriteria: 'Export transcript & metadata; delete on request; retention respected.'
@@ -108,6 +115,7 @@ export const requirementsMatrix = {
   requirement_12_security: {
     description: 'No secrets in bundles/logs; SSRF/DOM blocked; fail-fast on missing secrets (§14.12)',
     verification: [
+      { type: 'unit', testFile: 'tests/unit/security/secrets.test.js', assertionName: 'does not find secrets in front-end bundle' },
       { type: 'unit', testFile: 'tests/unit/security/secrets.test.js', assertionName: 'does not find hardcoded API keys in .js source files' },
       { type: 'unit', testFile: 'tests/unit/security/secrets.test.js', assertionName: 'does not find sk- prefixed keys in test helpers' },
       { type: 'unit', testFile: 'tests/unit/services/urlValidation.test.js', assertionName: 'rejects javascript: protocol' },

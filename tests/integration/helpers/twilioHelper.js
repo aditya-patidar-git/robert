@@ -41,7 +41,9 @@ class TwilioHelper {
   }
   async sendDTMF(callSid, digits) {
     this.ensureInitialized();
-    return await this.client.calls(callSid).dtmf.create({ digits });
+    const safe = String(digits).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const twiml = `<Response><Play digits="${safe}"></Play></Response>`;
+    return await this.client.calls(callSid).update({ twiml });
   }
   async getCall(callSid) {
     this.ensureInitialized();
