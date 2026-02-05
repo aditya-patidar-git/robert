@@ -121,6 +121,50 @@ class WebSocketService {
   getClientCount() {
     return this.clients.size;
   }
+
+  /**
+   * Broadcast backup progress to all connected clients
+   * @param {Object} progress - Progress data
+   * @param {string} progress.backupId - Backup ID
+   * @param {string} progress.status - Status: 'started', 'in_progress', 'completed', 'failed'
+   * @param {number} progress.progress - Progress percentage (0-100)
+   * @param {string} progress.currentCollection - Currently processing collection
+   * @param {number} progress.processedCollections - Number of processed collections
+   * @param {number} progress.totalCollections - Total collections to process
+   * @param {string} progress.message - Status message
+   * @param {Object} progress.error - Error details if failed
+   */
+  emitBackupProgress(progress) {
+    if (!io) {
+      console.warn('⚠️ [WEBSOCKET] Cannot emit backup progress - Socket.IO not available');
+      return;
+    }
+
+    io.emit('backup_progress', {
+      ...progress,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`📡 [WEBSOCKET] Backup progress: ${progress.status} - ${progress.progress || 0}%`);
+  }
+
+  /**
+   * Broadcast restore progress to all connected clients
+   * @param {Object} progress - Progress data
+   */
+  emitRestoreProgress(progress) {
+    if (!io) {
+      console.warn('⚠️ [WEBSOCKET] Cannot emit restore progress - Socket.IO not available');
+      return;
+    }
+
+    io.emit('restore_progress', {
+      ...progress,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`📡 [WEBSOCKET] Restore progress: ${progress.status} - ${progress.progress || 0}%`);
+  }
 }
 
 export default new WebSocketService();

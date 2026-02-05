@@ -242,14 +242,11 @@ class VoiceInsightsService {
       const result = results[0] || {};
 
       const totalCalls = result.totalCalls || 0;
-      // Use separate totals for each metric (only count calls with that metric available)
-      const mosTotal = result.mosTotal || 0;
-      const latencyTotal = result.latencyTotal || 0;
-      const packetLossTotal = result.packetLossTotal || 0;
       
-      const mosCompliance = mosTotal > 0 ? (result.mosCompliant / mosTotal) * 100 : 0;
-      const latencyCompliance = latencyTotal > 0 ? (result.latencyCompliant / latencyTotal) * 100 : 0;
-      const packetLossCompliance = packetLossTotal > 0 ? (result.packetLossCompliant / packetLossTotal) * 100 : 0;
+      // Calculate compliance percentages using totalCalls as the denominator
+      const mosCompliance = totalCalls > 0 ? (result.mosCompliant / totalCalls) * 100 : 0;
+      const latencyCompliance = totalCalls > 0 ? (result.latencyCompliant / totalCalls) * 100 : 0;
+      const packetLossCompliance = totalCalls > 0 ? (result.packetLossCompliant / totalCalls) * 100 : 0;
 
       // Calculate error budget (assuming 99.9% SLO target)
       const sloTarget = 99.9;
@@ -264,21 +261,21 @@ class VoiceInsightsService {
             target: 3.5,
             compliance: Math.round(mosCompliance * 100) / 100,
             compliant: result.mosCompliant || 0,
-            total: mosTotal,
+            total: totalCalls,
             avgValue: Math.round((result.avgMOS || 0) * 100) / 100
           },
           latency: {
             target: 200, // ms
             compliance: Math.round(latencyCompliance * 100) / 100,
             compliant: result.latencyCompliant || 0,
-            total: latencyTotal,
+            total: totalCalls,
             avgValue: Math.round((result.avgLatency || 0) * 100) / 100
           },
           packetLoss: {
             target: 5, // %
             compliance: Math.round(packetLossCompliance * 100) / 100,
             compliant: result.packetLossCompliant || 0,
-            total: packetLossTotal,
+            total: totalCalls,
             avgValue: Math.round((result.avgPacketLoss || 0) * 100) / 100
           }
         },

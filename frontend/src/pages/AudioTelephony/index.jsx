@@ -252,7 +252,7 @@ const AudioTelephonyPage = () => {
     // Fetch audio as blob with authentication
     const fetchAudio = async () => {
       try {
-        const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
+        const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3002';
         const fullAudioUrl = previewAudioUrl.startsWith('http') 
           ? previewAudioUrl 
           : `${API_BASE}${previewAudioUrl.startsWith('/') ? '' : '/'}${previewAudioUrl}`;

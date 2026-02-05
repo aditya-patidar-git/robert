@@ -31,20 +31,20 @@ const CRMTasksTab = ({
         </Typography>
 
         <Grid container spacing={3}>
-          {Object.entries(crmTasksConfig)
-            .filter(([key]) => key !== 'dryRunEnforced' && key !== 'auditLogging')
+          {Object.entries(crmTasksConfig || {})
+            .filter(([key, value]) => (key === 'createBooking' || key === 'cancel') && value && typeof value === 'object')
             .map(([taskKey, taskConfig]) => (
               <Grid size={{ xs: 12, md: 6 }} key={taskKey}>
                 <Card variant="outlined">
                   <CardContent>
                     <Typography variant="subtitle1" gutterBottom textTransform="capitalize">
-                      {taskKey.replace(/([A-Z])/g, ' $1').trim()}
+                      {taskKey === 'createBooking' ? 'Create Booking' : 'Cancel Booking'}
                     </Typography>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <FormControlLabel
                         control={
                           <Switch
-                            checked={taskConfig.enabled}
+                            checked={taskConfig?.enabled ?? true}
                             onChange={(e) => handleCrmTaskToggle(taskKey, 'enabled', e.target.checked)}
                           />
                         }
@@ -53,9 +53,9 @@ const CRMTasksTab = ({
                       <FormControlLabel
                         control={
                           <Switch
-                            checked={taskConfig.requireConfirmation}
+                            checked={taskConfig?.requireConfirmation ?? true}
                             onChange={(e) => handleCrmTaskToggle(taskKey, 'requireConfirmation', e.target.checked)}
-                            disabled={!taskConfig.enabled}
+                            disabled={!taskConfig?.enabled}
                           />
                         }
                         label="Require Human Confirmation"
@@ -75,7 +75,7 @@ const CRMTasksTab = ({
               <FormControlLabel
                 control={
                   <Switch
-                    checked={crmTasksConfig.dryRunEnforced}
+                    checked={crmTasksConfig?.dryRunEnforced ?? true}
                     onChange={(e) => handleCrmGeneralToggle('dryRunEnforced', e.target.checked)}
                   />
                 }
@@ -84,7 +84,7 @@ const CRMTasksTab = ({
               <FormControlLabel
                 control={
                   <Switch
-                    checked={crmTasksConfig.auditLogging}
+                    checked={crmTasksConfig?.auditLogging ?? true}
                     onChange={(e) => handleCrmGeneralToggle('auditLogging', e.target.checked)}
                   />
                 }

@@ -14,8 +14,7 @@ class ErrorRecoveryService {
       'openai': 'openai',
       'file_search': 'openai',
       'web_search': 'brave',
-      'crm_browser': 'crm',
-      'crm': 'crm'
+      'update_customer': 'crm'
     };
   }
 
@@ -109,16 +108,12 @@ class ErrorRecoveryService {
     }
 
     // Tool-specific messages
-    if (toolName === 'crm_browser') {
+    if (toolName === 'update_customer') {
       return "I'm having trouble accessing the booking system. Please try again or I can help you with something else.";
     }
 
     if (toolName === 'web_search') {
       return "I couldn't search the web right now. Let me try again or we can continue without that information.";
-    }
-
-    if (toolName === 'calendar') {
-      return "I'm having trouble accessing the calendar. Please try again in a moment.";
     }
 
     if (toolName === 'email') {
@@ -254,15 +249,12 @@ class ErrorRecoveryService {
   suggestAlternatives(callSid, failedTool) {
     const alternatives = [];
 
-    if (failedTool === 'crm_browser') {
+    if (failedTool === 'update_customer') {
       alternatives.push("I can help you find information another way.");
       alternatives.push("Would you like to try again, or can I help you with something else?");
     } else if (failedTool === 'web_search') {
       alternatives.push("I can continue without that information.");
       alternatives.push("Would you like to try a different search?");
-    } else if (failedTool === 'calendar') {
-      alternatives.push("I can help you check availability another way.");
-      alternatives.push("Would you like to try again later?");
     } else if (failedTool === 'email') {
       alternatives.push("I can help you with something else while we wait.");
       alternatives.push("Would you like to try sending the email again?");

@@ -1,8 +1,16 @@
 import { loginToCRM } from '../commonBookingSteps/index.js';
 import * as taskHandlers from './tasks/index.js';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
+import configManager from '../../agent/configManager.js';
 
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
+
+// Map CRM browser tasks to config task names
+const TASK_CONFIG_MAP = {
+  'cancel_booking': 'cancel',
+  'create_booking': 'createBooking',
+  // check_availability doesn't need config checks (always allowed)
+};
 
 /**
  * Task executor
@@ -31,6 +39,20 @@ export class TaskExecutor {
         'browser.course_type': args.courseType || 'unknown'
       }
     });
+
+    // Check if task is enabled in CRM tasks config
+    const configTaskName = TASK_CONFIG_MAP[task];
+    if (configTaskName && !configManager.isCRMTaskEnabled(configTaskName)) {
+      console.log(`🚫 [${callSid}] Task "${task}" is disabled in CRM tasks configuration`);
+      span.setAttribute('browser.task_disabled', true);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: 'Task disabled in configuration' });
+      span.end();
+      return {
+        success: false,
+        error: `Task "${task}" is currently disabled in the system configuration. Please contact an administrator to enable it.`,
+        dryRun: false
+      };
+    }
 
     // Helper function to call progress callback if provided
     const reportProgress = (milestone, message, progress = null) => {
@@ -141,7 +163,7 @@ export class TaskExecutor {
         context = await this.browserManager.getPublicContext();
         shouldCloseContext = true; // Mark this context for cleanup since it's not the pooled one
       } else {
-        // For other tasks (create_booking, reschedule, cancel, update_customer), use authenticated context
+        // For other tasks (create_booking, cancel, update_customer), use authenticated context
         context = await this.browserManager.getContext(reportProgress);
       }
       
@@ -232,33 +254,44 @@ export class TaskExecutor {
       }, this.executionHeartbeatInterval);
       
       try {
-        // Always start with dry-run for tasks
-        const dryRunResult = await this.executeDryRun(page, task, args, auditId);
+        // Check if dry-run is enforced by config
+        const isDryRunEnforced = configManager.isDryRunEnforced();
         
-        if (!dryRunResult.success) {
-          span.setAttribute('browser.dry_run_failed', true);
-          span.setStatus({ code: SpanStatusCode.ERROR, message: dryRunResult.error });
-          span.end();
-          return {
-            success: false,
-            error: dryRunResult.error,
-            dryRun: true
-          };
-        }
+        // Check if confirmation is required from config (for this task type)
+        const configRequiresConfirmation = configTaskName ? configManager.requiresConfirmation(configTaskName) : true;
+        
+        if (isDryRunEnforced) {
+          // Perform dry-run first
+          const dryRunResult = await this.executeDryRun(page, task, args, auditId);
+          
+          if (!dryRunResult.success) {
+            span.setAttribute('browser.dry_run_failed', true);
+            span.setStatus({ code: SpanStatusCode.ERROR, message: dryRunResult.error });
+            span.end();
+            return {
+              success: false,
+              error: dryRunResult.error,
+              dryRun: true
+            };
+          }
 
-        // If dry-run successful and task requires confirmation, return for user confirmation
-        if (dryRunResult.requiresConfirmation) {
-          span.setAttribute('browser.requires_confirmation', true);
-          span.setAttribute('browser.dry_run', true);
-          span.setStatus({ code: SpanStatusCode.OK });
-          span.end();
-          return {
-            success: true,
-            result: dryRunResult.result,
-            dryRun: true,
-            requiresConfirmation: true,
-            auditId
-          };
+          // Use config setting to determine if confirmation is required
+          // Override task handler's requiresConfirmation with config value
+          const shouldRequireConfirmation = configRequiresConfirmation && (dryRunResult.requiresConfirmation !== false);
+          
+          if (shouldRequireConfirmation) {
+            span.setAttribute('browser.requires_confirmation', true);
+            span.setAttribute('browser.dry_run', true);
+            span.setStatus({ code: SpanStatusCode.OK });
+            span.end();
+            return {
+              success: true,
+              result: dryRunResult.result,
+              dryRun: true,
+              requiresConfirmation: true,
+              auditId
+            };
+          }
         }
 
         // Execute actual task
@@ -295,7 +328,9 @@ export class TaskExecutor {
     } finally {
       // ALWAYS clean up pages and execution lock, even on error
       try {
-        if (page && !page.isClosed()) {
+        // Safety check: Verify page is a valid Playwright Page object before calling isClosed()
+        const isValidPage = page && typeof page === 'object' && typeof page.isClosed === 'function';
+        if (isValidPage && !page.isClosed()) {
           // CRITICAL: Do NOT close the authenticated page - we need to keep it open for session persistence
           const authenticatedPage = this.browserManager.getAuthenticatedPage();
           if (page === authenticatedPage) {
@@ -348,8 +383,6 @@ export class TaskExecutor {
       }
       
       switch (task) {
-        case 'reschedule_booking':
-          return await taskHandlers.dryRunRescheduleBooking(page, args, auditId, this.screenshotsDir);
         case 'cancel_booking':
           return await taskHandlers.dryRunCancelBooking(page, args, auditId, this.screenshotsDir);
         case 'update_customer':
@@ -370,8 +403,6 @@ export class TaskExecutor {
   async executeActualTask(page, task, args, auditId) {
     try {
       switch (task) {
-        case 'reschedule_booking':
-          return await taskHandlers.rescheduleBooking(page, args, auditId, this.screenshotsDir);
         case 'cancel_booking':
           return await taskHandlers.cancelBooking(page, args, auditId, this.screenshotsDir);
         case 'update_customer':

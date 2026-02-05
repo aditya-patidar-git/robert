@@ -1,5 +1,7 @@
 import { takeScreenshot } from './utils.js';
 
+const CRM_NAVIGATION_TIMEOUT_MS = 60000;
+
 /**
  * Step 2: Login to CRM using cookie-based authentication
  * @param {Page} page - Playwright page object
@@ -16,8 +18,13 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     const currentUrl = page.url();
     if (currentUrl === 'about:blank' || !currentUrl.includes('takeabyte.co.uk/InContact')) {
       console.log('🔐 [STEP 2] Page not on CRM, navigating to CRM...');
-      await page.goto('https://takeabyte.co.uk/InContact');
-      await page.waitForLoadState('networkidle');
+      await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
+      // Use 'load' instead of 'networkidle' - networkidle can timeout on pages with continuous requests
+      try {
+        await page.waitForLoadState('load', { timeout: 10000 });
+      } catch (e) {
+        console.log('⚠️ [STEP 2] Load state timeout, continuing anyway...');
+      }
     }
     
     // Check if already logged in
@@ -39,7 +46,7 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     
     if (isAlreadyLoggedIn) {
       if (currentUrl.includes('/Account/Login')) {
-        await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'networkidle' });
+        await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
         await page.waitForTimeout(2000);
       }
       await takeScreenshot(page, 'step-2-already-logged-in.png', screenshotsDir);
@@ -48,8 +55,13 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     
     // Step 1: Navigate to CRM_LOGIN_URL
     console.log('🔐 [STEP 2] Navigating to CRM login URL...');
-    await page.goto(credentials.loginUrl);
-    await page.waitForLoadState('networkidle');
+    await page.goto(credentials.loginUrl, { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
+    // Use 'load' instead of 'networkidle' - networkidle can timeout on pages with continuous requests
+    try {
+      await page.waitForLoadState('load', { timeout: 10000 });
+    } catch (e) {
+      console.log('⚠️ [STEP 2] Load state timeout after navigation to login URL, continuing anyway...');
+    }
     
     // Take screenshot of login page
     await takeScreenshot(page, 'login-page-loaded.png', screenshotsDir);
@@ -120,8 +132,8 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     
     // Step 3: Navigate to CRM_HOME_URL and reload
     console.log('🔐 [STEP 2] Navigating to CRM home URL...');
-    await page.goto(crmHomeUrl, { waitUntil: 'networkidle' });
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.goto(crmHomeUrl, { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
+    await page.reload({ waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
     await page.waitForTimeout(2000);
     
     // Take screenshot after navigation
@@ -155,7 +167,7 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     const finalUrl = page.url();
     if (finalUrl.includes('bookcbtnow.com') || finalUrl.includes('gateway.aspx')) {
       console.log('🔐 [STEP 2] Page is on availability URL after login, navigating to CRM dashboard...');
-      await page.goto(crmHomeUrl, { waitUntil: 'networkidle' });
+      await page.goto(crmHomeUrl, { waitUntil: 'networkidle', timeout: CRM_NAVIGATION_TIMEOUT_MS });
       await page.waitForTimeout(2000);
       
       // Verify we're on the dashboard
@@ -165,7 +177,7 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     } else if (!finalUrl.includes('takeabyte.co.uk/InContact') || finalUrl.includes('/Account/Login')) {
       // If we're not on CRM dashboard or still on login page, navigate to dashboard
       console.log('🔐 [STEP 2] Navigating to CRM dashboard...');
-      await page.goto(crmHomeUrl, { waitUntil: 'networkidle' });
+      await page.goto(crmHomeUrl, { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
       await page.waitForTimeout(2000);
       await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
       console.log('✅ [STEP 2] Successfully navigated to CRM dashboard');

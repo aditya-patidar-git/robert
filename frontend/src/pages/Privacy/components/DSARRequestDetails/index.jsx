@@ -95,35 +95,33 @@ const DSARRequestDetails = ({ requestId, open, onClose, onUpdate }) => {
               <DSARRequestInfo request={request} />
             </Box>
 
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              <Box sx={{ width: { xs: '100%', md: 'calc(50% - 8px)' }, minWidth: { md: '300px' } }}>
-                <DSARDataPreview
-                  data={preview}
-                  dataTypes={selectedDataTypes}
-                  onDataTypeToggle={handleDataTypeToggle}
-                  onPreview={handlePreview}
-                />
-              </Box>
+            <Box sx={{ width: '100%' }}>
+              <DSARDataPreview
+                data={preview}
+                dataTypes={selectedDataTypes}
+                onDataTypeToggle={handleDataTypeToggle}
+                onPreview={handlePreview}
+              />
+            </Box>
 
-              <Box sx={{ width: { xs: '100%', md: 'calc(50% - 8px)' }, minWidth: { md: '300px' } }}>
-                <DSARExportProgress
-                  progress={exportStatus === 'processing' ? 50 : 100}
-                  status={exportStatus}
-                  onDownload={handleDownload}
-                  exportData={exportData}
-                />
-                {request?.status === 'approved' && (
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={handleGenerateExport}
-                    disabled={exportStatus === 'processing'}
-                    sx={{ mt: 2 }}
-                  >
-                    {exportStatus === 'processing' ? 'Generating...' : 'Generate Export'}
-                  </Button>
-                )}
-              </Box>
+            <Box sx={{ width: '100%' }}>
+              <DSARExportProgress
+                progress={exportStatus === 'processing' ? 50 : 100}
+                status={exportStatus}
+                onDownload={handleDownload}
+                exportData={exportData}
+              />
+              {request?.status === 'approved' && (
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={handleGenerateExport}
+                  disabled={exportStatus === 'processing'}
+                  sx={{ mt: 2 }}
+                >
+                  {exportStatus === 'processing' ? 'Generating...' : 'Generate Export'}
+                </Button>
+              )}
             </Box>
 
             <Box sx={{ width: '100%' }}>

@@ -2,14 +2,14 @@ import { conversations } from '../shared/state.js';
 
 class AbusePreventionService {
   constructor() {
-    this.callFrequency = new Map(); // callerId -> { count, windowStart, blocked }
-    this.suspiciousPatterns = new Map(); // callerId -> pattern data
-    this.RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-    this.MAX_CALLS_PER_WINDOW = 10; // Max 10 calls per hour
-    this.BLOCK_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
-    this.SUSPICIOUS_PATTERN_THRESHOLD = 5; // 5 suspicious calls = block
+    this.callFrequency = new Map();
+    this.suspiciousPatterns = new Map();
+    this.RATE_LIMIT_WINDOW_MS = parseInt(process.env.ABUSE_RATE_LIMIT_WINDOW_MS, 10) || 3600000;
+    this.MAX_CALLS_PER_WINDOW = parseInt(process.env.ABUSE_MAX_CALLS_PER_WINDOW, 10) || 100;
+    this.BLOCK_DURATION_MS = parseInt(process.env.ABUSE_BLOCK_DURATION_MS, 10) || 86400000;
+    this.SUSPICIOUS_PATTERN_THRESHOLD = parseInt(process.env.ABUSE_SUSPICIOUS_PATTERN_THRESHOLD, 10) || 5;
   }
-
+  
   /**
    * Check if caller is rate limited
    * @param {string} callerId - Caller phone number

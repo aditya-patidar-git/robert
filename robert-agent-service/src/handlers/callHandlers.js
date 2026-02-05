@@ -13,9 +13,7 @@ import {
     generateErrorTwiML,
     buildMediaStreamsWsUrl
 } from '../utils/twimlGenerator.js';
-import dotenv from "dotenv";
-
-dotenv.config();
+// dotenv is already loaded in index.js, no need to reload here
 
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 
@@ -255,6 +253,18 @@ export const handleIncomingCall = async (req, res) => {
         // Initialize conversation state using session management service
         const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
         
+        // Check concurrent call limit from database configuration
+        if (!sessionManagementService.canAcceptNewCall()) {
+            const maxCalls = sessionManagementService.getMaxConcurrentCalls();
+            span.setAttribute('call.blocked', true);
+            span.setAttribute('call.block_reason', 'concurrent_limit_reached');
+            span.setStatus({ code: SpanStatusCode.ERROR, message: `Concurrent call limit reached (${maxCalls})` });
+            console.log(`🚫 [${CallSid}] Call blocked: Concurrent call limit reached (${maxCalls})`);
+            const twiml = generateBlockedCallTwiML('Sorry, all lines are currently busy. Please try again in a few minutes.');
+            span.end();
+            return res.type("text/xml").send(twiml);
+        }
+        
         // Check if SIP should be used (primary path)
         const telephonyConfig = configManager.getTelephonyConfig();
         const shouldUseSip = sipCallRouter.shouldUseSip(telephonyConfig) && sipService.isSipEnabled();
@@ -303,11 +313,13 @@ export const handleIncomingCall = async (req, res) => {
                     incrementActiveCalls({ entry_path: entryPath });
                 }
                 
-                // Set recording consent early for inbound SIP calls
-                await setInboundCallConsent(CallSid, 'SIP');
-                
+                // Set recording consent asynchronously so TwiML can be sent immediately (reduces pickup latency)
+                setInboundCallConsent(CallSid, 'SIP').catch(err => {
+                    console.error(`[CallHandler] Error setting inbound consent for SIP call ${CallSid}:`, err.message);
+                });
+
                 console.log(`📞 [${CallSid}] Inbound call routed via SIP to: ${sipEndpoint}`);
-                
+
                 // Return TwiML with SIP routing
                 const twiml = generateSipRoutingTwiML(sipEndpoint);
                 span.setStatus({ code: SpanStatusCode.OK });
@@ -323,14 +335,19 @@ export const handleIncomingCall = async (req, res) => {
         
         // Fallback to Media Streams (if SIP not enabled or failed)
         if (!conversations[CallSid]) {
-            sessionManagementService.initializeSession(CallSid, {
-                from: From,
-                to: To,
-                language: 'en-GB',
-                callType: callType,
-                entryPath: entryPath,
-                realtimeWs: null
-            });
+            try {
+                sessionManagementService.initializeSession(CallSid, {
+                    from: From,
+                    to: To,
+                    language: 'en-GB',
+                    callType: callType,
+                    entryPath: entryPath,
+                    realtimeWs: null
+                });
+            } catch (sessionError) {
+                console.error(`[CallHandler] Error initializing session for ${CallSid}:`, sessionError.message);
+                throw sessionError;
+            }
             
             // Record call metrics
             recordCallMetrics({
@@ -341,9 +358,10 @@ export const handleIncomingCall = async (req, res) => {
             incrementActiveCalls({ entry_path: entryPath });
         }
 
-        // Set recording consent early for inbound calls
-        // This ensures consent is set before recording webhook arrives and before WebSocket connects
-        await setInboundCallConsent(CallSid, entryPath);
+        // Set recording consent asynchronously so TwiML can be sent immediately (reduces pickup latency)
+        setInboundCallConsent(CallSid, entryPath).catch(err => {
+            console.error(`[CallHandler] Error setting inbound consent for ${CallSid}:`, err.message);
+        });
 
         // Generate Media Streams TwiML WITH Connect verb for bidirectional streaming
         // NOTE: <Start><Stream> is UNIDIRECTIONAL (receive only) - cannot send audio back!
@@ -352,20 +370,7 @@ export const handleIncomingCall = async (req, res) => {
         // Recording should be handled via Twilio API (like outbound calls) instead of TwiML verb
         const wsUrl = buildMediaStreamsWsUrl(CallSid);
         
-        console.log(`\n📞 [${CallSid}] ========== GENERATING MEDIA STREAMS TWIML ==========`);
-        console.log(`   📊 Configuration:`);
-        console.log(`      - CallSid: ${CallSid}`);
-        console.log(`      - From: ${From}`);
-        console.log(`      - To: ${To}`);
-        console.log(`      - WebSocket URL: ${wsUrl}`);
-        console.log(`      - Use Connect verb: true (REQUIRED for bidirectional)`);
-        console.log(`      - Track: inbound_track (REQUIRED for <Connect> verb - Twilio Error 31941)`);
-        
-        const twiml = generateMediaStreamsTwiML(wsUrl, { useConnect: true }); // CRITICAL: Use Connect for inbound calls
-        
-        console.log(`   📋 Generated TwiML:`);
-        console.log(`      ${twiml.replace(/\n/g, '\n      ')}`);
-        console.log(`   ✅ TwiML generated successfully\n`);
+        const twiml = generateMediaStreamsTwiML(wsUrl, { useConnect: true });
 
         span.setStatus({ code: SpanStatusCode.OK });
         span.end();
@@ -374,7 +379,7 @@ export const handleIncomingCall = async (req, res) => {
         span.recordException(error);
         span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
         span.end();
-        console.error(`❌ [${CallSid}] Error in handleIncomingCall:`, error);
+        console.error(`[CallHandler] Error in handleIncomingCall for ${CallSid}:`, error.message);
         const errorTwiml = generateErrorTwiML('An error occurred. Please try again later.');
         res.status(500).type("text/xml").send(errorTwiml);
     }

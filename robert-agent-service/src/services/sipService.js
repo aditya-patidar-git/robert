@@ -5,23 +5,37 @@
  * Falls back to Media Streams if SIP is not available
  */
 
-import dotenv from "dotenv";
+// dotenv is already loaded in index.js, no need to reload here
 import sipValidation from "./sip/sipValidation.js";
 import sipSessionManager from "./sip/sipSessionManager.js";
 import sipStatusTracker from "./sip/sipStatusTracker.js";
 
-dotenv.config();
-
 class SipService {
   constructor() {
-    this.openaiSipEndpoint = process.env.OPENAI_SIP_ENDPOINT || null;
-    this.sipEnabled = process.env.SIP_ENABLED === 'true' || false;
+    // Note: SIP config values are read live via getters to avoid initialization timing issues
+    // This ensures secrets loaded after module import are always reflected
     this.retryConfig = {
       maxRetries: 3,
       initialDelay: 1000,
       maxDelay: 10000,
       backoffMultiplier: 2
     };
+  }
+
+  /**
+   * Get OpenAI SIP endpoint from environment (lazy evaluation)
+   * @returns {string|null} - SIP endpoint URL or null
+   */
+  get openaiSipEndpoint() {
+    return process.env.OPENAI_SIP_ENDPOINT || null;
+  }
+
+  /**
+   * Check if SIP is enabled via environment variable (lazy evaluation)
+   * @returns {boolean} - True if SIP_ENABLED=true
+   */
+  get sipEnabled() {
+    return process.env.SIP_ENABLED === 'true';
   }
 
   /**

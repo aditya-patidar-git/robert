@@ -1,0 +1,560 @@
+{
+  "requirement_1_pickup": {
+    "requirement": "Call pickup latency < 2s; greeting; asks language; detects reply; switches (§14.1)",
+    "status": "FAILED",
+    "verification": [
+      {
+        "type": "integration",
+        "testFile": "tests/integration/timing-critical.test.js",
+        "assertionName": "measures p95 latency < 2s",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/integration/timing-critical.test.js",
+          "testName": "Call Pickup Latency (Integration) measures p95 latency < 2s",
+          "status": "failed",
+          "duration": 60023,
+          "error": "Error: thrown: \"Exceeded timeout of 60000 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\tests\\integration\\timing-critical.test.js:22:3\n    at _dispatchDescribe (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\jestAdapterInit.js:604:26)\n    at describe (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\jestAdapterInit.js:572:44)\n    at C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\tests\\integration\\timing-critical.test.js:17:1\n    at SourceTextModule.evaluate (node:internal/vm/module:227:23)\n    at Runtime.linkAndEvaluateModule (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runtime\\build\\index.js:686:20)\n    at jestAdapter (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\runner.js:93:5)\n    at runTestInternal (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runner\\build\\index.js:275:16)\n    at runTest (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runner\\build\\index.js:343:7)",
+          "timestamp": "2026-02-05T06:23:23.752Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/conversationService.test.js",
+        "assertionName": "returns instructions for initial greeting when consent not given",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/conversationService.test.js",
+          "testName": "ConversationService getResponseInstructions returns instructions for initial greeting when consent not given",
+          "status": "passed",
+          "duration": 3,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "integration",
+        "testFile": "tests/integration/language-switch.test.js",
+        "assertionName": "greeting instructions include language question",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/integration/language-switch.test.js",
+          "testName": "Language switch (Integration) greeting instructions include language question",
+          "status": "passed",
+          "duration": 2,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.752Z"
+        }
+      },
+      {
+        "type": "integration",
+        "testFile": "tests/integration/language-switch.test.js",
+        "assertionName": "call connects and accepts language response",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/integration/language-switch.test.js",
+          "testName": "Language switch (Integration) call connects and accepts language response",
+          "status": "passed",
+          "duration": 8822,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.752Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "Inbound answers <2.0s; greeting played; asks language; French reply triggers switch."
+  },
+  "requirement_2_barge_in": {
+    "requirement": "Barge-in halt < 200ms (§14.2)",
+    "status": "FAILED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/handlers/bargeInHandler.test.js",
+        "assertionName": "sets interrupted flag when triggerImmediateBargeIn is called",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/handlers/bargeInHandler.test.js",
+          "testName": "Barge-in Logic sets interrupted flag when triggerImmediateBargeIn is called",
+          "status": "passed",
+          "duration": 156,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/handlers/bargeInHandler.test.js",
+        "assertionName": "cancels OpenAI response on interruption when activeResponseId is set",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/handlers/bargeInHandler.test.js",
+          "testName": "Barge-in Logic cancels OpenAI response on interruption when activeResponseId is set",
+          "status": "passed",
+          "duration": 172,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "integration",
+        "testFile": "tests/integration/timing-critical.test.js",
+        "assertionName": "halts TTS within 200ms",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/integration/timing-critical.test.js",
+          "testName": "Barge-in Timing (Integration) halts TTS within 200ms",
+          "status": "failed",
+          "duration": 10014,
+          "error": "Error: thrown: \"Exceeded timeout of 10000 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\tests\\integration\\timing-critical.test.js:74:3\n    at _dispatchDescribe (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\jestAdapterInit.js:604:26)\n    at describe (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\jestAdapterInit.js:572:44)\n    at C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\tests\\integration\\timing-critical.test.js:73:1\n    at SourceTextModule.evaluate (node:internal/vm/module:227:23)\n    at Runtime.linkAndEvaluateModule (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runtime\\build\\index.js:686:20)\n    at jestAdapter (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\runner.js:93:5)\n    at runTestInternal (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runner\\build\\index.js:275:16)\n    at runTest (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runner\\build\\index.js:343:7)",
+          "timestamp": "2026-02-05T06:23:23.752Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "Caller speech interrupts TTS; stop within 200ms."
+  },
+  "requirement_3_vad": {
+    "requirement": "VAD thresholds 500-700ms (§14.3)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/config/vadConfig.test.js",
+        "assertionName": "uses correct threshold range (500-700ms)",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/config/vadConfig.test.js",
+          "testName": "VAD Configuration uses correct threshold range (500-700ms)",
+          "status": "passed",
+          "duration": 3,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/config/vadConfig.test.js",
+        "assertionName": "has correct padding values",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/config/vadConfig.test.js",
+          "testName": "VAD Configuration has correct padding values",
+          "status": "passed",
+          "duration": 1,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "integration",
+        "testFile": "tests/integration/timing-critical.test.js",
+        "assertionName": "detects silence correctly",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/integration/timing-critical.test.js",
+          "testName": "VAD Behavior (Integration) detects silence correctly",
+          "status": "passed",
+          "duration": 2,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.752Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "No over-talk; no tail-cut; padding prevents clipping."
+  },
+  "requirement_4_kb_retrieval": {
+    "requirement": "KB retrieval with citation (§14.4)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/conversationService.test.js",
+        "assertionName": "returns instructions for subsequent response",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/conversationService.test.js",
+          "testName": "ConversationService getResponseInstructions returns instructions for subsequent response",
+          "status": "passed",
+          "duration": 1,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "File Search returns correct passage; cited in speech."
+  },
+  "requirement_5_web_search": {
+    "requirement": "Web search with announcement (§14.5)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/kbaService.test.js",
+        "assertionName": "returns false for web_search",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/kbaService.test.js",
+          "testName": "KBAService requiresKBA returns false for web_search",
+          "status": "passed",
+          "duration": 1,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "MCP web_search with prior disclosure; result grounded."
+  },
+  "requirement_6_crm_tasking": {
+    "requirement": "CRM booking with KBA + dry-run + confirmation (§14.6)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/kbaService.test.js",
+        "assertionName": "returns true for reschedule_booking",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/kbaService.test.js",
+          "testName": "KBAService requiresKBA returns true for reschedule_booking",
+          "status": "passed",
+          "duration": 2,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/kbaService.test.js",
+        "assertionName": "returns true for update_customer",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/kbaService.test.js",
+          "testName": "KBAService requiresKBA returns true for update_customer",
+          "status": "passed",
+          "duration": 3,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/toolExecutionService.test.js",
+        "assertionName": "returns true for duplicate call with same params",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/toolExecutionService.test.js",
+          "testName": "ToolExecutionService checkDuplicateCall returns true for duplicate call with same params",
+          "status": "passed",
+          "duration": 1,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/sendConfirmation.test.js",
+        "assertionName": "returns confirmationSent true after successful send",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/sendConfirmation.test.js",
+          "testName": "sendConfirmation step returns confirmationSent true after successful send",
+          "status": "passed",
+          "duration": 6,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "KBA, dry-run diff, confirmation, commit, DOM assert; SMS/email confirmation."
+  },
+  "requirement_7_human_transfer": {
+    "requirement": "Human transfer with DTMF (§14.7)",
+    "status": "FAILED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/kbaService.test.js",
+        "assertionName": "returns true for transfer_call",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/kbaService.test.js",
+          "testName": "KBAService requiresKBA returns true for transfer_call",
+          "status": "passed",
+          "duration": 1,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "integration",
+        "testFile": "tests/integration/human-transfer.test.js",
+        "assertionName": "bridges call successfully",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/integration/human-transfer.test.js",
+          "testName": "Human Transfer (Integration) bridges call successfully",
+          "status": "failed",
+          "duration": 10002,
+          "error": "Error: thrown: \"Exceeded timeout of 10000 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\tests\\integration\\human-transfer.test.js:15:3\n    at _dispatchDescribe (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\jestAdapterInit.js:604:26)\n    at describe (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\jestAdapterInit.js:572:44)\n    at C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\tests\\integration\\human-transfer.test.js:10:1\n    at SourceTextModule.evaluate (node:internal/vm/module:227:23)\n    at Runtime.linkAndEvaluateModule (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runtime\\build\\index.js:686:20)\n    at jestAdapter (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-circus\\build\\runner.js:93:5)\n    at runTestInternal (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runner\\build\\index.js:275:16)\n    at runTest (C:\\Users\\AdityaPatidar\\Documents\\Emergent\\robert\\node_modules\\jest-runner\\build\\index.js:343:7)",
+          "timestamp": "2026-02-05T06:23:23.752Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "DTMF capture; bridge success."
+  },
+  "requirement_8_memory": {
+    "requirement": "Cross-call memory with consent (§14.8)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/memoryService.test.js",
+        "assertionName": "stores call summary and retrieves previous calls",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/memoryService.test.js",
+          "testName": "Cross-Call Memory stores call summary and retrieves previous calls",
+          "status": "passed",
+          "duration": 89,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/memoryService.test.js",
+        "assertionName": "recalls preferences across calls",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/memoryService.test.js",
+          "testName": "Cross-Call Memory recalls preferences across calls",
+          "status": "passed",
+          "duration": 61,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "Preference set in call 1; recalled in call 2 after consent."
+  },
+  "requirement_9_concurrency": {
+    "requirement": "20 concurrent calls, p95 < 3s (§14.9)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "integration",
+        "testFile": "tests/integration/concurrency.test.js",
+        "assertionName": "handles 20 simultaneous calls",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/integration/concurrency.test.js",
+          "testName": "Concurrency (Load Test) handles 20 simultaneous calls",
+          "status": "passed",
+          "duration": 15751,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.752Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "20 simultaneous calls; p95 within target; no cross-talk."
+  },
+  "requirement_10_error_paths": {
+    "requirement": "Graceful error handling (§14.10)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/conversationService.test.js",
+        "assertionName": "returns false when quality score is below 0.7",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/conversationService.test.js",
+          "testName": "ConversationService shouldCreateResponse returns false when quality score is below 0.7",
+          "status": "passed",
+          "duration": 1,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/errorRecoveryService.test.js",
+        "assertionName": "handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/errorRecoveryService.test.js",
+          "testName": "ErrorRecoveryService handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx",
+          "status": "passed",
+          "duration": 18,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/errorRecoveryService.test.js",
+        "assertionName": "handleToolError returns shouldFallbackToVoicemail for Twilio stream drop",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/errorRecoveryService.test.js",
+          "testName": "ErrorRecoveryService handleToolError returns shouldFallbackToVoicemail for Twilio stream drop",
+          "status": "passed",
+          "duration": 25,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "OpenAI 5xx / stream drop handled; retry; voicemail fallback."
+  },
+  "requirement_11_gdpr": {
+    "requirement": "DSAR export/delete (§14.11)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/gdprService.test.js",
+        "assertionName": "returns export structure with requestId and data",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/gdprService.test.js",
+          "testName": "GDRPService exportDSARData returns export structure with requestId and data",
+          "status": "passed",
+          "duration": 55,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/gdprService.test.js",
+        "assertionName": "processes export action",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/gdprService.test.js",
+          "testName": "GDRPService processDSARRequest processes export action",
+          "status": "passed",
+          "duration": 54,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "Export transcript & metadata; delete on request; retention respected."
+  },
+  "requirement_12_security": {
+    "requirement": "No secrets in bundles/logs; SSRF/DOM blocked; fail-fast on missing secrets (§14.12)",
+    "status": "PASSED",
+    "verification": [
+      {
+        "type": "unit",
+        "testFile": "tests/unit/security/secrets.test.js",
+        "assertionName": "does not find hardcoded API keys in .js source files",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/security/secrets.test.js",
+          "testName": "Security does not find hardcoded API keys in .js source files",
+          "status": "passed",
+          "duration": 74,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/security/secrets.test.js",
+        "assertionName": "does not find sk- prefixed keys in test helpers",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/security/secrets.test.js",
+          "testName": "Security does not find sk- prefixed keys in test helpers",
+          "status": "passed",
+          "duration": 2,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/urlValidation.test.js",
+        "assertionName": "rejects javascript: protocol",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/urlValidation.test.js",
+          "testName": "UrlValidation rejects javascript: protocol",
+          "status": "passed",
+          "duration": 5,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/urlValidation.test.js",
+        "assertionName": "rejects file: protocol",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/urlValidation.test.js",
+          "testName": "UrlValidation rejects file: protocol",
+          "status": "passed",
+          "duration": 5,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/urlValidation.test.js",
+        "assertionName": "rejects private IP localhost",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/urlValidation.test.js",
+          "testName": "UrlValidation rejects private IP localhost",
+          "status": "passed",
+          "duration": 3,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/urlValidation.test.js",
+        "assertionName": "rejects domain not in allowed list",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/urlValidation.test.js",
+          "testName": "UrlValidation rejects domain not in allowed list",
+          "status": "passed",
+          "duration": 3,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      },
+      {
+        "type": "unit",
+        "testFile": "tests/unit/services/secretsManager.test.js",
+        "assertionName": "validateSecrets throws when a required secret is missing",
+        "result": {
+          "source": "jest",
+          "testFile": "tests/unit/services/secretsManager.test.js",
+          "testName": "SecretsManager validateSecrets throws when a required secret is missing",
+          "status": "passed",
+          "duration": 33,
+          "error": "",
+          "timestamp": "2026-02-05T06:23:23.751Z"
+        }
+      }
+    ],
+    "artifacts": [],
+    "acceptanceCriteria": "No secrets in logs or bundles; PII masking; Argon2id; SSRF/DOM blocked; fail-fast at boot."
+  }
+}

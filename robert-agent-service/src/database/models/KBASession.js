@@ -3,8 +3,7 @@ import mongoose from "mongoose";
 const KBASessionSchema = new mongoose.Schema({
   callSid: {
     type: String,
-    required: true,
-    index: true
+    required: true
   },
   callerId: {
     type: String,
@@ -60,4 +59,3 @@ KBASessionSchema.index({ callSid: 1, createdAt: -1 });
 KBASessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index for automatic deletion
 
 export default mongoose.model("KBASession", KBASessionSchema);
-

@@ -42,13 +42,25 @@ export const getSystemLogs = async (req, res) => {
   }
 };
 
-// Get performance traces
+// Get performance traces (database-backed via traceAggregationService)
 export const getTraces = async (req, res) => {
   try {
-    const { pattern } = req.query;
-    const traces = pattern
-      ? observabilityService.getTracesByPattern(pattern)
-      : observabilityService.getTraces();
+    const { search, dateRange, status, entryPath, limit } = req.query;
+    const filters = {};
+    
+    // Parse date range
+    if (dateRange) {
+      const [start, end] = dateRange.split(',');
+      filters.dateRange = { start, end };
+    }
+    
+    // Add search and other filters
+    if (search) filters.search = search;
+    if (status) filters.status = status;
+    if (entryPath) filters.entryPath = entryPath;
+    
+    // Get traces from traceAggregationService for database-backed call timelines
+    const traces = await traceAggregationService.getTraces(filters, parseInt(limit) || 100);
     res.json({ success: true, data: traces });
   } catch (error) {
     observabilityService.error('Get traces error', { error: error.message });

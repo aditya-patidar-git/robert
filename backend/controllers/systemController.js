@@ -18,10 +18,10 @@ export const getSystemConfig = async (req, res) => {
 
     // Combine into system config
     const systemConfig = {
-      // MCP Settings (defaults - can be stored in AIConfig if needed)
-      mcpEnabled: true,
-      mcpRateLimit: 100,
-      mcpTimeout: 30,
+      // MCP Settings (from AIConfig)
+      mcpEnabled: aiConfig?.mcpSettings?.enabled ?? true,
+      mcpRateLimit: aiConfig?.mcpSettings?.rateLimit ?? 100,
+      mcpTimeout: aiConfig?.mcpSettings?.timeout ?? 30,
       
       // System Settings (from TelephonyConfig)
       maxConcurrentCalls: telephonyConfig?.maxConcurrentCalls ?? 50,
@@ -72,13 +72,30 @@ export const updateSystemConfig = async (req, res) => {
   try {
     const configData = req.body;
 
-    // Update AI Config for MCP settings (if AIConfig model supports these fields)
-    // Note: MCP settings are currently managed through MCP tools service
-    // This is a placeholder for future MCP configuration storage
+    // Update AI Config for MCP settings
     if (configData.mcpEnabled !== undefined || configData.mcpRateLimit !== undefined || configData.mcpTimeout !== undefined) {
-      // MCP settings are managed through the MCP tools service
-      // These values are stored in memory/config, not in AIConfig model
-      // TODO: Add MCP settings to AIConfig model if persistent storage is needed
+      let aiConfig = await AIConfig.findOne({ isActive: true });
+      if (!aiConfig) {
+        aiConfig = new AIConfig({ name: "default" });
+      }
+      
+      // Initialize mcpSettings if it doesn't exist
+      if (!aiConfig.mcpSettings) {
+        aiConfig.mcpSettings = {};
+      }
+      
+      if (configData.mcpEnabled !== undefined) {
+        aiConfig.mcpSettings.enabled = configData.mcpEnabled;
+      }
+      if (configData.mcpRateLimit !== undefined) {
+        aiConfig.mcpSettings.rateLimit = configData.mcpRateLimit;
+      }
+      if (configData.mcpTimeout !== undefined) {
+        aiConfig.mcpSettings.timeout = configData.mcpTimeout;
+      }
+      
+      await aiConfig.save();
+      console.log("✅ MCP settings saved to AIConfig:", aiConfig.mcpSettings);
     }
 
     // Update Telephony Config for system settings
@@ -317,18 +334,31 @@ export const deleteBackup = async (req, res) => {
 export const restoreBackup = async (req, res) => {
   try {
     const { backupId } = req.params;
-    const { createSafetyBackup, collections, dryRun } = req.body;
+    const { createSafetyBackup, collections, mode } = req.body;
     
-    const restoreService = (await import('../services/restoreService.js')).default;
+    const backupService = (await import('../services/backupService.js')).default;
     
-    const result = await restoreService.restoreBackup(backupId, {
-      createSafetyBackup: createSafetyBackup !== false, // default true
+    // Optionally create a safety backup before restore
+    if (createSafetyBackup !== false) {
+      console.log('📦 Creating safety backup before restore...');
+      try {
+        await backupService.createBackup({
+          description: `Safety backup before restoring ${backupId}`,
+          includeAuditLogs: true
+        });
+      } catch (safetyErr) {
+        console.warn('⚠️ Could not create safety backup:', safetyErr.message);
+        // Continue with restore even if safety backup fails
+      }
+    }
+    
+    const result = await backupService.restoreBackup(backupId, {
       collections: collections || null,
-      dryRun: dryRun || false
+      mode: mode || 'overwrite' // 'overwrite' or 'merge'
     });
 
     res.json({
-      success: true,
+      success: result.success,
       ...result
     });
   } catch (err) {
@@ -344,8 +374,14 @@ export const restoreBackup = async (req, res) => {
 export const getRestorePreview = async (req, res) => {
   try {
     const { backupId } = req.params;
-    const restoreService = (await import('../services/restoreService.js')).default;
-    const preview = await restoreService.getRestorePreview(backupId);
+    const { collections } = req.query;
+    
+    const backupService = (await import('../services/backupService.js')).default;
+    
+    // Parse collections from query string if provided
+    const collectionsList = collections ? collections.split(',') : null;
+    
+    const preview = await backupService.getRestorePreview(backupId, collectionsList);
     
     res.json({
       success: true,
@@ -353,6 +389,45 @@ export const getRestorePreview = async (req, res) => {
     });
   } catch (err) {
     console.error("Error getting restore preview:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Internal server error" 
+    });
+  }
+};
+
+// GET /api/system/backup/collections - Get available collections for backup/restore
+export const getBackupCollections = async (req, res) => {
+  try {
+    const backupService = (await import('../services/backupService.js')).default;
+    const collections = backupService.getAvailableCollections();
+    
+    res.json({
+      success: true,
+      collections
+    });
+  } catch (err) {
+    console.error("Error getting backup collections:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message || "Internal server error" 
+    });
+  }
+};
+
+// POST /api/system/backup/validate/:backupId - Validate backup file
+export const validateBackup = async (req, res) => {
+  try {
+    const { backupId } = req.params;
+    const backupService = (await import('../services/backupService.js')).default;
+    const validation = await backupService.validateBackup(backupId);
+    
+    res.json({
+      success: true,
+      ...validation
+    });
+  } catch (err) {
+    console.error("Error validating backup:", err);
     res.status(500).json({ 
       success: false, 
       error: err.message || "Internal server error" 

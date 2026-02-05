@@ -1,9 +1,7 @@
-import dotenv from 'dotenv';
+// dotenv is already loaded in index.js, no need to reload here
 import ComplaintRecord from '../database/models/ComplaintRecord.js';
 import emailService from './emailService.js';
 import generateReferenceIdTool from '../tools/generateReferenceId.js';
-
-dotenv.config();
 
 class ComplaintEmailService {
   constructor() {

@@ -51,6 +51,8 @@ const PrivacyPage = () => {
     dsarLoading,
     auditLogs,
     auditLogsLoading,
+    auditLogFilters,
+    setAuditLogFilters,
     retentionPolicies,
     retentionLoading,
     complianceReport,
@@ -208,12 +210,8 @@ const PrivacyPage = () => {
               state={{
                 auditLogs: auditLogs || [],
                 auditLogsLoading,
-                auditLogFilters: { eventType: '', startDate: '', endDate: '' },
-                setAuditLogFilters: (filters) => {
-                  // Note: This is a no-op since filters aren't currently used in the query
-                  // To make filters work, you'd need to update the useQuery in usePrivacyPageState
-                  console.log('Filter update (not yet implemented):', filters);
-                }
+                auditLogFilters,
+                setAuditLogFilters
               }}
             />
           )}

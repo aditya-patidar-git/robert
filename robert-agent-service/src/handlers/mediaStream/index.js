@@ -1,5 +1,6 @@
 import { WebSocket } from "ws";
 import { conversations, realtimeClients } from "../../shared/state.js";
+import testClientRegistry from "../../services/testClientRegistry.js";
 import { ConnectionManager } from "./connection/index.js";
 import { CallStateManager } from "./state/index.js";
 import { AudioProcessor } from "./audio/index.js";
@@ -14,6 +15,7 @@ import adaptiveTimingService from "../../services/adaptiveTimingService.js";
 import turnTakingStateMachine from "../../services/turnTakingStateMachine.js";
 import proactiveAssistanceService from "../../services/proactiveAssistanceService.js";
 import CallRecord from "../../database/models/CallRecord.js";
+import recordingService from "../../services/recordingService.js";
 
 /**
  * Media Stream HTTP endpoint handler
@@ -40,24 +42,22 @@ export const mediaStream = async (req, res) => {
  */
 export const handleMediaStreamConnection = (ws, req) => {
     try {
-        // CRITICAL FIX: Prevent duplicate connections for the same call
-        // Parse callSid from query params early to check for existing connections
+        // Extract and store callSid from URL query param
+        // This callSid matches what test clients register with (from REST API response)
+        let callSidFromUrl = null;
         try {
             const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-            const callSidFromQuery = url.searchParams.get('callSid');
+            callSidFromUrl = url.searchParams.get('callSid');
             
-            if (callSidFromQuery && realtimeClients[callSidFromQuery]) {
-                const existing = realtimeClients[callSidFromQuery];
-                console.warn(`⚠️ [${callSidFromQuery}] Duplicate WebSocket connection attempt detected`);
-                console.warn(`   - Existing streamSid: ${existing.streamSid}`);
-                console.warn(`   - Existing Twilio WS readyState: ${existing.twilioWs?.readyState} (1=OPEN)`);
-                console.warn(`   - Closing duplicate connection to prevent conflicts`);
-                ws.close(1000, 'Connection already exists for this call');
-                return;
+            if (callSidFromUrl && realtimeClients[callSidFromUrl]) {
+                const existing = realtimeClients[callSidFromUrl];
+                if (existing.twilioWs && existing.twilioWs.readyState === WebSocket.OPEN) {
+                    ws.close(1000, 'Connection already exists for this call');
+                    return;
+                }
             }
         } catch (urlError) {
             // If URL parsing fails, continue with normal flow (callSid will be extracted from start event)
-            console.debug(`🔍 Could not parse URL for early duplicate check: ${urlError.message}`);
         }
         
         // Initialize connection manager
@@ -84,34 +84,47 @@ export const handleMediaStreamConnection = (ws, req) => {
                 return { error: 'no_callsid' };
             }
             
-            // CRITICAL FIX: Double-check for duplicate connections (backup check)
-            if (realtimeClients[callSid]) {
-                const existing = realtimeClients[callSid];
+            const callSidFromStartEvent = callSid; // From Twilio start event
+            
+            // Use URL callSid for forwarding (matches test client registration)
+            // Fall back to start event callSid if URL callSid not available
+            const callSidForForwarding = callSidFromUrl || callSidFromStartEvent;
+            
+            // Double-check for duplicate connections (backup check)
+            if (realtimeClients[callSidFromStartEvent]) {
+                const existing = realtimeClients[callSidFromStartEvent];
                 // Only reject if existing connection is still open
                 if (existing.twilioWs && existing.twilioWs.readyState === WebSocket.OPEN) {
-                    console.warn(`⚠️ [${callSid}] Duplicate connection detected in start event handler`);
-                    console.warn(`   - Existing streamSid: ${existing.streamSid}`);
-                    console.warn(`   - New streamSid: ${streamSid}`);
-                    console.warn(`   - Existing connection is OPEN - closing duplicate`);
                     ws.close(1000, 'Connection already exists for this call');
                     return { error: 'duplicate_connection' };
                 } else {
                     // Existing connection is closed, clean it up and allow new one
-                    console.log(`🧹 [${callSid}] Cleaning up closed connection before accepting new one`);
-                    delete realtimeClients[callSid];
+                    delete realtimeClients[callSidFromStartEvent];
                 }
             }
             
             // Initialize state with call information
-            stateManager.callSid = callSid;
+            // Use start event callSid for state management (Twilio's canonical ID)
+            stateManager.callSid = callSidFromStartEvent;
             stateManager.streamSid = streamSid;
+            // Store callSid for forwarding (URL callSid matches test client registration)
+            stateManager.callSidForForwarding = callSidForForwarding;
+            stateManager.pickupLatencyStartTime = Date.now();
+            stateManager.phoneNumber = phoneNumber;
+
+            const latency = () => stateManager.pickupLatencyMs();
+            console.log(`[PICKUP_LATENCY] [${callSidFromStartEvent}] T0 start_event_received 0ms`);
             
             // Initialize audio diagnostics (non-intrusive, optional)
             const audioDiagnosticService = (await import('../../services/audioDiagnosticService.js')).default;
-            audioDiagnosticService.initializeCall(callSid);
-            stateManager.phoneNumber = phoneNumber;
+            audioDiagnosticService.initializeCall(callSidFromStartEvent);
             
-            console.log(`📞 Start event - callSid: ${callSid}, phoneNumber: ${phoneNumber}`);
+            console.log(`📞 Start event - callSid: ${callSidFromStartEvent}, phoneNumber: ${phoneNumber}`);
+
+            // Forward start event to registered test clients (acceptance tests)
+            // Use URL callSid for forwarding (matches test client registration)
+            const startPayload = { event: 'start', start: { callSid: callSidFromStartEvent, streamSid, phoneNumber } };
+            testClientRegistry.forwardEvent(callSidForForwarding, startPayload);
             
             // Setup duration timer
             stateManager.durationTimer = setTimeout(() => {
@@ -145,6 +158,7 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Initialize tool coordinator
             toolCoordinator = new ToolCoordinator(stateManager, null, ws); // openaiWs will be set after setup
             
+            console.log(`[PICKUP_LATENCY] [${callSid}] T1 setup_openai_start ${latency()}ms`);
             // Setup OpenAI connection
             const setupResult = await openaiIntegration.setupOpenAI();
             if (setupResult?.error) {
@@ -160,19 +174,46 @@ export const handleMediaStreamConnection = (ws, req) => {
                 return;
             }
             
-            // Update tool coordinator with OpenAI WebSocket
+            // Update tool coordinator with OpenAI WebSocket and integration reference
             if (setupResult?.openaiWs) {
                 toolCoordinator.setOpenAIWebSocket(setupResult.openaiWs);
+                toolCoordinator.setOpenAIIntegration(openaiIntegration);
                 // Set OpenAI ready with connection manager reference for robust sending
                 const connectionManager = openaiIntegration?.connectionManager || null;
                 stateManager.setOpenAIReady(setupResult.openaiWs, connectionManager);
             }
+            console.log(`[PICKUP_LATENCY] [${callSid}] T2 openai_ready ${latency()}ms`);
             
             // Audio processing will start automatically when first audio arrives
             // via processIncomingAudio() method
             
             // Memory consent will be checked after initial greeting completes
             // (moved to responseHandler.handleResponseDone to avoid blocking conversation start)
+            
+            // Start recording for inbound calls (once per call; consent checked by recording service)
+            try {
+                const conversation = conversations[callSid] || {};
+                if (!conversation.recordingStarted && recordingService.shouldRecordCall(conversation)) {
+                    const callbackUrl = recordingService.getRecordingCallbackUrl('inbound');
+                    const recordingResult = await recordingService.startCallRecording(callSid, {
+                        statusCallbackUrl: callbackUrl
+                    });
+                    if (recordingResult.success || recordingResult.error === 'already_recording') {
+                        if (!conversations[callSid]) conversations[callSid] = {};
+                        conversations[callSid].recordingStarted = true;
+                        console.log(`[PICKUP_LATENCY] [${callSid}] T3 recording_started ${latency()}ms`);
+                    }
+                    if (recordingResult.success) {
+                        console.log(`🎙️ [${callSid}] Recording started for inbound call`);
+                    } else if (recordingResult.error !== 'already_recording') {
+                        console.warn(`⚠️ [${callSid}] Could not start recording: ${recordingResult.message}`);
+                    }
+                } else if (!conversation.recordingStarted) {
+                    console.log(`🔇 [${callSid}] Recording skipped - consent not given`);
+                }
+            } catch (recordingError) {
+                console.warn(`⚠️ [${callSid}] Recording setup error (non-blocking):`, recordingError.message);
+            }
             
             return { success: true };
         });
@@ -213,25 +254,23 @@ export const handleMediaStreamConnection = (ws, req) => {
                 // Handle other Twilio events (mark, stop, etc.)
                 if (json.event === 'mark') {
                     // Twilio sends mark events when audio finishes playing or is cleared
-                    // This helps track when barge-in clears were acknowledged
-                    const markName = json.mark?.name || 'unknown';
-                    const timestamp = json.timestamp || Date.now();
-                    
-                    // ENHANCED LOGGING: Track mark events to confirm clear message was processed
-                    console.log(`📌 [${stateManager.callSid}] Mark event received from Twilio: "${markName}" (audio finished or cleared)`);
-                    console.log(`   - Timestamp: ${timestamp}`);
-                    console.log(`   - Is interrupted: ${stateManager.isInterrupted}`);
-                    console.log(`   - Active response ID: ${stateManager.activeResponseId || 'none'}`);
-                    
-                    // If we're in an interrupted state, this mark likely confirms audio was cleared
+                    // Only log during interruption to confirm barge-in clears were acknowledged
                     if (stateManager.isInterrupted) {
-                        console.log(`✅ [${stateManager.callSid}] Mark event received during interruption - likely confirms audio was cleared by "clear" message`);
+                        const markName = json.mark?.name || 'unknown';
+                        console.log(`📌 [${stateManager.callSid}] Mark event during interruption: "${markName}" (audio cleared)`);
                     }
                 }
                 
                 if (json.event === 'stop') {
                     console.log(`🛑 [${stateManager.callSid}] Stop event received from Twilio`);
                     cleanup('twilio_stop');
+                }
+
+                // Forward Twilio events to registered test clients (acceptance tests)
+                // Use callSidForForwarding (URL callSid) which matches test client registration
+                const callSidForForward = stateManager.callSidForForwarding || stateManager.callSid || json.start?.callSid;
+                if (callSidForForward && ['connected', 'media', 'mark', 'stop'].includes(json.event)) {
+                    testClientRegistry.forwardEvent(callSidForForward, json);
                 }
             } catch (err) {
                 stateManager.incrementErrorCount();
@@ -322,6 +361,11 @@ export const handleMediaStreamConnection = (ws, req) => {
             stateManager.outboundAudioBuffer = null;
             stateManager.lastOutboundSendTime = 0;
             
+            // Cleanup test clients (forwarding registry)
+            if (stateManager.callSid) {
+                testClientRegistry.cleanup(stateManager.callSid);
+            }
+
             // Cleanup services
             if (stateManager.callSid) {
                 const toolExecutionService = (await import('../../services/toolExecutionService.js')).default;
@@ -411,10 +455,11 @@ export const handleMediaStreamConnection = (ws, req) => {
                             if (!updateData.summary && conversation.transcript.length > 0) {
                                 try {
                                     const summaryService = (await import('../../services/summaryService.js')).default;
-                                    updateData.summary = await summaryService.generateCallSummary(
+                                    const summary = await summaryService.generateCallSummary(
                                         conversation.transcript,
                                         { callSid: stateManager.callSid, from: conversation.from, to: conversation.to }
                                     );
+                                    updateData.summary = typeof summary === 'object' && summary !== null ? JSON.stringify(summary) : summary;
                                 } catch (summaryError) {
                                     console.warn(`⚠️ [${stateManager.callSid}] Could not generate summary:`, summaryError.message);
                                     updateData.summary = `Call transcript with ${conversation.transcript.length} exchanges.`;

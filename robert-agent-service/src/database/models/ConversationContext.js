@@ -4,8 +4,7 @@ const ConversationContextSchema = new mongoose.Schema({
   callSid: {
     type: String,
     required: true,
-    index: true,
-    unique: true
+    unique: true  // unique: true automatically creates an index
   },
   modelId: {
     type: String,
@@ -98,9 +97,7 @@ const ConversationContextSchema = new mongoose.Schema({
   timestamps: true
 });
 
-ConversationContextSchema.index({ callSid: 1 });
 ConversationContextSchema.index({ createdAt: -1 });
 ConversationContextSchema.index({ modelId: 1 });
 
 export default mongoose.models.ConversationContext || mongoose.model("ConversationContext", ConversationContextSchema);
-

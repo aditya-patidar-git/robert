@@ -6,6 +6,7 @@ import {
     getDSARRequestStatus,
     processDSARRequest,
     getDSARRequestDetails,
+    deleteDSARRequest,
     previewDSARData,
     generateDSARExport,
     downloadDSARExport,
@@ -39,25 +40,26 @@ router.post('/dsar/:requestId/preview', protect, authorizeRoles('owner', 'admin'
 router.post('/dsar/:requestId/export', protect, authorizeRoles('owner', 'admin'), generateDSARExport);
 router.get('/dsar/:requestId/export/:fileName', downloadDSARExport); // Public download link
 router.put('/dsar/:requestId/process', protect, authorizeRoles('owner', 'admin'), processDSARRequest);
+router.delete('/dsar/:requestId', protect, authorizeRoles('owner', 'admin'), deleteDSARRequest);
 
 // Data Management (admin only)
 router.post('/export/:userIdentifier', protect, authorizeRoles('owner', 'admin'), exportUserData);
 router.delete('/delete/:userIdentifier', protect, authorizeRoles('owner', 'admin'), deleteUserData);
 
-// Audit & Compliance
-router.get('/audit-logs', getAuditLogs);
-router.get('/retention-policies', checkRetentionPolicies);
-router.post('/cleanup-expired', cleanupExpiredData);
-router.post('/privacy-impact-assessment', generatePrivacyImpactAssessment);
-router.post('/data-breach', reportDataBreach);
-router.get('/compliance-report', generateComplianceReport);
+// Audit & Compliance (protected - admin only)
+router.get('/audit-logs', protect, authorizeRoles('owner', 'admin'), getAuditLogs);
+router.get('/retention-policies', protect, authorizeRoles('owner', 'admin'), checkRetentionPolicies);
+router.post('/cleanup-expired', protect, authorizeRoles('owner', 'admin'), cleanupExpiredData);
+router.post('/privacy-impact-assessment', protect, authorizeRoles('owner', 'admin'), generatePrivacyImpactAssessment);
+router.post('/data-breach', protect, authorizeRoles('owner', 'admin'), reportDataBreach);
+router.get('/compliance-report', protect, authorizeRoles('owner', 'admin'), generateComplianceReport);
 
-// PII Management
-router.post('/mask-pii', maskPII);
+// PII Management (protected - admin only)
+router.post('/mask-pii', protect, authorizeRoles('owner', 'admin'), maskPII);
 
 // Consent Management
 router.get('/consent-records', protect, authorizeRoles('owner', 'admin'), getConsentRecords);
-router.post('/consent', recordConsent);
-router.get('/consent/:callSid/:consentType', checkConsent);
+router.post('/consent', recordConsent); // Public - called by agent during calls
+router.get('/consent/:callSid/:consentType', checkConsent); // Public - called by agent during calls
 
 export default router;

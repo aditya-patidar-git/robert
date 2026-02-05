@@ -12,7 +12,16 @@ const dsarRequestSchema = new mongoose.Schema({
         required: true,
         index: true
     },
+    requestorName: {
+        type: String,
+        default: ''
+    },
     requestorPhone: String,
+    requestedDataTypes: {
+        type: [String],
+        enum: ['all', 'transcripts', 'recordings', 'metadata', 'callRecords'],
+        default: ['all']
+    },
     requestType: { 
         type: String,
         enum: ['export', 'delete', 'rectification'], 
@@ -49,7 +58,9 @@ const dsarRequestSchema = new mongoose.Schema({
         ref: 'User' 
     }
 }, { 
-    timestamps: true 
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
 });
 
 // Compound indexes for efficient queries

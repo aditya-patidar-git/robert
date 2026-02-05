@@ -1,0 +1,353 @@
+Playwright cancellation procedures for Introduction to Motorcycling (ITM), Gear Conversion session, Private Lessons session, Compulsory Basic Training (CBT)
+
+STEP 1 
+🎭 PLAYWRIGHT - STEP 1 - VOICE AGENT ONLY
+This step is handled entirely by the voice agent. No Playwright automation required.
+Voice agent asks: "Do you have a current booking with us?"
+If client says "Yes", voice agent explains cancellation policy and proceeds to Step 2.
+If client says "No", voice agent engages in conversation without proceeding to Step 2.
+
+If you receive a call asking about cancellation of: (1) Introduction to Motorcycling (ITM); 2) Gear Conversion session; (3) Private Lessons session; (4) Compulsory Basic Training (CBT), please see below:
+
+1. Ask the client: “Do you have a current booking with us?”
+- If the client says “No”, by using your knowledge base engage in conversation with the client to find out information he requires, and do not proceed to step 2.
+
+- If the client says: “Yes”, please say to the client:
+ “If you wish to cancel your (CBT), (ITM), (Gear Conversion), (Private Motorcycling lesson) you MUST provide a minimum of 3 (Three) full working days’ notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within more than 3 (three) full working days will result in the entire paid fees”.
+
+For your information our Full Terms & Conditions are available in our website: https://universalmct.co.uk/courses-prices/termsandconditions/
+
+2. If the client says “Yes”, to be above, then, say to the client: “would you like to proceed?” 
+- If the client says: “Yes”, then say to the client: “I’ll now login to the system to find your profile. Please bear with me a moment.” And proceed to Step 2.
+
+- If the client says, “No”, please say to the client: “Ok, thank you. Is there anything else that I can help you with?” And do not proceed to step 2.
+
+STEP 2 
+🎭 PLAYWRIGHT - STEP 2 - LOGIN TO CRM
+Automate the complete login process.
+await page.goto("https://takeabyte.co.uk/InContact/Account/Login");
+await page.getByLabel("login name").fill("universalmct");
+await page.getByLabel("user name").fill("auagent");
+await page.getByLabel("password").fill(process.env.CRM_PASSWORD || "Robert2025!");
+await page.getByRole("button", { name: "Login" }).click();
+await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+Your next step is to login to the following CRM accessed via web browser.
+
+1. Navigate to the following web page:  https://takeabyte.co.uk/InContact/Account/Login 
+
+2. Once you arrive at the login screen, please find the required credentials below to access the CRM via browser:
+
+- login name: universalmct
+- user name: auagent
+- password: Robert2025!
+
+On the login name shown in the picture below you need to write: universalmct
+
+
+
+On the username or email shown in the picture below you need to write: auagent
+
+
+
+On the password shown in the picture below you need to write: Robert2025!
+
+
+
+3. Then, the next task is to click on the “Login” button as shown in the picture below:
+
+
+
+Once you have successfully logged in, consider this step done, and move on to the next step. 
+
+🎭 PLAYWRIGHT AUTOMATION FOR STEP 3:
+
+// This step is handled by the voice agent
+// Voice agent asks: 'Have you done training with us before?'
+// Based on client response, set workflow flag:
+
+let workflowType = '';
+if (clientResponse === 'yes') {
+  workflowType = 'existing';
+} else if (clientResponse === 'no' || clientResponse === 'unsure') {
+  workflowType = 'new';
+}
+
+return { workflowType };
+
+🎭 PLAYWRIGHT - STEP 3 - NAVIGATE TO CONTACTS
+Click on the CONTACTS tab to access the client search.
+await page.getByRole("link", { name: "CONTACTS" }).click();
+await expect(page.getByRole("heading", { name: "Find contacts" })).toBeVisible();
+
+
+STEP 3 
+This workflow is designed for:
+-  Clients who have informed you that they have current and paid booking with Universal Motorcycle Training and that they wish to cancel it.
+
+This step consists of asking the client about his/her contact details so you can check if they already have done trainings with us before. 
+
+1. Your first task is to click on “CONTACTS” tab, located on the left column, as can be seen on the screenshot below:
+
+
+
+
+2. Then, on the “Find contacts” page will appear. Please see screenshot below:
+
+
+
+This page is the most important part for us to identify if the client is already part of our database or not.
+
+STEP 4 
+🎭 PLAYWRIGHT - STEP 4 - SMART SEARCH CLIENT
+Automate the multi-step client search process with fallback logic.
+// Select Smart search from dropdown
+await page.getByLabel("Search by").selectOption("Smart search");
+// First attempt: Search by mobile number
+await page.getByPlaceholder("search...").fill(mobileNumber);
+await page.getByPlaceholder("search...").press("Enter");
+// If not found, try email address
+if (!(await page.locator("tr").filter({ hasText: clientName }).isVisible())) {
+  await page.getByPlaceholder("search...").clear();
+  await page.getByPlaceholder("search...").fill(emailAddress);
+  await page.getByPlaceholder("search...").press("Enter");
+}
+// If still not found, try name search (first 3 + space + last 3 letters)
+if (!(await page.locator("tr").filter({ hasText: clientName }).isVisible())) {
+  const nameSearch = firstName.slice(0,3) + " " + lastName.slice(0,3);
+  await page.getByPlaceholder("search...").clear();
+  await page.getByPlaceholder("search...").fill(nameSearch);
+  await page.getByPlaceholder("search...").press("Enter");
+}
+
+
+If the client has informed you that they have a current and paid booking with Universal Motorcycle Training, then, the next step is to ask for their telephone number so that we may try to locate the client in the CRM by adding its full telephone.
+
+1. The first task on this step is to select the option “Smart search” from the dropdown menu located on the top left of the screen (next to the “Options…” button). 
+
+2. Then, click on the “search…” field located next to the “Smart search” dropdown menu, and ask the client the  following: “I will attempt to locate your profile in our systems. Therefore, may I please have your full mobile number?” Please see screenshot below:
+
+
+
+Please note: the mobile telephone numbers in the United Kingdom always starts with 07 and they have eleven characters in total (excluding the country code, if applicable, which is usually +44 for UK). As soon as you start typing the telephone numbers the system will start showing you the clients that have a telephone number starting with the same numbers as you can see on the next picture.
+
+
+
+If you have typed the full mobile number and you did not find the client’s details, please ask the client “Unfortunately, I could not locate your profile with us with the provide mobile number, could you please repeat your full mobile number to me so that I can try again?” Once the client tells you the number, try again.
+
+If you have typed the full mobile number for the second time and you did not find the client’s details, please ask the client “Unfortunately, I could not locate your profile with us with the provide mobile number, do you have or did you have an alternative phone number so that I can try again? Once the client tells you the number, try again.
+
+If you could not find the client’s profile on the CRM via the mobile number on the third attempt, please ask the client the following question “I could not locate your customer profile with us with the provided mobile phone number, could you please provide me with your full email address?”
+
+Then, type the client’s email address on the same “search…” field located next to the “Smart search” dropdown menu, please see the screenshot below:
+
+
+
+If you have successfully found the client's profile from his/her email address, you will say to the client: “Thanks for this; I believe that I have found your profile with us; However, for data protection purposes, could you please confirm: (1) your full name, (2) your post code, and (3) your telephone number?”
+
+Then, once the client tells you these three pieces of information, you will need to check whether thy corresponds to what we have in our database (CRM) as shown on your current screen. If these three pieces of information are verbally confirmed by the client, from now on, you will consider the client as VERIFIED.  If any of this information is incorrectly mentioned by the client, you will mention to the client which exact piece (or pieces of more than one) of information do not (or does not) correspond to what we have on file e.g.: 
+
+(1) if their full name does not match (excluding any reference numbers or symbols that may be present on their full name as this may be ignored), you will say to the client “Unfortunately, the full name that you have provided does not match the one that we hold on file for you; have you changed your name, or have you perhaps previously provided a different spelling of your name to us?”  
+
+(2) if their post code does not match the one that you have on the CRM, you will say to the client “Unfortunately, the post code that you have provided does not match the one that we hold on file for you; have you changed your address, or have you perhaps previously provided a different postcode to us?”  
+
+(3) if the telephone number does not match the one that you have on the CRM, you will say to the client “Unfortunately,  the telephone number that you have provided does not match the one that we hold on file for you; have you changed your telephone number or have you ever provided us with an alternative telephone number?” 
+
+You may provide up to seven chances to the client to correctly tell you a given piece of information e.g. (1) full name, (2) post code, and (3) telephone number.
+
+Things to consider:
+
+(A) Incorrect telephone number:
+• If the telephone number is not the same as the client have provided to you, please confirm the last four digits of the telephone number and ask the client if that corresponds to his/her previous telephone number? Ask the client: “Could you please confirm the full telephone number of the telephone number that we have on file for you that ends with [then you will say the four last digits of their telephone number that we have on file as per the screen]?”
+
+-  If the client is able to tell you the full telephone number that we have for him/her on file, then this piece of information is verified, and if the other two pieces of information, namely, their full name and email address, have already been confirmed by the client then, from now on, you will consider the client VERIFIED.
+
+After this, please ask the client whether he/she would like you to update their telephone number to the changed: if they say “no”, then no further action is required, and, therefore, you shall move on to the next step. However, if they say “yes”, you will be asking the client: “May I please have your new telephone number (mobile telephone number) so that we can update your details on our system (CRM)?” Once they tell you their new telephone number (please make sure that it is an 11-digit number, excluding the country code, which for the UK is usually +44), and please update it accordingly by accessing their profile as per Step 8.
+
+(B) Cannot find the client via the email address:
+• If you insert the email address that the client provides you, and you did not find the client’s information, the next step is to ask the client’s full name: “Could you please tell me your full name”?
+ 
+By typing the first 3 letters of his/her first name add a space and the 3 letters of his/her last name you may be able to find the client in our CRM. If you do not find the client, try to use the client’s middle name 3 letters instead of the last surname.
+
+As can be seen on the screenshot below, the system will attempt to find the clients that matches the same name and surname as you can see in the red arrows and in the green arrows below:
+
+
+
+In the above example, they are two different clients with same first name and same last name. If that happens you need to confirm the (1) email address of the client, and (2) the postcode to see if that matches to what we have in the system. If these two pieces of information, namely, their email address and postcode, are confirmed by the client then, from now on, you will consider the client VERIFIED.
+
+WARNING: never disclose any personal information from our clients found in our system with the client over the phone as it is against GDPR rules in the UK.
+
+Once the client is VERIFIED, then, please move on to the next step. 
+
+However, if the client remains unverified despite you providing him/her up to seven chances for information verification for any piece of information e.g. (1) full name, (2) post code, and (3) telephone number. Then, tell the client “Unfortunately, I am unable to gain access to your existing customer profile with us; Please send us an email to contact@universalmct.co.uk stating your query and we shall get back to you as soon as possible. 
+
+STEP 5 (Verified client only)
+🎭 PLAYWRIGHT - STEP 5 - SELECT VERIFIED CLIENT
+Click on the verified client name to access their profile.
+await page.getByRole("link", { name: clientName }).click();
+await expect(page.getByText("Bookings, credits, and debits")).toBeVisible();
+
+Now that the existing client is VERIFIED, the next step is to get the client’s profile to make the cancellation process. 
+
+
+
+
+
+Click on the name of the client that you have VERIFIED as the example below: 
+
+
+
+STEP 6 (Verified client only)
+🎭 PLAYWRIGHT - STEP 6 - LOCATE BOOKING
+Scroll to the "Bookings, credits, and debits" section and identify the booking to cancel.
+await page.getByText("Bookings, credits, and debits").scrollIntoViewIfNeeded();
+const bookingRow = page.locator("tr").filter({ hasText: courseDate });
+await expect(bookingRow).toBeVisible();
+
+
+1. Once you have accessed the client’s profile, go to the bottom of the page and find a section named “Bookings, credits, and debits”.
+
+
+
+2. Then, once you can see the “Bookings, credits, and debits” section. On the column “Course date” ask the client: “What date is your course booked for?”  
+
+3. Once you have found the date, please verify that the date is in the future (by checking today’s date), and then, say to the client:
+ “If you wish to cancel your (CBT), (ITM), (Gear Conversion), (Private Motorcycling lesson) you MUST provide a minimum of 3 (Three) full working days’ notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within more than 3 (three) full working days will result in the entire paid fees”.
+
+For your information our Full Terms & Conditions are available in our website: https://universalmct.co.uk/courses-prices/termsandconditions/
+
+4. Then, say to the client: “would you like to proceed with the cancellation of your course on [please say the Course Date]?” 
+- If the client says: “Yes”, then say to the client: “I’ll now cancel your booking. Please bear with me a moment.” And proceed to the next step (Step 7).
+
+- If the client says, “No”, please say to the client: “Ok, thank you. Is there anything else that I can help you with?” And do not proceed to the next step (Step 7).
+
+STEP 7 (Verified client only)
+🎭 PLAYWRIGHT - STEP 7 - INITIATE CANCELLATION
+Click on the booking row to trigger the context menu and select "Cancel booking".
+const bookingRow = page.locator("tr").filter({ hasText: courseDate });
+await bookingRow.locator("td").first().click();
+await page.getByRole("menuitem", { name: "Cancel booking" }).click();
+
+
+Then, please click with left anywhere on the booking “Description” column, and on the pop-up menu click on the “Cancel booking” option.
+
+
+STEP 8 (Verified client only)
+🎭 PLAYWRIGHT - STEP 8 - FILL CANCELLATION FORM
+Complete all fields in the cancellation form.
+// 1. Select reason for cancelling
+await page.getByLabel("Please select the reason for cancelling").selectOption("No longer needed");
+// 2. Add cancellation notes with date and time
+const today = new Date().toLocaleDateString("en-GB");
+const time = new Date().toLocaleTimeString("en-GB");
+const note = `Client called on ${today} ${time} and asked to cancel the booking. The Client is aware of the cancellation charges as follows: If you wish to cancel your (CBT), (ITM), (Gear Conversion), (Private Motorcycling lesson) you MUST provide a minimum of 3 (Three) full working days' notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within more than 3 (three) full working days will result in the entire paid fees. Notes by AI Agent Robert on ${today}.`;
+await page.getByLabel("...or add/amend the text below").fill(note);
+// 3. Set charge for cancellation
+await page.getByLabel("Charge for this cancellation?").selectOption("Yes");
+// 4. Set charge amount based on course type
+let fee = "";
+if (courseType === "CBT") { fee = "58.50"; }
+else if (courseType === "Executive CBT") { fee = "165.00"; }
+else { fee = "37.50"; } // ITM, Gear Conversion, Private Lesson
+await page.getByLabel("Amount to charge").fill(fee);
+// 5. Leave financial category as default (No category)
+// 6. Click Cancel now button
+await page.getByRole("button", { name: "Cancel now" }).click();
+
+
+You will then be taken to the cancelation screen, where you will have to complete three fields:
+
+1. On the field “Please select the reason for cancelling”, please click on “Select” and select the option: “No longer needed”
+
+2. On the field “…or add/amend the text below”, please add the following text in this field: “Client called on [TODAY’S DATE] [TIME] and asked to cancel the booking. The Client is aware of the cancellation charges as follows: If you wish to cancel your (CBT), (ITM), (Gear Conversion), (Private Motorcycling lesson) you MUST provide a minimum of 3 (Three) full working days’ notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within more than 3 (three) full working days will result in the entire paid fees. Notes by AI Agent Robert on [TODAY’S DATE].
+
+3. On the field “Charge for this cancellation?”, please select “Yes”.
+
+4. On the field “Amount to charge”, please insert (i) £37.50 for Introduction to Motorcycling (ITM), Gear Conversion, Private Lesson session bookings; or (ii) £58,50 for Compulsory Basic Training (CBT) bookings; or (iii) £165.00 for Executive CBT bookings.
+
+5. On the field “Financial category”, leave the default options “No category”.
+
+6. Then, click on the “Cancel now” green button at the bottom of the screen. 
+
+
+
+
+
+
+
+STEP 9 (Verified client only)
+🎭 PLAYWRIGHT - STEP 9 - NAVIGATE TO COMMUNICATION
+Navigate to the Communication tab to send confirmation email.
+await page.getByRole("tab", { name: "Communication" }).click();
+await page.getByRole("button", { name: "Send one of the standard letters to the contact" }).click();
+
+
+1. Then, once you are back on the main client’s profile screen, you click on the “Communication tab” as can be seen below:
+
+
+
+
+2. Click on “Send one of the standard letters to the contact” button.
+
+
+
+
+STEP 10 (Verified client only)
+🎭 PLAYWRIGHT - STEP 10 - SELECT CANCELLATION TEMPLATE
+Find and select the cancellation confirmation template.
+await page.getByText("Correspondence letter").scrollIntoViewIfNeeded();
+await page.getByRole("link", { name: "Cancellation confirmation of course/session" }).click();
+await page.getByRole("button", { name: "Preview" }).click();
+
+
+1. Once you are on the next screen, as shown below, please scroll down the page and find under the “Correspondence letter” session find the following letter “Cancellation confirmation of course/session”.
+
+
+
+2. Then, click with the left button on “Cancellation confirmation of course/session”
+
+3. Then, click on the “Preview” button displayed at the bottom of the screen.
+
+
+
+4. Now that you have clicked on the “Preview” button, you will see the name of the client as can be seen below:
+
+
+
+STEP 11 (Verified client only)
+🎭 PLAYWRIGHT - STEP 11 - SEND CONFIRMATION EMAIL
+Send the cancellation confirmation email to the client.
+await page.getByRole("button", { name: "Email" }).click();
+await expect(page.getByText("Email has been sent")).toBeVisible();
+await page.getByRole("button", { name: "Back" }).click();
+await page.getByRole("button", { name: "Ok" }).click();
+
+
+1. Next step is to send the email to the client by clicking on “Email” button displayed at the bottom of the screen. Please refer to the next screenshot.
+
+
+
+2. As soon as you send the email, a message will appear to show you that the email was sent, after that you only need to click on “Back” button displayed at the bottom of the screen, as you can see in the next screenshot
+
+
+
+3. After that, just click on the “Ok” displayed at the bottom of the screen to exit the client’s profile screen.
+
+
+
+STEP 12 (Verified client only)
+🎭 PLAYWRIGHT - STEP 12 - VOICE AGENT CONFIRMATION
+This step is handled entirely by the voice agent. No Playwright automation required.
+Voice agent says: "Your booking has now been cancelled, and I have now sent you an email confirmation. Is there anything else that I can help you with?"
+If client says "No", voice agent thanks them and ends the call.
+If client says "Yes", voice agent assists with additional queries.
+
+
+Please say to the client “Your booking has now been cancelled, and I have now sent you an email confirmation. Is there anything else that I can help you with?”
+
+- If the client says “No”, then say to the client “Thank you for calling Universal Motorcycle Training, we look forward to hearing from you again soon.”
+
+- If the client says “Yes”, then try to assist the client with the best of your knowledge.
+
+**************** This is the end of the Playwright cancellation procedures for Introduction to Motorcycling (ITM), Gear Conversion session, Private Lessons session, Compulsory Basic Training (CBT) **************
+

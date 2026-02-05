@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, CircularProgress, Paper, IconButton, Tooltip, TextField, InputAdornment } from '@mui/material';
-import { GetApp, Visibility, Search } from '@mui/icons-material';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, CircularProgress, Paper, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button } from '@mui/material';
+import { GetApp, Visibility, Delete } from '@mui/icons-material';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { formatDateTime } from '../../../utils/formatters';
 import privacyService from '../../../services/privacyService';
 import DSARRequestFilters from '../../../components/dsar/DSARRequestFilters';
@@ -14,6 +14,8 @@ const DSARRequestsTab = ({ state, handlers }) => {
   const [filters, setFilters] = useState({});
   const [selectedRequestId, setSelectedRequestId] = useState(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [requestToDelete, setRequestToDelete] = useState(null);
   
   const {
     dsarRequests: initialRequests,
@@ -22,6 +24,20 @@ const DSARRequestsTab = ({ state, handlers }) => {
   } = state;
 
   const { getStatusColor } = handlers;
+
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: (requestId) => privacyService.deleteDSARRequest(requestId),
+    onSuccess: () => {
+      showSuccess('DSAR request deleted successfully');
+      queryClient.invalidateQueries(['dsar-requests']);
+      setDeleteDialogOpen(false);
+      setRequestToDelete(null);
+    },
+    onError: (error) => {
+      showError(error.message || 'Failed to delete DSAR request');
+    }
+  });
 
   // Fetch requests with filters
   const { data: requestsData, isLoading, error } = useQuery({
@@ -57,6 +73,17 @@ const DSARRequestsTab = ({ state, handlers }) => {
       showSuccess('Download started');
     } catch (error) {
       showError('Failed to download export');
+    }
+  };
+
+  const handleDeleteClick = (request) => {
+    setRequestToDelete(request);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (requestToDelete) {
+      deleteMutation.mutate(requestToDelete._id || requestToDelete.id);
     }
   };
 
@@ -114,7 +141,7 @@ const DSARRequestsTab = ({ state, handlers }) => {
                 </TableRow>
               ) : (
                 dsarRequests.map((request) => (
-                  <TableRow key={request.id}>
+                  <TableRow key={request._id || request.id || request.requestId}>
                     <TableCell>{request.requestorEmail || request.requestor}</TableCell>
                     <TableCell>
                       <Chip
@@ -152,6 +179,15 @@ const DSARRequestsTab = ({ state, handlers }) => {
                             </IconButton>
                           </Tooltip>
                         )}
+                        <Tooltip title="Delete Request">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteClick(request)}
+                          >
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       </Box>
                     </TableCell>
                   </TableRow>
@@ -172,6 +208,32 @@ const DSARRequestsTab = ({ state, handlers }) => {
         }}
         onUpdate={handleUpdate}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+      >
+        <DialogTitle>Delete DSAR Request</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete this DSAR request from{' '}
+            <strong>{requestToDelete?.requestorEmail}</strong>?
+            This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleConfirmDelete}
+            color="error"
+            variant="contained"
+            disabled={deleteMutation.isPending}
+          >
+            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

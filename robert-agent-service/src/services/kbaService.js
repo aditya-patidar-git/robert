@@ -188,22 +188,8 @@ class KBAService {
    * @returns {boolean} True if KBA is required
    */
   requiresKBA(toolName, parameters) {
-    // Tools that require KBA:
-    // - crm_browser (any action that accesses/changes personal data)
-    // - Any tool that accesses booking information
-    const kbaRequiredTools = ['crm_browser', 'crm', 'transfer_call'];
-    
-    if (!kbaRequiredTools.includes(toolName)) {
-      return false;
-    }
-
-    // For crm_browser, check if action involves personal data
-    if (toolName === 'crm_browser' || toolName === 'crm') {
-      const personalDataActions = ['get_customer', 'update_customer', 'create_booking', 'reschedule_booking', 'cancel_booking'];
-      return personalDataActions.includes(parameters?.action);
-    }
-
-    return false;
+    const kbaRequiredTools = ['update_customer', 'transfer_call'];
+    return kbaRequiredTools.includes(toolName);
   }
 
   /**

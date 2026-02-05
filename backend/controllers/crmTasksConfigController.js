@@ -8,14 +8,12 @@ export const getCRMTasksConfig = async (req, res) => {
     
     if (!config) {
       // Create default configuration if none exists
+      // Only createBooking and cancel tasks are supported
       config = new CRMTasksConfig({
         name: "default",
         tasks: {
           createBooking: { enabled: true, requireConfirmation: true },
-          reschedule: { enabled: true, requireConfirmation: true },
-          cancel: { enabled: true, requireConfirmation: true },
-          updateRecord: { enabled: true, requireConfirmation: false },
-          issueRefund: { enabled: false, requireConfirmation: true }
+          cancel: { enabled: true, requireConfirmation: true }
         },
         generalSettings: {
           dryRunEnforced: true,
@@ -25,16 +23,14 @@ export const getCRMTasksConfig = async (req, res) => {
       await config.save();
     }
 
+    // Return only supported tasks (createBooking and cancel)
     res.json({
       success: true,
       config: {
-        createBooking: config.tasks.createBooking,
-        reschedule: config.tasks.reschedule,
-        cancel: config.tasks.cancel,
-        updateRecord: config.tasks.updateRecord,
-        issueRefund: config.tasks.issueRefund,
-        dryRunEnforced: config.generalSettings.dryRunEnforced,
-        auditLogging: config.generalSettings.auditLogging
+        createBooking: config.tasks?.createBooking || { enabled: true, requireConfirmation: true },
+        cancel: config.tasks?.cancel || { enabled: true, requireConfirmation: true },
+        dryRunEnforced: config.generalSettings?.dryRunEnforced ?? true,
+        auditLogging: config.generalSettings?.auditLogging ?? true
       }
     });
   } catch (err) {
@@ -49,12 +45,10 @@ export const getCRMTasksConfig = async (req, res) => {
 // Update CRM tasks configuration
 export const updateCRMTasksConfig = async (req, res) => {
   try {
+    // Only createBooking and cancel tasks are supported
     const { 
       createBooking,
-      reschedule,
       cancel,
-      updateRecord,
-      issueRefund,
       dryRunEnforced,
       auditLogging
     } = req.body;
@@ -76,7 +70,7 @@ export const updateCRMTasksConfig = async (req, res) => {
       config.generalSettings = {};
     }
 
-    // Update task configurations
+    // Update task configurations (only createBooking and cancel)
     if (createBooking !== undefined) {
       if (!config.tasks.createBooking) {
         config.tasks.createBooking = {};
@@ -89,18 +83,6 @@ export const updateCRMTasksConfig = async (req, res) => {
       }
     }
 
-    if (reschedule !== undefined) {
-      if (!config.tasks.reschedule) {
-        config.tasks.reschedule = {};
-      }
-      if (reschedule.enabled !== undefined) {
-        config.tasks.reschedule.enabled = reschedule.enabled;
-      }
-      if (reschedule.requireConfirmation !== undefined) {
-        config.tasks.reschedule.requireConfirmation = reschedule.requireConfirmation;
-      }
-    }
-
     if (cancel !== undefined) {
       if (!config.tasks.cancel) {
         config.tasks.cancel = {};
@@ -110,30 +92,6 @@ export const updateCRMTasksConfig = async (req, res) => {
       }
       if (cancel.requireConfirmation !== undefined) {
         config.tasks.cancel.requireConfirmation = cancel.requireConfirmation;
-      }
-    }
-
-    if (updateRecord !== undefined) {
-      if (!config.tasks.updateRecord) {
-        config.tasks.updateRecord = {};
-      }
-      if (updateRecord.enabled !== undefined) {
-        config.tasks.updateRecord.enabled = updateRecord.enabled;
-      }
-      if (updateRecord.requireConfirmation !== undefined) {
-        config.tasks.updateRecord.requireConfirmation = updateRecord.requireConfirmation;
-      }
-    }
-
-    if (issueRefund !== undefined) {
-      if (!config.tasks.issueRefund) {
-        config.tasks.issueRefund = {};
-      }
-      if (issueRefund.enabled !== undefined) {
-        config.tasks.issueRefund.enabled = issueRefund.enabled;
-      }
-      if (issueRefund.requireConfirmation !== undefined) {
-        config.tasks.issueRefund.requireConfirmation = issueRefund.requireConfirmation;
       }
     }
 
@@ -153,13 +111,10 @@ export const updateCRMTasksConfig = async (req, res) => {
       success: true,
       message: "CRM tasks configuration updated successfully",
       config: {
-        createBooking: config.tasks.createBooking,
-        reschedule: config.tasks.reschedule,
-        cancel: config.tasks.cancel,
-        updateRecord: config.tasks.updateRecord,
-        issueRefund: config.tasks.issueRefund,
-        dryRunEnforced: config.generalSettings.dryRunEnforced,
-        auditLogging: config.generalSettings.auditLogging
+        createBooking: config.tasks?.createBooking || { enabled: true, requireConfirmation: true },
+        cancel: config.tasks?.cancel || { enabled: true, requireConfirmation: true },
+        dryRunEnforced: config.generalSettings?.dryRunEnforced ?? true,
+        auditLogging: config.generalSettings?.auditLogging ?? true
       }
     });
   } catch (err) {

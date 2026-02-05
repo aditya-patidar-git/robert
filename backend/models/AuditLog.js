@@ -4,8 +4,13 @@ const auditLogSchema = new mongoose.Schema({
     actorId: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'User', 
-        required: true,
+        required: false, // Optional for system/GDPR events
         index: true
+    },
+    actorType: {
+        type: String,
+        enum: ['user', 'system', 'caller', 'agent'],
+        default: 'user'
     },
     action: { 
         type: String, 
@@ -14,7 +19,7 @@ const auditLogSchema = new mongoose.Schema({
     },
     targetType: { 
         type: String, 
-        enum: ['user', 'config', 'call', 'kb', 'allowlist', 'audit'], 
+        enum: ['user', 'config', 'call', 'kb', 'allowlist', 'audit', 'gdpr', 'dsar', 'consent', 'breach', 'compliance', 'retention'], 
         index: true
     },
     targetId: { 
@@ -28,6 +33,18 @@ const auditLogSchema = new mongoose.Schema({
     },
     metadata: {
         type: mongoose.Schema.Types.Mixed
+    },
+    // GDPR-specific fields
+    eventType: {
+        type: String,
+        index: true
+    },
+    eventData: {
+        type: mongoose.Schema.Types.Mixed
+    },
+    system: {
+        type: String,
+        default: 'robert-admin'
     }
 }, { 
     timestamps: true 

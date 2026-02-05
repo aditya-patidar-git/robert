@@ -32,7 +32,11 @@ export class CheckAvailabilityStep extends BaseStepTool {
     // Check if we have a stored page reference
     let page = sessionStateManager.getBrowserSession(callSid);
     
-    if (page && !page.isClosed()) {
+    // Safety check: Verify page is a valid Playwright Page object before calling isClosed()
+    // pageRef may be null or invalid if retrieved from Twilio Sync (non-serializable objects are removed)
+    const isValidPage = page && typeof page === 'object' && typeof page.isClosed === 'function';
+    
+    if (isValidPage && !page.isClosed()) {
       console.log(`✅ [${this.getStepName()}] Reusing existing browser page`);
       return page;
     }

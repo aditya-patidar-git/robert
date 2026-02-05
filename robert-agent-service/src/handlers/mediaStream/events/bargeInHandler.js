@@ -77,10 +77,10 @@ export class BargeInHandler {
     const isAudioActivelyPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio;
     
     // FALLBACK: Check recent audio timestamps (audio might still be buffered even after response.done clears activeResponseId)
-    // Use shorter windows (2-3 seconds) to avoid false positives after agent finishes speaking
-    // CRITICAL: Remove hasActiveResponse requirement - response.done clears activeResponseId but audio may still be playing
-    const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 3000; // 3 seconds window
-    const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 2000; // 2 seconds window
+    // Extended windows (10–12s) so barge-in stays active while Twilio is still playing long responses
+    // CRITICAL: response.done clears activeResponseId but Twilio can have 20–30s of audio in pipeline
+    const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 12000; // 12 seconds
+    const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 10000; // 10 seconds
     
     const isAudioPlaying = isAudioActivelyPlaying || hasRecentAudio || hasRecentResponseCompletion;
     
@@ -126,9 +126,18 @@ export class BargeInHandler {
     const isMultipleInterruption = this.state.isInterrupted;
     
     console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered from ${source} - stopping audio IMMEDIATELY (<200ms target)`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] BARGE-IN DETECTION START - timestamp: ${bargeInDetectionTime}`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] Source: ${source}, isMultipleInterruption: ${isMultipleInterruption}`);
     
     // Save IDs before clearing
     const responseIdToCancel = this.state.activeResponseId;
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] Response ID to cancel: ${responseIdToCancel || 'N/A'}`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] Audio state before barge-in:`);
+    console.log(`   - isResponding: ${this.state.isResponding}`);
+    console.log(`   - hasAudioPacer: ${this.state.outboundAudioPacer !== null}`);
+    console.log(`   - hasBufferedAudio: ${this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer?.length > 0}`);
+    console.log(`   - lastAudioChunkTime: ${this.state.lastAudioChunkTime || 'N/A'}`);
+    console.log(`   - outboundAudioChunkCount: ${this.state.outboundAudioChunkCount || 0}`);
     
     // STEP 1: Cancel response at OpenAI level FIRST (stops future audio generation)
     // This must happen BEFORE clearing Twilio buffer to prevent new audio from being generated
@@ -164,10 +173,15 @@ export class BargeInHandler {
     
     // STEP 2: IMMEDIATELY stop audio at Twilio level using native "clear" message (<50ms response time)
     // This sends Twilio's "clear" WebSocket message to flush all buffered audio instantly
+    const step2StartTime = Date.now();
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] STEP 2 START - Calling immediatelyStopAudio() at ${step2StartTime}`);
     if (this.responseHandler) {
       this.responseHandler.immediatelyStopAudio();
+      const step2Time = Date.now() - step2StartTime;
+      console.log(`🔍 [TEST-2] [${this.state.callSid}] STEP 2 COMPLETE - immediatelyStopAudio() took ${step2Time}ms`);
     } else {
       console.warn(`⚠️ [${this.state.callSid}] STEP 2: ResponseHandler not available - falling back to state-based audio blocking`);
+      console.log(`🔍 [TEST-2] [${this.state.callSid}] STEP 2 FAILED - ResponseHandler missing`);
     }
     
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
@@ -219,12 +233,19 @@ export class BargeInHandler {
     // STEP 6: Log barge-in completion - system is now listening for user input
     const totalBargeInTime = Date.now() - bargeInDetectionTime;
     console.log(`✅ [${this.state.callSid}] IMMEDIATE Barge-in complete in ${totalBargeInTime}ms (target: <200ms) - system now listening for user input`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] BARGE-IN COMPLETE - Total time: ${totalBargeInTime}ms (target: <200ms)`);
+    console.log(`🔍 [TEST-2] [${this.state.callSid}] Final state:`);
+    console.log(`   - isInterrupted: ${this.state.isInterrupted}`);
+    console.log(`   - waitingForUser: ${this.state.waitingForUser}`);
+    console.log(`   - isResponding: ${this.state.isResponding}`);
+    console.log(`   - activeResponseId: ${this.state.activeResponseId || 'null'}`);
     
     // Track barge-in response time for metrics
     if (this.state.interruptionStartTime > 0) {
       const bargeInResponseTime = Date.now() - this.state.interruptionStartTime;
       conversationQualityService.trackBargeInResponseTime(this.state.callSid, bargeInResponseTime);
       console.log(`📊 [${this.state.callSid}] Barge-in response time: ${bargeInResponseTime}ms`);
+      console.log(`🔍 [TEST-2] [${this.state.callSid}] METRIC - Barge-in response time: ${bargeInResponseTime}ms`);
     }
   }
 

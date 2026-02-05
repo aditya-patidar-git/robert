@@ -1,11 +1,16 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
+// dotenv is already loaded in server.js, no need to reload here
 
-dotenv.config();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 class FileSearchService {
   constructor() {
@@ -62,6 +67,7 @@ ${combinedContent}
 
 Summary:`;
 
+      const openai = getOpenAIClient();
       const response = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
@@ -103,6 +109,9 @@ Summary:`;
         tags = [],
         fileIds = null
       } = options;
+
+      // Get OpenAI client
+      const openai = getOpenAIClient();
 
       // Get vector store
       const vectorStore = await openai.vectorStores.retrieve(this.vectorStoreId);
@@ -250,6 +259,9 @@ Summary:`;
     try {
       console.log(`🏷️ Searching files by tags: ${tags.join(', ')}`);
       
+      // Get OpenAI client
+      const openai = getOpenAIClient();
+      
       // Get files from vector store
       const vectorStoreFiles = await openai.vectorStores.files.list(this.vectorStoreId);
       
@@ -278,6 +290,7 @@ Summary:`;
     try {
       console.log(`📄 Getting content for file: ${fileId}`);
       
+      const openai = getOpenAIClient();
       const file = await openai.files.retrieve(fileId);
       const content = await openai.files.content(fileId);
       
@@ -301,6 +314,7 @@ Summary:`;
     try {
       console.log('📊 Getting vector store status...');
       
+      const openai = getOpenAIClient();
       const vectorStore = await openai.vectorStores.retrieve(this.vectorStoreId);
       const files = await openai.vectorStores.files.list(this.vectorStoreId);
       

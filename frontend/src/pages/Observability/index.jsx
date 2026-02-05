@@ -16,7 +16,6 @@ import MetricCard from '../../components/common/MetricCard';
 import { useObservabilityState } from './hooks/useObservabilityState';
 import MetricsLogsTab from './tabs/MetricsLogsTab';
 import LiveCallsTab from './tabs/LiveCallsTab';
-import ErrorBudgetsTab from './tabs/ErrorBudgetsTab';
 import AlertsTab from './tabs/AlertsTab';
 import TimelineDialog from './components/TimelineDialog';
 import ToolTracesDialog from './components/ToolTracesDialog';
@@ -48,8 +47,6 @@ const ObservabilityPage = () => {
     latencyData,
     liveCalls,
     liveCallsLoading,
-    errorBudgets,
-    errorBudgetsLoading,
     alertsData,
     alertsLoading,
     callTimeline,

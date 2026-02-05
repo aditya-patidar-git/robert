@@ -1,9 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import DSARRequest from '../models/DSARRequest.js';
 import CallRecord from '../models/callRecord.js';
-import { createAuditLog } from '../controllers/auditLogController.js';
+import AuditLog from '../models/AuditLog.js';
 import nodemailer from 'nodemailer';
 
 class GDPRService {
@@ -119,7 +120,20 @@ class GDPRService {
   }
 
   // DSAR (Data Subject Access Request) Management
-  async createDSARRequest(requestorEmail, requestType, userIdentifier, requestorPhone = null) {
+  async createDSARRequest(data) {
+    // Support both object and positional parameters for backward compatibility
+    let requestorEmail, requestorName, requestorPhone, requestType, requestedDataTypes, userIdentifier;
+    
+    if (typeof data === 'object' && data !== null) {
+      ({ requestorEmail, requestorName, requestorPhone, requestType, requestedDataTypes, userIdentifier } = data);
+    } else {
+      // Legacy support: positional parameters
+      requestorEmail = data;
+      requestType = arguments[1];
+      userIdentifier = arguments[2];
+      requestorPhone = arguments[3] || null;
+    }
+
     const requestId = `DSAR-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     
     // Generate verification code
@@ -128,8 +142,10 @@ class GDPRService {
     const dsarRequest = await DSARRequest.create({
       requestId,
       requestorEmail,
-      requestorPhone,
+      requestorName: requestorName || '',
+      requestorPhone: requestorPhone || null,
       requestType,
+      requestedDataTypes: requestedDataTypes || ['all'],
       userIdentifier,
       verificationMethod: 'email',
       verificationCode,
@@ -139,11 +155,23 @@ class GDPRService {
     // Send verification email
     await this.sendVerificationEmail(requestorEmail, verificationCode, requestId);
 
+    // Log DSAR creation for audit trail
+    await this.logAuditEvent('dsar_created', {
+      requestId,
+      requestorEmail,
+      requestorName,
+      requestType,
+      requestedDataTypes,
+      userIdentifier,
+      status: 'pending'
+    });
+
     return dsarRequest;
   }
 
-  async verifyDSARRequest(requestId, verificationCode) {
-    const request = await DSARRequest.findOne({ requestId });
+  async verifyDSARRequest(id, verificationCode) {
+    const query = this._buildDSARQuery(id);
+    const request = await DSARRequest.findOne(query);
     
     if (!request) {
       throw new Error('DSAR request not found');
@@ -164,8 +192,9 @@ class GDPRService {
     return request;
   }
 
-  async generateDSARExport(requestId, maskPII = false) {
-    const request = await DSARRequest.findOne({ requestId });
+  async generateDSARExport(id, maskPII = false) {
+    const query = this._buildDSARQuery(id);
+    const request = await DSARRequest.findOne(query);
     
     if (!request) {
       throw new Error('DSAR request not found');
@@ -263,8 +292,9 @@ class GDPRService {
     };
   }
 
-  async getDSARRequestStatus(requestId) {
-    const request = await DSARRequest.findOne({ requestId })
+  async getDSARRequestStatus(id) {
+    const query = this._buildDSARQuery(id);
+    const request = await DSARRequest.findOne(query)
       .populate('processedBy', 'email username');
     
     if (!request) {
@@ -374,17 +404,34 @@ class GDPRService {
     return cleanupResults;
   }
 
-  // Audit Logging
+  // Audit Logging - writes to both file and MongoDB for unified access
   async logAuditEvent(eventType, eventData) {
+    const auditLogId = `audit_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const timestamp = new Date();
+    
     const auditLog = {
-      id: `audit_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      id: auditLogId,
       eventType,
       eventData,
-      timestamp: new Date().toISOString(),
+      timestamp: timestamp.toISOString(),
       system: 'robert-ai'
     };
 
-    const logFile = path.join(this.auditLogPath, `audit_${new Date().toISOString().split('T')[0]}.json`);
+    // Map eventType to targetType for consistent querying
+    const targetTypeMap = {
+      'consent_recorded': 'consent',
+      'dsar_created': 'dsar',
+      'dsar_processed': 'dsar',
+      'data_exported': 'gdpr',
+      'data_deleted': 'gdpr',
+      'retention_cleanup': 'retention',
+      'pia_generated': 'compliance',
+      'breach_reported': 'breach',
+      'compliance_report_generated': 'compliance'
+    };
+
+    // Write to file (for backward compatibility and backup)
+    const logFile = path.join(this.auditLogPath, `audit_${timestamp.toISOString().split('T')[0]}.json`);
     
     try {
       let existingLogs = [];
@@ -395,33 +442,84 @@ class GDPRService {
       
       existingLogs.push(auditLog);
       fs.writeFileSync(logFile, JSON.stringify(existingLogs, null, 2));
-      
-      console.log(`📝 Audit log: ${eventType}`);
-    } catch (error) {
-      console.error('Audit logging error:', error);
+    } catch (fileError) {
+      console.error('File audit logging error:', fileError);
+    }
+
+    // Write to MongoDB for unified access via /api/admin/audit
+    try {
+      await AuditLog.create({
+        actorId: null, // System event - no user actor
+        actorType: 'system',
+        action: eventType,
+        targetType: targetTypeMap[eventType] || 'gdpr',
+        targetId: eventData?.id || eventData?.requestId || eventData?.exportId || auditLogId,
+        eventType: eventType,
+        eventData: eventData,
+        system: 'robert-ai',
+        metadata: {
+          source: 'gdpr-service',
+          fileLogId: auditLogId
+        }
+      });
+      console.log(`📝 Audit log (DB + File): ${eventType}`);
+    } catch (dbError) {
+      console.error('MongoDB audit logging error:', dbError);
+      // Don't throw - file logging succeeded, DB failure shouldn't break the flow
+      console.log(`📝 Audit log (File only): ${eventType}`);
     }
   }
 
   async getAuditLogs(filters = {}) {
     const { startDate, endDate, eventType, limit = 100 } = filters;
     
-    // In a real implementation, this would query the audit database
-    const mockAuditLogs = [
-      {
-        id: 'audit_001',
-        eventType: 'consent_recorded',
-        timestamp: new Date().toISOString(),
-        eventData: { callSid: 'call_123', consentType: 'recording', granted: true }
-      },
-      {
-        id: 'audit_002',
-        eventType: 'data_exported',
-        timestamp: new Date().toISOString(),
-        eventData: { exportId: 'exp_001', userIdentifier: 'user_123' }
+    try {
+      // Read actual audit logs from the file-based system
+      const auditLogs = [];
+      const today = new Date();
+      
+      // Read logs from the last 30 days by default, or use date filters
+      const start = startDate ? new Date(startDate) : new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+      const end = endDate ? new Date(endDate) : today;
+      
+      // Iterate through date range and read log files
+      const currentDate = new Date(start);
+      while (currentDate <= end) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        const logFile = path.join(this.auditLogPath, `audit_${dateStr}.json`);
+        
+        if (fs.existsSync(logFile)) {
+          try {
+            const fileContent = fs.readFileSync(logFile, 'utf8');
+            const dayLogs = JSON.parse(fileContent);
+            auditLogs.push(...dayLogs);
+          } catch (parseError) {
+            console.error(`Error parsing audit log file ${logFile}:`, parseError);
+          }
+        }
+        
+        currentDate.setDate(currentDate.getDate() + 1);
       }
-    ];
-
-    return mockAuditLogs;
+      
+      // Apply filters
+      let filteredLogs = auditLogs;
+      
+      if (eventType) {
+        filteredLogs = filteredLogs.filter(log => 
+          log.eventType && log.eventType.toLowerCase().includes(eventType.toLowerCase())
+        );
+      }
+      
+      // Sort by timestamp descending (newest first)
+      filteredLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      
+      // Apply limit
+      return filteredLogs.slice(0, limit);
+    } catch (error) {
+      console.error('Error reading audit logs:', error);
+      // Fallback to empty array if there's an error
+      return [];
+    }
   }
 
   async getDSARRequests(filters = {}) {
@@ -457,9 +555,24 @@ class GDPRService {
     return requests;
   }
 
+  /**
+   * Build query to find DSAR request by either MongoDB _id or custom requestId
+   * @param {string} id - Either MongoDB ObjectId or custom requestId (DSAR-xxx)
+   * @returns {Object} MongoDB query object
+   */
+  _buildDSARQuery(id) {
+    // Check if it's a valid MongoDB ObjectId
+    if (mongoose.Types.ObjectId.isValid(id) && !id.startsWith('DSAR-')) {
+      return { _id: id };
+    }
+    // Otherwise treat as custom requestId
+    return { requestId: id };
+  }
+
   // Get full DSAR request details
-  async getDSARRequestDetails(requestId) {
-    const request = await DSARRequest.findOne({ requestId })
+  async getDSARRequestDetails(id) {
+    const query = this._buildDSARQuery(id);
+    const request = await DSARRequest.findOne(query)
       .populate('processedBy', 'email username');
     
     if (!request) {
@@ -467,6 +580,29 @@ class GDPRService {
     }
 
     return request;
+  }
+
+  // Delete DSAR request
+  async deleteDSARRequest(id) {
+    const query = this._buildDSARQuery(id);
+    const request = await DSARRequest.findOne(query);
+    
+    if (!request) {
+      throw new Error('DSAR request not found');
+    }
+
+    // Log the deletion for audit trail
+    await this.logAuditEvent('dsar_deleted', {
+      requestId: request.requestId,
+      requestorEmail: request.requestorEmail,
+      requestType: request.requestType,
+      status: request.status,
+      deletedAt: new Date().toISOString()
+    });
+
+    await DSARRequest.deleteOne(query);
+    
+    return { success: true, deletedRequestId: request.requestId };
   }
 
   // Preview DSAR data before export

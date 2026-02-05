@@ -1,10 +1,8 @@
 import webSearchTool from './webSearch.js';
-import calendarTool from './calendar.js';
 import emailTool from './email.js';
 import sendSMSTool from './sendSMS.js';
 import generateReferenceIdTool from './generateReferenceId.js';
-import crmTool from './crm.js';
-import crmBrowserTool from './crmBrowserTool.js';
+import updateCustomerTool from './updateCustomer.js';
 import paymentsTool from './payments.js';
 import fileSearchTool from './fileSearch.js';
 import transferCallTool from './transferCall.js';
@@ -16,6 +14,8 @@ import ToolRegistry from './toolRegistry.js';
 import ToolExecutor from './toolExecutor.js';
 import { getToolDefinitions } from './toolDefinitions.js';
 import { bookingStepTools } from './bookingSteps/index.js';
+import { cancellationStepTools } from './cancellationSteps/index.js';
+import { getToolsForContext } from '../services/toolFilterService.js';
 
 /**
  * Tool Executor for OpenAI Realtime API
@@ -45,12 +45,10 @@ class UnifiedToolExecutor {
     // Register tool implementations
     const tools = new Map([
       ['web_search', webSearchTool],
-      ['calendar', calendarTool],
       ['email', emailTool],
       ['send_sms', sendSMSTool],
       ['generate_reference_id', generateReferenceIdTool],
-      ['crm', crmTool],
-      ['crm_browser', crmBrowserTool],
+      ['update_customer', updateCustomerTool],
       ['payments', paymentsTool],
       ['file_search', fileSearchTool],
       ['transfer_call', transferCallTool],
@@ -64,11 +62,18 @@ class UnifiedToolExecutor {
       tools.set(toolName, toolImpl);
     }
     
+    // Register step-based cancellation tools
+    for (const [toolName, toolImpl] of Object.entries(cancellationStepTools)) {
+      tools.set(toolName, toolImpl);
+    }
+    
     this.toolRegistry.registerTools(tools);
     
-    // Log registered tools (excluding booking workflow tools)
+    // Log registered tools (excluding booking and cancellation workflow tools)
     const allTools = this.toolRegistry.getAvailableTools();
-    const publicTools = allTools.filter(toolName => !toolName.startsWith('booking_step_'));
+    const publicTools = allTools.filter(toolName => 
+      !toolName.startsWith('booking_step_') && !toolName.startsWith('cancellation_step_')
+    );
     console.log('📋 [TOOL EXECUTOR] Registered tools:', publicTools.join(', '));
   }
 
@@ -78,6 +83,45 @@ class UnifiedToolExecutor {
    */
   getToolDefinitions() {
     return getToolDefinitions();
+  }
+
+  /**
+   * Get filtered tool definitions based on workflow context.
+   * Uses toolFilterService to determine which tools are allowed for the current phase.
+   * 
+   * @param {Object} context - Context for filtering tools
+   * @param {string} context.workflowPhase - Current workflow phase (e.g., 'greeting', 'booking_start')
+   * @param {boolean} [context.clientVerified] - Whether client identity is verified
+   * @param {boolean} [context.adminAccess] - Whether admin operations are allowed
+   * @param {boolean} [context.legacyMode] - Whether to include legacy tools
+   * @returns {Array} Filtered array of tool definition objects
+   */
+  getFilteredToolDefinitions(context = {}) {
+    const allDefinitions = getToolDefinitions();
+    // TEMPORARY: bypass filtering for cancellation workflow testing; remove when re-enabling filter
+    if (process.env.DISABLE_TOOL_FILTERING === 'true') {
+      console.log(`🔧 [TOOL FILTER] DISABLED (temporary for cancellation workflow testing) - returning all ${allDefinitions.length} tools`);
+      return allDefinitions;
+    }
+    const allowedToolNames = getToolsForContext(
+      context.workflowPhase || 'general_inquiry',
+      context
+    );
+    
+    // If null, return all tools (full access mode)
+    if (allowedToolNames === null) {
+      return allDefinitions;
+    }
+    
+    // Filter definitions to only include allowed tools
+    const filteredDefinitions = allDefinitions.filter(
+      tool => allowedToolNames.includes(tool.name)
+    );
+    
+    // Log filtering result for debugging
+    console.log(`🔧 [TOOL FILTER] Phase: ${context.workflowPhase || 'general_inquiry'}, Tools: ${filteredDefinitions.length}/${allDefinitions.length}`);
+    
+    return filteredDefinitions;
   }
 
   /**

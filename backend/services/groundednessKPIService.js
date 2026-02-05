@@ -109,7 +109,7 @@ class GroundednessKPIService {
       }
 
       const callRecords = await CallRecord.find(query)
-        .select('callSid transcript provenance');
+        .select('callSid transcript provenance result escalation');
 
       const aggregated = {
         totalCalls: callRecords.length,
@@ -120,7 +120,9 @@ class GroundednessKPIService {
         totalUngroundedResponses: 0,
         totalResponses: 0,
         callsWithKB: 0,
-        callsWithoutKB: 0
+        callsWithoutKB: 0,
+        escalatedCalls: 0,
+        escalationRate: 0
       };
 
       let totalGroundedness = 0;
@@ -148,11 +150,19 @@ class GroundednessKPIService {
         } else {
           aggregated.callsWithoutKB++;
         }
+
+        // Track escalations (calls transferred to human)
+        if (record.result === 'escalated' || 
+            record.result === 'transferred' || 
+            (record.escalation && record.escalation.escalated)) {
+          aggregated.escalatedCalls++;
+        }
       }
 
       if (callRecords.length > 0) {
         aggregated.averageGroundednessScore = totalGroundedness / callRecords.length;
         aggregated.averageKBUsageRate = totalKBUsage / callRecords.length;
+        aggregated.escalationRate = aggregated.escalatedCalls / callRecords.length;
       }
 
       if (similarityCount > 0) {

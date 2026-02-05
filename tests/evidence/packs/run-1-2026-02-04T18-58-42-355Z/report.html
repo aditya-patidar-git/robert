@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Evidence Pack – Run 1</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .summary { background: #f0f0f0; padding: 20px; border-radius: 5px; }
+    .passed { color: green; font-weight: bold; }
+    .failed { color: red; font-weight: bold; }
+    .incomplete { color: orange; font-weight: bold; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+    th { background-color: #4CAF50; color: white; }
+    tr:nth-child(even) { background-color: #f2f2f2; }
+  </style>
+</head>
+<body>
+  <h1>Evidence Pack – Run 1</h1>
+  <div class="summary">
+    <p><strong>Timestamp:</strong> 2026-02-04T18-58-42-355Z</p>
+    <p><strong>Total requirements:</strong> 21</p>
+    <p class="passed">Passed: 20</p>
+    <p class="failed">Failed: 1</p>
+    <p class="incomplete">Incomplete: 0</p>
+  </div>
+  <h2>Requirements status</h2>
+  <table>
+    <tr><th>Requirement ID</th><th>Description</th><th>Status</th><th>Verification steps</th><th>Artifacts</th></tr>
+    
+    <tr>
+      <td>requirement_1_pickup</td>
+      <td>Call pickup latency < 2s (§14.1)</td>
+      <td class="failed">FAILED</td>
+      <td><ul><li>integration: measures p95 latency < 2s – failed</li><li>unit: returns instructions for initial greeting when consent not given – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_2_barge_in</td>
+      <td>Barge-in halt < 200ms (§14.2)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: sets interrupted flag when triggerImmediateBargeIn is called – passed</li><li>unit: cancels OpenAI response on interruption when activeResponseId is set – passed</li><li>integration: halts TTS within 200ms – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_3_vad</td>
+      <td>VAD thresholds 500-700ms (§14.3)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: uses correct threshold range (500-700ms) – passed</li><li>unit: has correct padding values – passed</li><li>integration: detects silence correctly – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_4_kb_retrieval</td>
+      <td>KB retrieval with citation (§14.4)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: returns instructions for subsequent response – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_5_web_search</td>
+      <td>Web search with announcement (§14.5)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: returns false for web_search – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_6_crm_tasking</td>
+      <td>CRM booking with KBA + dry-run (§14.6)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: returns true for reschedule_booking – passed</li><li>unit: returns true for update_customer – passed</li><li>unit: returns true for duplicate call with same params – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_7_human_transfer</td>
+      <td>Human transfer with DTMF (§14.7)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: returns true for transfer_call – passed</li><li>integration: bridges call successfully – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_8_memory</td>
+      <td>Cross-call memory with consent (§14.8)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: stores call summary and retrieves previous calls – passed</li><li>unit: recalls preferences across calls – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_9_concurrency</td>
+      <td>20 concurrent calls, p95 < 3s (§14.9)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>integration: handles 20 simultaneous calls – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_10_error_paths</td>
+      <td>Graceful error handling (§14.10)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: returns false when quality score is below 0.7 – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_11_gdpr</td>
+      <td>DSAR export/delete (§14.11)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: returns export structure with requestId and data – passed</li><li>unit: processes export action – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_12_security</td>
+      <td>No secrets in bundles/logs (§14.12)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: does not find hardcoded API keys in .js source files – passed</li><li>unit: does not find sk- prefixed keys in test helpers – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_13_multilingual</td>
+      <td>Multilingual: ask language; detect reply; switch language/voice</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>integration: greeting instructions include language question – passed</li><li>integration: call connects and accepts language response – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_14_recording_consent</td>
+      <td>Recording consent: announce recording; honour opt-out</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: buildConsentFlowInstructions includes recording notice – passed</li><li>unit: buildSessionInstructions includes recording notice – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_15_failfast_secrets</td>
+      <td>Fail-fast on missing secrets at boot</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: validateSecrets throws when a required secret is missing – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_16_ssrf_dom</td>
+      <td>SSRF/DOM injection defended in browser agent</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: rejects javascript: protocol – passed</li><li>unit: rejects file: protocol – passed</li><li>unit: rejects private IP localhost – passed</li><li>unit: rejects domain not in allowed list – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_17_postcall_logging</td>
+      <td>Post-call logging (structured call record / outcome)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: produces structured call record with outcome and keyFacts – passed</li><li>unit: validateOutcome returns only allowed outcome values – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_18_voicemail_fallback</td>
+      <td>Voicemail fallback on unrecoverable error</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx – passed</li><li>unit: handleToolError returns shouldFallbackToVoicemail for Twilio stream drop – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_19_crm_confirmation</td>
+      <td>CRM confirmation sent (SMS/email) after success</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: returns confirmationSent true after successful send – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_20_session_revocation</td>
+      <td>Session revocation on user status change</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: deleteSession revokes session and removes it from storage – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+    <tr>
+      <td>requirement_21_uncertainty_gate</td>
+      <td>Uncertainty gate (no ungrounded answers; ask or decline)</td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>unit: withholds response when confidence is low (uncertainty gate) – passed</li><li>unit: returns false when quality score is below 0.7 – passed</li></ul></td>
+      <td>0 artifact(s)</td>
+    </tr>
+  </table>
+</body>
+</html>

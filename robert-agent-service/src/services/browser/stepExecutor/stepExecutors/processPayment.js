@@ -4,6 +4,8 @@
  * Preserves all Playwright timing and state checks
  */
 
+import { trackCRMBooking, buildBookingData } from '../../../bookingTrackingClient.js';
+
 /**
  * Execute processPayment step
  * @param {Object} page - Playwright page object
@@ -166,6 +168,29 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
   if (paymentResult.success && paymentResult.paymentCompleted) {
     // After payment is confirmed, terms should be read before clicking "Make booking"
     // This is handled by acceptTermsAndMakeBooking which is called from sendPaymentRequest
+    
+    // Track the booking in the backend database
+    try {
+      const bookingData = buildBookingData({
+        bookingArgs: args,
+        callContext: { callSid: args.callSid },
+        sessionDetails: sessionState?.sessionDetails || {},
+        paymentCompleted: true,
+        workflowType: sessionState?.workflowType || args.workflowType || 'new',
+        serviceType: args.courseType || sessionState?.courseType || 'ITM'
+      });
+      
+      const trackingResult = await trackCRMBooking(bookingData);
+      if (trackingResult.success) {
+        console.log(`✅ [PAYMENT] Booking tracked in database: ${trackingResult.bookingId}`);
+      } else {
+        console.warn(`⚠️ [PAYMENT] Booking tracking failed (non-critical): ${trackingResult.error}`);
+      }
+    } catch (trackingError) {
+      // Don't fail the workflow if tracking fails
+      console.warn(`⚠️ [PAYMENT] Booking tracking error (non-critical):`, trackingError.message);
+    }
+    
     return {
       success: true,
       paymentCompleted: true,

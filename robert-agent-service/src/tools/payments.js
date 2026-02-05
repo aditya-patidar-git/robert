@@ -46,10 +46,10 @@ class PaymentsTool {
       return {
         success: false,
         error: 'Refund processing requires CRM access',
-        message: 'Refunds must be processed through the CRM system with proper authorization and verification. Please use crm_browser tool with task "issue_refund" (if permitted by policy) after completing identity verification.',
+        message: 'Refunds must be processed through the CRM system with proper authorization and verification. Please follow the appropriate refund process (if permitted by policy) after completing identity verification.',
         requiresCRM: true,
         requiresVerification: true,
-        recommendedTool: 'crm_browser',
+        recommendedTool: null,
         recommendedTask: 'issue_refund'
       };
     }

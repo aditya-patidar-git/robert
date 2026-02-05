@@ -1,7 +1,5 @@
 import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv is already loaded in index.js, no need to reload here
 
 /**
  * General Email Service for sending emails via SMTP
@@ -15,12 +13,36 @@ class EmailService {
 
   /**
    * Initialize email transporter (SMTP)
+   * Automatically detects Gmail and configures accordingly
    */
   initializeTransporter() {
     // Check if SMTP is configured
-    if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
+    const smtpUser = process.env.SMTP_USER || '';
+    const smtpHost = process.env.SMTP_HOST || '';
+    
+    // Detect Gmail automatically
+    const isGmail = smtpUser.toLowerCase().includes('@gmail.com') || 
+                    smtpHost.toLowerCase().includes('gmail.com') ||
+                    smtpHost.toLowerCase().includes('smtp.gmail.com');
+
+    if (isGmail || (process.env.SMTP_HOST && process.env.SMTP_PORT)) {
       try {
-        this.transporter = nodemailer.createTransport({
+        // Gmail SMTP configuration
+        const smtpConfig = isGmail ? {
+          host: 'smtp.gmail.com',
+          port: parseInt(process.env.SMTP_PORT) || 587,
+          secure: false, // Use TLS (port 587)
+          requireTLS: true,
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASSWORD // This should be an App Password for Gmail with 2FA
+          },
+          // Gmail-specific timeout settings
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 10000
+        } : {
+          // Generic SMTP configuration
           host: process.env.SMTP_HOST,
           port: parseInt(process.env.SMTP_PORT) || 587,
           secure: process.env.SMTP_SECURE === 'true',
@@ -28,14 +50,33 @@ class EmailService {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASSWORD
           },
-          // Add connection timeout and retry options
           connectionTimeout: 10000,
           greetingTimeout: 10000,
           socketTimeout: 10000
-        });
-        console.log('✅ Email transporter initialized (SMTP)');
+        };
+
+        this.transporter = nodemailer.createTransport(smtpConfig);
+        
+        if (isGmail) {
+          console.log('✅ Email transporter initialized (Gmail SMTP)');
+          console.log('📧 Using Gmail SMTP with App Password authentication');
+        } else {
+          console.log('✅ Email transporter initialized (SMTP)');
+        }
       } catch (error) {
         console.error('❌ Error initializing email transporter:', error.message);
+        if (isGmail) {
+          console.error('\n💡 Gmail Setup Instructions (2FA Enabled):');
+          console.error('   1. Go to: https://myaccount.google.com/apppasswords');
+          console.error('   2. Select "Mail" and "Other (Custom name)"');
+          console.error('   3. Enter a name like "Robert Voice Agent"');
+          console.error('   4. Click "Generate"');
+          console.error('   5. Copy the 16-character password (no spaces)');
+          console.error('   6. Set SMTP_PASSWORD in your .env file to this App Password');
+          console.error('   7. Set SMTP_USER to your Gmail address');
+          console.error('   8. Set SMTP_HOST=smtp.gmail.com (optional, auto-detected)');
+          console.error('   9. Set SMTP_PORT=587 (optional, defaults to 587)');
+        }
         this.transporter = null;
       }
     } else {

@@ -1,6 +1,7 @@
 import * as stepHandlers from './steps/index.js';
 import { formatUserFriendlyError, getErrorContext } from '../../utils/errorFormatter.js';
 import * as commonSteps from '../commonBookingSteps/index.js';
+import { trackCRMBooking, buildBookingData } from '../bookingTrackingClient.js';
 
 /**
  * Workflow orchestrator for ITM booking
@@ -233,6 +234,32 @@ export class WorkflowOrchestrator {
       }
 
       console.log('🎉 Service: All steps completed successfully!');
+      
+      // Track the booking in the backend database
+      try {
+        const workflowType = bookingArgs.workflowType || 
+                            (bookingArgs.existingClient ? 'existing' : 'new');
+        
+        const bookingData = buildBookingData({
+          bookingArgs,
+          callContext,
+          sessionDetails,
+          paymentCompleted,
+          workflowType,
+          serviceType: 'ITM'
+        });
+        
+        const trackingResult = await trackCRMBooking(bookingData);
+        if (trackingResult.success) {
+          console.log(`✅ [ITM] Booking tracked in database: ${trackingResult.bookingId}`);
+        } else {
+          console.warn(`⚠️ [ITM] Booking tracking failed (non-critical): ${trackingResult.error}`);
+        }
+      } catch (trackingError) {
+        // Don't fail the workflow if tracking fails
+        console.warn(`⚠️ [ITM] Booking tracking error (non-critical):`, trackingError.message);
+      }
+      
       return {
         success: true,
         sessionDetails,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, CircularProgress, Alert, Button } from '@mui/material';
+import { Box, CircularProgress, Alert, Button, Typography } from '@mui/material';
 import { Error, Warning, CheckCircle, Refresh } from '@mui/icons-material';
 import StatGrid from '../shared/StatGrid';
 import observabilityService from '../../../../services/observabilityService';

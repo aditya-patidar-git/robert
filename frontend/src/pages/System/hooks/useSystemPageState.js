@@ -29,12 +29,10 @@ export const useSystemPageState = () => {
 
   // Transform backend config to frontend format
   // The service normalizes the response, so data is in crmTasksConfigData.data
+  // Only createBooking and cancel tasks are supported
   const crmTasksConfig = crmTasksConfigData?.data || {
     createBooking: { enabled: true, requireConfirmation: true },
-    reschedule: { enabled: true, requireConfirmation: true },
     cancel: { enabled: true, requireConfirmation: true },
-    updateRecord: { enabled: true, requireConfirmation: false },
-    issueRefund: { enabled: false, requireConfirmation: true },
     dryRunEnforced: true,
     auditLogging: true
   };
@@ -176,24 +174,13 @@ export const useSystemPageState = () => {
     }
 
     // Prepare config data in the format expected by the backend
+    // Only createBooking and cancel tasks are supported
     const configData = {
-      createBooking: crmTasksConfig.createBooking,
-      reschedule: crmTasksConfig.reschedule,
-      cancel: crmTasksConfig.cancel,
-      updateRecord: crmTasksConfig.updateRecord,
-      issueRefund: crmTasksConfig.issueRefund,
-      dryRunEnforced: crmTasksConfig.dryRunEnforced,
-      auditLogging: crmTasksConfig.auditLogging
+      createBooking: crmTasksConfig.createBooking || { enabled: true, requireConfirmation: true },
+      cancel: crmTasksConfig.cancel || { enabled: true, requireConfirmation: true },
+      dryRunEnforced: crmTasksConfig.dryRunEnforced ?? true,
+      auditLogging: crmTasksConfig.auditLogging ?? true
     };
-
-    // Validate that all required properties exist
-    const hasInvalidData = Object.values(configData).some(value => value === undefined);
-    if (hasInvalidData) {
-      showError('Invalid configuration data. Please check all fields are properly set.');
-      console.error('Invalid configData:', configData);
-      console.error('crmTasksConfig:', crmTasksConfig);
-      return;
-    }
 
     console.log('Saving CRM tasks config:', configData);
     saveCRMTasksConfigMutation.mutate(configData, {

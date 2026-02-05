@@ -1,8 +1,6 @@
 import twilioClient from '../utils/twilioClient.js';
 import configManager from '../agent/configManager.js';
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv is already loaded in index.js, no need to reload here
 
 class TwilioCallBridgeService {
   constructor() {

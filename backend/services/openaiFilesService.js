@@ -1,14 +1,20 @@
 import { OpenAI, toFile } from 'openai';
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv is already loaded in server.js, no need to reload here
 
 class OpenAIFilesService {
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
+    // Lazy initialization - client created on first use
+    this._openai = null;
     this.vectorStoreId = process.env.OPENAI_VECTOR_STORE_ID;
+  }
+
+  get openai() {
+    if (!this._openai) {
+      this._openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY
+      });
+    }
+    return this._openai;
   }
 
   // Upload file to OpenAI Files

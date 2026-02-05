@@ -5,6 +5,7 @@ import {
   isMaxAttemptsExceeded,
   getMaxAttemptsExceededMessage,
   getFieldMismatchMessage,
+  getTelephoneLastFourDigitsPrompt,
   markClientVerified,
   getVerificationPrompt,
   getPostcodePrompt,
@@ -13,26 +14,7 @@ import {
   getMissingFieldsPrompt
 } from '../services/verificationService.js';
 import sessionStateManager from '../services/browser/sessionStateManager.js';
-
-/**
- * Get step name from step number (for step-based tools)
- * @param {number} stepNumber - Step number
- * @returns {string} Step name
- */
-function getStepName(stepNumber) {
-  const stepMap = {
-    1: 'authenticate',
-    2: 'authenticate', // Step 2 is also authenticate
-    3: 'determine_workflow_type',
-    4: 'select_session',
-    5: 'select_booking_options',
-    6: 'search_client', // or create_new_contact for new workflow
-    7: 'fill_contact_details',
-    8: 'fill_contact_details', // Step 8 is also fill_contact_details
-    9: 'process_payment'
-  };
-  return stepMap[stepNumber] || 'select_session';
-}
+import { getStepName, isCancellationStep } from '../services/browser/stepConfiguration.js';
 
 class ClientVerificationTool {
   /**
@@ -104,13 +86,15 @@ class ClientVerificationTool {
             fullName: null,
             postcode: null,
             telephoneNumber: null
-          }
+          },
+          askedLastFourDigitsForTelephone: false
         };
       }
 
       const verificationState = conversation.verificationState;
       const currentField = verificationState.currentField;
       const verifiedFields = verificationState.verifiedFields;
+      const workflowContext = conversation.workflowContext || 'booking';
 
       // Helper functions for validation (extracted for reusability)
       const normalizeForComparison = (str) => {
@@ -175,7 +159,7 @@ class ClientVerificationTool {
               success: false,
               verified: false,
               maxAttemptsExceeded: true,
-              message: getMaxAttemptsExceededMessage(),
+              message: getMaxAttemptsExceededMessage(workflowContext),
               attempts: conversation.verificationAttempts
             };
           }
@@ -231,7 +215,7 @@ class ClientVerificationTool {
               success: false,
               verified: false,
               maxAttemptsExceeded: true,
-              message: getMaxAttemptsExceededMessage(),
+              message: getMaxAttemptsExceededMessage(workflowContext),
               attempts: conversation.verificationAttempts
             };
           }
@@ -282,10 +266,23 @@ class ClientVerificationTool {
           
           console.log(`✅ [${callSid}] Client verification successful - all three fields verified sequentially`);
           
+          // Check if we're in a cancellation workflow
+          let isCancellationWorkflow = false;
+          try {
+            const currentStep = sessionStateManager.getCurrentStep(callSid);
+            const session = sessionStateManager.getSession(callSid);
+            if (currentStep !== null && session?.courseType) {
+              const stepName = getStepName(session.courseType, session.workflowType || 'existing', currentStep);
+              isCancellationWorkflow = isCancellationStep(stepName);
+            }
+          } catch (error) {
+            console.warn(`⚠️ [${callSid}] Could not check workflow type:`, error.message);
+          }
+          
           // Check if we're in a booking context
           const isBookingContext = !!conversation?.clientDetails;
           let nextStepTool = null;
-          if (isBookingContext) {
+          if (isBookingContext && !isCancellationWorkflow) {
             try {
               const currentStep = sessionStateManager.getCurrentStep(callSid);
               if (currentStep !== null && currentStep < 4) {
@@ -296,35 +293,60 @@ class ClientVerificationTool {
             }
           }
           
-          if (!nextStepTool && isBookingContext) {
+          if (!nextStepTool && isBookingContext && !isCancellationWorkflow) {
             nextStepTool = 'booking_step_select_session';
           }
+          
+          const verificationMessage = isCancellationWorkflow
+            ? 'You are successfully verified. Would you like to proceed with cancelling your booking? Please say yes or no.'
+            : 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.';
           
           return {
             success: true,
             verified: true,
-            message: 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.',
+            message: verificationMessage,
             verifiedFields: ['fullName', 'postcode', 'telephoneNumber'],
             requiresBookingContinuation: isBookingContext || undefined,
             nextStepTool: nextStepTool || undefined,
             requiresExplicitConfirmation: true,
-            requiresImmediateNextStep: false
+            requiresImmediateNextStep: false,
+            offerUpdatePhone: true,
+            offerUpdatePhoneInstruction: 'Ask the caller: "Would you like us to update your telephone number to the one you just provided?" If they say yes, collect their new UK mobile (11 digits starting with 07) and call the update_customer tool with telephoneNumber set to the new number and customerEmail or customerMobile to identify the customer.'
           };
         } else {
-          // TelephoneNumber mismatch - increment attempts and ask again
+          // TelephoneNumber mismatch - first offer last-four-digits confirmation per doc (A)
+          if (!verificationState.askedLastFourDigitsForTelephone) {
+            verificationState.askedLastFourDigitsForTelephone = true;
+            const lastFour = storedTelephone.slice(-4);
+            const lastFourPrompt = getTelephoneLastFourDigitsPrompt(lastFour);
+            console.log(`❌ [${callSid}] Telephone mismatch - asking for last four digits confirmation`);
+            return {
+              success: false,
+              verified: false,
+              missingFields: ['telephoneNumber'],
+              verifiedFields: ['fullName', 'postcode'],
+              currentField: 'telephoneNumber',
+              offerLastFourDigitsConfirmation: true,
+              lastFourDigits: lastFour,
+              message: lastFourPrompt,
+              instruction: `Use the exact message: "${lastFourPrompt}". Then call client_verification again with fullName="${verificationState.verifiedValues.fullName}", postcode="${verificationState.verifiedValues.postcode}", and telephoneNumber when caller provides the full number.`,
+              requiresImmediateContinuation: true
+            };
+          }
+
           incrementVerificationAttempt(conversation, 'telephoneNumber');
           console.log(`❌ [${callSid}] Telephone number mismatch: stored="${storedTelephone}", provided="${providedTelephone}"`);
-          
+
           if (isMaxAttemptsExceeded(conversation)) {
             return {
               success: false,
               verified: false,
               maxAttemptsExceeded: true,
-              message: getMaxAttemptsExceededMessage(),
+              message: getMaxAttemptsExceededMessage(workflowContext),
               attempts: conversation.verificationAttempts
             };
           }
-          
+
           return {
             success: false,
             verified: false,
@@ -343,10 +365,28 @@ class ClientVerificationTool {
       // If we reach here, all fields should be verified
       if (verifiedFields.fullName && verifiedFields.postcode && verifiedFields.telephoneNumber) {
         markClientVerified(conversation);
+        
+        // Check if we're in a cancellation workflow
+        let isCancellationWorkflow = false;
+        try {
+          const currentStep = sessionStateManager.getCurrentStep(callSid);
+          const session = sessionStateManager.getSession(callSid);
+          if (currentStep !== null && session?.courseType) {
+            const stepName = getStepName(session.courseType, session.workflowType || 'existing', currentStep);
+            isCancellationWorkflow = isCancellationStep(stepName);
+          }
+        } catch (error) {
+          console.warn(`⚠️ [${callSid}] Could not check workflow type:`, error.message);
+        }
+        
+        const verificationMessage = isCancellationWorkflow
+          ? 'You are successfully verified. Would you like to proceed with cancelling your booking? Please say yes or no.'
+          : 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.';
+        
         return {
           success: true,
           verified: true,
-          message: 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.',
+          message: verificationMessage,
           verifiedFields: ['fullName', 'postcode', 'telephoneNumber'],
           requiresExplicitConfirmation: true
         };

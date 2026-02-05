@@ -5,6 +5,7 @@ import { conversations } from '../../shared/state.js';
 import { getRecordingConsent, updateRecordingConsent, conversationExists } from '../../shared/conversationStateAccessor.js';
 import promptService from '../../services/promptService.js';
 import consentInstructionBuilder from '../../services/consentInstructionBuilder.js';
+import conversationService from '../../services/conversationService.js';
 
 /**
  * Tool Coordinator
@@ -15,6 +16,7 @@ export class ToolCoordinator {
     this.state = stateManager;
     this.openaiWs = openaiWs;
     this.ws = ws;
+    this.openaiIntegration = null;
     
     // Initialize handlers
     const memoryManager = new MemoryManager(stateManager);
@@ -130,122 +132,22 @@ export class ToolCoordinator {
     
     try {
       const isInitialGreeting = !this.state.hasInitialGreetingBeenSent;
-      
-      // Step 1: Get contextual instructions based on conversation state
-      // PHASE 1: Use promptService to get contextual instructions instead of full prompt
-      let responseInstructions = null;
-      
-      if (isInitialGreeting) {
-        console.log(`📤 [${this.state.callSid}] Preparing initial greeting with contextual instructions`);
-        
-        // OPTIMIZATION: Cache privacy settings from setupOpenAI instead of querying again
-        // Get consent notice/question if needed (use cached value if available)
-        const conversation = conversations[this.state.callSid];
-        let privacySettings = conversation?._cachedPrivacySettings || null;
-        
-        if (!privacySettings) {
-          const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
-          if (privacyConfig) {
-            privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
-            // Cache for reuse
-            if (conversation && privacySettings) {
-              conversation._cachedPrivacySettings = privacySettings;
-            }
-          }
-        }
-        
-        const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
-        const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
-        const consentQuestion = "Do you consent to this call being recorded?";
-        
-        // Check language preference state and consent state using reusable helper
-        const flowState = getConversationFlowState(this.state.callSid, this.state);
-        const { waitingForLanguage, languageSelected, consentGiven } = flowState;
-        
-        // CRITICAL FIX: Use instruction builder to get full instructions based on current state
-        // This ensures we don't override session-level instructions with incomplete contextual ones
-        if (requireExplicitConsent && !consentGiven) {
-          // Use instruction builder to get phase-specific instructions
-          const consentInstructions = consentInstructionBuilder.buildConsentFlowInstructions({
-            consentNotice,
-            consentQuestion,
-            languageSelected,
-            consentGiven,
-            requireExplicitConsent,
-            baseInstructions: '' // Base instructions are already in session
-          });
-          
-          if (consentInstructions) {
-            // Use full instructions from builder instead of short contextual ones
-            responseInstructions = consentInstructions;
-            console.log(`📋 [${this.state.callSid}] Using instruction builder for initial greeting (phase: ${languageSelected ? 'consent' : 'language'}, length: ${responseInstructions?.length || 0})`);
-          } else {
-            // No specific instructions needed - let session-level instructions handle it
-            responseInstructions = null;
-            console.log(`📋 [${this.state.callSid}] No override needed - using session-level instructions for initial greeting`);
-          }
-        } else {
-          // Consent not required or already given - use promptService for language question if needed
-          responseInstructions = promptService.getContextualInstructions({
-            isInitialGreeting: !waitingForLanguage,
-            requireConsent: false,
-            waitingForLanguage: waitingForLanguage && !languageSelected,
-            languageSelected
-          });
-          console.log(`📋 [${this.state.callSid}] Using contextual instructions for initial greeting (consent not required, length: ${responseInstructions?.length || 0})`);
-        }
-        
-        // OPTIMIZATION: Reduced delay from 300ms to 100ms
-        // Session should already be ready after session.update confirmation
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Verify WebSocket is still open
-        if (!this.openaiWs || this.openaiWs.readyState !== 1) {
-          console.error(`❌ [${this.state.callSid}] WebSocket closed during preparation`);
-          this.state.isResponding = false;
-          this.state.explicitResponseRequested = false;
-          return;
-        }
-      } else {
-        // PHASE 1: Get contextual instructions for subsequent responses
-        // Determine workflow phase from state (pass callSid to access booking session)
-        const workflowPhase = await promptService.determineWorkflowPhase(this.state, this.state.callSid);
-        
-        // Get active tool name if available
-        const activeToolName = this.state.activeToolName || 
-          (this.state.activeResponseId ? 'processing_response' : null);
-        
-        // Get booking session info if available
-        let courseType = null;
-        let workflowType = null;
-        let currentStep = null;
-        
-        if (this.state.callSid && conversations[this.state.callSid]?.bookingSession) {
-          const bookingSession = conversations[this.state.callSid].bookingSession;
-          courseType = bookingSession.courseType;
-          workflowType = bookingSession.workflowType;
-          currentStep = bookingSession.currentStep;
-        }
-        
-        // Check language preference state using reusable helper
-        const flowState = getConversationFlowState(this.state.callSid, this.state);
-        const { waitingForLanguage, languageSelected } = flowState;
-        
-        // Get contextual instructions for this response
-        responseInstructions = promptService.getContextualInstructions({
-          isInitialGreeting: false,
-          workflowPhase,
-          courseType,
-          workflowType,
-          currentStep,
-          activeTool: activeToolName,
-          waitingForLanguage: waitingForLanguage && !languageSelected,
-          languageSelected
-        });
-        
-        console.log(`📋 [${this.state.callSid}] Using contextual instructions for subsequent response (phase: ${workflowPhase}, length: ${responseInstructions?.length || 0})`);
+
+      const { instructions: responseInstructions } = await conversationService.getResponseInstructions({
+        callSid: this.state.callSid,
+        state: this.state,
+        conversation: conversations[this.state.callSid] || {},
+        hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent
+      });
+
+      if (isInitialGreeting && (!this.openaiWs || this.openaiWs.readyState !== 1)) {
+        console.error(`❌ [${this.state.callSid}] WebSocket closed during preparation`);
+        this.state.isResponding = false;
+        this.state.explicitResponseRequested = false;
+        this.state.releaseResponseLock();
+        return;
       }
-      
+
       // Step 2: ALWAYS disable tools before creating response
       // CRITICAL FIX: Tools are set to 'auto' in session setup, so we MUST disable them
       // to prevent tool calls during greeting (which causes JSON/URL output instead of speech)
@@ -256,22 +158,25 @@ export class ToolCoordinator {
           tool_choice: 'none'
         }
       }));
-      
-      // Wait for session.updated event confirmation
-      try {
-        await this.waitForSessionUpdate(10000);
-        console.log(`✅ [${this.state.callSid}] Session update confirmed - tools disabled`);
-      } catch (err) {
-        console.error(`❌ [${this.state.callSid}] Session update timeout:`, err.message);
-        console.warn(`⚠️ [${this.state.callSid}] Continuing without session update confirmation`);
+
+      if (isInitialGreeting) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      } else {
+        try {
+          await this.waitForSessionUpdate(10000);
+          console.log(`✅ [${this.state.callSid}] Session update confirmed - tools disabled`);
+        } catch (err) {
+          console.error(`❌ [${this.state.callSid}] Session update timeout:`, err.message);
+          console.warn(`⚠️ [${this.state.callSid}] Continuing without session update confirmation`);
+        }
       }
-      
-      // Verify WebSocket is still open
+
       if (!this.openaiWs || this.openaiWs.readyState !== 1) {
         console.error(`❌ [${this.state.callSid}] WebSocket closed after session.update`);
+        this.state.releaseResponseLock();
         return;
       }
-      
+
       // Step 3: Create response - PHASE 1: Include contextual instructions in response.create
       // Contextual instructions prevent model from falling back to full prompt (which causes code generation)
       const responseCreatePayload = {
@@ -317,6 +222,13 @@ export class ToolCoordinator {
       this.state.pendingSessionUpdatePromise = null;
       this.state.pendingItemCreatePromise = null;
     }
+  }
+
+  /**
+   * Set OpenAI integration reference (for phase/tool updates)
+   */
+  setOpenAIIntegration(openaiIntegration) {
+    this.openaiIntegration = openaiIntegration;
   }
 
   /**
@@ -420,6 +332,28 @@ export class ToolCoordinator {
           const transcriptionResult = await this.transcriptionHandler.handleTranscriptionCompleted(event);
           const transcriptionItemId = event.item_id; // Link to committed segment
           
+          const transcriptText = event.transcript || '';
+          const callSid = this.state.callSid;
+          let intentDetected = false;
+
+          if (transcriptText.trim() && this.openaiIntegration) {
+            const intentResult = conversationService.detectIntent(transcriptText, {
+              callSid,
+              currentPhase: this.openaiIntegration.getCurrentWorkflowPhase?.(),
+              workflowContext: conversations[callSid]?.workflowContext
+            });
+            if (intentResult.shouldUpdateTools && intentResult.newWorkflowContext) {
+              if (!conversations[callSid]) conversations[callSid] = {};
+              conversations[callSid].workflowContext = intentResult.newWorkflowContext;
+              console.log(`🎯 [${callSid}] Intent detected: "${transcriptText}" - updating tools and workflow phase to ${intentResult.phase}`);
+              const toolsUpdated = this.openaiIntegration.updateToolsForPhase(intentResult.phase);
+              if (toolsUpdated) {
+                intentDetected = true;
+                console.log(`✅ [${callSid}] Tools updated for phase: ${intentResult.phase}`);
+              }
+            }
+          }
+          
           // CRITICAL DIAGNOSTIC: Log transcription processing result
           console.log(`📝 [${this.state.callSid}] Transcription processing result:`);
           console.log(`   - processed: ${transcriptionResult?.processed}`);
@@ -448,30 +382,18 @@ export class ToolCoordinator {
             break;
           }
           
-          // Check if transcription was processed and if we should create a response
-          const shouldCreateResponse = 
-            transcriptionResult?.processed && 
-            transcriptionResult?.shouldCreateResponse !== false &&
-            transcriptionResult?.qualityScore >= 0.7 && // Additional quality gate
-            !transcriptionResult?.isBackgroundNoise; // Explicitly check background noise flag
-          
-          // CRITICAL: Robust audio playing check (same logic as in TranscriptionHandler)
-          const hasActiveResponse = this.state.activeResponseId !== null;
-          const hasAudioPacer = this.state.outboundAudioPacer !== null;
-          const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
-          const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 5000;
-          const isAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio;
-          
-          // Create response only if:
-          // 1. Transcription was processed successfully AND is high quality
-          // 2. shouldCreateResponse flag is true (from TranscriptionHandler)
-          // 3. Quality score meets threshold (>= 0.7)
-          // 4. NOT background noise
-          // 5. Agent is waiting for user
-          // 6. Audio is NOT currently playing (CRITICAL: prevent responses during audio playback)
-          // 7. No active response exists
-          // 8. Initial greeting has completed
-          if (shouldCreateResponse && this.state.waitingForUser && !isAudioPlaying && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted) {
+          const stateSnapshot = {
+            waitingForUser: this.state.waitingForUser,
+            isResponding: this.state.isResponding,
+            activeResponseId: this.state.activeResponseId,
+            hasInitialGreetingCompleted: this.state.hasInitialGreetingCompleted,
+            lastAudioChunkTime: this.state.lastAudioChunkTime,
+            outboundAudioPacer: this.state.outboundAudioPacer,
+            outboundAudioBuffer: this.state.outboundAudioBuffer
+          };
+          const shouldCreateResponse = conversationService.shouldCreateResponse(transcriptionResult, stateSnapshot);
+
+          if (shouldCreateResponse) {
             try {
               this.state.explicitResponseRequested = true;
               
@@ -481,17 +403,17 @@ export class ToolCoordinator {
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
             }
-          } else if (isAudioPlaying && shouldCreateResponse) {
-            console.log(`🔇 [${this.state.callSid}] Skipping response creation - audio is currently playing`);
           } else if (!shouldCreateResponse && transcriptionResult?.processed === false) {
             console.log(`🔇 [${this.state.callSid}] Blocked response - transcription filtered (reason: ${transcriptionResult.reason}, quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
-          } else if (transcriptionResult?.qualityScore < 0.7) {
+          } else if (!shouldCreateResponse && (transcriptionResult?.qualityScore ?? 1) < 0.7) {
             console.log(`🔇 [${this.state.callSid}] Blocked response - quality score too low (${transcriptionResult.qualityScore?.toFixed(2)} < 0.7)`);
           }
           break;
           
         case 'input_audio_buffer.speech_stopped':
+          console.log(`🔍 [TEST-3] [${this.state.callSid}] SPEECH_STOPPED EVENT RECEIVED - routing to handler`);
           const speechStoppedResult = await this.transcriptionHandler.handleSpeechStopped(event);
+          console.log(`🔍 [TEST-3] [${this.state.callSid}] SPEECH_STOPPED HANDLED - result type: ${speechStoppedResult?.type || 'null'}`);
           // Handle process_transcriptions return value
           if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
             const transcriptions = speechStoppedResult.transcriptions || [];
@@ -622,10 +544,7 @@ export class ToolCoordinator {
     
     if (!this.state.hasInitialGreetingBeenSent && !this.state.isResponding && this.state.activeResponseId === null) {
       try {
-        // OPTIMIZATION: Reduced delay from 800ms to 200ms
-        // OpenAI Realtime API typically needs minimal time after session.update
-        // The 200ms delay ensures the session is ready while minimizing latency
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await new Promise(resolve => setTimeout(resolve, 50));
         
         // Double-check WebSocket is still open after delay
         if (this.state.isClosed || !this.openaiWs || this.openaiWs.readyState !== 1) {

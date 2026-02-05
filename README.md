@@ -50,14 +50,22 @@ cd frontend && npm run dev  # Terminal 2Access admin console at `http://localhos
 
 ## 🧪 Testing
 
+# Unit tests (Jest, from repo root)
+npm run test:unit
+
+# Coverage
+npm run test:coverage
+
+# Integration tests (real Twilio/OpenAI; set RUN_INTEGRATION_TESTS=1 and credentials)
+npm run test:integration
+
 # Frontend tests
 cd frontend && npm test
 
-# Backend tests (when implemented)
-cd backend && npm test
+# Legacy acceptance tests (archived)
+npm run test:acceptance
 
-# Acceptance tests
-cd backend && npm run test:acceptance## 🔒 Security
+See [tests/README.md](tests/README.md) for structure and CI.## 🔒 Security
 
 - Secrets via environment variables (never hardcoded)
 - JWT authentication with Argon2 hashing

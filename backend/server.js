@@ -1,8 +1,12 @@
+// Load .env FIRST before any other imports that might need env vars
+import dotenv from "dotenv";
+dotenv.config();
+
+// Now import everything else
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
-import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { initializeTelemetry, shutdownTelemetry } from "./utils/telemetry.js";
@@ -55,8 +59,6 @@ import { setIO as setWebSocketIO } from "./services/websocketService.js";
 import { proxyRecording } from "./controllers/outboundController.js";
 import { protect as authenticateToken } from "./middleware/authMiddleware.js";
 
-dotenv.config();
-
 const app = express();
 const httpServer = createServer(app);
 
@@ -90,17 +92,9 @@ if (!mongoUri) {
   process.exit(1);
 }
 
-// Extract database name from URI for logging
-const dbNameMatch = mongoUri.match(/\/([^/?]+)(\?|$)/);
-const dbName = dbNameMatch ? dbNameMatch[1] : 'unknown';
-
-console.log(`🔌 [backend] Connecting to MongoDB database: ${dbName}`);
-console.log(`🔌 [backend] MongoDB URI: ${mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials
-
 mongoose.connect(mongoUri)
   .then(async () => {
-    console.log(`✅ [backend] Connected to MongoDB database: ${mongoose.connection.db.databaseName}`);
-    console.log(`✅ [backend] MongoDB connection state: ${mongoose.connection.readyState} (1=connected)`);
+    console.log(`✅ [backend] Connected to MongoDB: ${mongoose.connection.db.databaseName}`);
 
     // Initialize services after MongoDB connection
     try {

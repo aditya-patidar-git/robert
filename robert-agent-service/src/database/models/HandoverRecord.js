@@ -23,6 +23,10 @@ const HandoverRecordSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  conferenceName: {
+    type: String,
+    default: null
+  },
   kbaMethod: {
     type: String,
     default: null

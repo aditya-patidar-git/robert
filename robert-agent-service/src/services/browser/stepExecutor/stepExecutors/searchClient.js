@@ -27,10 +27,13 @@ export async function executeSearchClient(page, args, sessionState, screenshotsD
     searchType = 'email';
     searchValue = args.customerEmail;
     email = args.customerEmail;
+  } else if (args.customerName) {
+    searchType = 'name';
+    searchValue = args.customerName;
   } else {
     return {
       success: false,
-      error: 'Either customerMobile or customerEmail is required for client search'
+      error: 'Either customerMobile, customerEmail, or customerName is required for client search'
     };
   }
   
@@ -95,6 +98,7 @@ export async function executeSearchClient(page, args, sessionState, screenshotsD
         success: false,
         error: result.error || 'Client not found',
         retryPrompt: result.retryPrompt,
+        nextSearchType: result.nextSearchType,
         requiresPostcodeVerification: result.requiresPostcodeVerification
       };
     }

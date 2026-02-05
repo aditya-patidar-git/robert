@@ -2,10 +2,28 @@
  * Prompt Service
  * Manages prompt optimization by providing minimal core prompts and contextual instructions
  * Phase 1: Minimal core prompt (~500 chars) + contextual instructions per response
+ * 
+ * Now uses templateEngine for dynamic variable substitution and promptTemplates
+ * for centralized template definitions.
  */
+
+import templateEngine from './templateEngine.js';
+import {
+  greetingTemplates,
+  consentTemplates,
+  workflowInstructionTemplates,
+  bookingConfirmationTemplates,
+  verificationTemplates,
+  errorTemplates,
+  courseTemplates,
+  defaultContext
+} from '../config/promptTemplates.js';
 
 class PromptService {
   constructor() {
+    // Template engine for variable substitution
+    this.templateEngine = templateEngine;
+    
     // Minimal core prompt - always loaded in session.update
     this.corePrompt = `You are "Robert", Universal Motorcycle Training's AI phone agent.
 
@@ -25,7 +43,7 @@ TOOLS - PROACTIVE USAGE:
 - If a caller asks about policies, prices, courses, or procedures → IMMEDIATELY use file_search to find accurate information
 - If a caller asks about availability → IMMEDIATELY use booking_step_check_availability
 - If a caller asks about current/external information not in KB → IMMEDIATELY use web_search
-- If a caller needs to book, reschedule, or cancel → IMMEDIATELY use appropriate booking_step_* or crm_browser tools
+- If a caller needs to book or cancel → IMMEDIATELY use appropriate booking_step_* tools or update_customer
 - If a caller expresses dissatisfaction or wants to complain → IMMEDIATELY use complaint_submission tool
 - If a caller needs verification → IMMEDIATELY use kba_verification or client_verification tools
 - If a caller needs a summary or confirmation sent → IMMEDIATELY use email or send_sms tools
@@ -36,7 +54,7 @@ TOOLS AVAILABLE:
 - booking_step_* tools for all bookings (preferred, step-based)
 - file_search to find information in knowledge base (use proactively for policy/price/course questions)
 - web_search for time-sensitive facts not in KB (use proactively when needed)
-- crm_browser for CRM operations (bookings, reschedules, cancellations)
+- update_customer for customer/booking updates
 - email and send_sms for sending confirmations/summaries
 - complaint_submission for formal complaints
 - kba_verification and client_verification for identity verification
@@ -55,6 +73,8 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
 
   /**
    * Get contextual instructions for response.create based on conversation state
+   * Uses template engine for dynamic variable substitution.
+   * 
    * @param {Object} context - Conversation context
    * @param {boolean} context.isInitialGreeting - Whether this is the initial greeting
    * @param {string} context.workflowPhase - Current workflow phase (greeting, booking_start, etc.)
@@ -67,6 +87,9 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
    * @param {string} context.consentQuestion - Consent question text
    * @param {boolean} context.waitingForLanguage - Whether waiting for language preference
    * @param {boolean} context.languageSelected - Whether language has been selected
+   * @param {string} context.callerName - Caller's name if known
+   * @param {Object} context.booking - Booking details if available
+   * @param {string} context.language - Current language (en, hi, etc.)
    * @returns {string|null} Contextual instructions or null if not needed
    */
   getContextualInstructions(context = {}) {
@@ -81,192 +104,70 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       consentNotice = null,
       consentQuestion = null,
       waitingForLanguage = false,
-      languageSelected = false
+      languageSelected = false,
+      callerName = null,
+      booking = null,
+      language = 'en'
     } = context;
+
+    // Build template context with all available data and defaults
+    const templateContext = {
+      ...defaultContext,
+      callerName,
+      courseType,
+      workflowType,
+      currentStep,
+      activeTool,
+      booking,
+      language,
+      consentNotice: consentNotice || consentTemplates.recordingNotice,
+      consentQuestion: consentQuestion || consentTemplates.recordingQuestion
+    };
 
     // Initial greeting instructions
     // NEW ORDER: Language preference (greeting) → Consent question → Main follow-up
     if (isInitialGreeting) {
-      // For initial greeting, always ask language preference first
-      return `Say hello and introduce yourself as Robert from Universal Motorcycle Training. Ask what language the caller would like to use. Say exactly: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?"
-
-WAIT for the caller's response. If their response is unclear or you detect noise/barge-in, repeat: "What language would you like to use today?" until you get a clear answer.
-
-DO NOT ask the consent question or "What would you like to do today?" until language preference is confirmed.`;
+      return this.resolveTemplate(workflowInstructionTemplates.greeting, templateContext);
     }
 
     // CRITICAL: After language is selected, MUST ask consent question before main follow-up
     if (languageSelected && requireConsent && consentNotice && consentQuestion) {
-      return `CRITICAL: You MUST ask the consent question NOW before proceeding with any other conversation. Follow this exact sequence:
-
-1. First, say: "${consentNotice}"
-2. Then immediately ask: "${consentQuestion}"
-3. WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
-4. If the caller's response is unclear, ambiguous, or you detect background noise/barge-in that prevents you from understanding their answer, IMMEDIATELY repeat the question: "${consentQuestion}" - DO NOT proceed until you receive a clear yes or no answer
-
-DO NOT proceed to "What would you like to do today?" or any business questions until consent is given.`;
+      return this.resolveTemplate(consentTemplates.consentFlow, templateContext);
     }
 
     // After language is selected but consent not required or already given
     if (waitingForLanguage && !languageSelected) {
-      return `CRITICAL: You MUST ask the language preference question NOW before proceeding with any other conversation. Say exactly: "Hello, you're through to Universal Motorcycle Training. This is Robert. What language would you like to use today?" 
-
-WAIT for the caller's response. If their response is unclear or you detect noise/barge-in, repeat: "What language would you like to use today?" until you get a clear answer. 
-
-DO NOT proceed to "What would you like to do today?" or any business questions until language preference is confirmed.`;
+      return this.resolveTemplate(workflowInstructionTemplates.greeting, templateContext);
     }
 
     // Subsequent response instructions based on workflow phase
     let instructions = '';
 
-    // Add phase-specific instructions
+    // Add phase-specific instructions from templates
     if (workflowPhase) {
-      switch (workflowPhase) {
-        case 'language_selection':
-          instructions = `Continue the conversation naturally. Be helpful and concise.`;
-          break;
-
-        case 'general_inquiry':
-          instructions = `Help the caller with their question. Be concise and helpful.
-
-🚨 PROACTIVE TOOL USAGE: Use tools automatically whenever they're needed to provide accurate answers:
-- Policy/price/course questions → IMMEDIATELY use file_search (don't wait for caller to ask you to check)
-- Current/external information → IMMEDIATELY use web_search
-- Complaints/dissatisfaction → IMMEDIATELY use complaint_submission
-- Need to send confirmation/summary → IMMEDIATELY use email or send_sms
-
-NOTE: For booking/availability questions, follow the booking_start workflow phase instructions which require asking preferences FIRST before checking availability.
-
-DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate tool immediately to provide accurate information.`;
-          break;
-
-        case 'booking_start':
-          instructions = `You're starting a booking flow. CRITICAL WORKFLOW ORDER - DO NOT SKIP STEPS:
-1. FIRST: Ask what type of course they need
-2. SECOND: Once they choose the course type, you MUST ask about their preferences BEFORE calling booking_step_check_availability:
-   - "Do you have any preference for date or time?"
-   - "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon)
-   - "Do you have any instructor preference?"
-   
-   🚨 CRITICAL: DO NOT call booking_step_check_availability until you have asked about ALL preferences (even if they say "no preference").
-   You MUST have a conversation about preferences FIRST, then call the tool with the preferences (or null if no preference).
-   
-3. THIRD: Only AFTER asking about preferences and getting their response, call booking_step_check_availability with the preferences to find available slots.
-
-This saves time by focusing the availability check on slots that match their preferences.`;
-          break;
-
-        case 'booking_existing_client':
-          instructions = `You're booking for an existing client. CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email). NEVER use placeholder or example emails. If no email found, ask caller: "Could you please provide your email address?"
-
-AUTOMATIC CONTINUATION: After any tool completes successfully, IMMEDIATELY acknowledge the result and proceed to the next step. Do NOT wait for the caller to prompt you. For example:
-- After client_verification returns verified: true → Say "Thank you, your identity has been verified successfully. Now let me continue with your booking." and IMMEDIATELY call the next booking step (booking_step_select_session).
-- After booking_step_search_client (Step 5) finds a client → IMMEDIATELY proceed to client_verification.
-- After booking_step_select_session completes → IMMEDIATELY proceed to select booking options.
-- After booking_step_lookup_contact (Step 7.5) completes → IMMEDIATELY proceed to fill_contact_details.
-- After booking_step_fill_contact_details completes → IMMEDIATELY proceed to payment step.
-
-IMPORTANT: Do NOT confuse booking_step_search_client (Step 5, in Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).`;
-          break;
-
-        case 'booking_options':
-          instructions = `You're on the booking options page (SelectBookingOptions). CRITICAL WORKFLOW ORDER:
-
-1. FIRST: Ask about course-specific options BEFORE collecting contact details:
-   - For CBT courses: Ask "Which CBT type should be selected?" (e.g., Standard CBT, Executive CBT, etc.)
-   - For other courses: Ask about relevant course options
-   - Ask about bike type/preferences if applicable
-
-2. ONLY AFTER collecting course options: Proceed to lookup contact step (for existing clients) or fill contact details step (for new clients)
-
-DO NOT ask for house number or contact details until you've collected the course-specific options (like CBT type). The workflow should be:
-- Select session → Select booking options (CBT type, bike type) → Lookup contact (existing clients only, silent) → Fill contact details (checks fields sequentially)
-
-AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes:
-- For existing clients: IMMEDIATELY proceed to booking_step_lookup_contact (Step 7.5, silent step, no questions). DO NOT call booking_step_search_client - that was already done in Step 5 before client verification.
-- For new clients: IMMEDIATELY proceed to booking_step_create_new_contact (silent step, no questions)
-
-CRITICAL: booking_step_fill_contact_details will check fields sequentially (email, mobile, postcode, house number, licence held, NI number, driving licence). If a field is missing, the tool will return requiresField with fieldName and question. Ask the client for that specific field, collect it, then call the tool again with the collected value.`;
-          break;
-
-        case 'booking_lookup_contact':
-          instructions = `You're looking up an existing client contact. This is a silent step - do NOT ask any questions. The system will automatically look up the client and proceed to fill contact details.
-
-AUTOMATIC CONTINUATION: After booking_step_lookup_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`;
-          break;
-
-        case 'booking_new_client':
-          instructions = `You're booking for a new client. 
-
-WORKFLOW: booking_step_create_new_contact (silent, no questions) → booking_step_fill_contact_details (fills all fields)
-
-CRITICAL: booking_step_create_new_contact does NOT ask any questions - it silently clicks the "New contact" button. Do NOT ask for email confirmation or any other questions after this step completes.
-
-AUTOMATIC CONTINUATION: After booking_step_create_new_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`;
-          break;
-
-        case 'booking_payment':
-          instructions = `Processing payment. CRITICAL: Only say "Booking confirmed" when paymentCompleted: true appears in tool result.
-
-🚨 MANDATORY TERMS AND CONDITIONS CHECK 🚨
-CRITICAL WORKFLOW ORDER:
-1. BEFORE calling booking_step_send_payment_request: Ask terms and conditions to caller
-   - Read the full terms text from the tool result (termsText field)
-   - Ask: "Do you agree with the statements that I have just made?"
-   - Wait for caller's response
-2. Handle terms response:
-   - If "yes": Call booking_step_send_payment_request with termsAcceptedBeforeSend: true
-   - If "no" or questions: Try to answer their questions to the best of your abilities
-     - If they still don't agree after explanation: Ask "Would you like to be transferred to a human agent?"
-     - If yes: Use transfer_call tool with target: "+442036918807"
-     - If no: Say "Unfortunately, it will not be possible to proceed with the booking. Goodbye." and terminate the call
-3. ONLY after termsAcceptedBeforeSend: true, proceed with payment request sending
-4. After payment request is sent, polling will automatically find "Make booking" button and click it
-5. NO NEED to ask terms again after "Make booking" button appears (already handled before sending)
-
-CRITICAL: Terms check is MANDATORY and cannot be bypassed. The tool will return requiresTermsBeforeSend if termsAcceptedBeforeSend is not true.
-
-AUTOMATIC CONTINUATION: After payment tools complete, IMMEDIATELY proceed to next steps (confirmation email, terms, SMS). Do NOT wait for prompts.`;
-          break;
-
-        case 'booking_completion':
-          instructions = `Booking is complete. Send confirmation email and SMS if applicable. Be friendly and confirm next steps.
-
-AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS, IMMEDIATELY confirm completion with the caller. Do NOT wait for prompts.`;
-          break;
-
-        case 'booking_availability':
-          instructions = `Present available slots naturally. Preferences were already collected before checking availability, so present the slots that match their preferences. Once agreed on a slot, proceed to authentication step.
-
-AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIATELY present the slots to the caller. Do NOT wait for prompts.`;
-          break;
-
-        case 'booking_authentication':
-          instructions = `Authenticating with CRM (automatic). Once authenticated, ask: "Have you done training with us before?" This determines if we use existing client workflow or new client workflow.
-
-AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY ask the workflow type question. Do NOT wait for prompts.`;
-          break;
-
-        default:
-          instructions = `Respond naturally to the caller's question. Be helpful and concise.`;
-      }
+      // Get template for the workflow phase
+      const phaseTemplate = workflowInstructionTemplates[workflowPhase] || 
+                           workflowInstructionTemplates[this.normalizePhase(workflowPhase)];
+      
+      if (phaseTemplate) {
+        instructions = this.resolveTemplate(phaseTemplate, templateContext);
       } else {
+        // Default fallback
+        instructions = this.resolveTemplate(workflowInstructionTemplates.default, templateContext);
+      }
+    } else {
       // Default fallback if no workflow phase detected
-      instructions = `Respond naturally to the caller's question. Be helpful and concise. Do not generate code, JSON, or technical output - only natural spoken responses.
-
-🚨 PROACTIVE TOOL USAGE: Use tools automatically whenever they're needed to provide accurate answers:
-- Policy/price/course questions → IMMEDIATELY use file_search (don't wait for caller to ask you to check)
-- Availability questions → IMMEDIATELY use booking_step_check_availability
-- Current/external information → IMMEDIATELY use web_search
-- Complaints/dissatisfaction → IMMEDIATELY use complaint_submission
-- Need to send confirmation/summary → IMMEDIATELY use email or send_sms
-
-DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate tool immediately to provide accurate information.`;
+      instructions = this.resolveTemplate(workflowInstructionTemplates.default, templateContext);
     }
 
     // Add critical rules if in booking flow
     if (workflowPhase && workflowPhase.startsWith('booking_')) {
       instructions += `\n\nCRITICAL RULES:\n- NEVER say "Booking confirmed" unless paymentCompleted: true in tool result\n- Terms acceptance ONLY after payment confirmed, before final "Make booking" click\n- For existing clients: Use email from booking_step_search_client result ONLY`;
+    }
+
+    // Add critical rules if in cancellation flow
+    if (workflowPhase === 'cancellation') {
+      instructions += `\n\nCRITICAL CANCELLATION RULES:\n- MUST start with cancellation_step_verify_booking_intent - ask "Do you have a current booking with us?" FIRST\n- NEVER ask for booking reference, email, or phone number before Step 1\n- NEVER use client_verification before cancellation_step_search_client finds a client (Step 5)\n- Follow steps sequentially - do NOT skip steps`;
     }
 
     // Add tool-specific context if tool is active
@@ -275,6 +176,143 @@ DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate 
     }
 
     return instructions.trim() || null;
+  }
+
+  /**
+   * Resolve a template with the given context using the template engine.
+   * 
+   * @param {string} template - Template string
+   * @param {Object} context - Context object for variable substitution
+   * @returns {string} Resolved template
+   */
+  resolveTemplate(template, context = {}) {
+    return this.templateEngine.resolve(template, context);
+  }
+
+  /**
+   * Normalize a workflow phase name to match template keys.
+   * 
+   * @param {string} phase - Phase name
+   * @returns {string} Normalized phase name
+   */
+  normalizePhase(phase) {
+    // Map common variations to standard template keys
+    const phaseMap = {
+      'greeting': 'greeting',
+      'language': 'language_selection',
+      'inquiry': 'general_inquiry',
+      'question': 'general_inquiry',
+      'booking': 'booking_start',
+      'book': 'booking_start',
+      'availability': 'booking_availability',
+      'auth': 'booking_authentication',
+      'authentication': 'booking_authentication',
+      'existing': 'booking_existing_client',
+      'new': 'booking_new_client',
+      'options': 'booking_options',
+      'lookup': 'booking_lookup_contact',
+      'payment': 'booking_payment',
+      'pay': 'booking_payment',
+      'complete': 'booking_completion',
+      'completion': 'booking_completion',
+      'done': 'booking_completion',
+      'cancel': 'cancellation',
+      'cancellation': 'cancellation',
+      'cancel_booking': 'cancellation'
+    };
+    
+    return phaseMap[phase] || phase;
+  }
+
+  /**
+   * Get a greeting template for the specified language.
+   * 
+   * @param {string} language - Language code (en, hi, etc.)
+   * @param {string} type - Greeting type (initial, withCallerName, returning)
+   * @param {Object} context - Context for variable substitution
+   * @returns {string} Resolved greeting
+   */
+  getGreeting(language = 'en', type = 'initial', context = {}) {
+    const langTemplates = greetingTemplates[language] || greetingTemplates.en;
+    const template = langTemplates[type] || langTemplates.initial;
+    return this.resolveTemplate(template, context);
+  }
+
+  /**
+   * Get a verification message.
+   * 
+   * @param {string} type - Message type (askFullName, askPostcode, etc.)
+   * @param {Object} context - Context for variable substitution
+   * @returns {string} Resolved message
+   */
+  getVerificationMessage(type, context = {}) {
+    const template = verificationTemplates[type];
+    if (!template) {
+      console.warn(`[PromptService] Unknown verification message type: ${type}`);
+      return '';
+    }
+    return this.resolveTemplate(template, context);
+  }
+
+  /**
+   * Get a booking confirmation message.
+   * 
+   * @param {string} type - Message type (confirmation, emailSubject, smsConfirmation)
+   * @param {Object} context - Context with booking details
+   * @returns {string} Resolved message
+   */
+  getBookingConfirmation(type = 'confirmation', context = {}) {
+    const template = bookingConfirmationTemplates[type];
+    if (!template) {
+      console.warn(`[PromptService] Unknown booking confirmation type: ${type}`);
+      return '';
+    }
+    return this.resolveTemplate(template, context);
+  }
+
+  /**
+   * Get a course-specific question.
+   * 
+   * @param {string} courseType - Course type (cbt, itm, gearConversion)
+   * @param {string} questionType - Question type (typeQuestion, bikeTypeQuestion, etc.)
+   * @param {Object} context - Context for variable substitution
+   * @returns {string} Resolved question
+   */
+  getCourseQuestion(courseType, questionType, context = {}) {
+    const normalizedType = courseType.toLowerCase().replace(/\s+/g, '');
+    const courseTypeMap = {
+      'cbt': 'cbt',
+      'compulsorybasictraining': 'cbt',
+      'itm': 'itm',
+      'introductiontomotorcycling': 'itm',
+      'gearconversion': 'gearConversion'
+    };
+    
+    const mappedType = courseTypeMap[normalizedType] || normalizedType;
+    const courseConfig = courseTemplates[mappedType];
+    
+    if (!courseConfig || !courseConfig[questionType]) {
+      console.warn(`[PromptService] Unknown course question: ${mappedType}.${questionType}`);
+      return '';
+    }
+    
+    return this.resolveTemplate(courseConfig[questionType], context);
+  }
+
+  /**
+   * Get an error message.
+   * 
+   * @param {string} type - Error type (genericError, transferOffer, goodbye)
+   * @param {Object} context - Context for variable substitution
+   * @returns {string} Resolved error message
+   */
+  getErrorMessage(type = 'genericError', context = {}) {
+    const template = errorTemplates[type];
+    if (!template) {
+      console.warn(`[PromptService] Unknown error message type: ${type}`);
+      return '';
+    }
+    return this.resolveTemplate(template, context);
   }
 
   /**
@@ -288,6 +326,21 @@ DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate 
     // Check if initial greeting has been sent
     if (!state.hasInitialGreetingBeenSent) {
       return 'greeting';
+    }
+
+    if (callSid) {
+      try {
+        const stateModule = await import('../../shared/state.js');
+        const { conversations } = stateModule;
+        if (conversations[callSid]?.workflowContext === 'cancellation') {
+          return 'cancellation';
+        }
+        if (conversations[callSid]?.workflowContext === 'booking') {
+          return 'booking_start';
+        }
+      } catch (e) {
+        // ignore
+      }
     }
 
     // Try to get booking session from conversations if callSid is available

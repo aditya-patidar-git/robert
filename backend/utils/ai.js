@@ -1,11 +1,16 @@
 import OpenAI from "openai";
-import dotenv from "dotenv";
+// dotenv is already loaded in server.js, no need to reload here
 
-dotenv.config();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 // Global system instructions for Robert
 const ROBERT_SYSTEM_INSTRUCTIONS = `
@@ -27,7 +32,7 @@ Use tools automatically whenever they're needed to provide accurate answers, eve
 - Current/external information → IMMEDIATELY use web_search
 - Complaints/dissatisfaction → IMMEDIATELY use complaint_submission
 - Need to send confirmation/summary → IMMEDIATELY use email or send_sms
-- Booking/reschedule/cancel requests → IMMEDIATELY use appropriate booking_step_* or crm_browser tools
+- Booking/cancel requests → IMMEDIATELY use appropriate booking_step_* or crm_browser tools
 - Identity verification needed → IMMEDIATELY use kba_verification or client_verification
 
 DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate tool immediately to provide accurate information.
@@ -105,7 +110,7 @@ const TOOLS = [
         properties: {
           task: {
             type: "string",
-            enum: ["create_booking", "reschedule_booking", "cancel_booking", "update_customer", "check_availability"],
+            enum: ["create_booking", "cancel_booking", "update_customer", "check_availability"],
             description: "Type of CRM task to perform"
           },
           args: {
@@ -329,6 +334,7 @@ export const getAIResponse = async (conversationText, tools = null, callContext 
             }
         }
 
+        const openai = getOpenAIClient();
         const response = await openai.chat.completions.create({
             model: effectiveParams.model,
             messages: optimizedMessages,

@@ -2,6 +2,7 @@ import React from 'react';
 import { Paper, Box, Typography, Button, TextField, FormControl, InputLabel, Select, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Pagination, CircularProgress } from '@mui/material';
 import { Visibility } from '@mui/icons-material';
 import { formatDateTime } from '../../../utils/formatters';
+import { COMPLAINT_TYPE_OPTIONS, COMPLAINT_STATUS_OPTIONS, COMPLAINT_PRIORITY_OPTIONS, DEFAULT_COMPLAINT_FILTERS } from '../constants';
 
 const ComplaintsTab = ({ state, handlers }) => {
   const {
@@ -38,48 +39,40 @@ const ComplaintsTab = ({ state, handlers }) => {
           <InputLabel id="status-label">Status</InputLabel>
           <Select
             labelId="status-label"
+            label="Status"
             value={complaintFilters.status}
             onChange={(e) => setComplaintFilters(prev => ({ ...prev, status: e.target.value, page: 1 }))}
           >
-            <MenuItem value="">All</MenuItem>
-            <MenuItem value="open">Open</MenuItem>
-            <MenuItem value="investigating">Investigating</MenuItem>
-            <MenuItem value="resolved">Resolved</MenuItem>
-            <MenuItem value="closed">Closed</MenuItem>
+            {COMPLAINT_STATUS_OPTIONS.map(opt => (
+              <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+            ))}
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel id="priority-label">Priority</InputLabel>
           <Select
             labelId="priority-label"
+            label="Priority"
             value={complaintFilters.priority}
             onChange={(e) => setComplaintFilters(prev => ({ ...prev, priority: e.target.value, page: 1 }))}
           >
-            <MenuItem value="">All</MenuItem>
-            <MenuItem value="urgent">Urgent</MenuItem>
-            <MenuItem value="high">High</MenuItem>
-            <MenuItem value="medium">Medium</MenuItem>
-            <MenuItem value="low">Low</MenuItem>
+            {COMPLAINT_PRIORITY_OPTIONS.map(opt => (
+              <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+            ))}
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 180 }}>
           <InputLabel id="type-label">Type</InputLabel>
           <Select
             labelId="type-label"
+            label="Type"
             value={complaintFilters.complaintType}
             onChange={(e) => setComplaintFilters(prev => ({ ...prev, complaintType: e.target.value, page: 1 }))}
           >
             <MenuItem value="">All</MenuItem>
-            <MenuItem value="service_quality">Service Quality</MenuItem>
-            <MenuItem value="ai_understanding">AI Understanding</MenuItem>
-            <MenuItem value="response_time">Response Time</MenuItem>
-            <MenuItem value="technical_issue">Technical Issue</MenuItem>
-            <MenuItem value="billing">Billing</MenuItem>
-            <MenuItem value="booking">Booking</MenuItem>
-            <MenuItem value="instructor_conduct">Instructor Conduct</MenuItem>
-            <MenuItem value="safety_concern">Safety Concern</MenuItem>
-            <MenuItem value="discrimination">Discrimination</MenuItem>
-            <MenuItem value="other">Other</MenuItem>
+            {COMPLAINT_TYPE_OPTIONS.map(opt => (
+              <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+            ))}
           </Select>
         </FormControl>
         <TextField
@@ -102,7 +95,7 @@ const ComplaintsTab = ({ state, handlers }) => {
         />
         <Button
           variant="outlined"
-          onClick={() => setComplaintFilters({ page: 1, limit: 20, search: '', status: '', priority: '', complaintType: '', assignedTo: '', startDate: '', endDate: '' })}
+          onClick={() => setComplaintFilters(DEFAULT_COMPLAINT_FILTERS)}
         >
           Clear Filters
         </Button>
@@ -128,21 +121,31 @@ const ComplaintsTab = ({ state, handlers }) => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {complaints.map((complaint) => (
-                  <TableRow key={complaint._id || complaint.id}>
-                    <TableCell><Typography variant="body2" fontFamily="monospace">{complaint.callerId || complaint.from}</Typography></TableCell>
-                    <TableCell>{formatDateTime(complaint.createdAt)}</TableCell>
-                    <TableCell>{complaint.complaintType || complaint.type}</TableCell>
-                    <TableCell><Chip label={complaint.status} color={getComplaintStatusColor(complaint.status)} size="small" /></TableCell>
-                    <TableCell><Chip label={complaint.priority} color={getPriorityColor(complaint.priority)} size="small" /></TableCell>
-                    <TableCell>{complaint.assignedTo || 'Unassigned'}</TableCell>
-                    <TableCell>
-                      <IconButton size="small" onClick={() => handleViewComplaint(complaint)}>
-                        <Visibility fontSize="small" />
-                      </IconButton>
+                {complaints.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                      <Typography color="text.secondary">
+                        No complaints found matching your filters
+                      </Typography>
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  complaints.map((complaint) => (
+                    <TableRow key={complaint._id || complaint.id}>
+                      <TableCell><Typography variant="body2" fontFamily="monospace">{complaint.callerId || complaint.from}</Typography></TableCell>
+                      <TableCell>{formatDateTime(complaint.createdAt)}</TableCell>
+                      <TableCell>{complaint.complaintType || complaint.type}</TableCell>
+                      <TableCell><Chip label={complaint.status} color={getComplaintStatusColor(complaint.status)} size="small" /></TableCell>
+                      <TableCell><Chip label={complaint.priority} color={getPriorityColor(complaint.priority)} size="small" /></TableCell>
+                      <TableCell>{complaint.assignedTo || 'Unassigned'}</TableCell>
+                      <TableCell>
+                        <IconButton size="small" onClick={() => handleViewComplaint(complaint)}>
+                          <Visibility fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </TableContainer>

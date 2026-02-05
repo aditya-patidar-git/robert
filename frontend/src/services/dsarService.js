@@ -102,6 +102,66 @@ class DSARService extends BaseService {
     });
     return response.data;
   }
+
+  // ============================================
+  // Alias methods for backward compatibility
+  // ============================================
+
+  /**
+   * Alias for createDSARRequest
+   * @param {Object} requestData - Request data
+   * @returns {Promise<Object>} Created request
+   */
+  async createRequest(requestData) {
+    // Map frontend field names to backend expected names
+    const mappedData = {
+      requestorEmail: requestData.requestorEmail || requestData.subjectEmail,
+      requestorName: requestData.requestorName || '',
+      requestorPhone: requestData.requestorPhone || requestData.subjectPhone,
+      requestType: this.mapRequestType(requestData.requestType),
+      requestedDataTypes: requestData.requestedDataTypes || ['all'],
+      userIdentifier: requestData.userIdentifier || requestData.requestorEmail || requestData.subjectEmail,
+      description: requestData.description
+    };
+    return this.createDSARRequest(mappedData);
+  }
+
+  /**
+   * Alias for processDSARRequest - updates request status
+   * @param {string} requestId - Request ID
+   * @param {Object} data - Update data containing status/action
+   * @returns {Promise<Object>} Updated request
+   */
+  async updateRequest(requestId, data) {
+    // Map status updates to process actions
+    const action = data.status || data.action || 'approve';
+    const notes = data.notes || data.description || '';
+    return this.processDSARRequest(requestId, action, notes);
+  }
+
+  /**
+   * Alias for generateDSARExport
+   * @param {string} requestId - Request ID
+   * @returns {Promise<Object>} Export data
+   */
+  async exportData(requestId) {
+    return this.generateDSARExport(requestId, false);
+  }
+
+  /**
+   * Map frontend request types to backend expected values
+   * @param {string} type - Frontend request type
+   * @returns {string} Backend request type
+   */
+  mapRequestType(type) {
+    const typeMap = {
+      'access': 'export',
+      'portability': 'export',
+      'deletion': 'delete',
+      'rectification': 'rectification'
+    };
+    return typeMap[type] || type;
+  }
 }
 
 // Export singleton instance

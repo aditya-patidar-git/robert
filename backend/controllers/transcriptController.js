@@ -20,6 +20,7 @@ export const getAllTranscripts = async (req, res) => {
       result,
       escalated,
       hasComplaint,
+      consentStatus,
       startDate,
       endDate,
       userId
@@ -56,6 +57,34 @@ export const getAllTranscripts = async (req, res) => {
     // Complaint filter
     if (hasComplaint !== undefined) {
       filter['complaint.hasComplaint'] = hasComplaint === 'true';
+    }
+
+    // Consent status filter
+    if (consentStatus) {
+      if (consentStatus === 'given') {
+        // Consent given OR not explicitly denied (null/undefined = opt-in default)
+        filter.$or = filter.$or || [];
+        // If we already have an $or from search, we need to use $and
+        if (search) {
+          filter.$and = [
+            { $or: filter.$or },
+            { $or: [
+              { 'recordingConsent.given': true },
+              { 'recordingConsent.given': { $exists: false } },
+              { 'recordingConsent.given': null }
+            ]}
+          ];
+          delete filter.$or;
+        } else {
+          filter.$or = [
+            { 'recordingConsent.given': true },
+            { 'recordingConsent.given': { $exists: false } },
+            { 'recordingConsent.given': null }
+          ];
+        }
+      } else if (consentStatus === 'denied') {
+        filter['recordingConsent.given'] = false;
+      }
     }
 
     // Date range filter
@@ -161,20 +190,42 @@ export const searchTranscripts = async (req, res) => {
 // Export transcripts
 export const exportTranscripts = async (req, res) => {
   try {
-    const { format = 'csv', filters = {} } = req.query;
+    const { format = 'csv', id, ...filters } = req.query;
 
-    const transcripts = await CallRecord.find(filters)
-      .sort({ createdAt: -1 })
-      .lean();
+    let transcripts;
+    let filename;
+
+    if (id) {
+      // Export single transcript by ID
+      const transcript = await CallRecord.findById(id).lean();
+      if (!transcript) {
+        return res.status(404).json({ error: 'Transcript not found' });
+      }
+      // Check consent before export
+      if (transcript.recordingConsent?.given === false) {
+        return res.status(403).json({ 
+          error: 'Transcript not available - consent not given',
+          message: 'This transcript cannot be exported as the customer did not provide recording consent.'
+        });
+      }
+      transcripts = [transcript];
+      filename = `transcript-${id}`;
+    } else {
+      // Export filtered transcripts
+      transcripts = await CallRecord.find(filters)
+        .sort({ createdAt: -1 })
+        .lean();
+      filename = 'transcripts';
+    }
 
     if (format === 'csv') {
       const csvData = generateCSV(transcripts);
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=transcripts.csv');
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}.csv`);
       res.send(csvData);
     } else if (format === 'json') {
       res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', 'attachment; filename=transcripts.json');
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}.json`);
       res.json({ transcripts });
     } else {
       res.status(400).json({ error: 'Unsupported format' });
@@ -221,7 +272,7 @@ export const deleteTranscript = async (req, res) => {
 // Submit complaint
 export const submitComplaint = async (req, res) => {
   try {
-    const { callId, complaintText, complaintType, callerId } = req.body;
+    const { callId, complaintText, complaintType, callerId, priority } = req.body;
 
     if (!callId || !complaintText) {
       return res.status(400).json({ error: 'Call ID and complaint text are required' });
@@ -233,13 +284,14 @@ export const submitComplaint = async (req, res) => {
       return res.status(404).json({ error: 'Call record not found' });
     }
 
-    // Create complaint record
+    // Create complaint record with priority (high-risk types auto-set to 'urgent' from frontend)
     const complaint = new ComplaintRecord({
       callId,
       callSid: callRecord.callSid,
       callerId: callerId || callRecord.from,
       complaintText,
       complaintType: complaintType || 'other',
+      priority: priority || 'medium',
       createdBy: req.user.id
     });
 

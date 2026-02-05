@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import { hashPassword, verifyPassword } from "../utils/hash.js";
 import { generateToken } from "../utils/jwt.js";
 import { protect } from "../middleware/authMiddleware.js";
+import { createAuditLog } from "./auditLogController.js";
 
 // POST /auth/signup
 export const signup = async (req, res) => {
@@ -29,12 +30,43 @@ export const login = async (req, res) => {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ message: "Invalid email or password" });
+    if (!user) {
+        // Log failed login attempt (unknown email)
+        await createAuditLog({
+            actorId: null,
+            action: 'auth.login_failed',
+            targetType: 'user',
+            targetId: null,
+            diff: { email, reason: 'unknown_email' },
+            req
+        });
+        return res.status(401).json({ message: "Invalid email or password" });
+    }
 
     const isValid = await verifyPassword(user.passwordHash, password);
-    if (!isValid) return res.status(401).json({ message: "Invalid email or password" });
+    if (!isValid) {
+        // Log failed login attempt (wrong password)
+        await createAuditLog({
+            actorId: user._id,
+            action: 'auth.login_failed',
+            targetType: 'user',
+            targetId: user._id.toString(),
+            diff: { reason: 'invalid_password' },
+            req
+        });
+        return res.status(401).json({ message: "Invalid email or password" });
+    }
 
     if (user.status !== "active") {
+        // Log failed login attempt (inactive user)
+        await createAuditLog({
+            actorId: user._id,
+            action: 'auth.login_failed',
+            targetType: 'user',
+            targetId: user._id.toString(),
+            diff: { reason: 'inactive_user', status: user.status },
+            req
+        });
         return res.status(403).json({ message: `User is not active. Current status: ${user.status}` });
     }
 
@@ -43,6 +75,16 @@ export const login = async (req, res) => {
     // Update last login
     user.lastLoginAt = new Date();
     await user.save();
+
+    // Log successful login
+    await createAuditLog({
+        actorId: user._id,
+        action: 'auth.login',
+        targetType: 'user',
+        targetId: user._id.toString(),
+        diff: { email: user.email },
+        req
+    });
 
     res.json({
         token,
@@ -85,6 +127,17 @@ export const getProfile = async (req, res) => {
 
 // POST /auth/logout - Logout user (client-side token removal)
 export const logout = async (req, res) => {
+    // Log logout event
+    if (req.user) {
+        await createAuditLog({
+            actorId: req.user._id,
+            action: 'auth.logout',
+            targetType: 'user',
+            targetId: req.user._id.toString(),
+            req
+        });
+    }
+    
     // Since we're using JWT tokens, logout is handled client-side
     // In a more secure setup, you might want to maintain a token blacklist
     res.json({ message: "Logged out successfully" });

@@ -7,7 +7,15 @@ import {
   getMCPTools,
   executeMCPTool,
   getAvailableModels,
-  updateModelConfig
+  updateModelConfig,
+  createBackup,
+  listBackups,
+  getBackupDetails,
+  deleteBackup,
+  restoreBackup,
+  getRestorePreview,
+  getBackupCollections,
+  validateBackup
 } from "../controllers/systemController.js";
 import {
   getSyncStatus,
@@ -37,6 +45,16 @@ router.put("/models/:modelId", updateModelConfig);
 router.get("/config-sync/status", getSyncStatus);
 router.get("/config-sync/status/:configType", getConfigSyncStatus);
 router.post("/config-sync/refresh", refreshConfig);
+
+// Backup & Restore Routes (Owner only)
+router.get("/backup/collections", getBackupCollections);
+router.post("/backup", createBackup);
+router.get("/backups", listBackups);
+router.get("/backups/:backupId", getBackupDetails);
+router.post("/backups/:backupId/validate", validateBackup);
+router.delete("/backups/:backupId", deleteBackup);
+router.post("/restore/:backupId", restoreBackup);
+router.get("/restore/:backupId/preview", getRestorePreview);
 
 export default router;
 

@@ -19,7 +19,19 @@ export const STEP_NAMES = {
   SEND_PAYMENT_REQUEST: 'sendPaymentRequest', // Payment request flow
   SEND_CONFIRMATION: 'sendConfirmation',
   SEND_TERMS: 'sendTerms',
-  SEND_SMS: 'sendSMS'                          // Existing workflow only
+  SEND_SMS: 'sendSMS',                          // Existing workflow only
+  // Cancellation workflow steps
+  VERIFY_BOOKING_INTENT: 'verifyBookingIntent',
+  DETERMINE_WORKFLOW: 'determineWorkflow',
+  SELECT_CLIENT: 'selectClient',
+  LOCATE_BOOKING: 'locateBooking',
+  CONFIRM_CANCELLATION: 'confirmCancellation',
+  INITIATE_CANCELLATION: 'initiateCancellation',
+  FILL_CANCELLATION_FORM: 'fillCancellationForm',
+  NAVIGATE_COMMUNICATION: 'navigateCommunication',
+  SELECT_TEMPLATE: 'selectTemplate',
+  SEND_CANCELLATION_CONFIRMATION: 'sendCancellationConfirmation',
+  VOICE_CONFIRMATION: 'voiceConfirmation'
 };
 
 /**
@@ -286,6 +298,158 @@ const STEP_CONFIGURATIONS = {
 };
 
 /**
+ * Cancellation step configurations
+ * Cancellation workflows always use 'existing' workflow type (no 'new' variant)
+ * All cancellation workflows follow the same 14-step pattern
+ */
+const CANCELLATION_STEP_CONFIGURATIONS = {
+  'ITM': {
+    'Introduction to Motorcycling': {
+      existing: {
+        [STEP_NAMES.VERIFY_BOOKING_INTENT]: 1,
+        [STEP_NAMES.AUTHENTICATE]: 2,
+        [STEP_NAMES.DETERMINE_WORKFLOW]: 3,
+        [STEP_NAMES.NAVIGATE_CONTACTS]: 4,
+        [STEP_NAMES.SEARCH_CLIENT]: 5,
+        [STEP_NAMES.SELECT_CLIENT]: 6,
+        [STEP_NAMES.LOCATE_BOOKING]: 7,
+        [STEP_NAMES.CONFIRM_CANCELLATION]: 8,
+        [STEP_NAMES.INITIATE_CANCELLATION]: 9,
+        [STEP_NAMES.FILL_CANCELLATION_FORM]: 10,
+        [STEP_NAMES.NAVIGATE_COMMUNICATION]: 11,
+        [STEP_NAMES.SELECT_TEMPLATE]: 12,
+        [STEP_NAMES.SEND_CANCELLATION_CONFIRMATION]: 13,
+        [STEP_NAMES.VOICE_CONFIRMATION]: 14
+      }
+    }
+  },
+  'CBT': {
+    'Compulsory Basic Training': {
+      existing: {
+        [STEP_NAMES.VERIFY_BOOKING_INTENT]: 1,
+        [STEP_NAMES.AUTHENTICATE]: 2,
+        [STEP_NAMES.DETERMINE_WORKFLOW]: 3,
+        [STEP_NAMES.NAVIGATE_CONTACTS]: 4,
+        [STEP_NAMES.SEARCH_CLIENT]: 5,
+        [STEP_NAMES.SELECT_CLIENT]: 6,
+        [STEP_NAMES.LOCATE_BOOKING]: 7,
+        [STEP_NAMES.CONFIRM_CANCELLATION]: 8,
+        [STEP_NAMES.INITIATE_CANCELLATION]: 9,
+        [STEP_NAMES.FILL_CANCELLATION_FORM]: 10,
+        [STEP_NAMES.NAVIGATE_COMMUNICATION]: 11,
+        [STEP_NAMES.SELECT_TEMPLATE]: 12,
+        [STEP_NAMES.SEND_CANCELLATION_CONFIRMATION]: 13,
+        [STEP_NAMES.VOICE_CONFIRMATION]: 14
+      }
+    }
+  },
+  'CBT Executive': {
+    'CBT Executive 1-2-1': {
+      existing: {
+        [STEP_NAMES.VERIFY_BOOKING_INTENT]: 1,
+        [STEP_NAMES.AUTHENTICATE]: 2,
+        [STEP_NAMES.DETERMINE_WORKFLOW]: 3,
+        [STEP_NAMES.NAVIGATE_CONTACTS]: 4,
+        [STEP_NAMES.SEARCH_CLIENT]: 5,
+        [STEP_NAMES.SELECT_CLIENT]: 6,
+        [STEP_NAMES.LOCATE_BOOKING]: 7,
+        [STEP_NAMES.CONFIRM_CANCELLATION]: 8,
+        [STEP_NAMES.INITIATE_CANCELLATION]: 9,
+        [STEP_NAMES.FILL_CANCELLATION_FORM]: 10,
+        [STEP_NAMES.NAVIGATE_COMMUNICATION]: 11,
+        [STEP_NAMES.SELECT_TEMPLATE]: 12,
+        [STEP_NAMES.SEND_CANCELLATION_CONFIRMATION]: 13,
+        [STEP_NAMES.VOICE_CONFIRMATION]: 14
+      }
+    }
+  },
+  'Gear Conversion': {
+    'Gear Conversion': {
+      existing: {
+        [STEP_NAMES.VERIFY_BOOKING_INTENT]: 1,
+        [STEP_NAMES.AUTHENTICATE]: 2,
+        [STEP_NAMES.DETERMINE_WORKFLOW]: 3,
+        [STEP_NAMES.NAVIGATE_CONTACTS]: 4,
+        [STEP_NAMES.SEARCH_CLIENT]: 5,
+        [STEP_NAMES.SELECT_CLIENT]: 6,
+        [STEP_NAMES.LOCATE_BOOKING]: 7,
+        [STEP_NAMES.CONFIRM_CANCELLATION]: 8,
+        [STEP_NAMES.INITIATE_CANCELLATION]: 9,
+        [STEP_NAMES.FILL_CANCELLATION_FORM]: 10,
+        [STEP_NAMES.NAVIGATE_COMMUNICATION]: 11,
+        [STEP_NAMES.SELECT_TEMPLATE]: 12,
+        [STEP_NAMES.SEND_CANCELLATION_CONFIRMATION]: 13,
+        [STEP_NAMES.VOICE_CONFIRMATION]: 14
+      }
+    }
+  },
+  'Private Lesson': {
+    'Private Lesson': {
+      existing: {
+        [STEP_NAMES.VERIFY_BOOKING_INTENT]: 1,
+        [STEP_NAMES.AUTHENTICATE]: 2,
+        [STEP_NAMES.DETERMINE_WORKFLOW]: 3,
+        [STEP_NAMES.NAVIGATE_CONTACTS]: 4,
+        [STEP_NAMES.SEARCH_CLIENT]: 5,
+        [STEP_NAMES.SELECT_CLIENT]: 6,
+        [STEP_NAMES.LOCATE_BOOKING]: 7,
+        [STEP_NAMES.CONFIRM_CANCELLATION]: 8,
+        [STEP_NAMES.INITIATE_CANCELLATION]: 9,
+        [STEP_NAMES.FILL_CANCELLATION_FORM]: 10,
+        [STEP_NAMES.NAVIGATE_COMMUNICATION]: 11,
+        [STEP_NAMES.SELECT_TEMPLATE]: 12,
+        [STEP_NAMES.SEND_CANCELLATION_CONFIRMATION]: 13,
+        [STEP_NAMES.VOICE_CONFIRMATION]: 14
+      }
+    }
+  }
+};
+
+/**
+ * Check if a course type is a cancellation workflow
+ * @param {string} courseType - Course type
+ * @returns {boolean} True if cancellation workflow
+ */
+function isCancellationWorkflow(courseType) {
+  const cancellationStepNames = [
+    STEP_NAMES.VERIFY_BOOKING_INTENT,
+    STEP_NAMES.DETERMINE_WORKFLOW,
+    STEP_NAMES.SELECT_CLIENT,
+    STEP_NAMES.LOCATE_BOOKING,
+    STEP_NAMES.CONFIRM_CANCELLATION,
+    STEP_NAMES.INITIATE_CANCELLATION,
+    STEP_NAMES.FILL_CANCELLATION_FORM,
+    STEP_NAMES.NAVIGATE_COMMUNICATION,
+    STEP_NAMES.SELECT_TEMPLATE,
+    STEP_NAMES.SEND_CANCELLATION_CONFIRMATION,
+    STEP_NAMES.VOICE_CONFIRMATION
+  ];
+  return false; // Will be determined by step name, not course type
+}
+
+/**
+ * Check if a step name is a cancellation step
+ * @param {string} stepName - Step name
+ * @returns {boolean} True if cancellation step
+ */
+export function isCancellationStep(stepName) {
+  const cancellationStepNames = [
+    STEP_NAMES.VERIFY_BOOKING_INTENT,
+    STEP_NAMES.DETERMINE_WORKFLOW,
+    STEP_NAMES.SELECT_CLIENT,
+    STEP_NAMES.LOCATE_BOOKING,
+    STEP_NAMES.CONFIRM_CANCELLATION,
+    STEP_NAMES.INITIATE_CANCELLATION,
+    STEP_NAMES.FILL_CANCELLATION_FORM,
+    STEP_NAMES.NAVIGATE_COMMUNICATION,
+    STEP_NAMES.SELECT_TEMPLATE,
+    STEP_NAMES.SEND_CANCELLATION_CONFIRMATION,
+    STEP_NAMES.VOICE_CONFIRMATION
+  ];
+  return cancellationStepNames.includes(stepName);
+}
+
+/**
  * Get step number for a given course type, workflow type, and step name
  * @param {string} courseType - Course type (ITM, CBT, etc.)
  * @param {string} workflowType - 'existing' or 'new' (can be null for checkAvailability)
@@ -294,6 +458,24 @@ const STEP_CONFIGURATIONS = {
  */
 export function getStepNumber(courseType, workflowType, stepName) {
   if (!courseType || !stepName) {
+    return null;
+  }
+
+  // Check if this is a cancellation step
+  if (isCancellationStep(stepName)) {
+    // Cancellation workflows always use 'existing' workflow type
+    const normalizedCourseType = normalizeCourseType(courseType);
+    const cancellationConfig = CANCELLATION_STEP_CONFIGURATIONS[normalizedCourseType];
+    
+    if (cancellationConfig) {
+      const workflowConfig = Object.values(cancellationConfig)[0];
+      if (workflowConfig && workflowConfig.existing) {
+        return workflowConfig.existing[stepName] || null;
+      }
+    }
+    
+    // If not found in cancellation config, return null
+    console.warn(`⚠️ [STEP_CONFIG] No cancellation configuration found for course type: ${courseType}`);
     return null;
   }
 
@@ -350,6 +532,18 @@ export function getStepNumber(courseType, workflowType, stepName) {
  */
 export function getStepConfiguration(courseType, workflowType) {
   const normalizedCourseType = normalizeCourseType(courseType);
+  
+  // Check if this is a cancellation workflow (check first step name)
+  const cancellationConfig = CANCELLATION_STEP_CONFIGURATIONS[normalizedCourseType];
+  if (cancellationConfig) {
+    const workflowConfig = Object.values(cancellationConfig)[0];
+    if (workflowConfig && workflowConfig.existing) {
+      // Cancellation workflows always use 'existing'
+      return workflowConfig.existing;
+    }
+  }
+  
+  // Regular booking workflow
   const courseConfig = STEP_CONFIGURATIONS[normalizedCourseType];
   if (!courseConfig) {
     return {};
@@ -371,6 +565,21 @@ export function getStepConfiguration(courseType, workflowType) {
  * @returns {string|null} Step name or null if not found
  */
 export function getStepName(courseType, workflowType, stepNumber) {
+  // Check cancellation config first
+  const normalizedCourseType = normalizeCourseType(courseType);
+  const cancellationConfig = CANCELLATION_STEP_CONFIGURATIONS[normalizedCourseType];
+  if (cancellationConfig) {
+    const workflowConfig = Object.values(cancellationConfig)[0];
+    if (workflowConfig && workflowConfig.existing) {
+      for (const [stepName, num] of Object.entries(workflowConfig.existing)) {
+        if (num === stepNumber) {
+          return stepName;
+        }
+      }
+    }
+  }
+  
+  // Regular booking workflow
   const config = getStepConfiguration(courseType, workflowType);
   for (const [stepName, num] of Object.entries(config)) {
     if (num === stepNumber) {

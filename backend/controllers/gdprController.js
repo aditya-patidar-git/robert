@@ -74,7 +74,7 @@ export const getDSARRequests = async (req, res) => {
 // Create DSAR request
 export const createDSARRequest = async (req, res) => {
     try {
-        const { requestorEmail, requestType, userIdentifier, requestorPhone } = req.body;
+        const { requestorEmail, requestorName, requestorPhone, requestType, requestedDataTypes, userIdentifier } = req.body;
         
         if (!requestorEmail || !requestType || !userIdentifier) {
             return res.status(400).json({ success: false, error: 'Missing required fields: requestorEmail, requestType, userIdentifier' });
@@ -84,7 +84,14 @@ export const createDSARRequest = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Invalid requestType. Must be: export, delete, or rectification' });
         }
         
-        const dsarRequest = await gdprService.createDSARRequest(requestorEmail, requestType, userIdentifier, requestorPhone);
+        const dsarRequest = await gdprService.createDSARRequest({
+            requestorEmail,
+            requestorName,
+            requestorPhone,
+            requestType,
+            requestedDataTypes,
+            userIdentifier
+        });
         
         observabilityService.info('DSAR request created', { requestId: dsarRequest.requestId, requestType });
         res.status(201).json({ success: true, dsarRequest });
@@ -152,6 +159,21 @@ export const getDSARRequestTimeline = async (req, res) => {
         res.json({ success: true, timeline });
     } catch (error) {
         observabilityService.error('Get DSAR request timeline error', { requestId: req.params.requestId, error: error.message });
+        res.status(404).json({ success: false, error: error.message });
+    }
+};
+
+// Delete DSAR request
+export const deleteDSARRequest = async (req, res) => {
+    try {
+        const { requestId } = req.params;
+        
+        const result = await gdprService.deleteDSARRequest(requestId);
+        
+        observabilityService.info('DSAR request deleted', { requestId, deletedRequestId: result.deletedRequestId });
+        res.json({ success: true, ...result });
+    } catch (error) {
+        observabilityService.error('Delete DSAR request error', { requestId: req.params.requestId, error: error.message });
         res.status(404).json({ success: false, error: error.message });
     }
 };

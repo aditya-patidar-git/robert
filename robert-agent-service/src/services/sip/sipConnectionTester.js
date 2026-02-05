@@ -8,13 +8,27 @@ import twilio from 'twilio';
 
 class SipConnectionTester {
   constructor() {
-    this.twilioClient = null;
-    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-      this.twilioClient = twilio(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN
-      );
+    // Lazy-initialized Twilio client to avoid ES module import hoisting issues
+    // where env vars might not be loaded yet at module evaluation time
+    this._twilioClient = null;
+    this._twilioClientInitialized = false;
+  }
+
+  /**
+   * Get the Twilio client instance.
+   * Creates the client on first access when env vars are guaranteed to be loaded.
+   */
+  get twilioClient() {
+    if (!this._twilioClientInitialized) {
+      this._twilioClientInitialized = true;
+      if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+        this._twilioClient = twilio(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN
+        );
+      }
     }
+    return this._twilioClient;
   }
 
   /**

@@ -5,13 +5,18 @@
  */
 
 import OpenAI from "openai";
-import dotenv from "dotenv";
+// dotenv is already loaded in index.js, no need to reload here
 
-dotenv.config();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 class ResponsesApiService {
   constructor() {
@@ -54,6 +59,8 @@ class ResponsesApiService {
 
       console.log(`📡 [Responses API] Calling ${model} with ${messages.length} messages${tools ? ` and ${tools.length} tools` : ''}`);
 
+      // Get OpenAI client (lazy initialization)
+      const openai = getOpenAIClient();
       const response = await openai.chat.completions.create(requestPayload);
 
       const choice = response.choices[0];
@@ -187,4 +194,3 @@ class ResponsesApiService {
 }
 
 export default new ResponsesApiService();
-

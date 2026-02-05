@@ -96,6 +96,15 @@ class PrivacyService extends BaseService {
   }
 
   /**
+   * Delete DSAR request
+   * @param {string} dsarId - DSAR ID (MongoDB _id or custom requestId)
+   * @returns {Promise<Object>} Deletion result
+   */
+  async deleteDSARRequest(dsarId) {
+    return this.delete(`/dsar/${dsarId}`);
+  }
+
+  /**
    * Export user data
    * @param {string} userId - User ID
    * @param {Array<string>} dataTypes - Data types to export (default: ['transcripts', 'recordings', 'metadata'])

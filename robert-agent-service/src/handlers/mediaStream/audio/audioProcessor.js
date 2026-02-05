@@ -177,6 +177,9 @@ export class AudioProcessor {
       this.state.calibratedThreshold = calibrated;
       this.state.calibrationComplete = true;
       
+      const finalStartPadding = configManager.getConfigForNumber(this.state.phoneNumber).startPadding || 250;
+      const finalEndPadding = configManager.getConfigForNumber(this.state.phoneNumber).endPadding || 500;
+      
       // Update session with calibrated threshold using robust send method
       this.state.sendToOpenAI({
         type: 'session.update',
@@ -185,13 +188,19 @@ export class AudioProcessor {
           turn_detection: {
             type: 'server_vad',
             threshold: calibrated,
-            prefix_padding_ms: configManager.getConfigForNumber(this.state.phoneNumber).startPadding || 250,
-            silence_duration_ms: configManager.getConfigForNumber(this.state.phoneNumber).endPadding || 500
+            prefix_padding_ms: finalStartPadding,
+            silence_duration_ms: finalEndPadding
           }
         }
       }, { priority: 'high' });
       
       console.log(`✅ [${this.state.callSid}] VAD calibration complete - threshold updated to ${calibrated.toFixed(3)}s`);
+      console.log(`🔍 [TEST-3] [${this.state.callSid}] VAD CALIBRATION COMPLETE:`);
+      console.log(`   - Base threshold: ${baseThreshold.toFixed(3)}s`);
+      console.log(`   - Calibrated threshold: ${calibrated.toFixed(3)}s`);
+      console.log(`   - Start padding: ${finalStartPadding}ms (target: 250ms)`);
+      console.log(`   - End padding: ${finalEndPadding}ms (target: 500-700ms)`);
+      console.log(`   - Calibration samples: ${this.state.calibrationSamples.length} chunks`);
       
       // Clear calibration samples to free memory
       this.state.calibrationSamples = [];

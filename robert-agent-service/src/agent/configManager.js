@@ -8,14 +8,17 @@ import FlowParameterOverride from '../database/models/FlowParameterOverride.js';
 import CRMTasksConfig from '../database/models/CRMTasksConfig.js';
 import multilingualService from '../services/multilingualService.js';
 import promptService from '../services/promptService.js';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+// dotenv is already loaded in index.js, no need to reload here
 
-// Load .env from project root
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-dotenv.config({ path: join(__dirname, '../../.env') });
+// Lazy import to avoid circular dependencies
+let sessionManagementService = null;
+const getSessionManagementService = async () => {
+  if (!sessionManagementService) {
+    const module = await import('../services/sessionManagementService.js');
+    sessionManagementService = module.default;
+  }
+  return sessionManagementService;
+};
 
 class ConfigManager {
   constructor() {
@@ -78,7 +81,12 @@ class ConfigManager {
       console.log('✅ AI Config refreshed:', {
         voice: config?.voice?.id,
         temperature: config?.parameters?.temperature,
-        model: config?.model?.id
+        model: config?.model?.id,
+        mcpSettings: config?.mcpSettings ? {
+          enabled: config.mcpSettings.enabled ?? true,
+          rateLimit: config.mcpSettings.rateLimit ?? 100,
+          timeout: config.mcpSettings.timeout ?? 30
+        } : 'default'
       });
     }
     return config;
@@ -105,6 +113,28 @@ class ConfigManager {
     const config = await TelephonyConfig.findOne({ isActive: true }).lean();
     this.cache.telephony = config;
     this.lastFetch.telephony = now;
+    if (config) {
+      const systemSettings = {
+        maxConcurrentCalls: config.maxConcurrentCalls ?? 50,
+        callTimeout: config.callTimeout ?? 300,
+        retryAttempts: config.retryAttempts ?? 3,
+        logLevel: config.logLevel ?? 'info'
+      };
+      
+      console.log('✅ Telephony Config refreshed:', {
+        ...systemSettings,
+        sipPath: config.sipSettings?.primaryPath ?? 'sip'
+      });
+      
+      // Update sessionManagementService with new settings (async, non-blocking)
+      getSessionManagementService().then(sms => {
+        if (sms && sms.updateFromConfig) {
+          sms.updateFromConfig(systemSettings);
+        }
+      }).catch(err => {
+        console.warn('⚠️ Failed to update session management service:', err.message);
+      });
+    }
     return config;
   }
 
@@ -118,6 +148,102 @@ class ConfigManager {
 
   getTelephonyConfig() {
     return this.cache.telephony || {};
+  }
+
+  /**
+   * Get system settings from TelephonyConfig
+   * These control system-wide behavior limits and logging
+   * @returns {Object} System settings with maxConcurrentCalls, callTimeout, retryAttempts, logLevel
+   */
+  getSystemSettings() {
+    const telephonyConfig = this.cache.telephony || {};
+    
+    return {
+      maxConcurrentCalls: telephonyConfig.maxConcurrentCalls ?? 50,
+      callTimeout: telephonyConfig.callTimeout ?? 300,        // seconds
+      retryAttempts: telephonyConfig.retryAttempts ?? 3,
+      logLevel: telephonyConfig.logLevel ?? 'info'
+    };
+  }
+
+  /**
+   * Get maximum concurrent calls limit
+   * @returns {number} Max concurrent calls (default: 50)
+   */
+  getMaxConcurrentCalls() {
+    return this.getSystemSettings().maxConcurrentCalls;
+  }
+
+  /**
+   * Get call timeout in seconds
+   * @returns {number} Call timeout in seconds (default: 300)
+   */
+  getCallTimeout() {
+    return this.getSystemSettings().callTimeout;
+  }
+
+  /**
+   * Get call timeout in milliseconds
+   * @returns {number} Call timeout in milliseconds
+   */
+  getCallTimeoutMs() {
+    return this.getCallTimeout() * 1000;
+  }
+
+  /**
+   * Get retry attempts for failed operations
+   * @returns {number} Retry attempts (default: 3)
+   */
+  getRetryAttempts() {
+    return this.getSystemSettings().retryAttempts;
+  }
+
+  /**
+   * Get log level for the system
+   * @returns {string} Log level: 'debug' | 'info' | 'warn' | 'error' (default: 'info')
+   */
+  getLogLevel() {
+    return this.getSystemSettings().logLevel;
+  }
+
+  /**
+   * Get global MCP settings from AIConfig
+   * These settings control global tool execution behavior
+   * @returns {Object} MCP settings with enabled, rateLimit, and timeout
+   */
+  getMCPSettings() {
+    const aiConfig = this.cache.ai || {};
+    const mcpSettings = aiConfig.mcpSettings || {};
+    
+    return {
+      enabled: mcpSettings.enabled ?? true,           // Global MCP on/off switch
+      rateLimit: mcpSettings.rateLimit ?? 100,        // Global rate limit (requests per minute)
+      timeout: mcpSettings.timeout ?? 30              // Global timeout in seconds
+    };
+  }
+
+  /**
+   * Check if MCP tools are globally enabled
+   * @returns {boolean} True if MCP tools are enabled
+   */
+  isMCPEnabled() {
+    return this.getMCPSettings().enabled;
+  }
+
+  /**
+   * Get global MCP timeout in milliseconds
+   * @returns {number} Timeout in milliseconds
+   */
+  getMCPTimeoutMs() {
+    return this.getMCPSettings().timeout * 1000;
+  }
+
+  /**
+   * Get global MCP rate limit
+   * @returns {number} Rate limit (requests per minute)
+   */
+  getMCPRateLimit() {
+    return this.getMCPSettings().rateLimit;
   }
 
   async refreshToolConfig() {
@@ -269,7 +395,7 @@ class ConfigManager {
 
   /**
    * Check if a CRM task is enabled
-   * @param {string} taskName - Task name: 'createBooking', 'reschedule', 'cancel', 'updateRecord', 'issueRefund'
+   * @param {string} taskName - Task name: 'createBooking', 'cancel', 'updateRecord', 'issueRefund'
    * @returns {boolean} - True if task is enabled (defaults to true if no config)
    */
   isCRMTaskEnabled(taskName) {

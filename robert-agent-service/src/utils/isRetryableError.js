@@ -45,3 +45,28 @@ export function isRetryableError(error, retryableErrors = []) {
 
   return false;
 }
+
+/**
+ * Check if an error is a network-related error (DNS, connection, etc.)
+ * Used to suppress noisy logs for expected network failures
+ * @param {Error} error - Error to check
+ * @returns {boolean} True if error is network-related
+ */
+export function isNetworkError(error) {
+  const networkErrorCodes = ['ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'EHOSTUNREACH'];
+  const errorCode = error.code || error.errno;
+  const errorMessage = (error.message || String(error)).toLowerCase();
+  
+  if (errorCode && networkErrorCodes.includes(errorCode)) {
+    return true;
+  }
+  
+  if (errorMessage.includes('getaddrinfo') || 
+      errorMessage.includes('econnrefused') ||
+      errorMessage.includes('etimedout') ||
+      errorMessage.includes('enotfound')) {
+    return true;
+  }
+  
+  return false;
+}

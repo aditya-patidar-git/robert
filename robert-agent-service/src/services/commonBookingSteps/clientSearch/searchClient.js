@@ -159,7 +159,7 @@ export async function executeSearch(iframe, page, searchValue, screenshotsDir) {
 /**
  * Find matching client row in search results
  * @param {FrameLocator} iframe - Frame locator for the contact lookup iframe
- * @param {string} searchType - 'email' or 'mobile'
+ * @param {string} searchType - 'email' | 'mobile' | 'name'
  * @param {string} searchValue - Original search value
  * @param {string} email - Optional email for Smart search (overrides searchValue)
  * @returns {Promise<{rowIndex: number, email?: string, postcode?: string, matchingRows?: Array} | null>}
@@ -342,6 +342,24 @@ export async function findMatchingClientRow(iframe, searchType, searchValue, ema
       }
       
       return null;
+    }
+
+    if (finalSearchType === 'name') {
+      const normalizedSearch = finalSearchValue.toLowerCase().trim().replace(/\s+/g, ' ');
+      for (let i = 0; i < rowCount; i++) {
+        const row = resultRows.nth(i);
+        try {
+          const rowText = await row.textContent();
+          if (rowText && rowText.toLowerCase().replace(/\s+/g, ' ').includes(normalizedSearch)) {
+            console.log(`✅ [SEARCH] Found name match in row ${i + 1}`);
+            return { rowIndex: i };
+          }
+        } catch (e) {
+          console.log(`⚠️ [SEARCH] Could not get text from row ${i + 1}:`, e.message);
+        }
+      }
+      console.log(`🔍 [SEARCH] No row contained name search "${finalSearchValue}", returning first row`);
+      return rowCount > 0 ? { rowIndex: 0 } : null;
     }
     
     return null;

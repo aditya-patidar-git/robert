@@ -17,6 +17,7 @@ export class OpenAIIntegration {
     this.onEvent = onEvent; // Callback for event handling
     this.openaiTimeout = null;
     this.connectionManager = null; // Will be initialized after WebSocket connection
+    this.currentWorkflowPhase = 'greeting'; // Track current workflow phase for tool filtering
   }
 
   /**
@@ -241,13 +242,11 @@ export class OpenAIIntegration {
    */
   sendToOpenAI(message, options = {}) {
     const messageObj = typeof message === 'string' ? message : JSON.stringify(message);
-    
-    // Use connection manager if available (provides queuing, keep-alive, quality monitoring)
+
     if (this.connectionManager) {
       return this.connectionManager.send(messageObj, options);
     }
-    
-    // Fallback to direct send if connection manager not initialized
+
     if (this.state.openaiWs && this.state.openaiWs.readyState === WebSocket.OPEN) {
       try {
         this.state.openaiWs.send(messageObj);
@@ -257,9 +256,8 @@ export class OpenAIIntegration {
         return false;
       }
     }
-    
-    console.warn(`⚠️ [${this.state.callSid}] Cannot send message - WebSocket not ready (readyState: ${this.state.openaiWs?.readyState})`);
-    return false;
+
+    return this.state.sendToOpenAI(messageObj, options);
   }
 
   /**
@@ -268,8 +266,9 @@ export class OpenAIIntegration {
   async setupOpenAI() {
     if (this.state.setupComplete || this.state.isClosed) return;
     this.state.markSetupComplete();
-    
+    const latency = () => this.state.pickupLatencyMs();
     try {
+      console.log(`[PICKUP_LATENCY] [${this.state.callSid}] setup_openai_enter ${latency() ?? 0}ms`);
       console.log(`🚀 Setting up OpenAI connection for call: ${this.state.callSid}`);
       
       // OPTIMIZATION: Reduced logging verbosity - only validate and log errors
@@ -450,6 +449,7 @@ export class OpenAIIntegration {
       }
       
       // Use model from database configuration, fallback to default if not available
+      console.log(`[PICKUP_LATENCY] [${this.state.callSid}] session_config_built ${latency()}ms`);
       const modelId = config.model?.id || 'gpt-4o-realtime-preview';
       const openaiUrl = `wss://api.openai.com/v1/realtime?model=${modelId}`;
       console.log(`📋 [${this.state.callSid}] Using model from config: ${modelId}`);
@@ -476,8 +476,10 @@ export class OpenAIIntegration {
       
       let openaiWs;
       try {
+        console.log(`[PICKUP_LATENCY] [${this.state.callSid}] openai_ws_connect_start ${latency()}ms`);
         console.log(`🔌 [${this.state.callSid}] Attempting WebSocket connection...`);
         openaiWs = await this.createWebSocketWithRetry(openaiUrl, headers, 3, 1000);
+        console.log(`[PICKUP_LATENCY] [${this.state.callSid}] openai_ws_connected ${latency()}ms`);
         console.log(`✅ [${this.state.callSid}] OpenAI WebSocket connected successfully`);
         
         // Initialize connection manager for robust connection handling (keep-alive, queuing, quality monitoring)
@@ -503,7 +505,8 @@ export class OpenAIIntegration {
       
       // Set OpenAI ready with connection manager reference
       this.state.setOpenAIReady(openaiWs, this.connectionManager);
-      realtimeClients[this.state.callSid] = { twilioWs: this.ws, openaiWs, streamSid: this.state.streamSid };
+      console.log(`[PICKUP_LATENCY] [${this.state.callSid}] openai_ready_set ${latency()}ms`);
+      realtimeClients[this.state.callSid] = { twilioWs: this.ws, openaiWs, streamSid: this.state.streamSid, connectionManager: this.connectionManager };
       
       // Ensure transcript and language are set
       if (!conversations[this.state.callSid].transcript) {
@@ -533,8 +536,13 @@ export class OpenAIIntegration {
         console.log(`✅ [${this.state.callSid}] WebSocket already open, sending session.update immediately`);
         
         try {
-          // Get tool definitions
-          const tools = toolExecutor.getToolDefinitions();
+          // Get filtered tool definitions based on current workflow phase
+          // Start with 'greeting' phase which has minimal tools
+          const toolContext = {
+            workflowPhase: this.currentWorkflowPhase,
+            clientVerified: conversations[this.state.callSid]?.kba?.verified || false
+          };
+          const tools = toolExecutor.getFilteredToolDefinitions(toolContext);
           
           // Clear any existing conversation state and audio buffer
           try {
@@ -573,12 +581,14 @@ export class OpenAIIntegration {
           
           // Use robust send method with connection manager support
           this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
-          console.log(`📤 Sent session.update with config and ${tools.length} tools for call: ${this.state.callSid}`);
+          console.log(`[PICKUP_LATENCY] [${this.state.callSid}] session_update_sent ${this.state.pickupLatencyMs()}ms`);
+          console.log(`📤 Sent session.update with config and ${tools.length} tools (phase: ${this.currentWorkflowPhase}) for call: ${this.state.callSid}`);
           console.log(`🔍 [${this.state.callSid}] Session config details:`);
           console.log(`   - input_audio_format: g711_ulaw`);
           console.log(`   - output_audio_format: g711_ulaw (direct format - no conversion needed)`);
           console.log(`   - voice: ${config.voice.id}`);
           console.log(`   - temperature: ${Math.max(0.6, effectiveTemperature)} (flow: ${flowType})`);
+          console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
           if (audioConfig?.energyThresholdAutoCalibrate !== false) {
             console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
           }
@@ -685,8 +695,12 @@ export class OpenAIIntegration {
       console.log(`✅ OpenAI connected for call: ${this.state.callSid}`);
       
       try {
-        // Get tool definitions
-        const tools = toolExecutor.getToolDefinitions();
+        // Get filtered tool definitions based on current workflow phase
+        const toolContext = {
+          workflowPhase: this.currentWorkflowPhase,
+          clientVerified: conversations[this.state.callSid]?.kba?.verified || false
+        };
+        const tools = toolExecutor.getFilteredToolDefinitions(toolContext);
         
         // CRITICAL: Clear any existing conversation state and audio buffer
         try {
@@ -725,14 +739,21 @@ export class OpenAIIntegration {
         
         // Use robust send method with connection manager support
         this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
-        console.log(`📤 Sent session.update with config and ${tools.length} tools for call: ${this.state.callSid}`);
+        console.log(`📤 Sent session.update with config and ${tools.length} tools (phase: ${this.currentWorkflowPhase}) for call: ${this.state.callSid}`);
         console.log(`🔍 [${this.state.callSid}] Session config details:`);
         console.log(`   - input_audio_format: g711_ulaw`);
         console.log(`   - output_audio_format: g711_ulaw (direct format - no conversion needed)`);
         console.log(`   - voice: ${config.voice.id}`);
         console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
+        console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
+        console.log(`🔍 [TEST-3] [${this.state.callSid}] VAD CONFIGURATION:`);
+        console.log(`   - threshold: ${initialThreshold}s (${config.vadThreshold}ms)`);
+        console.log(`   - prefix_padding_ms: ${config.startPadding}ms (target: 250ms)`);
+        console.log(`   - silence_duration_ms: ${config.endPadding}ms (target: 500-700ms)`);
+        console.log(`   - turn_detection type: server_vad`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
           console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
+          console.log(`🔍 [TEST-3] [${this.state.callSid}] Auto-calibration will update threshold after ${this.state.CALIBRATION_DURATION_MS}ms`);
         }
       } catch (err) {
         this.state.incrementErrorCount();
@@ -855,6 +876,73 @@ export class OpenAIIntegration {
     openaiWs.on('close', () => {
       if (this.onEvent) this.onEvent({ type: 'close', reason: 'openai_close' });
     });
+  }
+
+  /**
+   * Update tools for a new workflow phase.
+   * Call this when the conversation transitions to a different workflow phase.
+   * Sends a session.update to OpenAI with the filtered tools for the new phase.
+   * 
+   * @param {string} newPhase - The new workflow phase (e.g., 'booking_start', 'general_inquiry')
+   * @param {Object} additionalContext - Additional context for tool filtering
+   * @returns {boolean} True if update was sent successfully
+   */
+  updateToolsForPhase(newPhase, additionalContext = {}) {
+    // Skip if phase hasn't changed
+    if (newPhase === this.currentWorkflowPhase) {
+      console.log(`🔧 [${this.state.callSid}] Tool update skipped - already in phase: ${newPhase}`);
+      return true;
+    }
+    
+    // Skip if WebSocket not ready
+    if (!this.state.openaiWs || this.state.openaiWs.readyState !== 1) { // 1 = OPEN
+      console.warn(`⚠️ [${this.state.callSid}] Cannot update tools - WebSocket not ready`);
+      return false;
+    }
+    
+    const previousPhase = this.currentWorkflowPhase;
+    this.currentWorkflowPhase = newPhase;
+    
+    // Build context for tool filtering
+    const toolContext = {
+      workflowPhase: newPhase,
+      clientVerified: conversations[this.state.callSid]?.kba?.verified || false,
+      ...additionalContext
+    };
+    
+    // Get filtered tools for the new phase
+    const tools = toolExecutor.getFilteredToolDefinitions(toolContext);
+    
+    // Send session.update with only the tools property
+    const sessionUpdateMessage = {
+      type: 'session.update',
+      session: {
+        tools: tools,
+        tool_choice: 'auto'
+      }
+    };
+    
+    const sent = this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
+    
+    if (sent) {
+      console.log(`🔄 [${this.state.callSid}] Workflow phase transition: ${previousPhase} → ${newPhase}`);
+      console.log(`   - Tools updated: ${tools.length} tools now available`);
+      console.log(`   - Tool names: ${tools.map(t => t.name).join(', ')}`);
+    } else {
+      // Revert phase on failure
+      this.currentWorkflowPhase = previousPhase;
+      console.error(`❌ [${this.state.callSid}] Failed to update tools for phase: ${newPhase}`);
+    }
+    
+    return sent;
+  }
+
+  /**
+   * Get the current workflow phase.
+   * @returns {string} Current workflow phase
+   */
+  getCurrentWorkflowPhase() {
+    return this.currentWorkflowPhase;
   }
 
   /**

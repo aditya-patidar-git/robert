@@ -1,7 +1,5 @@
 import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv is already loaded in server.js, no need to reload here
 
 /**
  * Email Service for backend (MCP Tools)

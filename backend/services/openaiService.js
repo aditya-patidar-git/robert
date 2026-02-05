@@ -1,12 +1,16 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
+// dotenv is already loaded in server.js, no need to reload here
 
-dotenv.config();
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
+let openaiClient = null;
+function getOpenAIClient() {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openaiClient;
+}
 
 // Existing vector store ID from documentation
 const VECTOR_STORE_ID = process.env.OPENAI_VECTOR_STORE_ID || 'vs_68b70556ca1081918dd5dbe56042a419';
@@ -21,6 +25,7 @@ class OpenAIService {
   // Get or create vector store
   async getVectorStore() {
     try {
+      const openai = getOpenAIClient();
       // First, try to get the existing vector store
       const vectorStores = await openai.vectorStores.list();
       const existingStore = vectorStores.data.find(store => store.id === this.vectorStoreId);
@@ -48,6 +53,7 @@ class OpenAIService {
   // Upload file to OpenAI
   async uploadFile(filePath, fileName, fileType = 'text/plain') {
     try {
+      const openai = getOpenAIClient();
       const fs = await import('fs');
       const fileContent = fs.readFileSync(filePath);
       
@@ -67,6 +73,7 @@ class OpenAIService {
   // Add file to vector store
   async addFileToVectorStore(fileId, metadata = {}) {
     try {
+      const openai = getOpenAIClient();
       const vectorStoreFile = await openai.vectorStores.files.create(this.vectorStoreId, {
         file_id: fileId
       });
@@ -90,6 +97,7 @@ class OpenAIService {
         searchParams.file_ids = fileIds;
       }
 
+      const openai = getOpenAIClient();
       const results = await openai.vectorStores.search(this.vectorStoreId, searchParams);
       
       console.log(`✅ Found ${results.data.length} results for query: "${query}"`);
@@ -103,6 +111,7 @@ class OpenAIService {
   // Get file content by ID
   async getFileContent(fileId) {
     try {
+      const openai = getOpenAIClient();
       const file = await openai.files.retrieve(fileId);
       const content = await openai.files.content(fileId);
       
@@ -122,6 +131,7 @@ class OpenAIService {
   // List files in vector store
   async listVectorStoreFiles() {
     try {
+      const openai = getOpenAIClient();
       const files = await openai.vectorStores.files.list(this.vectorStoreId);
       return files.data;
     } catch (error) {
@@ -133,6 +143,7 @@ class OpenAIService {
   // Remove file from vector store
   async removeFileFromVectorStore(fileId) {
     try {
+      const openai = getOpenAIClient();
       await openai.vectorStores.files.del(this.vectorStoreId, fileId);
       console.log(`✅ File ${fileId} removed from vector store`);
       return true;
@@ -145,6 +156,7 @@ class OpenAIService {
   // Get model capabilities
   async getModelCapabilities() {
     try {
+      const openai = getOpenAIClient();
       const models = await openai.models.list();
       const capabilities = [];
 

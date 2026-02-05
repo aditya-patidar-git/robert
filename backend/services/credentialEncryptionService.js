@@ -1,7 +1,5 @@
 import crypto from 'crypto';
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv is already loaded in server.js, no need to reload here
 
 /**
  * Credential Encryption Service

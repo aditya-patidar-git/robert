@@ -103,8 +103,9 @@ class ToolExecutionService {
       conversations[callId] = {};
     }
 
-    // Store client details from CRM browser tool
-    if (toolName === 'crm_browser' && executionResult.success && executionResult.result) {
+    // Store client details from CRM/browser tools
+    const crmToolNames = ['update_customer'];
+    if (crmToolNames.includes(toolName) && executionResult.success && executionResult.result) {
       if (executionResult.result.clientDetails) {
         conversations[callId].clientDetails = executionResult.result.clientDetails;
       }
@@ -207,6 +208,7 @@ class ToolExecutionService {
       progressCallback = null
     } = options;
 
+    const toolExecutionStartTime = Date.now();
     console.log(`\n🔧 [${callSid || callId}] ========================================`);
     console.log(`🔧 [${callSid || callId}] TOOL INVOCATION DETECTED`);
     console.log(`🔧 [${callSid || callId}] Tool: ${toolName}`);
@@ -214,6 +216,10 @@ class ToolExecutionService {
     console.log(`🔧 [${callSid || callId}] Tool Call ID: ${toolCallId}`);
     console.log(`🔧 [${callSid || callId}] Phone: ${phoneNumber || 'unknown'}`);
     console.log(`🔧 [${callSid || callId}] Raw Arguments: ${args || '{}'}`);
+    if (toolName === 'file_search') {
+      console.log(`🔍 [TEST-4] [${callSid || callId}] FILE_SEARCH TOOL CALLED - timestamp: ${toolExecutionStartTime}`);
+      console.log(`🔍 [TEST-4] [${callSid || callId}] Tool call ID: ${toolCallId}`);
+    }
 
     // Parse arguments
     let parameters;
@@ -334,6 +340,18 @@ class ToolExecutionService {
 
       // Extract actual tool result (toolExecutor wraps it in { success, result, executionTime })
       const toolResult = executionResult.result || executionResult;
+      
+      if (toolName === 'file_search') {
+        const totalExecutionTime = Date.now() - toolExecutionStartTime;
+        console.log(`🔍 [TEST-4] [${callSid || callId}] FILE_SEARCH EXECUTION COMPLETE:`);
+        console.log(`   - Execution time: ${executionTime}ms`);
+        console.log(`   - Total time (including overhead): ${totalExecutionTime}ms`);
+        console.log(`   - Success: ${executionResult.success !== false}`);
+        if (toolResult && toolResult.results) {
+          console.log(`   - Results count: ${toolResult.results.length}`);
+          console.log(`   - Citations: ${toolResult.citations ? toolResult.citations.join(', ') : 'N/A'}`);
+        }
+      }
 
       // ========== FILE_SEARCH FAILURE → WEB_SEARCH FALLBACK ==========
       if (toolName === 'file_search' && toolResult && toolResult.validationFailed === true) {
@@ -513,9 +531,7 @@ class ToolExecutionService {
         const webSearchResult = toolResult;
         
         // Check if web_search returned empty results or failed
-        const hasNoResults = !webSearchResult.results || 
-                            webSearchResult.results.length === 0 || 
-                            (webSearchResult.totalResults !== undefined && webSearchResult.totalResults === 0);
+        const hasNoResults = !webSearchResult.results || webSearchResult.results.length === 0;
         
         const hasError = executionResult.success === false || webSearchResult.error;
         

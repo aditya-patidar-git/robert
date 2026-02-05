@@ -1,13 +1,14 @@
+// Load .env first so process.env is set before any module (e.g. tools) is evaluated
+import './loadEnv.js';
+
 import express from 'express';
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
-import twilio from 'twilio';
-import dotenv from 'dotenv';
+import WebSocket, { WebSocketServer } from 'ws';
+import twilioClient from '../utils/twilioClient.js';
 import cors from 'cors';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import configManager from './configManager.js';
 import { handleMediaStreamConnection } from '../handlers/mediaStream/index.js';
+import { handleTestClientConnection } from '../handlers/mediaStream/testClientHandler.js';
 import { makeCall, aiIntro, getAllCalls, handleIncomingCall } from '../handlers/callHandlers.js';
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
@@ -16,6 +17,9 @@ import secretsManager from '../services/secretsManager.js';
 import browserAgentService from '../services/browser/index.js';
 import toolExecutor from '../tools/index.js';
 import sessionManagementService from '../services/sessionManagementService.js';
+import healthCheckService from '../services/healthCheckService.js';
+import distributedStateService from '../services/distributedStateService.js';
+import { validateAndLogStartupConfig } from '../utils/configValidator.js';
 import scheduler from '../jobs/scheduler.js';
 import memoryCleanupJob from '../jobs/memoryCleanupJob.js';
 import retentionCleanupJob from '../jobs/retentionCleanupJob.js';
@@ -29,22 +33,21 @@ initializeTelemetry();
 // Initialize metrics after telemetry
 initializeMetrics();
 
-// Get the directory of the current module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Load .env from project root (two levels up from src/agent/)
-dotenv.config({ path: join(__dirname, '../../.env') });
-
 // Initialize secrets manager and validate required secrets
 (async () => {
   try {
+    console.log('\n' + '='.repeat(80));
+    console.log('🚀 ROBERT AGENT SERVICE STARTING');
+    console.log('='.repeat(80) + '\n');
+    
     await secretsManager.initialize();
     console.log('✅ Secrets Manager initialized successfully');
     
-    // Initialize session management service (starts cleanup interval)
+    // Initialize session management service AFTER environment variables are loaded
+    // This ensures Twilio Sync can access env vars during initialization
+    await sessionManagementService.initialize();
     console.log('✅ Session Management Service initialized');
-    const metrics = sessionManagementService.getSessionMetrics();
+    const metrics = await sessionManagementService.getSessionMetrics();
     console.log(`📊 Session Management: TTL=${metrics.sessionTTLMinutes}min, Max=${metrics.maxSessions}, Cleanup=${metrics.cleanupIntervalSeconds}s`);
     
     // Validate SIP configuration on startup
@@ -94,7 +97,7 @@ const pendingCalls = new Map(); // phoneNumber -> timestamp
 
 // Add error handler to WebSocket server
 wss.on('error', (error) => {
-  console.error('❌ [DEBUG] WebSocket server error:', error);
+  console.error('❌ WebSocket server error:', error.message);
 });
 
 // Middleware
@@ -105,7 +108,7 @@ app.use(express.urlencoded({ extended: true })); // Required for Twilio form-enc
 // Initialize config manager
 await configManager.initialize();
 
-// Health check
+// Basic health check (backward compatible)
 app.get('/', async (_, res) => {
   const sipService = (await import('../services/sipService.js')).default;
   const sipStats = sipService.getStats();
@@ -133,6 +136,45 @@ app.get('/', async (_, res) => {
       warnings: sipValidation.warnings
     }
   });
+});
+
+// Comprehensive health endpoint (for load balancers and monitoring)
+app.get('/health', async (req, res) => {
+  try {
+    // Get full health status with all service metrics
+    const healthStatus = await healthCheckService.getFullStatus({
+      sessionManagementService,
+      browserAgentService,
+      distributedStateService
+    });
+
+    // Determine HTTP status code based on health
+    const httpStatus = healthStatus.status === 'unhealthy' ? 503 : 200;
+    
+    // Support minimal response for load balancer probes
+    if (req.query.minimal === 'true') {
+      return res.status(httpStatus).json({
+        status: healthStatus.status,
+        uptime: healthStatus.uptime
+      });
+    }
+
+    res.status(httpStatus).json(healthStatus);
+  } catch (error) {
+    console.error('❌ [Health] Error getting health status:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Quick health check (minimal computation, for frequent polling)
+app.get('/health/quick', (req, res) => {
+  const quickStatus = healthCheckService.getQuickStatus();
+  const httpStatus = quickStatus.status === 'unhealthy' ? 503 : 200;
+  res.status(httpStatus).json(quickStatus);
 });
 
 // WebSocket test endpoint
@@ -177,52 +219,50 @@ app.get('/test-websocket', (_, res) => {
 
 // WebSocket upgrade
 server.on('upgrade', (req, socket, head) => {
-  console.log('🔌 [DEBUG] WebSocket upgrade request received');
-  console.log('🔌 [DEBUG] Request URL:', req.url);
-  console.log('🔌 [DEBUG] Request method:', req.method);
-  console.log('🔌 [DEBUG] Request headers:', {
-    'upgrade': req.headers.upgrade,
-    'connection': req.headers.connection,
-    'sec-websocket-key': req.headers['sec-websocket-key'] ? 'present' : 'missing',
-    'host': req.headers.host
-  });
-  
   if (req.url === '/media-stream' || req.url.startsWith('/media-stream?')) {
-    console.log('✅ [DEBUG] URL matches /media-stream, handling upgrade...');
     try {
       wss.handleUpgrade(req, socket, head, ws => {
-        console.log('✅ [DEBUG] WebSocket upgrade completed, emitting connection event');
-        console.log('✅ [DEBUG] WebSocket readyState:', ws.readyState, '(OPEN=1)');
-        // CRITICAL FIX: Attach request object to WebSocket so it can be passed to handler
+        // Attach request object to WebSocket so it can be passed to handler
         ws._req = req;
-        wss.emit('connection', ws, req); // Pass req as second parameter
+        wss.emit('connection', ws, req);
       });
     } catch (error) {
-      console.error('❌ [DEBUG] Error during WebSocket upgrade:', error);
-      console.error('❌ [DEBUG] Error stack:', error.stack);
+      console.error('❌ Error during WebSocket upgrade:', error.message);
+      socket.destroy();
+    }
+  } else if (req.url === '/media-stream-test' || req.url.startsWith('/media-stream-test?')) {
+    try {
+      wss.handleUpgrade(req, socket, head, ws => {
+        ws._req = req;
+        wss.emit('test-connection', ws, req);
+      });
+    } catch (error) {
+      console.error('❌ Error during test client WebSocket upgrade:', error.message);
       socket.destroy();
     }
   } else {
-    console.log('❌ [DEBUG] URL does not match /media-stream');
-    console.log('❌ [DEBUG] Expected: /media-stream or /media-stream?..., Got:', req.url);
     socket.destroy();
   }
 });
 
 wss.on('connection', (twilioWs, req) => {
-  console.log('Twilio WebSocket connected');
   try {
-    // CRITICAL FIX: Use request object from parameter or attached to WebSocket
     const requestObj = req || twilioWs._req || {};
-    console.log('📞 [DEBUG] About to call handleMediaStreamConnection');
-    console.log('📞 [DEBUG] Request URL:', requestObj.url);
-    console.log('📞 [DEBUG] WebSocket readyState:', twilioWs?.readyState);
-    console.log('📞 [DEBUG] WebSocket type:', typeof twilioWs);
-    handleMediaStreamConnection(twilioWs, requestObj); // Pass actual request object
-    console.log('✅ [DEBUG] handleMediaStreamConnection called successfully');
+    handleMediaStreamConnection(twilioWs, requestObj);
   } catch (error) {
-    console.error('❌ [DEBUG] Error calling handleMediaStreamConnection:', error);
-    console.error('❌ [DEBUG] Error stack:', error.stack);
+    console.error('❌ Error calling handleMediaStreamConnection:', error.message);
+  }
+});
+
+wss.on('test-connection', (testWs, req) => {
+  try {
+    const requestObj = req || testWs._req || {};
+    handleTestClientConnection(testWs, requestObj);
+  } catch (error) {
+    console.error('❌ Error calling handleTestClientConnection:', error.message);
+    if (testWs.readyState === 0 || testWs.readyState === 1) {
+      testWs.close(1011, 'Internal server error');
+    }
   }
 });
 
@@ -236,6 +276,8 @@ app.get('/api/outbound/recording/:callSid', proxyRecording);
 
 // API Routes - Inbound
 app.post('/api/inbound/incoming-call', handleIncomingCall);
+// Alias for backward compatibility (some test helpers may use this)
+app.post('/api/inbound/handle-call', handleIncomingCall);
 app.post('/api/inbound/call-status', callStatus);
 app.post('/api/inbound/recording-status', recordingStatus);
 app.get('/api/inbound/recording/:callSid', proxyRecording);
@@ -449,7 +491,7 @@ app.get('/call', async (req, res) => {
     }
     
     console.log(`📞 [DEBUG] Call request received for: ${to}`);
-    const client = twilio(TWILIO_SID, TWILIO_AUTH_TOKEN);
+    // Use shared lazy-initialized Twilio client instead of creating new one per request
     const baseUrl = TUNNEL_DOMAIN ? `https://${TUNNEL_DOMAIN}` : `http://localhost:${PORT}`;
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -481,7 +523,7 @@ app.get('/call', async (req, res) => {
     const telephonyConfig = configManager.getTelephonyConfig();
     
     const { call, method } = await sipCallRouter.routeCall(
-      client,
+      twilioClient,
       to,
       TWILIO_NUMBER,
       telephonyConfig,
@@ -489,14 +531,9 @@ app.get('/call', async (req, res) => {
     );
 
     if (!call) {
-      console.error('❌ [DEBUG] Failed to create call');
-      // Remove from pending on failure
       pendingCalls.delete(to);
       return res.status(500).send('Failed to create call');
     }
-
-    console.log(`✅ [DEBUG] Twilio call created - SID: ${call.sid}, Status: ${call.status}, Method: ${method}`);
-    console.log(`📋 [DEBUG] Media Stream WebSocket will connect to: ${wsUrl}?callSid=${call.sid}`);
     
     // Remove from pending after successful creation (call will be tracked by callSid)
     pendingCalls.delete(to);
@@ -517,6 +554,23 @@ server.listen(PORT, async () => {
   const toolConfigsCount = configManager.getAllToolConfigs().length;
   console.log(`📋 Configs: AI=${configManager.getAIConfig() ? '✅' : '❌'}, Audio=${configManager.getAudioConfig() ? '✅' : '❌'}, Telephony=${configManager.getTelephonyConfig() ? '✅' : '❌'}, Tools=${toolConfigsCount > 0 ? `✅ (${toolConfigsCount})` : '❌'}`);
   
+  // Validate all configurations at startup
+  validateAndLogStartupConfig();
+  
+  // Initialize browser agent service (includes pool initialization)
+  try {
+    await browserAgentService.initialize();
+    const poolStatus = browserAgentService.getPoolStatus();
+    if (poolStatus) {
+      console.log(`🏊 Browser Pool: size=${poolStatus.config.size}, mode=${poolStatus.mode}, available=${poolStatus.available}`);
+    } else {
+      console.log(`🏊 Browser Pool: disabled (VPN mode or single browser)`);
+    }
+  } catch (error) {
+    console.error('❌ Error initializing browser agent service:', error);
+    // Don't fail startup if browser pool fails to initialize
+  }
+  
   // Initialize scheduled jobs
   try {
     scheduler.registerJob(memoryCleanupJob.name, memoryCleanupJob.schedule, memoryCleanupJob.run);
@@ -533,11 +587,46 @@ server.listen(PORT, async () => {
   console.log(`CALL NOW → http://localhost:${PORT}/call?to=+918120523400\n`);
 });
 
+/**
+ * Clean up all active Media Stream connections on shutdown.
+ * Stops ping intervals and closes WebSockets so pong logs stop immediately.
+ */
+async function cleanupAllActiveConnections() {
+  const { realtimeClients } = await import('../shared/state.js');
+  const callSids = Object.keys(realtimeClients);
+
+  if (callSids.length === 0) return;
+
+  console.log(`Cleaning up ${callSids.length} active connection(s)...`);
+
+  for (const callSid of callSids) {
+    const client = realtimeClients[callSid];
+    if (client?.connectionManager) {
+      client.connectionManager.cleanup();
+    }
+    if (client?.openaiWs) {
+      if (client.openaiWs.readyState === WebSocket.OPEN) {
+        client.openaiWs.close(1000, 'Server shutting down');
+      }
+    }
+    if (client?.twilioWs) {
+      if (client.twilioWs.readyState === WebSocket.OPEN) {
+        client.twilioWs.close(1000, 'Server shutting down');
+      }
+    }
+  }
+
+  for (const key of Object.keys(realtimeClients)) {
+    delete realtimeClients[key];
+  }
+}
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  await cleanupAllActiveConnections();
   scheduler.stop();
-  await browserAgentService.cleanup();
+  await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
   configManager.destroy();
   await shutdownTelemetry();
   server.close(() => {
@@ -547,8 +636,9 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  await cleanupAllActiveConnections();
   scheduler.stop();
-  await browserAgentService.cleanup();
+  await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
   configManager.destroy();
   await shutdownTelemetry();
   server.close(() => {

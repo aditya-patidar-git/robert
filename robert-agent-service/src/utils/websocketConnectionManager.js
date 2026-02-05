@@ -6,14 +6,22 @@
  * - Transient error detection
  */
 
+let isProcessShuttingDown = false;
+if (typeof process !== 'undefined') {
+  const onShutdown = () => { isProcessShuttingDown = true; };
+  process.once('SIGINT', onShutdown);
+  process.once('SIGTERM', onShutdown);
+}
+
 export class WebSocketConnectionManager {
   constructor(ws, callSid, options = {}) {
     this.ws = ws;
     this.callSid = callSid;
     this.pingInterval = null;
     this.pongTimeout = null;
-    this.isPermanentlyClosed = false; // Track permanent closure
-    this.warningLogged = false; // Track if warning has been logged to prevent log spam
+    this.isPermanentlyClosed = false;
+    this.warningLogged = false;
+    this.messageQueue = [];
     this.connectionQuality = {
       latency: [],
       packetLoss: 0,
@@ -21,17 +29,32 @@ export class WebSocketConnectionManager {
       consecutivePongMisses: 0,
       isHealthy: true
     };
-    
-    // Configuration
+
     this.config = {
-      pingInterval: options.pingInterval || 30000, // 30 seconds
-      pongTimeout: options.pongTimeout || 10000, // 10 seconds to receive pong
+      pingInterval: options.pingInterval || 30000,
+      pongTimeout: options.pongTimeout || 10000,
       maxLatencyHistory: options.maxLatencyHistory || 10,
-      unhealthyThreshold: options.unhealthyThreshold || 3 // consecutive missed pongs
+      unhealthyThreshold: options.unhealthyThreshold || 3
     };
-    
+
+    if (this.ws) {
+      this.ws.once('open', () => this.flushQueue());
+    }
     this.setupKeepAlive();
     this.setupConnectionQualityMonitoring();
+  }
+
+  flushQueue() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.isPermanentlyClosed) return;
+    while (this.messageQueue.length > 0) {
+      const msg = this.messageQueue.shift();
+      try {
+        const messageStr = typeof msg === 'string' ? msg : JSON.stringify(msg);
+        this.ws.send(messageStr);
+      } catch (error) {
+        console.error(`❌ [${this.callSid}] Error flushing queued message:`, error.message);
+      }
+    }
   }
 
   /**
@@ -44,24 +67,20 @@ export class WebSocketConnectionManager {
 
     // Handle pong responses
     this.ws.on('pong', () => {
+      if (isProcessShuttingDown || this.pingInterval === null) return;
       if (this.pongTimeout) {
         clearTimeout(this.pongTimeout);
         this.pongTimeout = null;
       }
-      
       const now = Date.now();
       const latency = now - (this.lastPingTime || now);
-      
-      // Track latency
       this.connectionQuality.latency.push(latency);
       if (this.connectionQuality.latency.length > this.config.maxLatencyHistory) {
         this.connectionQuality.latency.shift();
       }
-      
       this.connectionQuality.lastPongTime = now;
       this.connectionQuality.consecutivePongMisses = 0;
       this.connectionQuality.isHealthy = true;
-      
       console.log(`💓 [${this.callSid}] Pong received, latency: ${latency}ms`);
     });
 
@@ -96,28 +115,23 @@ export class WebSocketConnectionManager {
    * @returns {boolean} True if sent successfully, false otherwise
    */
   send(message, options = {}) {
-    // Don't send if connection is permanently closed
     if (this.isPermanentlyClosed) {
-      // Only log warning once to prevent log spam from repeated send attempts
       if (!this.warningLogged) {
         console.warn(`⚠️ [${this.callSid}] Message not sent - connection permanently closed`);
         this.warningLogged = true;
       }
       return false;
     }
-    
-    // If WebSocket is CLOSED, mark as permanently closed
+
     if (this.ws && this.ws.readyState === WebSocket.CLOSED) {
       this.isPermanentlyClosed = true;
-      // Only log warning once to prevent log spam
       if (!this.warningLogged) {
         console.warn(`⚠️ [${this.callSid}] WebSocket is CLOSED - cannot send message`);
         this.warningLogged = true;
       }
       return false;
     }
-    
-    // Only send if connection is OPEN and healthy
+
     if (this.ws && this.ws.readyState === WebSocket.OPEN && this.connectionQuality.isHealthy) {
       try {
         const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
@@ -128,9 +142,12 @@ export class WebSocketConnectionManager {
         return false;
       }
     }
-    
-    // Connection not ready
-    console.warn(`⚠️ [${this.callSid}] Message not sent - WebSocket not ready (readyState: ${this.ws?.readyState}, healthy: ${this.connectionQuality.isHealthy})`);
+
+    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === undefined)) {
+      this.messageQueue.push(message);
+      return true;
+    }
+
     return false;
   }
 
@@ -221,10 +238,9 @@ export class WebSocketConnectionManager {
    * Cleanup resources
    */
   cleanup() {
-    // Mark as permanently closed during cleanup
     this.isPermanentlyClosed = true;
+    this.messageQueue = [];
     this.stopKeepAlive();
-    // Reset warning flag so cleanup can log if needed
     this.warningLogged = false;
     this.connectionQuality = {
       latency: [],

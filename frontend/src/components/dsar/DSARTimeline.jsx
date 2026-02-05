@@ -8,7 +8,10 @@ import { formatDateTime } from '../../utils/formatters';
  * DSARTimeline Component
  * Reusable timeline component for DSAR requests
  */
-const DSARTimeline = ({ events = [] }) => {
+const DSARTimeline = ({ events }) => {
+  // Ensure events is always an array
+  const safeEvents = Array.isArray(events) ? events : [];
+  
   const getEventIcon = (eventType) => {
     switch (eventType) {
       case 'request_created':
@@ -37,7 +40,7 @@ const DSARTimeline = ({ events = [] }) => {
     }
   };
 
-  if (!events || events.length === 0) {
+  if (safeEvents.length === 0) {
     return (
       <Paper sx={{ p: 2 }}>
         <Typography variant="body2" color="text.secondary">
@@ -53,13 +56,13 @@ const DSARTimeline = ({ events = [] }) => {
         Request Timeline
       </Typography>
       <Timeline>
-        {events.map((event, index) => (
+        {safeEvents.map((event, index) => (
           <TimelineItem key={index}>
             <TimelineSeparator>
               <TimelineDot color={getEventColor(event.event)}>
                 {getEventIcon(event.event)}
               </TimelineDot>
-              {index < events.length - 1 && <TimelineConnector />}
+              {index < safeEvents.length - 1 && <TimelineConnector />}
             </TimelineSeparator>
             <TimelineContent>
               <Typography variant="body2" fontWeight="medium">

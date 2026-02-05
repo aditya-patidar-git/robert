@@ -126,7 +126,7 @@ class HandoverSummaryService {
     // Look for outcome indicators in recent user messages
     const outcomePatterns = [
       /(?:want|need|looking for|hoping for|would like)\s+(.+?)(?:\.|$)/i,
-      /(?:to|for)\s+(book|reschedule|cancel|change|find|get|check)\s+(.+?)(?:\.|$)/i
+      /(?:to|for)\s+(book|cancel|change|find|get|check)\s+(.+?)(?:\.|$)/i
     ];
 
     const recentUserMessages = transcript

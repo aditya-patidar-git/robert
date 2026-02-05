@@ -373,6 +373,32 @@ class TraceAggregationService {
   }
 
   /**
+   * Get traces with combined search and filter support
+   * Unified method for the traces endpoint
+   * @param {Object} filters - Filter criteria (dateRange, search, status, entryPath)
+   * @param {number} limit - Maximum number of traces to return
+   * @returns {Promise<Array>} Array of trace objects
+   */
+  async getTraces(filters = {}, limit = 100) {
+    const span = tracer.startSpan('get_traces');
+
+    try {
+      // If there's a search term, use searchTraces
+      if (filters.search) {
+        return await this.searchTraces(filters.search, filters);
+      }
+
+      // Otherwise use getAggregatedTraces
+      return await this.getAggregatedTraces(filters, limit);
+    } catch (error) {
+      span.recordException(error);
+      span.setStatus({ code: 2, message: error.message });
+      span.end();
+      throw error;
+    }
+  }
+
+  /**
    * Search traces by criteria
    * @param {string} searchTerm - Search term
    * @param {Object} filters - Additional filters

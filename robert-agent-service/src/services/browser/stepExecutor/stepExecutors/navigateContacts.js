@@ -22,7 +22,7 @@ export async function executeNavigateContacts(page, args, sessionState, screensh
   }
   
   // Wait for dashboard to be fully loaded
-  await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
+  await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 30000 });
   
   // Navigate to Contacts tab using the correct selector (h3 element, not link)
   const contactsTab = page.locator('h3.list-menu-item-heading:has-text("Contacts")').first();
@@ -36,13 +36,13 @@ export async function executeNavigateContacts(page, args, sessionState, screensh
   // CRITICAL: Wait for the iframe to be present and loaded
   // The Contacts page content is inside an iframe, not in the main page
   console.log('🔍 [navigateContacts] Looking for Contacts iframe...');
-  await page.waitForSelector('#contactLookup_iframe', { state: 'attached', timeout: 15000 });
+  await page.waitForSelector('#contactLookup_iframe', { state: 'attached', timeout: 30000 });
   
   // Wait for the iframe content to be ready
   await page.waitForFunction(() => {
     const iframe = document.querySelector('#contactLookup_iframe');
     return iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete';
-  }, { timeout: 15000 });
+  }, { timeout: 30000 });
   
   console.log('✅ [navigateContacts] Contacts page iframe loaded successfully');
 

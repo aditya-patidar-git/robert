@@ -129,6 +129,11 @@ export const updatePrivacyConfig = async (req, res) => {
     }
     if (requireExplicitConsent !== undefined) {
       config.consentSettings.requireExplicitConsent = requireExplicitConsent;
+      // Keep recording.requireExplicitConsent in sync for agent service compatibility
+      if (!config.recording) {
+        config.recording = {};
+      }
+      config.recording.requireExplicitConsent = requireExplicitConsent;
     }
     
     if (privacyPolicyUrl !== undefined) {
