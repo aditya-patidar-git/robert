@@ -31,7 +31,7 @@ export const sendOtp = async (req, res) => {
         return res.status(400).json({ message: "Two-factor authentication is not enabled for this account" });
     }
 
-    const otp = createOtpForEmail(user.email);
+    const otp = createOtpForEmail(user.email, 'mfa');
     const result = await emailService.sendLoginOtp(user.email, otp);
     if (!result.success) {
         return res.status(500).json({ message: "Failed to send OTP. Please try again." });
@@ -46,7 +46,7 @@ export const invalidateLoginOtp = async (req, res) => {
     if (!email || typeof email !== 'string' || !email.trim()) {
         return res.status(400).json({ message: "Email is required" });
     }
-    clearOtp(email.trim().toLowerCase());
+    clearOtp(email.trim().toLowerCase(), 'mfa');
     res.json({ message: "OK" });
 };
 
@@ -61,7 +61,7 @@ export const sendSignupOtp = async (req, res) => {
     if (existingUser) {
         return res.status(400).json({ message: "Email already registered" });
     }
-    const otp = createOtpForEmail(normalizedEmail);
+    const otp = createOtpForEmail(normalizedEmail, 'signup');
     const result = await emailService.sendSignupOtp(normalizedEmail, otp);
     if (!result.success) {
         return res.status(500).json({ message: "Failed to send verification code. Please try again." });
@@ -84,7 +84,7 @@ export const signup = async (req, res) => {
     if (!otp || typeof otp !== 'string' || otp.trim().length === 0) {
         return res.status(400).json({ message: "Verification code is required" });
     }
-    const storedOtp = getAndClearOtp(normalizedEmail);
+    const storedOtp = getAndClearOtp(normalizedEmail, 'signup');
     if (!storedOtp || storedOtp !== otp.trim()) {
         return res.status(400).json({ message: "Invalid or expired verification code" });
     }
@@ -134,8 +134,18 @@ export const login = async (req, res) => {
         return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    if (user.status === "pending") {
+        await createAuditLog({
+            actorId: user._id,
+            action: 'auth.login_failed',
+            targetType: 'user',
+            targetId: user._id.toString(),
+            diff: { reason: 'pending_verification_required', status: user.status },
+            req
+        });
+        return res.status(403).json({ needEmailVerification: true, message: "Verify your email to activate your account." });
+    }
     if (user.status !== "active") {
-        // Log failed login attempt (inactive user)
         await createAuditLog({
             actorId: user._id,
             action: 'auth.login_failed',
@@ -152,7 +162,7 @@ export const login = async (req, res) => {
         if (!otp || typeof otp !== 'string' || otp.trim().length === 0) {
             return res.status(403).json({ mfaRequired: true, message: "OTP required" });
         }
-        const storedOtp = getAndClearOtp(user.email);
+        const storedOtp = getAndClearOtp(user.email, 'mfa');
         if (!storedOtp || storedOtp !== otp.trim()) {
             await createAuditLog({
                 actorId: user._id,
@@ -182,6 +192,77 @@ export const login = async (req, res) => {
         req
     });
 
+    res.json({
+        token,
+        user: {
+            id: user._id,
+            email: user.email,
+            username: user.username,
+            role: user.role,
+            status: user.status
+        }
+    });
+};
+
+// POST /auth/send-pending-verification-otp - Send OTP to pending user for email verification
+export const sendPendingVerificationOtp = async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+        return res.status(401).json({ message: "Invalid email or password" });
+    }
+    const isValid = await verifyPassword(user.passwordHash, password);
+    if (!isValid) {
+        return res.status(401).json({ message: "Invalid email or password" });
+    }
+    if (user.status !== "pending") {
+        return res.status(403).json({ message: "Account is not pending verification" });
+    }
+    const otp = createOtpForEmail(normalizedEmail, 'pending_verification');
+    const result = await emailService.sendPendingVerificationOtp(normalizedEmail, otp);
+    if (!result.success) {
+        return res.status(500).json({ message: "Failed to send verification code. Please try again." });
+    }
+    res.json({ message: "Verification code sent to your email" });
+};
+
+// POST /auth/verify-pending-user - Verify OTP and activate pending user, return token
+export const verifyPendingUser = async (req, res) => {
+    const { email, otp } = req.body;
+    if (!email || typeof email !== 'string' || !email.trim()) {
+        return res.status(400).json({ message: "Email is required" });
+    }
+    if (!otp || typeof otp !== 'string' || otp.trim().length === 0) {
+        return res.status(400).json({ message: "Verification code is required" });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    const storedOtp = getAndClearOtp(normalizedEmail, 'pending_verification');
+    if (!storedOtp || storedOtp !== otp.trim()) {
+        return res.status(400).json({ message: "Invalid or expired verification code" });
+    }
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+        return res.status(400).json({ message: "User not found" });
+    }
+    if (user.status !== "pending") {
+        return res.status(400).json({ message: "Account is already active" });
+    }
+    user.status = "active";
+    user.lastLoginAt = new Date();
+    await user.save();
+    const { token } = generateToken(user);
+    await createAuditLog({
+        actorId: user._id,
+        action: 'auth.login',
+        targetType: 'user',
+        targetId: user._id.toString(),
+        diff: { email: user.email, pending_verified: true },
+        req
+    });
     res.json({
         token,
         user: {

@@ -185,8 +185,14 @@ export const AuthProvider = ({ children }) => {
       const isMfaRequired =
         (error?.response?.status === 403 && data?.mfaRequired) ||
         (error?.statusCode === 403 && error?.details?.mfaRequired);
+      const needEmailVerification =
+        (error?.response?.status === 403 && data?.needEmailVerification) ||
+        (error?.statusCode === 403 && error?.details?.needEmailVerification);
       if (isMfaRequired) {
         return { success: false, mfaRequired: true, error: message };
+      }
+      if (needEmailVerification) {
+        return { success: false, needEmailVerification: true, error: message };
       }
       return { success: false, error: message, isBlocked };
     }
@@ -199,6 +205,34 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       const data = error?.response?.data ?? error?.details;
       const message = data?.message || error?.message || 'Failed to send verification code.';
+      return { success: false, error: message };
+    }
+  };
+
+  const sendPendingVerificationOtp = async (credentials) => {
+    try {
+      await authService.sendPendingVerificationOtp(credentials);
+      return { success: true };
+    } catch (error) {
+      const data = error?.response?.data ?? error?.details;
+      const message = data?.message || error?.message || 'Failed to send verification code.';
+      return { success: false, error: message };
+    }
+  };
+
+  const verifyPendingUser = async ({ email, otp }) => {
+    try {
+      const data = await authService.verifyPendingUser({ email, otp });
+      if (data?.user && data?.token) {
+        setUser(data.user);
+        setIsAuthenticated(true);
+        window.dispatchEvent(new Event('authTokenChanged'));
+        return { success: true, user: data.user };
+      }
+      return { success: false, error: 'Invalid response' };
+    } catch (error) {
+      const data = error?.response?.data ?? error?.details;
+      const message = data?.message || error?.message || 'Verification failed.';
       return { success: false, error: message };
     }
   };
@@ -299,6 +333,8 @@ export const AuthProvider = ({ children }) => {
         login,
         sendLoginOtp,
         sendSignupOtp,
+        sendPendingVerificationOtp,
+        verifyPendingUser,
         register,
         logout,
         updateProfile,

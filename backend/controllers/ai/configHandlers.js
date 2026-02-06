@@ -206,6 +206,12 @@ export const updateConfig = async (req, res) => {
       if (uncertaintyGate.minSources !== undefined) config.uncertaintyGate.minSources = uncertaintyGate.minSources;
     }
 
+    if (model?.fallbackChain !== undefined) {
+      config.model.markModified('fallbackChain');
+    }
+    if (model) {
+      config.markModified('model');
+    }
     config.createdBy = req.user?.id || "admin";
     await config.save();
 

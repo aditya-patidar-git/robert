@@ -32,6 +32,28 @@ class AuditLogService extends BaseService {
   async getAuditLog(auditLogId) {
     return this.get(`/${auditLogId}`);
   }
+
+  /**
+   * Export audit logs as CSV or JSON file (download)
+   * @param {Object} params - Same filters as getAuditLogs plus format: 'csv' | 'json'
+   * @returns {Promise<void>}
+   */
+  async exportAuditLogs(params = {}) {
+    const { format = 'csv', ...rest } = params;
+    const url = this.buildUrl('/export');
+    const response = await this.client.get(url, {
+      params: { ...rest, format },
+      responseType: 'blob'
+    });
+    const blob = response.data;
+    const ext = format === 'csv' ? 'csv' : 'json';
+    const filename = `audit-logs.${ext}`;
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    window.URL.revokeObjectURL(link.href);
+  }
 }
 
 // Export singleton instance

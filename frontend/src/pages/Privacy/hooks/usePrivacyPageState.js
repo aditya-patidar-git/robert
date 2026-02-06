@@ -25,6 +25,7 @@ export function usePrivacyPageState() {
   // Audit log filters state
   const [auditLogFilters, setAuditLogFilters] = useState({
     eventType: '',
+    actorId: '',
     startDate: '',
     endDate: ''
   });
@@ -63,6 +64,7 @@ export function usePrivacyPageState() {
         page: auditLogPage + 1 // API uses 1-indexed pages
       };
       if (auditLogFilters.eventType) params.action = auditLogFilters.eventType;
+      if (auditLogFilters.actorId) params.actorId = auditLogFilters.actorId;
       if (auditLogFilters.startDate) params.startDate = auditLogFilters.startDate;
       if (auditLogFilters.endDate) params.endDate = auditLogFilters.endDate;
       

@@ -158,6 +158,12 @@ class EmailService {
     const text = `Your verification code is: ${otp}\n\nThis code is valid for 10 minutes. Use it to complete your registration.`;
     return this.sendEmail({ to, subject, text });
   }
+
+  async sendPendingVerificationOtp(to, otp) {
+    const subject = 'Activate your account – verification code';
+    const text = `Your verification code is: ${otp}\n\nThis code is valid for 10 minutes. Use it to activate your account and sign in.`;
+    return this.sendEmail({ to, subject, text });
+  }
 }
 
 export default new EmailService();

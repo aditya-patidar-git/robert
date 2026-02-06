@@ -1,10 +1,11 @@
 import openaiService from './openaiService.js';
 import KnowledgeBase from '../models/KnowledgeBase.js';
 import driftDetectionService from './driftDetectionService.js';
+import { VECTOR_STORE_ID } from '../config/openaiVectorStore.js';
 
 class ReingestService {
   constructor() {
-    this.vectorStoreId = process.env.OPENAI_VECTOR_STORE_ID;
+    this.vectorStoreId = VECTOR_STORE_ID;
     this.reingestStatus = {
       isRunning: false,
       lastRun: null,

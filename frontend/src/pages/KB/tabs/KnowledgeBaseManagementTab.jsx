@@ -31,7 +31,8 @@ const KnowledgeBaseManagementTab = ({ state, handlers }) => {
     detectingDrift,
     reingestFileMutation,
     detectDriftMutation,
-    addQAPairMutation
+    addQAPairMutation,
+    initialQAPairForKB = { question: '', answer: '' }
   } = state;
 
   const {
@@ -40,7 +41,8 @@ const KnowledgeBaseManagementTab = ({ state, handlers }) => {
     handleViewFile,
     handleOpenEditTags,
     handleReingestFile,
-    handleDetectDrift
+    handleDetectDrift,
+    handleClearInitialQAForKB
   } = handlers;
 
   const handleFileUploadLocal = (event) => {
@@ -118,6 +120,9 @@ const KnowledgeBaseManagementTab = ({ state, handlers }) => {
           
           <QAPairInput
             addQAPairMutation={addQAPairMutation}
+            initialQuestion={initialQAPairForKB.question}
+            initialAnswer={initialQAPairForKB.answer}
+            onInitialApplied={handleClearInitialQAForKB}
           />
           
           <FilesTable

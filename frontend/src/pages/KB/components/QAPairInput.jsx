@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Paper,
   Typography,
@@ -9,9 +9,17 @@ import {
 } from '@mui/material';
 import { Add, Clear } from '@mui/icons-material';
 
-const QAPairInput = ({ addQAPairMutation, onClear }) => {
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
+const QAPairInput = ({ addQAPairMutation, onClear, initialQuestion = '', initialAnswer = '', onInitialApplied }) => {
+  const [question, setQuestion] = useState(initialQuestion);
+  const [answer, setAnswer] = useState(initialAnswer);
+
+  useEffect(() => {
+    if (initialQuestion || initialAnswer) {
+      setQuestion(initialQuestion);
+      setAnswer(initialAnswer);
+      onInitialApplied?.();
+    }
+  }, [initialQuestion, initialAnswer]);
 
   const handleAdd = () => {
     if (!question.trim() || !answer.trim()) {

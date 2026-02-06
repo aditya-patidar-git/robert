@@ -1,11 +1,10 @@
 import { OpenAI, toFile } from 'openai';
-// dotenv is already loaded in server.js, no need to reload here
+import { VECTOR_STORE_ID } from '../config/openaiVectorStore.js';
 
 class OpenAIFilesService {
   constructor() {
-    // Lazy initialization - client created on first use
     this._openai = null;
-    this.vectorStoreId = process.env.OPENAI_VECTOR_STORE_ID;
+    this.vectorStoreId = VECTOR_STORE_ID;
   }
 
   get openai() {
@@ -392,16 +391,12 @@ class OpenAIFilesService {
   async uploadTextToVectorStore(content, filename) {
     try {
       console.log(`📝 Uploading text content directly to vector store: ${filename}`);
-      
-      // Use uploadAndPoll to upload text directly to vector store
+      const buffer = Buffer.from(content, 'utf-8');
+      const fileObj = await toFile(buffer, filename);
       const result = await this.openai.vectorStores.files.uploadAndPoll(
         this.vectorStoreId,
-        {
-          file: Buffer.from(content, 'utf-8'),
-          filename: filename
-        }
+        fileObj
       );
-
       console.log(`✅ Text content uploaded to vector store: ${result.id}, status: ${result.status}`);
       return result;
     } catch (error) {

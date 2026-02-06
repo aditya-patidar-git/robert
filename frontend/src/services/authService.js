@@ -56,6 +56,22 @@ class AuthService extends BaseService {
     return this.post('/send-signup-otp', { email });
   }
 
+  async sendPendingVerificationOtp(credentials) {
+    return this.post('/send-pending-verification-otp', {
+      email: credentials.email,
+      password: credentials.password
+    });
+  }
+
+  async verifyPendingUser({ email, otp }) {
+    const response = await this.post('/verify-pending-user', { email, otp });
+    const data = response?.data ?? response;
+    if (data?.token) {
+      localStorage.setItem('authToken', data.token);
+    }
+    return data;
+  }
+
   /**
    * Get current user profile (validates session)
    * @returns {Promise<Object>} User profile object

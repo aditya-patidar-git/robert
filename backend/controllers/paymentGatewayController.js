@@ -1,6 +1,7 @@
 import PaymentGatewayConfig from "../models/PaymentGatewayConfig.js";
 import paymentGatewayService from "../services/paymentGatewayService.js";
 import configSyncService from "../services/configSyncService.js";
+import { createAuditLog } from "./auditLogController.js";
 
 // Get current payment gateway config
 export const getPaymentGatewayConfig = async (req, res) => {
@@ -121,6 +122,17 @@ export const testGatewayConnection = async (req, res) => {
 
     // Test connection
     const testResult = await paymentGatewayService.testConnection(gatewayType, testCredentials);
+
+    if (req.user) {
+      await createAuditLog({
+        actorId: req.user._id,
+        action: 'secret.access_attempt',
+        targetType: 'config',
+        targetId: `payment_${gatewayType}`,
+        diff: { operation: 'test_connection', success: testResult.success },
+        req
+      });
+    }
 
     // Update config with test results if config exists
     const config = await PaymentGatewayConfig.findOne({ 

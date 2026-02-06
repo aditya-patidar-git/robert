@@ -1,5 +1,5 @@
 import express from "express";
-import { signup, login, sendOtp, sendSignupOtp, invalidateLoginOtp, getProfile, logout, updateProfile, changePassword, toggleMFA } from "../controllers/authController.js";
+import { signup, login, sendOtp, sendSignupOtp, invalidateLoginOtp, sendPendingVerificationOtp, verifyPendingUser, getProfile, logout, updateProfile, changePassword, toggleMFA } from "../controllers/authController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -10,6 +10,8 @@ router.post("/login", login);
 router.post("/send-otp", sendOtp);
 router.post("/invalidate-login-otp", invalidateLoginOtp);
 router.post("/send-signup-otp", sendSignupOtp);
+router.post("/send-pending-verification-otp", sendPendingVerificationOtp);
+router.post("/verify-pending-user", verifyPendingUser);
 
 // Protected routes
 router.get("/me", protect, getProfile);

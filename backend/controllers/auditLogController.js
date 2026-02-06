@@ -2,6 +2,7 @@ import AuditLog from "../models/AuditLog.js";
 import User from "../models/User.js";
 import fs from 'fs';
 import path from 'path';
+import auditLogRetentionJob from "../jobs/auditLogRetentionJob.js";
 
 /**
  * Create audit log entry
@@ -230,6 +231,108 @@ export const getAuditLogs = async (req, res) => {
     }
 };
 
+const MAX_EXPORT_LIMIT = 10000;
+const SENSITIVE_KEYS = ['password', 'token', 'credentials', 'apiKey', 'secret', 'passwordHash'];
+
+const sanitizeForExport = (obj) => {
+    if (obj === null || obj === undefined) return null;
+    if (typeof obj !== 'object') return obj;
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+        const lower = k.toLowerCase();
+        if (SENSITIVE_KEYS.some(s => lower.includes(s))) continue;
+        out[k] = typeof v === 'object' && v !== null && !(v instanceof Date) ? sanitizeForExport(v) : v;
+    }
+    return out;
+};
+
+const buildAuditFilter = (query) => {
+    const { actorId, action, targetType, targetId, startDate, endDate } = query;
+    const filter = {};
+    const isValidValue = (v) => v && v !== 'undefined' && v !== 'null' && (typeof v !== 'string' || v.trim() !== '');
+    if (isValidValue(actorId)) filter.actorId = actorId;
+    if (isValidValue(action)) filter.action = { $regex: action, $options: 'i' };
+    if (isValidValue(targetType)) filter.targetType = targetType;
+    if (isValidValue(targetId)) filter.targetId = targetId;
+    if (isValidValue(startDate) || isValidValue(endDate)) {
+        filter.createdAt = {};
+        if (isValidValue(startDate)) {
+            const start = new Date(startDate);
+            if (!isNaN(start.getTime())) filter.createdAt.$gte = start;
+        }
+        if (isValidValue(endDate)) {
+            const end = new Date(endDate);
+            if (!isNaN(end.getTime())) filter.createdAt.$lte = end;
+        }
+        if (Object.keys(filter.createdAt).length === 0) delete filter.createdAt;
+    }
+    return { filter, isValidValue };
+};
+
+/**
+ * Export audit logs as CSV or JSON
+ * GET /admin/audit/export?format=csv|json&actorId=&action=&startDate=&endDate=...
+ */
+export const exportAuditLogs = async (req, res) => {
+    try {
+        const { format = 'json' } = req.query;
+        const { filter, isValidValue } = buildAuditFilter(req.query);
+
+        const mongoLogs = await AuditLog.find(filter)
+            .populate('actorId', 'email username role')
+            .sort({ createdAt: -1 })
+            .limit(MAX_EXPORT_LIMIT)
+            .lean();
+
+        const syncedFileLogIds = new Set(
+            mongoLogs.filter(log => log.metadata?.fileLogId).map(log => log.metadata.fileLogId)
+        );
+        let fileLogs = readFileBasedAuditLogs({
+            startDate: isValidValue(req.query.startDate) ? req.query.startDate : null,
+            endDate: isValidValue(req.query.endDate) ? req.query.endDate : null
+        });
+        if (isValidValue(req.query.action)) {
+            const actionRegex = new RegExp(req.query.action, 'i');
+            fileLogs = fileLogs.filter(log => actionRegex.test(log.action));
+        }
+        fileLogs = fileLogs.filter(log => !syncedFileLogIds.has(log._id));
+        const allLogs = [...mongoLogs, ...fileLogs].sort((a, b) =>
+            new Date(b.createdAt) - new Date(a.createdAt)
+        ).slice(0, MAX_EXPORT_LIMIT);
+
+        if (format === 'csv') {
+            const header = 'timestamp,actor_email,actor_username,action,targetType,targetId,ip,userAgent,diff_summary';
+            const escapeCsv = (v) => {
+                const s = v == null ? '' : String(v);
+                return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+            const rows = allLogs.map(log => {
+                const ts = log.createdAt ? new Date(log.createdAt).toISOString() : '';
+                const actor = log.actorId || {};
+                const email = actor.email || '';
+                const username = actor.username || '';
+                const diffSummary = log.diff ? JSON.stringify(sanitizeForExport(log.diff)) : '';
+                return [ts, email, username, log.action || '', log.targetType || '', log.targetId || '', log.ip || '', (log.userAgent || '').replace(/\r?\n/g, ' '), diffSummary].map(escapeCsv).join(',');
+            });
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', 'attachment; filename="audit-logs.csv"');
+            res.send([header, ...rows].join('\n'));
+            return;
+        }
+
+        const safeLogs = allLogs.map(log => ({
+            ...log,
+            diff: sanitizeForExport(log.diff),
+            metadata: sanitizeForExport(log.metadata)
+        }));
+        res.setHeader('Content-Disposition', 'attachment; filename="audit-logs.json"');
+        res.json(safeLogs);
+    } catch (error) {
+        console.error("Error exporting audit logs:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
 /**
  * Get single audit log entry
  * GET /admin/audit/:id
@@ -248,6 +351,20 @@ export const getAuditLog = async (req, res) => {
         res.json(auditLog);
     } catch (error) {
         console.error("Error fetching audit log:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+/**
+ * Run audit log retention job (admin only). Call via cron or manually.
+ * POST /admin/audit/retention-run
+ */
+export const runAuditRetention = async (req, res) => {
+    try {
+        const results = await auditLogRetentionJob.run();
+        res.json({ success: true, results });
+    } catch (error) {
+        console.error("Error running audit retention:", error);
         res.status(500).json({ message: "Internal server error" });
     }
 };

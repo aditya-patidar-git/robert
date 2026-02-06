@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-// dotenv is already loaded in server.js, no need to reload here
+import { VECTOR_STORE_ID, VECTOR_STORE_NAME } from '../config/openaiVectorStore.js';
 
 // Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
 let openaiClient = null;
@@ -14,8 +14,8 @@ function getOpenAIClient() {
 
 class FileSearchService {
   constructor() {
-    this.vectorStoreId = process.env.OPENAI_VECTOR_STORE_ID;
-    this.vectorStoreName = process.env.OPENAI_VECTOR_STORE_NAME || 'UNIVERSALAIDATABASE';
+    this.vectorStoreId = VECTOR_STORE_ID;
+    this.vectorStoreName = VECTOR_STORE_NAME;
   }
 
   // Extract readable text from content (handles string, object, or array structures)

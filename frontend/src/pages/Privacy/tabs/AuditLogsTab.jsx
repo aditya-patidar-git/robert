@@ -1,9 +1,12 @@
-import React from 'react';
-import { Box, Typography, TextField, FormControl, InputLabel, Select, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, CircularProgress, Tooltip, TablePagination } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Typography, TextField, FormControl, InputLabel, Select, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, CircularProgress, Tooltip, TablePagination, Button } from '@mui/material';
+import { Download as DownloadIcon } from '@mui/icons-material';
 import { formatDateTime } from '../../../utils/formatters';
 import { formatAuditDetails, formatEventTypeLabel, getEventTypeColor } from '../utils/auditLogFormatters';
+import auditLogService from '../../../services/auditLogService';
 
 const AuditLogsTab = ({ state }) => {
+  const [exporting, setExporting] = useState(false);
   const {
     auditLogs,
     auditLogsLoading,
@@ -15,9 +18,24 @@ const AuditLogsTab = ({ state }) => {
     auditLogPagination
   } = state;
 
+  const handleExport = async (format) => {
+    setExporting(true);
+    try {
+      await auditLogService.exportAuditLogs({
+        action: auditLogFilters.eventType || undefined,
+        actorId: auditLogFilters.actorId || undefined,
+        startDate: auditLogFilters.startDate || undefined,
+        endDate: auditLogFilters.endDate || undefined,
+        format: format || 'csv'
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>Event Type</InputLabel>
           <Select
@@ -45,6 +63,14 @@ const AuditLogsTab = ({ state }) => {
         </FormControl>
         <TextField
           size="small"
+          label="User (Actor ID)"
+          value={auditLogFilters.actorId || ''}
+          onChange={(e) => setAuditLogFilters({ ...auditLogFilters, actorId: e.target.value })}
+          placeholder="Filter by user ID"
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          size="small"
           type="date"
           label="Start Date"
           value={auditLogFilters.startDate}
@@ -59,6 +85,9 @@ const AuditLogsTab = ({ state }) => {
           onChange={(e) => setAuditLogFilters({ ...auditLogFilters, endDate: e.target.value })}
           InputLabelProps={{ shrink: true }}
         />
+        <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={() => handleExport('csv')} disabled={exporting}>
+          {exporting ? 'Exporting…' : 'Export CSV'}
+        </Button>
       </Box>
       {auditLogsLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>

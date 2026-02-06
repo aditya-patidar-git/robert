@@ -1,6 +1,7 @@
 import PrivacyConfig from "../models/PrivacyConfig.js";
 import observabilityService from "../services/observabilityService.js";
 import configSyncService from "../services/configSyncService.js";
+import { createAuditLog } from "./auditLogController.js";
 
 // Get current privacy configuration
 export const getPrivacyConfig = async (req, res) => {
@@ -159,6 +160,24 @@ export const updatePrivacyConfig = async (req, res) => {
 
     config.createdBy = req.user?.id || "admin";
     await config.save();
+
+    const diff = {};
+    if (consentScript !== undefined) diff.consentScript = true;
+    if (transcriptRetention !== undefined || recordingRetention !== undefined || metadataRetention !== undefined) diff.retentionSettings = true;
+    if (optOutAllowed !== undefined || optOutEmailRoute !== undefined || requireExplicitConsent !== undefined) diff.consentSettings = true;
+    if (privacyPolicyUrl !== undefined) diff.privacyPolicy = true;
+    if (lawfulBasis !== undefined) diff.lawfulBasis = true;
+    if (ukGdprCompliance !== undefined) diff.ukGdprCompliance = true;
+    if (Object.keys(diff).length > 0 && req.user) {
+      await createAuditLog({
+        actorId: req.user._id,
+        action: 'config.update',
+        targetType: 'config',
+        targetId: 'privacy',
+        diff,
+        req
+      });
+    }
 
     // Notify config change
     configSyncService.notifyConfigChange('privacy', null, {

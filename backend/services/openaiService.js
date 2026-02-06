@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-// dotenv is already loaded in server.js, no need to reload here
+import { VECTOR_STORE_ID, VECTOR_STORE_NAME } from '../config/openaiVectorStore.js';
 
 // Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
 let openaiClient = null;
@@ -11,10 +11,6 @@ function getOpenAIClient() {
   }
   return openaiClient;
 }
-
-// Existing vector store ID from documentation
-const VECTOR_STORE_ID = process.env.OPENAI_VECTOR_STORE_ID || 'vs_68b70556ca1081918dd5dbe56042a419';
-const VECTOR_STORE_NAME = process.env.OPENAI_VECTOR_STORE_NAME || 'UNIVERSALAIDATABASE';
 
 class OpenAIService {
   constructor() {

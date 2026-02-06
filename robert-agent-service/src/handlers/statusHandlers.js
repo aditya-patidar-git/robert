@@ -1,6 +1,9 @@
 import CallRecord from "../database/models/CallRecord.js";
+import ConversationContext from "../database/models/ConversationContext.js";
 import { conversations } from "../shared/state.js";
 import summaryService from "../services/summaryService.js";
+import tokenLimitService from "../services/tokenLimitService.js";
+import configManager from "../agent/configManager.js";
 import crossCallMemoryService from "../services/crossCallMemoryService.js";
 import twilioMetricsService from "../services/twilioMetricsService.js";
 import voicemailEmailService from "../services/voicemailEmailService.js";
@@ -205,6 +208,41 @@ export const callStatus = async (req, res) => {
         } catch (error) {
             console.error(`❌ [${CallSid}] Error storing call summary:`, error);
             // Don't block call completion if summary storage fails
+        }
+
+        try {
+            let totalTokens = 0;
+            let maxTokensUsed = 0;
+            let truncationCount = 0;
+            const convContext = await ConversationContext.findOne({ callSid: CallSid }).lean();
+            if (convContext && (convContext.currentTokens != null || (convContext.truncationHistory && convContext.truncationHistory.length > 0))) {
+                totalTokens = convContext.currentTokens || 0;
+                maxTokensUsed = totalTokens;
+                truncationCount = convContext.truncationHistory?.length || 0;
+            } else if (conversation?.transcript?.length > 0) {
+                const messages = conversation.transcript.map(t => ({
+                    role: t.role === 'agent' ? 'assistant' : 'user',
+                    content: t.text || ''
+                }));
+                const config = configManager.getConfigForNumber(To, conversation.language || 'en');
+                const modelId = config?.model?.id || 'gpt-4o-realtime-preview-2024-12-17';
+                totalTokens = tokenLimitService.countTokensInMessages(messages, modelId);
+                maxTokensUsed = totalTokens;
+            }
+            await CallRecord.findOneAndUpdate(
+                { callSid: CallSid },
+                {
+                    $set: {
+                        'metrics.totalTokens': totalTokens,
+                        'metrics.maxTokensUsed': maxTokensUsed,
+                        'metrics.truncationCount': truncationCount,
+                        'metrics.contextOptimizationApplied': truncationCount > 0
+                    }
+                },
+                { upsert: true }
+            );
+        } catch (tokenErr) {
+            console.error(`❌ [${CallSid}] Error saving token metrics to CallRecord:`, tokenErr);
         }
 
         // Check if this was a voicemail call and send notification email

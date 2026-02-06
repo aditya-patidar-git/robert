@@ -78,6 +78,9 @@ export const useAudioConfig = (formMethods = null) => {
         energyThresholdAutoCalibrate: config.energyThresholdAutoCalibrate !== null && config.energyThresholdAutoCalibrate !== undefined 
           ? config.energyThresholdAutoCalibrate 
           : AUDIO_CONFIG_DEFAULTS.energyThresholdAutoCalibrate,
+        transcriptionModel: config.transcriptionModel !== null && config.transcriptionModel !== undefined
+          ? config.transcriptionModel
+          : AUDIO_CONFIG_DEFAULTS.transcriptionModel,
       };
       
       // Reset form with new values - use keepDefaultValues: false to ensure values update
@@ -121,6 +124,9 @@ export const useAudioConfig = (formMethods = null) => {
         }
         if (config.energyThresholdAutoCalibrate !== undefined) {
           setValue('energyThresholdAutoCalibrate', config.energyThresholdAutoCalibrate, { shouldValidate: false });
+        }
+        if (config.transcriptionModel !== undefined && config.transcriptionModel !== null) {
+          setValue('transcriptionModel', config.transcriptionModel, { shouldValidate: false });
         }
     }
   }, [data, isLoading, setValue, reset, getValues]);

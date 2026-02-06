@@ -23,7 +23,7 @@ const MFA_OTP_SENT_EMAIL_KEY = 'mfa_otp_sent_email';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { login, sendLoginOtp, isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const { login, sendLoginOtp, sendPendingVerificationOtp, verifyPendingUser, isAuthenticated, isLoading: authLoading, user } = useAuth();
   const { showSuccess, showError } = useToast();
 
   const [showPassword, setShowPassword] = useState(false);
@@ -32,6 +32,8 @@ const LoginPage = () => {
   const [loginError, setLoginError] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
   const [pendingCredentials, setPendingCredentials] = useState(null);
+  const [pendingVerificationRequired, setPendingVerificationRequired] = useState(false);
+  const [pendingVerificationCredentials, setPendingVerificationCredentials] = useState(null);
   const [otp, setOtp] = useState('');
   const [sendOtpCooldownSeconds, setSendOtpCooldownSeconds] = useState(0);
 
@@ -70,6 +72,20 @@ const LoginPage = () => {
     setLoginError('');
 
     try {
+      if (pendingVerificationRequired) {
+        const result = await verifyPendingUser({
+          email: pendingVerificationCredentials.email,
+          otp: otp.trim()
+        });
+        if (result.success) {
+          showSuccess(`Welcome, ${result.user.username}! Your account is now active.`);
+          navigate('/admin/dashboard');
+        } else {
+          setLoginError(result.error);
+          showError(result.error);
+        }
+        return;
+      }
       const payload = mfaRequired ? { ...getValues(), otp: otp.trim() } : data;
       const result = await login(payload);
       if (result.success) {
@@ -79,6 +95,10 @@ const LoginPage = () => {
         setMfaRequired(true);
         setPendingCredentials({ email: data.email, password: data.password });
         showSuccess('Enter the OTP sent to your email.');
+      } else if (result.needEmailVerification) {
+        setPendingVerificationRequired(true);
+        setPendingVerificationCredentials({ email: data.email, password: data.password });
+        showSuccess('Verify your email to activate your account.');
       } else {
         setLoginError(result.error);
         showError(result.error, result.isBlocked ? 'Account Suspended' : 'Login Failed');
@@ -94,7 +114,7 @@ const LoginPage = () => {
   };
 
   const onSendOtp = async () => {
-    const creds = pendingCredentials || getValues();
+    const creds = pendingVerificationRequired ? pendingVerificationCredentials : (pendingCredentials || getValues());
     if (!creds?.email || !creds?.password) {
       showError('Please enter email and password first.');
       return;
@@ -102,21 +122,35 @@ const LoginPage = () => {
     setIsSendingOtp(true);
     setLoginError('');
     try {
-      const result = await sendLoginOtp(creds);
-      if (result.success) {
-        showSuccess('OTP sent to your email.');
-        setSendOtpCooldownSeconds(600); // 10 minutes
-        sessionStorage.setItem(MFA_OTP_SENT_EMAIL_KEY, creds.email);
+      if (pendingVerificationRequired) {
+        const result = await sendPendingVerificationOtp(creds);
+        if (result.success) {
+          showSuccess('Verification code sent to your email.');
+          setSendOtpCooldownSeconds(600);
+        } else {
+          setLoginError(result.error);
+          showError(result.error);
+        }
       } else {
-        setLoginError(result.error);
-        showError(result.error);
+        const result = await sendLoginOtp(creds);
+        if (result.success) {
+          showSuccess('OTP sent to your email.');
+          setSendOtpCooldownSeconds(600);
+          sessionStorage.setItem(MFA_OTP_SENT_EMAIL_KEY, creds.email);
+        } else {
+          setLoginError(result.error);
+          showError(result.error);
+        }
       }
     } finally {
       setIsSendingOtp(false);
     }
   };
 
-  const canSubmit = !mfaRequired || (getValues('email') && getValues('password') && otp.trim().length >= 6);
+  const canSubmit =
+    (!mfaRequired && !pendingVerificationRequired) ||
+    (mfaRequired && getValues('email') && getValues('password') && otp.trim().length >= 6) ||
+    (pendingVerificationRequired && pendingVerificationCredentials?.email && otp.trim().length >= 6);
 
   const formatCooldown = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -150,6 +184,13 @@ const LoginPage = () => {
 
           {/* <-- Use actual form element --> */}
           <form onSubmit={handleSubmit(onSubmit)} noValidate>
+            {pendingVerificationRequired && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Your account is pending verification. We'll send a verification code to your email to activate it.
+              </Alert>
+            )}
+            {!pendingVerificationRequired && (
+            <>
             <TextField
               fullWidth
               label="Email Address"
@@ -199,8 +240,10 @@ const LoginPage = () => {
                 )
               }}
             />
+            </>
+            )}
 
-            {mfaRequired && (
+            {(mfaRequired || pendingVerificationRequired) && (
               <Box sx={{ mt: 2 }}>
                 <TextField
                   fullWidth
@@ -226,8 +269,8 @@ const LoginPage = () => {
                   disabled={
                     isSendingOtp ||
                     sendOtpCooldownSeconds > 0 ||
-                    !pendingCredentials?.email ||
-                    !pendingCredentials?.password
+                    (mfaRequired && (!pendingCredentials?.email || !pendingCredentials?.password)) ||
+                    (pendingVerificationRequired && (!pendingVerificationCredentials?.email || !pendingVerificationCredentials?.password))
                   }
                   onClick={onSendOtp}
                   sx={{ mt: 1, mb: 1 }}
@@ -237,8 +280,25 @@ const LoginPage = () => {
                     ? 'Sending...'
                     : sendOtpCooldownSeconds > 0
                       ? `Resend in ${formatCooldown(sendOtpCooldownSeconds)}`
-                      : 'Send OTP'}
+                      : 'Send verification code'}
                 </Button>
+                {pendingVerificationRequired && (
+                  <Button
+                    type="button"
+                    fullWidth
+                    variant="text"
+                    size="medium"
+                    onClick={() => {
+                      setPendingVerificationRequired(false);
+                      setPendingVerificationCredentials(null);
+                      setOtp('');
+                      setLoginError('');
+                    }}
+                    sx={{ mt: 1 }}
+                  >
+                    Use different account
+                  </Button>
+                )}
               </Box>
             )}
 
@@ -247,11 +307,15 @@ const LoginPage = () => {
               fullWidth
               variant="contained"
               size="large"
-              disabled={isLoading || (mfaRequired && !canSubmit)}
+              disabled={isLoading || ((mfaRequired || pendingVerificationRequired) && !canSubmit)}
               sx={{ mt: 3, mb: 2, py: 1.5 }}
               startIcon={isLoading ? <CircularProgress size={20} /> : <LoginIcon />}
             >
-              {isLoading ? 'Signing In...' : 'Sign In'}
+              {isLoading
+                ? (pendingVerificationRequired ? 'Verifying...' : 'Signing In...')
+                : pendingVerificationRequired
+                  ? 'Verify and sign in'
+                  : 'Sign In'}
             </Button>
           </form>
 

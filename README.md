@@ -72,6 +72,7 @@ See [tests/README.md](tests/README.md) for structure and CI.## 🔒 Security
 - RBAC (admin, supervisor, agent, read-only)
 - PII masking in logs/transcripts
 - GDPR-compliant retention and DSAR support
+- **Audit log retention**: Logs are retained for `AUDIT_LOG_RETENTION_DAYS` (default 365). Call `POST /api/admin/audit/retention-run` (e.g. from cron) to delete older audit log entries.
 
 ## 📖 Documentation
 

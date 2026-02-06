@@ -15,14 +15,17 @@ import {
   Select,
   MenuItem,
   Alert,
-  CircularProgress
+  CircularProgress,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import {
   HelpOutline,
   CheckCircle,
   Cancel,
   Warning,
-  TrendingUp
+  TrendingUp,
+  AddCircleOutline
 } from '@mui/icons-material';
 import { formatDateTime } from '../../../utils/formatters';
 
@@ -38,6 +41,8 @@ const UnansweredQuestionsTab = ({ state, handlers }) => {
     setUnansweredQuestionsPriorityFilter,
     refetchUnansweredQuestions
   } = state;
+
+  const { handleAddToKBFromUnanswered } = handlers;
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -168,6 +173,7 @@ const UnansweredQuestionsTab = ({ state, handlers }) => {
                   <TableCell><strong>Confidence</strong></TableCell>
                   <TableCell><strong>Occurrences</strong></TableCell>
                   <TableCell><strong>Created</strong></TableCell>
+                  <TableCell align="center"><strong>Actions</strong></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -225,6 +231,18 @@ const UnansweredQuestionsTab = ({ state, handlers }) => {
                       <Typography variant="body2" color="text.secondary">
                         {formatDateTime(question.createdAt)}
                       </Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      <Tooltip title="Add to Knowledge Base (opens KB tab with question pre-filled)">
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => handleAddToKBFromUnanswered?.(question.question)}
+                          aria-label="Add to KB"
+                        >
+                          <AddCircleOutline fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))}

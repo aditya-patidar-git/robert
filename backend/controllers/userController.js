@@ -198,6 +198,16 @@ export const updateUser = async (req, res) => {
                 diff,
                 req
             });
+            if (diff.role) {
+                await createAuditLog({
+                    actorId: req.user._id,
+                    action: 'rbac.role_change',
+                    targetType: 'user',
+                    targetId: user._id.toString(),
+                    diff: { role: diff.role },
+                    req
+                });
+            }
         }
         
         res.json(user);

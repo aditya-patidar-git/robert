@@ -67,39 +67,31 @@ export const getTokenStats = async (req, res) => {
       if (startDate) callRecordQuery.createdAt.$gte = new Date(startDate);
       if (endDate) callRecordQuery.createdAt.$lte = new Date(endDate);
     }
-    
-    // Get call records that have token metrics
+
+    const totalCalls = await CallRecord.countDocuments(callRecordQuery);
+
     const callRecords = await CallRecord.find({
       ...callRecordQuery,
       $or: [
-        { 'metrics.totalTokens': { $exists: true, $gt: 0 } },
-        { 'metrics.maxTokensUsed': { $exists: true, $gt: 0 } }
+        { 'metrics.totalTokens': { $exists: true } },
+        { 'metrics.maxTokensUsed': { $exists: true } }
       ]
     }).limit(1000);
 
-    // Calculate statistics from ConversationContext
-    const contextCalls = contexts.length;
     const contextTotalTokens = contexts.reduce((sum, ctx) => sum + (ctx.currentTokens || 0), 0);
     const contextTruncations = contexts.reduce((sum, ctx) => sum + (ctx.truncationHistory?.length || 0), 0);
     const contextCallsWithTruncation = contexts.filter(ctx => (ctx.truncationHistory?.length || 0) > 0).length;
     const contextMaxTokens = contexts.length > 0 ? Math.max(...contexts.map(ctx => ctx.currentTokens || 0), 0) : 0;
-    
-    // Calculate statistics from CallRecord metrics
-    const callRecordCalls = callRecords.length;
+
     const callRecordTotalTokens = callRecords.reduce((sum, rec) => sum + (rec.metrics?.totalTokens || 0), 0);
     const callRecordMaxTokens = callRecords.length > 0 ? Math.max(...callRecords.map(rec => rec.metrics?.maxTokensUsed || 0), 0) : 0;
     const callRecordTruncations = callRecords.reduce((sum, rec) => sum + (rec.metrics?.truncationCount || 0), 0);
     const callRecordCallsWithTruncation = callRecords.filter(rec => (rec.metrics?.truncationCount || 0) > 0).length;
-    
-    // Merge statistics: combine data from both sources
-    // For calls that exist in both, prefer ConversationContext (more accurate)
-    // For calls that only exist in CallRecord, use CallRecord data
-    const totalCalls = Math.max(contextCalls, callRecordCalls);
+
     const totalTokens = callRecordTotalTokens + contextTotalTokens;
     const maxTokens = Math.max(contextMaxTokens, callRecordMaxTokens);
     const totalTruncations = callRecordTruncations + contextTruncations;
     const callsWithTruncation = callRecordCallsWithTruncation + contextCallsWithTruncation;
-    
     const avgTokensPerCall = totalCalls > 0 ? Math.round(totalTokens / totalCalls) : 0;
     const truncationRate = totalCalls > 0 ? (callsWithTruncation / totalCalls) * 100 : 0;
 
