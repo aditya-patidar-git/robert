@@ -103,9 +103,9 @@ const SIPAnalyticsDashboard = ({ timeRange = '24h' }) => {
       key: 'percentage',
       label: 'Percentage',
       align: 'right',
-      render: (value, row) => {
+      render: (_value, row) => {
         const total = metrics?.totalCalls || 1;
-        const pct = (value / total * 100).toFixed(1);
+        const pct = ((row.count ?? 0) / total * 100).toFixed(1);
         return `${pct}%`;
       }
     },

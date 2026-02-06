@@ -430,47 +430,48 @@ export const handleMediaStreamConnection = (ws, req) => {
                             }
                         }
                     
-                    // Check recording consent before saving transcript (GDPR compliance)
                     const consent = conversation?.recordingConsent;
-                    // Default is opt-in: null/undefined means consent given, only false means denied
                     const consentGiven = consent?.given !== false;
-                    
+                    const existingRecord = await CallRecord.findOne({ callSid: stateManager.callSid }).select('transcript').lean();
+                    const existingLen = existingRecord?.transcript?.length ?? 0;
+                    const newLen = conversation?.transcript?.length ?? 0;
+                    const shouldSetTranscript = newLen >= existingLen;
+
                     if (conversation?.transcript && conversation.transcript.length > 0) {
                         if (consentGiven) {
-                            // Consent given - store transcript
-                            updateData.transcript = conversation.transcript;
-                            if (conversation.from) updateData.from = conversation.from;
-                            if (conversation.to) updateData.to = conversation.to;
-                            
-                            // Ensure consent is saved (may have been set earlier, but ensure it's persisted)
-                            updateData.recordingConsent = {
-                                requested: consent?.requested || false,
-                                given: true,
-                                requestedAt: consent?.requestedAt || null,
-                                respondedAt: consent?.respondedAt || new Date(),
-                                optOutReason: null
-                            };
-                            
-                            // Generate summary if not already present
-                            if (!updateData.summary && conversation.transcript.length > 0) {
-                                try {
-                                    const summaryService = (await import('../../services/summaryService.js')).default;
-                                    const summary = await summaryService.generateCallSummary(
-                                        conversation.transcript,
-                                        { callSid: stateManager.callSid, from: conversation.from, to: conversation.to }
-                                    );
-                                    updateData.summary = typeof summary === 'object' && summary !== null ? JSON.stringify(summary) : summary;
-                                } catch (summaryError) {
-                                    console.warn(`⚠️ [${stateManager.callSid}] Could not generate summary:`, summaryError.message);
-                                    updateData.summary = `Call transcript with ${conversation.transcript.length} exchanges.`;
+                            if (!shouldSetTranscript) {
+                                console.log(`⚠️ [${stateManager.callSid}] Skipping transcript write - existing (${existingLen}) longer than in-memory (${newLen})`);
+                            } else {
+                                updateData.transcript = conversation.transcript;
+                                if (conversation.from) updateData.from = conversation.from;
+                                if (conversation.to) updateData.to = conversation.to;
+                                updateData.recordingConsent = {
+                                    requested: consent?.requested || false,
+                                    given: true,
+                                    requestedAt: consent?.requestedAt || null,
+                                    respondedAt: consent?.respondedAt || new Date(),
+                                    optOutReason: null
+                                };
+                                if (!updateData.summary && conversation.transcript.length > 0) {
+                                    try {
+                                        const summaryService = (await import('../../services/summaryService.js')).default;
+                                        const summary = await summaryService.generateCallSummary(
+                                            conversation.transcript,
+                                            { callSid: stateManager.callSid, from: conversation.from, to: conversation.to }
+                                        );
+                                        updateData.summary = typeof summary === 'object' && summary !== null ? JSON.stringify(summary) : summary;
+                                    } catch (summaryError) {
+                                        console.warn(`⚠️ [${stateManager.callSid}] Could not generate summary:`, summaryError.message);
+                                        updateData.summary = `Call transcript with ${conversation.transcript.length} exchanges.`;
+                                    }
                                 }
+                                console.log(`✅ [${stateManager.callSid}] Saving transcript with ${conversation.transcript.length} entries - consent given`);
                             }
-                            
-                            console.log(`✅ [${stateManager.callSid}] Saving transcript with ${conversation.transcript.length} entries - consent given`);
                         } else {
-                            // Consent not given - do not store transcript (GDPR compliance)
-                            updateData.transcript = []; // Explicitly set to empty array
-                            updateData.summary = "Recording and transcript not stored - consent not given";
+                            if (shouldSetTranscript) {
+                                updateData.transcript = [];
+                                updateData.summary = "Recording and transcript not stored - consent not given";
+                            }
                             if (conversation.from) updateData.from = conversation.from;
                             if (conversation.to) updateData.to = conversation.to;
                             updateData.recordingConsent = {

@@ -3,13 +3,21 @@
  * Handles structured logging with filtering
  */
 
+import { maskLogPayload } from '../../utils/logPiiMasker.js';
+
+const isPiiMaskingEnabled = () => {
+  const v = process.env.PII_MASKING_ENABLED;
+  return v === 'true' || v === '1';
+};
+
 class LoggingService {
   constructor() {
     this.logs = [];
     this.config = {
-      maxLogs: 10000, // Maximum number of logs to keep in memory
-      logLevel: process.env.LOG_LEVEL || 'info', // Log level filtering
-      enableConsole: process.env.NODE_ENV !== 'production' // Console logging in dev
+      maxLogs: 10000,
+      logLevel: process.env.LOG_LEVEL || 'info',
+      enableConsole: process.env.NODE_ENV !== 'production',
+      piiMaskingEnabled: isPiiMaskingEnabled()
     };
     
     // Log levels for filtering
@@ -62,29 +70,27 @@ class LoggingService {
    * @private
    */
   _log(level, message, context) {
-    // Check if we should log this level
     if (this.logLevels[level] > this.logLevels[this.config.logLevel]) {
       return;
     }
-    
+    const ctx = context ?? {};
+    const { message: msg, context: maskedCtx } = this.config.piiMaskingEnabled
+      ? maskLogPayload(message, ctx)
+      : { message, context: ctx };
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: level,
-      message: message,
-      context: context,
-      traceId: context.traceId || null
+      message: msg,
+      context: maskedCtx,
+      traceId: maskedCtx.traceId ?? ctx.traceId ?? null
     };
-    
     this.logs.push(logEntry);
-    
-    // Cleanup old logs if we exceed the limit
     if (this.logs.length > this.config.maxLogs) {
       this.logs = this.logs.slice(-this.config.maxLogs);
     }
-    
     if (this.config.enableConsole) {
       const emoji = this._getLogEmoji(level);
-      console.log(`${emoji} [${level.toUpperCase()}] ${message}`, context);
+      console.log(`${emoji} [${level.toUpperCase()}] ${msg}`, maskedCtx);
     }
   }
 

@@ -69,32 +69,11 @@ ToolConfigSchema.statics.initializeDefaults = async function() {
       domains: ['universalmct.co.uk', 'dvsa.gov.uk', 'gov.uk']
     },
     {
-      toolName: 'calendar',
-      description: 'Manage calendar events and availability',
-      enabled: true,
-      rateLimit: { limit: 50, windowMs: 60000 },
-      domains: []
-    },
-    {
       toolName: 'email',
       description: 'Send and manage emails',
       enabled: true,
       rateLimit: { limit: 30, windowMs: 60000 },
       domains: []
-    },
-    {
-      toolName: 'crm',
-      description: 'Access CRM system for customer management',
-      enabled: true,
-      rateLimit: { limit: 20, windowMs: 60000 },
-      domains: ['takeabyte.co.uk']
-    },
-    {
-      toolName: 'crm_browser',
-      description: 'Perform CRM tasks using browser automation',
-      enabled: true,
-      rateLimit: { limit: 10, windowMs: 60000 },
-      domains: ['takeabyte.co.uk']
     },
     {
       toolName: 'payments',

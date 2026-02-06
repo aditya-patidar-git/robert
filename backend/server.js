@@ -63,6 +63,7 @@ import { setIO as setWebSocketIO } from "./services/websocketService.js";
 import { proxyRecording } from "./controllers/outboundController.js";
 import { protect as authenticateToken } from "./middleware/authMiddleware.js";
 import { ipAllowlistMiddleware, logBypassIfActive } from "./middleware/ipAllowlistMiddleware.js";
+import forceHttpsMiddleware from "./middleware/forceHttpsMiddleware.js";
 
 const app = express();
 app.set('trust proxy', 1);
@@ -90,6 +91,7 @@ app.use(cors({
 }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(forceHttpsMiddleware);
 
 logBypassIfActive();
 

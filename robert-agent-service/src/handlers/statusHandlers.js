@@ -8,6 +8,11 @@ import crossCallMemoryService from "../services/crossCallMemoryService.js";
 import twilioMetricsService from "../services/twilioMetricsService.js";
 import voicemailEmailService from "../services/voicemailEmailService.js";
 import twilioClient from "../utils/twilioClient.js";
+import {
+    buildCallerIdentityUpdate,
+    ensureCallRecordCallerIdentity,
+    backfillRecordingUrlIfMissing
+} from "../services/callRecordPersistenceService.js";
 
 // Call status with live updates (no Socket.IO in agent service)
 export const callStatus = async (req, res) => {
@@ -48,15 +53,17 @@ export const callStatus = async (req, res) => {
         });
     }
 
-    // Update CallRecord
+    // Update CallRecord: only set from/to when present so we never overwrite with undefined
     try {
+        const identitySet = buildCallerIdentityUpdate(From, To);
         await CallRecord.findOneAndUpdate(
             { callSid: CallSid },
             {
-                callSid: CallSid,
-                callStatus: CallStatus,
-                from: From,
-                to: To
+                $set: {
+                    callSid: CallSid,
+                    callStatus: CallStatus,
+                    ...identitySet
+                }
             },
             { upsert: true, new: true }
         );
@@ -99,6 +106,8 @@ export const callStatus = async (req, res) => {
             
             if (!conversation) {
                 console.log(`⚠️ [${CallSid}] No conversation data found on call completion`);
+                await ensureCallRecordCallerIdentity(CallSid, { from: From, to: To });
+                backfillRecordingUrlIfMissing(CallSid).catch(() => {});
                 res.sendStatus(200);
                 return;
             }
@@ -110,19 +119,17 @@ export const callStatus = async (req, res) => {
             // BUT only if recording consent was given (GDPR compliance)
             
             if (conversation.transcript && conversation.transcript.length > 0) {
+                const identitySet = buildCallerIdentityUpdate(conversation.from || From, conversation.to || To);
                 if (consentGiven) {
-                    // Consent given - store transcript and ensure consent is saved
                     try {
                         await CallRecord.findOneAndUpdate(
                             { callSid: CallSid },
                             {
                                 $set: {
                                     transcript: conversation.transcript,
-                                    from: conversation.from || From,
-                                    to: conversation.to || To,
+                                    ...identitySet,
                                     duration: conversation.duration || null,
                                     language: conversation.language || 'en-GB',
-                                    // Ensure consent is saved (may have been set earlier, but ensure it's persisted)
                                     recordingConsent: {
                                         requested: consent?.requested || false,
                                         given: true,
@@ -137,19 +144,16 @@ export const callStatus = async (req, res) => {
                         console.log(`✅ [${CallSid}] Transcript and consent saved to CallRecord (${conversation.transcript.length} entries) - consent given`);
                     } catch (transcriptError) {
                         console.error(`❌ [${CallSid}] Error saving transcript to CallRecord:`, transcriptError);
-                        // Continue with other operations even if transcript save fails
                     }
                 } else {
-                    // Consent not given - do not store transcript (GDPR compliance)
                     console.log(`🚫 [${CallSid}] Recording consent not given - transcript will not be stored`);
                     try {
                         await CallRecord.findOneAndUpdate(
                             { callSid: CallSid },
                             {
                                 $set: {
-                                    transcript: [], // Explicitly set to empty array
-                                    from: conversation.from || From,
-                                    to: conversation.to || To,
+                                    transcript: [],
+                                    ...identitySet,
                                     duration: conversation.duration || null,
                                     language: conversation.language || 'en-GB',
                                     recordingConsent: {
@@ -205,6 +209,7 @@ export const callStatus = async (req, res) => {
             } else if (!consentGiven) {
                 console.log(`🚫 [${CallSid}] Summary not generated - recording consent not given`);
             }
+            await ensureCallRecordCallerIdentity(CallSid, { from: From, to: To });
         } catch (error) {
             console.error(`❌ [${CallSid}] Error storing call summary:`, error);
             // Don't block call completion if summary storage fails
@@ -293,92 +298,8 @@ export const callStatus = async (req, res) => {
             // Error is already logged in the service, just catch to prevent unhandled rejection
         });
 
-        // Fetch recording URL from Twilio if consent was given but recordingUrl is missing
-        // This ensures recordings are available when consent is given, even if webhook is delayed
-        (async () => {
-            try {
-                const conversation = conversations[CallSid] || {};
-                const consent = conversation.recordingConsent;
-                
-                // Default is opt-in: null/undefined means consent given, only false means denied
-                // Only skip fetch if consent was explicitly denied
-                if (consent?.given === false) {
-                    console.log(`ℹ️ [${CallSid}] Recording consent explicitly denied, skipping recording fetch`);
-                    return;
-                }
-
-                // Check if recording URL already exists
-                const existingRecord = await CallRecord.findOne({ callSid: CallSid }).lean();
-                if (existingRecord?.recordingUrl) {
-                    console.log(`✅ [${CallSid}] Recording URL already exists, skipping fetch`);
-                    return;
-                }
-
-                console.log(`🔍 [${CallSid}] Consent given but recording URL missing - fetching from Twilio API...`);
-
-                // Wait a bit for Twilio to process the recording (recordings may take a few seconds)
-                await new Promise(resolve => setTimeout(resolve, 5000));
-
-                // Fetch recordings from Twilio API with retries
-                let recordingUrl = null;
-                let retries = 3;
-                let delay = 3000;
-
-                while (retries > 0 && !recordingUrl) {
-                    try {
-                        const recordings = await twilioClient.recordings.list({
-                            callSid: CallSid,
-                            limit: 1
-                        });
-
-                        if (recordings && recordings.length > 0) {
-                            const recording = recordings[0];
-                            recordingUrl = recording.uri.replace('.json', ''); // Remove .json extension
-                            break;
-                        }
-                    } catch (error) {
-                        if (error.status === 404 || error.code === 20404) {
-                            // Recording not yet available, retry
-                            console.log(`⏳ [${CallSid}] Recording not yet available, retrying in ${delay}ms... (${retries} retries left)`);
-                            retries--;
-                            if (retries > 0) {
-                                await new Promise(resolve => setTimeout(resolve, delay));
-                                delay *= 2; // Exponential backoff
-                            }
-                        } else {
-                            throw error;
-                        }
-                    }
-                }
-
-                if (recordingUrl) {
-                    // Update CallRecord with recording URL and consent info
-                    await CallRecord.findOneAndUpdate(
-                        { callSid: CallSid },
-                        {
-                            $set: {
-                                recordingUrl: recordingUrl,
-                                recordingConsent: {
-                                    requested: consent?.requested || false,
-                                    given: true,
-                                    requestedAt: consent?.requestedAt || null,
-                                    respondedAt: consent?.respondedAt || null,
-                                    optOutReason: null
-                                }
-                            }
-                        },
-                        { upsert: true }
-                    );
-                    
-                    console.log(`✅ [${CallSid}] Recording URL fetched from Twilio API and saved (consent was given)`);
-                } else {
-                    console.warn(`⚠️ [${CallSid}] Consent was given but recording not found in Twilio after retries - may still be processing`);
-                }
-            } catch (error) {
-                console.error(`❌ [${CallSid}] Error fetching recording from Twilio:`, error.message);
-                // Don't block call completion if recording fetch fails
-            }
-        })();
+        // Backfill recording URL from Twilio when consent given and recordingUrl missing (fire-and-forget)
+        backfillRecordingUrlIfMissing(CallSid).catch(() => {});
     }
 
     // CRITICAL: Delay cleanup for completed calls to allow recording webhook to arrive

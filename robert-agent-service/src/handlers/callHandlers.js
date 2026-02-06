@@ -4,6 +4,7 @@ import configManager from "../agent/configManager.js";
 import sipService from "../services/sipService.js";
 import sipCallRouter from "../services/sip/sipCallRouter.js";
 import abusePreventionService from "../services/abusePreventionService.js";
+import { ensureCallRecordCallerIdentity } from "../services/callRecordPersistenceService.js";
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { recordCallMetrics, incrementActiveCalls, decrementActiveCalls, recordSIPMetrics } from '../services/metricsService.js';
 import { 
@@ -313,14 +314,13 @@ export const handleIncomingCall = async (req, res) => {
                     incrementActiveCalls({ entry_path: entryPath });
                 }
                 
-                // Set recording consent asynchronously so TwiML can be sent immediately (reduces pickup latency)
                 setInboundCallConsent(CallSid, 'SIP').catch(err => {
                     console.error(`[CallHandler] Error setting inbound consent for SIP call ${CallSid}:`, err.message);
                 });
+                await ensureCallRecordCallerIdentity(CallSid, { from: From, to: To });
 
                 console.log(`📞 [${CallSid}] Inbound call routed via SIP to: ${sipEndpoint}`);
 
-                // Return TwiML with SIP routing
                 const twiml = generateSipRoutingTwiML(sipEndpoint);
                 span.setStatus({ code: SpanStatusCode.OK });
                 span.end();
@@ -358,10 +358,10 @@ export const handleIncomingCall = async (req, res) => {
             incrementActiveCalls({ entry_path: entryPath });
         }
 
-        // Set recording consent asynchronously so TwiML can be sent immediately (reduces pickup latency)
         setInboundCallConsent(CallSid, entryPath).catch(err => {
             console.error(`[CallHandler] Error setting inbound consent for ${CallSid}:`, err.message);
         });
+        await ensureCallRecordCallerIdentity(CallSid, { from: From, to: To });
 
         // Generate Media Streams TwiML WITH Connect verb for bidirectional streaming
         // NOTE: <Start><Stream> is UNIDIRECTIONAL (receive only) - cannot send audio back!
