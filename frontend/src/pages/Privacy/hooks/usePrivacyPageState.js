@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import privacyService from '../../../services/privacyService';
 import dsarService from '../../../services/dsarService';
-import auditLogService from '../../../services/auditLogService';
 import configService from '../../../services/configService';
 import { useToast } from '../../../components/common/ToastProvider';
 
@@ -21,17 +20,24 @@ export function usePrivacyPageState() {
   const [privacyNoticeDialogOpen, setPrivacyNoticeDialogOpen] = useState(false);
   const [retentionDialogOpen, setRetentionDialogOpen] = useState(false);
   const [breachDialogOpen, setBreachDialogOpen] = useState(false);
-  
-  // Audit log filters state
-  const [auditLogFilters, setAuditLogFilters] = useState({
-    eventType: '',
+  const [consentPage, setConsentPage] = useState(0);
+  const [consentPageSize, setConsentPageSizeState] = useState(15);
+  const [consentFilters, setConsentFiltersState] = useState({
+    consentType: '',
+    granted: '',
+    callSid: '',
     startDate: '',
     endDate: ''
   });
-  
-  // Audit log pagination state
-  const [auditLogPage, setAuditLogPage] = useState(0); // 0-indexed for MUI
-  const auditLogPageSize = 15;
+  const setConsentPageSize = useCallback((size) => {
+    setConsentPageSizeState(size);
+    setConsentPage(0);
+  }, []);
+
+  const setConsentFilters = useCallback((next) => {
+    setConsentFiltersState(next);
+    setConsentPage(0);
+  }, []);
 
   // Fetch privacy configuration from the same source as System page and Agent Service
   const { data: privacyConfig, isLoading: configLoading, refetch: refetchConfig } = useQuery({
@@ -53,56 +59,6 @@ export function usePrivacyPageState() {
     }
   });
 
-  // Fetch audit logs with filters and pagination
-  const { data: auditLogsData, isLoading: auditLogsLoading, refetch: refetchAuditLogs } = useQuery({
-    queryKey: ['auditLogs', auditLogFilters, auditLogPage],
-    queryFn: async () => {
-      // Build filter params with pagination
-      const params = { 
-        limit: auditLogPageSize, 
-        page: auditLogPage + 1 // API uses 1-indexed pages
-      };
-      if (auditLogFilters.eventType) params.action = auditLogFilters.eventType;
-      if (auditLogFilters.startDate) params.startDate = auditLogFilters.startDate;
-      if (auditLogFilters.endDate) params.endDate = auditLogFilters.endDate;
-      
-      const response = await auditLogService.getAuditLogs(params);
-      
-      // Extract data from normalized response structure
-      // The normalizer returns: { success, data: { auditLogs, pagination }, error, metadata }
-      const responseData = response?.data || response;
-      
-      // Handle both normalized and raw response formats
-      const logs = responseData?.auditLogs || response?.auditLogs || [];
-      const paginationData = responseData?.pagination || response?.pagination;
-      
-      return {
-        auditLogs: Array.isArray(logs) ? logs : [],
-        pagination: paginationData || { 
-          total: Array.isArray(logs) ? logs.length : 0, 
-          page: auditLogPage + 1, 
-          limit: auditLogPageSize,
-          pages: 1 
-        }
-      };
-    }
-  });
-  
-  // Extract audit logs and pagination from response with safe defaults
-  const auditLogs = auditLogsData?.auditLogs || [];
-  const auditLogPagination = auditLogsData?.pagination || { 
-    total: auditLogs.length, 
-    page: 1, 
-    limit: auditLogPageSize,
-    pages: 1 
-  };
-  
-  // Reset page when filters change
-  const handleAuditLogFiltersChange = useCallback((newFilters) => {
-    setAuditLogFilters(newFilters);
-    setAuditLogPage(0); // Reset to first page
-  }, []);
-
   // Fetch retention policies
   const { data: retentionPolicies, isLoading: retentionLoading, refetch: refetchRetention } = useQuery({
     queryKey: ['retentionPolicies'],
@@ -123,15 +79,27 @@ export function usePrivacyPageState() {
     }
   });
 
-  // Fetch consent records from CallRecord collection
-  const { data: consentRecords, isLoading: consentLoading, refetch: refetchConsent } = useQuery({
-    queryKey: ['consentRecords'],
+  // Fetch consent records with pagination and filters
+  const { data: consentData, isLoading: consentLoading, refetch: refetchConsent } = useQuery({
+    queryKey: ['consentRecords', consentPage, consentPageSize, consentFilters],
     queryFn: async () => {
-      const response = await privacyService.getConsentRecords({ limit: 500 });
-      // Handle normalized response structure
-      return response?.data?.consentRecords || response?.consentRecords || response?.data || [];
+      const params = { page: consentPage + 1, limit: consentPageSize || 15 };
+      if (consentFilters?.consentType) params.consentType = consentFilters.consentType;
+      if (consentFilters?.granted !== undefined && consentFilters?.granted !== '') params.granted = consentFilters.granted;
+      if (consentFilters?.callSid) params.callSid = consentFilters.callSid;
+      if (consentFilters?.startDate) params.startDate = consentFilters.startDate;
+      if (consentFilters?.endDate) params.endDate = consentFilters.endDate;
+      const response = await privacyService.getConsentRecords(params);
+      const data = response?.data || response;
+      return {
+        consentRecords: data?.consentRecords || [],
+        pagination: data?.pagination || { page: 1, limit: consentPageSize, total: 0, pages: 1 }
+      };
     }
   });
+
+  const consentRecords = consentData?.consentRecords ?? [];
+  const consentPagination = consentData?.pagination ?? { page: 1, limit: consentPageSize, total: 0, pages: 1 };
 
   // Update privacy configuration mutation - uses configService for proper sync
   const updateConfigMutation = useMutation({
@@ -178,10 +146,7 @@ export function usePrivacyPageState() {
 
   // Report data breach mutation
   const reportBreachMutation = useMutation({
-    mutationFn: (data) => privacyService.reportDataBreach(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['auditLogs']);
-    }
+    mutationFn: (data) => privacyService.reportDataBreach(data)
   });
 
   // Cleanup expired data mutation
@@ -189,7 +154,6 @@ export function usePrivacyPageState() {
     mutationFn: () => privacyService.cleanupExpiredData(),
     onSuccess: () => {
       queryClient.invalidateQueries(['retentionPolicies']);
-      queryClient.invalidateQueries(['auditLogs']);
     }
   });
 
@@ -294,20 +258,19 @@ export function usePrivacyPageState() {
     configLoading,
     dsarRequests,
     dsarLoading,
-    auditLogs,
-    auditLogsLoading,
-    auditLogFilters,
-    setAuditLogFilters: handleAuditLogFiltersChange,
-    auditLogPage,
-    setAuditLogPage,
-    auditLogPageSize,
-    auditLogPagination,
     retentionPolicies,
     retentionLoading,
     complianceReport,
     complianceLoading,
     consentRecords,
     consentLoading,
+    consentPagination,
+    consentPage,
+    setConsentPage,
+    consentPageSize: consentPageSize || 15,
+    setConsentPageSize,
+    consentFilters,
+    setConsentFilters,
 
     // Mutations
     updateConfigMutation,
@@ -329,7 +292,6 @@ export function usePrivacyPageState() {
     // Refetch functions
     refetchConfig,
     refetchDSAR,
-    refetchAuditLogs,
     refetchRetention,
     refetchCompliance,
     refetchConsent

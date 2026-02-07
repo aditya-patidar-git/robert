@@ -67,8 +67,8 @@ const ProtectedRoute = ({ children, requiredRoles = [] }) => {
     );
   }
 
-  // Check if user account is blocked
-  if (user.status === 'blocked') {
+  // Check if user account is suspended
+  if (user.status === 'suspended') {
     return (
       <Box
         sx={{
@@ -92,10 +92,10 @@ const ProtectedRoute = ({ children, requiredRoles = [] }) => {
         >
           <Lock sx={{ fontSize: 64, color: 'error.main', mb: 3 }} />
           <Typography variant="h4" gutterBottom color="error">
-            Account Blocked
+            Account Suspended
           </Typography>
           <Typography variant="body1" color="text.secondary" paragraph>
-            Your account has been blocked. Contact admin for assistance.
+            Your account has been suspended. Contact admin for assistance.
           </Typography>
           <Button
             variant="contained"

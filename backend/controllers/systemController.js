@@ -3,6 +3,7 @@ import TelephonyConfig from "../models/TelephonyConfig.js";
 import PrivacyConfig from "../models/PrivacyConfig.js";
 import AIConfig from "../models/AIConfig.js";
 import ConversationBehaviorConfig from "../models/ConversationBehaviorConfig.js";
+import { createAuditLog } from "./auditLogController.js";
 
 // GET /api/system/config
 export const getSystemConfig = async (req, res) => {
@@ -169,6 +170,22 @@ export const updateSystemConfig = async (req, res) => {
         privacyConfig.retentionSettings.metadataRetention = configData.metadataRetention;
       }
       await privacyConfig.save();
+    }
+
+    const diff = {};
+    if (configData.mcpEnabled !== undefined || configData.mcpRateLimit !== undefined || configData.mcpTimeout !== undefined) diff.mcp = true;
+    if (configData.outboundCallerId !== undefined || configData.maxConcurrentCalls !== undefined || configData.callTimeout !== undefined || configData.retryAttempts !== undefined || configData.logLevel !== undefined) diff.telephony = true;
+    if (configData.vadThreshold !== undefined || configData.startPadding !== undefined || configData.endPadding !== undefined || configData.bargeInPolicy !== undefined || configData.noiseSuppression !== undefined || configData.echoCancellation !== undefined || configData.audioQuality !== undefined || configData.energyThreshold !== undefined || configData.energyThresholdAutoCalibrate !== undefined || configData.noiseSuppressionAlgorithm !== undefined || configData.automaticGainControl !== undefined) diff.audio = true;
+    if (configData.transcriptRetention !== undefined || configData.recordingRetention !== undefined || configData.metadataRetention !== undefined) diff.privacy = true;
+    if (Object.keys(diff).length > 0 && req.user) {
+      await createAuditLog({
+        actorId: req.user._id,
+        action: 'config.update',
+        targetType: 'config',
+        targetId: 'system',
+        diff,
+        req
+      });
     }
 
     res.json({

@@ -2,6 +2,7 @@ import TelephonyConfig from "../models/TelephonyConfig.js";
 import sipConfigService from "../services/sipConfigService.js";
 import connectionTestService from "../services/connectionTestService.js";
 import configSyncService from "../services/configSyncService.js";
+import { createAuditLog } from "./auditLogController.js";
 
 // Get current telephony configuration
 export const getTelephonyConfig = async (req, res) => {
@@ -316,6 +317,17 @@ export const testSipConnection = async (req, res) => {
 
     // Test connection
     const testResult = await sipConfigService.testSipConnection(sipConfig);
+
+    if (req.user) {
+      await createAuditLog({
+        actorId: req.user._id,
+        action: 'secret.access_attempt',
+        targetType: 'config',
+        targetId: 'telephony_sip',
+        diff: { operation: 'test_connection', success: testResult.success },
+        req
+      });
+    }
 
     // Update config with test results
     config.sipSettings.testConnectionStatus = testResult.success ? 'success' : 'failed';

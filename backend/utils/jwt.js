@@ -11,7 +11,7 @@ export const generateToken = (user) => {
     // Generate unique JWT ID (jti) for token revocation
     const jti = randomUUID();
     
-    // Token will be valid for 2 days
+    // Token will be valid for 2 hours
     const token = jwt.sign(
         { 
             id: user._id, 
@@ -19,7 +19,7 @@ export const generateToken = (user) => {
             jti: jti  // JWT ID for revocation
         },
         process.env.JWT_SECRET,
-        { expiresIn: "2d" }
+        { expiresIn: "2h" }
     );
 
     // Track token for user (for bulk revocation)

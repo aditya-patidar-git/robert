@@ -362,7 +362,18 @@ const ModelVoiceSelection = ({
                     label="Voice"
                     disabled={!selectedModel}
                     onChange={(e) => {
-                      field.onChange(e.target.value);
+                      const voiceId = e.target.value;
+                      field.onChange(voiceId);
+                      if (!showDefaultVoice && setValue) {
+                        const voice = compatibleVoices.find((v) => v.id === voiceId);
+                        if (voice) {
+                          setValue('defaultVoice', {
+                            id: voice.id,
+                            name: voice.name,
+                            language: voice.language || 'en-GB'
+                          }, { shouldValidate: false });
+                        }
+                      }
                     }}
                   >
                     {compatibleVoices.length > 0 ? (

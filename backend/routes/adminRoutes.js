@@ -4,7 +4,7 @@ import { authorizeRoles } from "../middleware/rbacMiddleware.js";
 import { getUsers, createUser, updateUser, approveUser, blockUser, excludeUser, deleteUser } from "../controllers/userController.js";
 import { addPrompt, getPrompts, updatePrompt } from "../controllers/promptController.js";
 import { getAllowlist, addToAllowlist, removeFromAllowlist, checkAllowlist } from "../controllers/allowlistController.js";
-import { getAuditLogs, getAuditLog } from "../controllers/auditLogController.js";
+import { getAuditLogs, getAuditLog, exportAuditLogs, runAuditRetention } from "../controllers/auditLogController.js";
 
 const router = express.Router();
 
@@ -29,6 +29,8 @@ router.get("/allowlist/check", checkAllowlist);
 
 // Audit Logs
 router.get("/audit", getAuditLogs);
+router.get("/audit/export", exportAuditLogs);
+router.post("/audit/retention-run", runAuditRetention);
 router.get("/audit/:id", getAuditLog);
 
 // Global Prompt

@@ -24,7 +24,8 @@ export const AUDIO_CONFIG_DEFAULTS = {
   automaticGainControl: false,
   audioQuality: 'high',
   energyThreshold: null, // null = auto-calibrate
-  energyThresholdAutoCalibrate: true
+  energyThresholdAutoCalibrate: true,
+  transcriptionModel: 'whisper-1'
 };
 
 // Telephony Configuration Defaults

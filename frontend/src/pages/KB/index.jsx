@@ -27,10 +27,12 @@ import promptVersionService from '../../services/promptVersionService';
 import flowParameterService from '../../services/flowParameterService';
 import { formatDateTime } from '../../utils/formatters';
 
+const KB_TAB_INDEX = { knowledgeBase: 0, aiConfig: 1, systemOps: 2, analytics: 3, unanswered: 4 };
+
 const AIKnowledgePage = () => {
   const [currentTab, setCurrentTab] = useState(0);
-  
-  // Get all state and functions from the hook
+  const [initialQAPairForKB, setInitialQAPairForKB] = useState({ question: '', answer: '' });
+
   const state = useKBPageState();
   const {
     control,
@@ -155,14 +157,18 @@ const AIKnowledgePage = () => {
 
   const handleSavePrompt = useCallback(async (data) => {
     let finalFallbackChain = [...fallbackChain];
-    if (data.selectedModel) {
+    const selectedInChain = finalFallbackChain.some(item => {
+      const id = typeof item === 'string' ? item : item?.modelId;
+      return id === data.selectedModel;
+    });
+    if (data.selectedModel && selectedInChain) {
       finalFallbackChain = finalFallbackChain.filter(item => {
         const itemModelId = typeof item === 'string' ? item : item.modelId;
         return itemModelId !== data.selectedModel;
       });
       finalFallbackChain = [{ modelId: data.selectedModel, voiceId: data.selectedVoice }, ...finalFallbackChain];
     }
-    
+
     const normalizedFallbackChain = finalFallbackChain.map(item => {
       if (typeof item === 'string') {
         return {
@@ -178,7 +184,11 @@ const AIKnowledgePage = () => {
       }
       return null;
     }).filter(item => item !== null);
-    
+
+    const primary = normalizedFallbackChain[0];
+    const effectiveModelId = primary?.modelId || data.selectedModel;
+    const effectiveVoiceId = primary?.voiceId || data.selectedVoice;
+
     try {
       await aiService.updateConfig({
         globalPrompt: data.globalPrompt,
@@ -189,13 +199,13 @@ const AIKnowledgePage = () => {
           speechRate: data.speechRate
         },
         model: {
-          id: data.selectedModel,
-          name: models.find(m => m.id === data.selectedModel)?.name || 'Unknown',
-          fallbackChain: normalizedFallbackChain.length > 0 ? normalizedFallbackChain : (data.selectedModel ? [{ modelId: data.selectedModel, voiceId: data.selectedVoice }] : [])
+          id: effectiveModelId,
+          name: models.find(m => m.id === effectiveModelId)?.name || 'Unknown',
+          fallbackChain: normalizedFallbackChain.length > 0 ? normalizedFallbackChain : (effectiveModelId ? [{ modelId: effectiveModelId, voiceId: effectiveVoiceId }] : [])
         },
         voice: {
-          id: data.selectedVoice,
-          name: voices.find(v => v.id === data.selectedVoice)?.name || 'Unknown'
+          id: effectiveVoiceId,
+          name: voices.find(v => v.id === effectiveVoiceId)?.name || 'Unknown'
         },
         uncertaintyGate: {
           enabled: data.uncertaintyGateEnabled,
@@ -209,10 +219,16 @@ const AIKnowledgePage = () => {
       queryClient.invalidateQueries(['prompt-current-version']);
       refetchVersions();
       setFallbackChain(normalizedFallbackChain);
+      if (effectiveModelId !== data.selectedModel) {
+        setValue('selectedModel', effectiveModelId);
+      }
+      if (effectiveVoiceId !== data.selectedVoice) {
+        setValue('selectedVoice', effectiveVoiceId);
+      }
     } catch (error) {
       showError('Failed to save AI configuration');
     }
-  }, [fallbackChain, models, voices, setFallbackChain, showSuccess, showError, queryClient, refetchVersions]);
+  }, [fallbackChain, models, voices, setFallbackChain, setValue, showSuccess, showError, queryClient, refetchVersions]);
 
   const handleCancelConfig = useCallback(async () => {
     try {
@@ -452,14 +468,25 @@ const AIKnowledgePage = () => {
     }
   }, [flowDetectionTest, setFlowDetectionTest, showError]);
 
-  // Prepare state and handlers for tabs
+  const handleAddToKBFromUnanswered = useCallback((questionText, answerText = '') => {
+    setInitialQAPairForKB({ question: questionText || '', answer: answerText || '' });
+    setCurrentTab(KB_TAB_INDEX.knowledgeBase);
+  }, []);
+
+  const handleClearInitialQAForKB = useCallback(() => {
+    setInitialQAPairForKB({ question: '', answer: '' });
+  }, []);
+
   const tabState = {
     ...state,
-    tagOptions: ['policy', 'courses', 'pricing', 'T&Cs', 'training', 'documentation', 'procedures', 'forms']
+    tagOptions: ['policy', 'courses', 'pricing', 'T&Cs', 'training', 'documentation', 'procedures', 'forms'],
+    initialQAPairForKB
   };
 
   const tabHandlers = {
     handleFileUpload,
+    handleAddToKBFromUnanswered,
+    handleClearInitialQAForKB,
     handleFileSearch,
     handleViewFile,
     handleOpenEditTags,

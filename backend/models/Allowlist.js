@@ -3,14 +3,13 @@ import mongoose from "mongoose";
 const allowlistSchema = new mongoose.Schema({
     type: { 
         type: String, 
-        enum: ['email', 'domain'], 
+        enum: ['email', 'domain', 'ip'], 
         required: true,
         index: true
     },
     value: { 
         type: String, 
         required: true, 
-        unique: true,
         index: true
     },
     notes: String,
@@ -22,8 +21,8 @@ const allowlistSchema = new mongoose.Schema({
     timestamps: true 
 });
 
-// Compound index for efficient lookups
-allowlistSchema.index({ type: 1, value: 1 });
+// Compound unique index so (type, value) is unique (same value can exist for different types)
+allowlistSchema.index({ type: 1, value: 1 }, { unique: true });
 
 export default mongoose.model("Allowlist", allowlistSchema);
 

@@ -5,9 +5,74 @@ import { Error, Warning, CheckCircle, Refresh } from '@mui/icons-material';
 import StatGrid from '../shared/StatGrid';
 import observabilityService from '../../../../services/observabilityService';
 
+function parsePercent(str) {
+  if (str == null) return 0;
+  const n = parseFloat(String(str).replace('%', ''), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getStatusFromRemaining(remainingPct) {
+  if (remainingPct >= 80) return { color: 'success', icon: CheckCircle };
+  if (remainingPct >= 50) return { color: 'warning', icon: Warning };
+  return { color: 'error', icon: Error };
+}
+
+/**
+ * Build stat metrics from API shape: { calls, errorBudget, errors }.
+ * Does not render timeRange/timestamp as cards.
+ */
+function buildErrorBudgetMetrics(budgets) {
+  if (!budgets) return [];
+  const { calls = {}, errorBudget = {}, errors = {} } = budgets;
+  const metrics = [];
+
+  const totalCalls = calls.total ?? 0;
+  const failedCalls = calls.failed ?? 0;
+  const callsRemainingPct = totalCalls > 0 ? ((totalCalls - failedCalls) / totalCalls) * 100 : 100;
+  const callsStatus = getStatusFromRemaining(callsRemainingPct);
+  metrics.push({
+    id: 'calls',
+    title: 'Calls',
+    value: callsRemainingPct,
+    unit: '%',
+    color: callsStatus.color,
+    icon: callsStatus.icon,
+    subtitle: `${failedCalls} / ${totalCalls} failed`,
+    trend: null
+  });
+
+  const budgetRemainingPct = parsePercent(errorBudget.remaining);
+  const budgetStatus = getStatusFromRemaining(budgetRemainingPct);
+  metrics.push({
+    id: 'errorBudget',
+    title: 'Error budget',
+    value: budgetRemainingPct,
+    unit: '%',
+    color: budgetStatus.color,
+    icon: budgetStatus.icon,
+    subtitle: `Current: ${errorBudget.current ?? '0%'}, target: ${errorBudget.target ?? '1%'}`,
+    trend: null
+  });
+
+  const errorCount = errors.total ?? 0;
+  const errorsStatus = errorCount > 0 ? { color: 'error', icon: Error } : { color: 'success', icon: CheckCircle };
+  metrics.push({
+    id: 'errors',
+    title: 'Errors',
+    value: errorCount,
+    unit: '',
+    color: errorsStatus.color,
+    icon: errorsStatus.icon,
+    subtitle: `Application error logs in window`,
+    trend: null
+  });
+
+  return metrics;
+}
+
 /**
  * Error Budget Dashboard Component
- * Displays error budgets and SLO compliance
+ * Displays error budgets and SLO compliance from API shape: calls, errorBudget, errors.
  */
 const ErrorBudgetDashboard = ({ timeRange = '24h' }) => {
   const { data: budgets, isLoading, error, refetch } = useQuery({
@@ -49,35 +114,7 @@ const ErrorBudgetDashboard = ({ timeRange = '24h' }) => {
     );
   }
 
-  const calculateBudgetRemaining = (budget) => {
-    if (!budget || !budget.total) return 0;
-    const used = budget.errors || 0;
-    const remaining = Math.max(0, budget.total - used);
-    return (remaining / budget.total) * 100;
-  };
-
-  const getBudgetStatus = (budget) => {
-    const remaining = calculateBudgetRemaining(budget);
-    if (remaining >= 80) return { color: 'success', icon: CheckCircle, label: 'Healthy' };
-    if (remaining >= 50) return { color: 'warning', icon: Warning, label: 'Warning' };
-    return { color: 'error', icon: Error, label: 'Critical' };
-  };
-
-  const statMetrics = budgets ? Object.entries(budgets).map(([key, budget]) => {
-    const status = getBudgetStatus(budget);
-    const remaining = calculateBudgetRemaining(budget);
-    
-    return {
-      id: key,
-      title: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-      value: remaining,
-      unit: '%',
-      color: status.color,
-      icon: status.icon,
-      subtitle: `${budget.errors || 0} / ${budget.total || 0} errors`,
-      trend: null
-    };
-  }) : [];
+  const statMetrics = buildErrorBudgetMetrics(budgets);
 
   return (
     <Box>

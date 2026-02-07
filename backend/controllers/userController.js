@@ -83,7 +83,7 @@ export const blockUser = async (req, res) => {
         if (!user) return res.status(404).json({ message: "User not found" });
 
         const oldStatus = user.status;
-        user.status = "blocked";
+        user.status = "suspended";
         await user.save();
         
         // Revoke all user tokens
@@ -95,7 +95,7 @@ export const blockUser = async (req, res) => {
             action: 'user.block',
             targetType: 'user',
             targetId: user._id.toString(),
-            diff: { status: { from: oldStatus, to: 'blocked' } },
+            diff: { status: { from: oldStatus, to: 'suspended' } },
             req
         });
         
@@ -113,7 +113,7 @@ export const excludeUser = async (req, res) => {
         if (!user) return res.status(404).json({ message: "User not found" });
 
         const oldStatus = user.status;
-        user.status = "excluded";
+        user.status = "suspended";
         await user.save();
         
         // Revoke all user tokens
@@ -125,7 +125,7 @@ export const excludeUser = async (req, res) => {
             action: 'user.exclude',
             targetType: 'user',
             targetId: user._id.toString(),
-            diff: { status: { from: oldStatus, to: 'excluded' } },
+            diff: { status: { from: oldStatus, to: 'suspended' } },
             req
         });
         
@@ -176,8 +176,8 @@ export const updateUser = async (req, res) => {
             user.status = status;
             diff.status = { from: oldValues.status, to: status };
             
-            // If status changed to blocked/excluded/deleted, revoke tokens
-            if (['blocked', 'excluded', 'deleted'].includes(status)) {
+            // If status changed to suspended/deleted, revoke tokens
+            if (['suspended', 'deleted'].includes(status)) {
                 jwtBlacklistService.revokeAllUserTokens(user._id.toString());
             }
         }
@@ -198,6 +198,16 @@ export const updateUser = async (req, res) => {
                 diff,
                 req
             });
+            if (diff.role) {
+                await createAuditLog({
+                    actorId: req.user._id,
+                    action: 'rbac.role_change',
+                    targetType: 'user',
+                    targetId: user._id.toString(),
+                    diff: { role: diff.role },
+                    req
+                });
+            }
         }
         
         res.json(user);

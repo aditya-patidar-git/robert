@@ -13,7 +13,6 @@ import { ConsentScriptSection } from './components/sections/ConsentScriptSection
 import { DataRetentionSection } from './components/sections/DataRetentionSection';
 import { LawfulBasisSection } from './components/sections/LawfulBasisSection';
 import DSARRequestsTab from './tabs/DSARRequestsTab';
-import AuditLogsTab from './tabs/AuditLogsTab';
 import RetentionStatusTab from './tabs/RetentionStatusTab';
 import ComplianceReportTab from './tabs/ComplianceReportTab';
 import ConsentManagementTab from './tabs/ConsentManagementTab';
@@ -49,16 +48,19 @@ const PrivacyPage = () => {
     configLoading,
     dsarRequests,
     dsarLoading,
-    auditLogs,
-    auditLogsLoading,
-    auditLogFilters,
-    setAuditLogFilters,
     retentionPolicies,
     retentionLoading,
     complianceReport,
     complianceLoading,
     consentRecords,
     consentLoading,
+    consentPagination,
+    consentPage,
+    setConsentPage,
+    consentPageSize,
+    setConsentPageSize,
+    consentFilters,
+    setConsentFilters,
 
     // Mutations
     cleanupMutation,
@@ -133,7 +135,7 @@ const PrivacyPage = () => {
                 Create DSAR Request
               </Button>
             )}
-            {activeTab === 2 && (
+            {activeTab === 1 && (
               <Button
                 variant="contained"
                 onClick={() => cleanupMutation.mutate()}
@@ -171,7 +173,6 @@ const PrivacyPage = () => {
           scrollButtons="auto"
         >
           <Tab label="DSAR Requests" />
-          <Tab label="Audit Logs" />
           <Tab label="Retention Status" />
           <Tab label="Compliance Report" />
           <Tab label="Consent Management" />
@@ -206,17 +207,6 @@ const PrivacyPage = () => {
           )}
 
           {activeTab === 1 && (
-            <AuditLogsTab
-              state={{
-                auditLogs: auditLogs || [],
-                auditLogsLoading,
-                auditLogFilters,
-                setAuditLogFilters
-              }}
-            />
-          )}
-
-          {activeTab === 2 && (
             <RetentionStatusTab
               state={{
                 retentionPolicies: retentionPolicies || {},
@@ -228,7 +218,7 @@ const PrivacyPage = () => {
             />
           )}
 
-          {activeTab === 3 && (
+          {activeTab === 2 && (
             <ComplianceReportTab
               state={{
                 complianceReport: complianceReport || null,
@@ -237,11 +227,18 @@ const PrivacyPage = () => {
             />
           )}
 
-          {activeTab === 4 && (
+          {activeTab === 3 && (
             <ConsentManagementTab
               state={{
                 consentRecords: consentRecords || [],
-                consentLoading
+                consentLoading,
+                consentPagination,
+                consentPage,
+                setConsentPage,
+                consentPageSize,
+                setConsentPageSize,
+                consentFilters,
+                setConsentFilters
               }}
             />
           )}

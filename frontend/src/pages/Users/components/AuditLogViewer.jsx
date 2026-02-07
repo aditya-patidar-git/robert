@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Box,
@@ -18,18 +18,25 @@ import {
   Alert,
   Collapse,
   Tooltip,
-  Pagination
+  Pagination,
+  Button,
+  Autocomplete
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
-  Download as DownloadIcon
+  Download as DownloadIcon,
+  Clear as ClearIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import auditLogService from '../../../services/auditLogService';
+import userService from '../../../services/userService';
+import { formatEventTypeLabel, AUDIT_LOG_ACTIONS } from '../../Privacy/utils/auditLogFormatters';
 
 const AuditLogViewer = () => {
+  const [exporting, setExporting] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
+  const [selectedUser, setSelectedUser] = useState(null);
   const [filters, setFilters] = useState({
     actorId: '',
     action: '',
@@ -39,6 +46,16 @@ const AuditLogViewer = () => {
     page: 1,
     limit: 50
   });
+
+  const { data: usersData } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => userService.getAllUsers()
+  });
+  const users = useMemo(() => {
+    const d = usersData?.data ?? usersData;
+    const list = d?.users ?? d;
+    return Array.isArray(list) ? list : [];
+  }, [usersData]);
 
   const { data: auditData, isLoading } = useQuery({
     queryKey: ['audit-logs', filters],
@@ -73,6 +90,35 @@ const AuditLogViewer = () => {
 
   const handlePageChange = (event, newPage) => {
     setFilters({ ...filters, page: newPage });
+  };
+
+  const handleClearFilters = () => {
+    setSelectedUser(null);
+    setFilters({
+      actorId: '',
+      action: '',
+      targetType: '',
+      startDate: null,
+      endDate: null,
+      page: 1,
+      limit: 50
+    });
+  };
+
+  const handleExport = async (format = 'csv') => {
+    setExporting(true);
+    try {
+      await auditLogService.exportAuditLogs({
+        actorId: filters.actorId || undefined,
+        action: filters.action || undefined,
+        targetType: filters.targetType || undefined,
+        startDate: filters.startDate ? filters.startDate.toISOString() : undefined,
+        endDate: filters.endDate ? filters.endDate.toISOString() : undefined,
+        format
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const formatDiff = (diff) => {
@@ -111,14 +157,36 @@ const AuditLogViewer = () => {
       {/* Filters */}
       <Paper elevation={0} sx={{ p: 2, mb: 3, borderRadius: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 220 }}
+            options={users}
+            value={selectedUser}
+            onChange={(_, value) => {
+              setSelectedUser(value ?? null);
+              handleFilterChange('actorId')(value?._id ?? '');
+            }}
+            getOptionLabel={(option) => option.email || option.username || ''}
+            isOptionEqualToValue={(option, val) => option._id === val?._id}
+            renderInput={(params) => (
+              <TextField {...params} label="User" placeholder="Select user..." />
+            )}
+          />
           <TextField
+            select
             label="Action"
             value={filters.action}
             onChange={(e) => handleFilterChange('action')(e.target.value)}
             size="small"
             sx={{ minWidth: 200 }}
-            placeholder="Filter by action..."
-          />
+          >
+            <MenuItem value="">All</MenuItem>
+            {AUDIT_LOG_ACTIONS.map((action) => (
+              <MenuItem key={action} value={action}>
+                {formatEventTypeLabel(action)}
+              </MenuItem>
+            ))}
+          </TextField>
           <TextField
             select
             label="Target Type"
@@ -147,6 +215,32 @@ const AuditLogViewer = () => {
             onChange={(date) => handleFilterChange('endDate')(date)}
             slotProps={{ textField: { size: 'small', sx: { minWidth: 150 } } }}
           />
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ClearIcon />}
+            onClick={handleClearFilters}
+          >
+            Clear filters
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={() => handleExport('csv')}
+            disabled={exporting}
+          >
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={() => handleExport('json')}
+            disabled={exporting}
+          >
+            {exporting ? 'Exporting…' : 'Export JSON'}
+          </Button>
         </Box>
       </Paper>
 

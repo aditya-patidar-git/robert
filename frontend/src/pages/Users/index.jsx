@@ -364,7 +364,8 @@ const UsersPage = () => {
           >
             <MenuItem value="">All Statuses</MenuItem>
             <MenuItem value="active">Active</MenuItem>
-            <MenuItem value="inactive">Inactive</MenuItem>
+            <MenuItem value="suspended">Suspended</MenuItem>
+            <MenuItem value="pending">Pending</MenuItem>
           </TextField>
         </Box>
       </Paper>
@@ -446,7 +447,7 @@ const UsersPage = () => {
                   <TableCell>
                     <Chip
                       label={user.status || 'active'}
-                      color={user.status === 'active' ? 'success' : 'default'}
+                      color={user.status === 'active' ? 'success' : user.status === 'suspended' ? 'warning' : 'default'}
                       size="small"
                       sx={{ 
                         textTransform: 'capitalize',

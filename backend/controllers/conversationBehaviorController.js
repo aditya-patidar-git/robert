@@ -90,19 +90,16 @@ export const getConfig = async (req, res) => {
 // POST /api/conversation-behavior/config
 export const updateConfig = async (req, res) => {
   try {
-    const configData = req.body;
+    const raw = req.body;
+    const { _id, __v, ...configData } = raw;
 
-    // Find active config or create new one
     let config = await ConversationBehaviorConfig.findOne({ isActive: true });
     
     if (!config) {
-      // Deactivate any existing configs
       await ConversationBehaviorConfig.updateMany(
         { isActive: true },
         { isActive: false }
       );
-      
-      // Create new config
       config = new ConversationBehaviorConfig({
         name: configData.name || "default",
         ...configData,
@@ -110,7 +107,6 @@ export const updateConfig = async (req, res) => {
         createdBy: req.user?.username || "admin"
       });
     } else {
-      // Update existing config
       Object.assign(config, configData);
       if (req.user?.username) {
         config.createdBy = req.user.username;

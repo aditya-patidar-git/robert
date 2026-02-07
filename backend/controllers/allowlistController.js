@@ -56,35 +56,43 @@ export const addToAllowlist = async (req, res) => {
             return res.status(400).json({ message: "Type and value are required" });
         }
 
-        if (!['email', 'domain'].includes(type)) {
-            return res.status(400).json({ message: "Type must be 'email' or 'domain'" });
+        if (!['email', 'domain', 'ip'].includes(type)) {
+            return res.status(400).json({ message: "Type must be 'email', 'domain', or 'ip'" });
         }
 
-        // Validate email format if type is email
+        let normalizedValue = value.trim();
+        if (type !== 'ip') normalizedValue = normalizedValue.toLowerCase();
+
         if (type === 'email') {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(value)) {
+            if (!emailRegex.test(normalizedValue)) {
                 return res.status(400).json({ message: "Invalid email format" });
             }
-        }
-
-        // Validate domain format if type is domain
-        if (type === 'domain') {
+        } else if (type === 'domain') {
             const domainRegex = /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/i;
-            if (!domainRegex.test(value)) {
+            if (!domainRegex.test(normalizedValue)) {
                 return res.status(400).json({ message: "Invalid domain format" });
+            }
+        } else if (type === 'ip') {
+            const ipv4Regex = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+            if (!ipv4Regex.test(normalizedValue)) {
+                return res.status(400).json({ message: "Invalid IPv4 format" });
+            }
+            const octets = normalizedValue.split('.').map(Number);
+            if (octets.some(o => o < 0 || o > 255)) {
+                return res.status(400).json({ message: "Invalid IPv4 octet range" });
             }
         }
 
         // Check if entry already exists
-        const existing = await Allowlist.findOne({ type, value });
+        const existing = await Allowlist.findOne({ type, value: normalizedValue });
         if (existing) {
             return res.status(400).json({ message: "Entry already exists in allowlist" });
         }
 
         const allowlistEntry = await Allowlist.create({
             type,
-            value,
+            value: normalizedValue,
             notes,
             createdBy: actorId
         });
@@ -95,7 +103,7 @@ export const addToAllowlist = async (req, res) => {
             action: 'allowlist.add',
             targetType: 'allowlist',
             targetId: allowlistEntry._id.toString(),
-            diff: { type, value, notes },
+            diff: { type, value: normalizedValue, notes },
             req
         });
 

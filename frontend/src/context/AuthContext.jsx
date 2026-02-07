@@ -33,6 +33,7 @@ export const AuthProvider = ({ children }) => {
         console.log('🔍 No authToken found in localStorage');
         setUser(null);
         setIsAuthenticated(false);
+        setTheme('light');
         setIsLoading(false);
         return;
       }
@@ -57,6 +58,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('authToken');
         setUser(null);
         setIsAuthenticated(false);
+        setTheme('light');
         setIsLoading(false);
         return;
       }
@@ -75,6 +77,7 @@ export const AuthProvider = ({ children }) => {
       console.log('No valid session found:', error.message);
       setUser(null);
       setIsAuthenticated(false);
+      setTheme('light');
       // Clear invalid token
       localStorage.removeItem('authToken');
       
@@ -120,6 +123,7 @@ export const AuthProvider = ({ children }) => {
           console.log('🚪 Logout detected in another tab');
           setUser(null);
           setIsAuthenticated(false);
+          setTheme('light');
         }
       }
     };
@@ -147,6 +151,16 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  const sendLoginOtp = async (credentials) => {
+    try {
+      await authService.sendLoginOtp(credentials);
+      return { success: true };
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Failed to send OTP.';
+      return { success: false, error: message };
+    }
+  };
+
   const login = async (credentials) => {
     try {
       const response = await authService.login(credentials);
@@ -165,11 +179,61 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Invalid login response structure');
       }
     } catch (error) {
-      console.log("error:", error);
-      const message =
-        error?.response?.data?.message || 'Invalid credentials. Please try again.';
-      const isBlocked = message.toLowerCase().includes('blocked');
+      const data = error?.response?.data;
+      const message = data?.message || error?.message || 'Invalid credentials. Please try again.';
+      const isBlocked = message.toLowerCase().includes('blocked') || message.toLowerCase().includes('suspended');
+      const isMfaRequired =
+        (error?.response?.status === 403 && data?.mfaRequired) ||
+        (error?.statusCode === 403 && error?.details?.mfaRequired);
+      const needEmailVerification =
+        (error?.response?.status === 403 && data?.needEmailVerification) ||
+        (error?.statusCode === 403 && error?.details?.needEmailVerification);
+      if (isMfaRequired) {
+        return { success: false, mfaRequired: true, error: message };
+      }
+      if (needEmailVerification) {
+        return { success: false, needEmailVerification: true, error: message };
+      }
       return { success: false, error: message, isBlocked };
+    }
+  };
+
+  const sendSignupOtp = async (email) => {
+    try {
+      await authService.sendSignupOtp(email);
+      return { success: true };
+    } catch (error) {
+      const data = error?.response?.data ?? error?.details;
+      const message = data?.message || error?.message || 'Failed to send verification code.';
+      return { success: false, error: message };
+    }
+  };
+
+  const sendPendingVerificationOtp = async (credentials) => {
+    try {
+      await authService.sendPendingVerificationOtp(credentials);
+      return { success: true };
+    } catch (error) {
+      const data = error?.response?.data ?? error?.details;
+      const message = data?.message || error?.message || 'Failed to send verification code.';
+      return { success: false, error: message };
+    }
+  };
+
+  const verifyPendingUser = async ({ email, otp }) => {
+    try {
+      const data = await authService.verifyPendingUser({ email, otp });
+      if (data?.user && data?.token) {
+        setUser(data.user);
+        setIsAuthenticated(true);
+        window.dispatchEvent(new Event('authTokenChanged'));
+        return { success: true, user: data.user };
+      }
+      return { success: false, error: 'Invalid response' };
+    } catch (error) {
+      const data = error?.response?.data ?? error?.details;
+      const message = data?.message || error?.message || 'Verification failed.';
+      return { success: false, error: message };
     }
   };
 
@@ -178,8 +242,8 @@ export const AuthProvider = ({ children }) => {
       await authService.register(userData);
       return { success: true, message: 'Registration successful! Please log in.' };
     } catch (error) {
-      const message =
-        error?.response?.data?.message || 'Registration failed. Please try again.';
+      const data = error?.response?.data ?? error?.details;
+      const message = (typeof data?.message === 'string' ? data.message : null) || error?.message || 'Registration failed. Please try again.';
       return { success: false, error: message };
     }
   };
@@ -192,6 +256,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setUser(null);
       setIsAuthenticated(false);
+      setTheme('light');
       // Clear token from localStorage
       localStorage.removeItem('authToken');
       
@@ -212,7 +277,36 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+  const toggleMFA = async (enabled) => {
+    try {
+      const result = await authService.toggleMFA(enabled);
+      const payload = result?.data ?? result;
+      const updatedUser = payload?.user;
+      if (updatedUser) {
+        setUser(prev => (prev ? { ...prev, ...updatedUser, mfaEnabled: Boolean(enabled) } : { ...updatedUser, mfaEnabled: Boolean(enabled) }));
+      } else {
+        setUser(prev => (prev ? { ...prev, mfaEnabled: Boolean(enabled) } : null));
+      }
+      return { success: true, message: payload?.message ?? 'MFA settings updated' };
+    } catch (error) {
+      const message = error?.response?.data?.message || 'Failed to update MFA settings.';
+      return { success: false, error: message };
+    }
+  };
+
+  const changePassword = async ({ currentPassword, newPassword }) => {
+    try {
+      await authService.changePassword({ currentPassword, newPassword });
+      return { success: true };
+    } catch (error) {
+      const message = error?.response?.data?.message || error?.message || 'Failed to change password.';
+      return { success: false, error: message };
+    }
+  };
+
+  const toggleTheme = () => {
+    if (isAuthenticated) setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+  };
 
   const clearAllTokens = () => {
     // Clear all possible token keys
@@ -224,7 +318,7 @@ export const AuthProvider = ({ children }) => {
     });
     setUser(null);
     setIsAuthenticated(false);
-    
+    setTheme('light');
     // Trigger event for same-tab synchronization
     window.dispatchEvent(new Event('authTokenChanged'));
   };
@@ -237,9 +331,15 @@ export const AuthProvider = ({ children }) => {
         isLoading,
         theme,
         login,
+        sendLoginOtp,
+        sendSignupOtp,
+        sendPendingVerificationOtp,
+        verifyPendingUser,
         register,
         logout,
         updateProfile,
+        toggleMFA,
+        changePassword,
         toggleTheme,
         checkAuthStatus,
         clearAllTokens

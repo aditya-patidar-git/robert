@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -21,13 +21,15 @@ import {
   MenuItem,
   CircularProgress,
   Alert,
-  Tooltip
+  Tooltip,
+  Autocomplete
 } from '@mui/material';
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Email as EmailIcon,
-  Domain as DomainIcon
+  Domain as DomainIcon,
+  Public as PublicIcon
 } from '@mui/icons-material';
 import { useToast } from '../../../components/common/ToastProvider';
 import allowlistService from '../../../services/allowlistService';
@@ -57,9 +59,12 @@ const AllowlistManager = forwardRef((props, ref) => {
     })
   });
 
-  // Access data from normalized response structure
   const allowlist = allowlistData?.data?.allowlist || allowlistData?.allowlist || [];
   const pagination = allowlistData?.data?.pagination || allowlistData?.pagination || {};
+  const searchOptions = useMemo(() => {
+    const values = [...new Set(allowlist.map((e) => e.value).filter(Boolean))].sort();
+    return values;
+  }, [allowlist]);
 
   const addMutation = useMutation({
     mutationFn: (data) => allowlistService.addToAllowlist(data),
@@ -89,21 +94,23 @@ const AllowlistManager = forwardRef((props, ref) => {
 
   const validateForm = () => {
     const errors = {};
-    
     if (!formData.value) {
       errors.value = 'Value is required';
     } else if (formData.type === 'email') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData.value)) {
-        errors.value = 'Invalid email format';
-      }
+      if (!emailRegex.test(formData.value)) errors.value = 'Invalid email format';
     } else if (formData.type === 'domain') {
       const domainRegex = /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/i;
-      if (!domainRegex.test(formData.value)) {
-        errors.value = 'Invalid domain format';
+      if (!domainRegex.test(formData.value)) errors.value = 'Invalid domain format';
+    } else if (formData.type === 'ip') {
+      const ipv4Regex = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+      if (!ipv4Regex.test(formData.value.trim())) {
+        errors.value = 'Invalid IPv4 format';
+      } else {
+        const octets = formData.value.trim().split('.').map(Number);
+        if (octets.some(o => o < 0 || o > 255)) errors.value = 'Invalid IPv4 octet range';
       }
     }
-    
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -154,14 +161,20 @@ const AllowlistManager = forwardRef((props, ref) => {
             <MenuItem value="">All Types</MenuItem>
             <MenuItem value="email">Email</MenuItem>
             <MenuItem value="domain">Domain</MenuItem>
+            <MenuItem value="ip">IP</MenuItem>
           </TextField>
-          <TextField
-            label="Search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+          <Autocomplete
+            freeSolo
             size="small"
-            sx={{ minWidth: 200 }}
-            placeholder="Search by value..."
+            sx={{ minWidth: 220 }}
+            options={searchOptions}
+            value={searchQuery}
+            onInputChange={(_, value) => setSearchQuery(value ?? '')}
+            onChange={(_, value) => setSearchQuery(typeof value === 'string' ? value : value ?? '')}
+            getOptionLabel={(opt) => opt || ''}
+            renderInput={(params) => (
+              <TextField {...params} label="Search" placeholder="Search by value or select..." />
+            )}
           />
         </Box>
       </Paper>
@@ -193,10 +206,10 @@ const AllowlistManager = forwardRef((props, ref) => {
                 <TableRow key={entry._id || entry.id}>
                   <TableCell>
                     <Chip
-                      icon={entry.type === 'email' ? <EmailIcon /> : <DomainIcon />}
+                      icon={entry.type === 'email' ? <EmailIcon /> : entry.type === 'ip' ? <PublicIcon /> : <DomainIcon />}
                       label={entry.type}
                       size="small"
-                      color={entry.type === 'email' ? 'primary' : 'secondary'}
+                      color={entry.type === 'email' ? 'primary' : entry.type === 'ip' ? 'default' : 'secondary'}
                     />
                   </TableCell>
                   <TableCell>
@@ -261,10 +274,11 @@ const AllowlistManager = forwardRef((props, ref) => {
             >
               <MenuItem value="email">Email</MenuItem>
               <MenuItem value="domain">Domain</MenuItem>
+              <MenuItem value="ip">IP</MenuItem>
             </TextField>
             <TextField
               fullWidth
-              label={formData.type === 'email' ? 'Email Address' : 'Domain'}
+              label={formData.type === 'email' ? 'Email Address' : formData.type === 'ip' ? 'IPv4 Address' : 'Domain'}
               value={formData.value}
               onChange={(e) => {
                 setFormData({ ...formData, value: e.target.value });
@@ -273,7 +287,7 @@ const AllowlistManager = forwardRef((props, ref) => {
               error={!!formErrors.value}
               helperText={formErrors.value}
               required
-              placeholder={formData.type === 'email' ? 'user@example.com' : 'example.com'}
+              placeholder={formData.type === 'email' ? 'user@example.com' : formData.type === 'ip' ? '192.168.1.1' : 'example.com'}
             />
             <TextField
               fullWidth

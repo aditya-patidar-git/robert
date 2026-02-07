@@ -27,8 +27,8 @@ export const formatEventTypeLabel = (eventType) => {
     'user.update': 'User Updated',
     'user.delete': 'User Deleted',
     'user.approve': 'User Approved',
-    'user.block': 'User Blocked',
-    'user.exclude': 'User Excluded',
+    'user.block': 'User Suspended',
+    'user.exclude': 'User Suspended',
     
     // Auth Events
     'auth.login': 'Login',
@@ -37,11 +37,44 @@ export const formatEventTypeLabel = (eventType) => {
     
     // Allowlist Events
     'allowlist.add': 'Allowlist Added',
-    'allowlist.remove': 'Allowlist Removed'
+    'allowlist.remove': 'Allowlist Removed',
+    // Config & RBAC
+    'config.update': 'Config Updated',
+    'rbac.role_change': 'RBAC Role Changed',
+    'secret.access_attempt': 'Secret Access Attempt',
+    'user.delete.hard': 'User Permanently Deleted'
   };
-  
+
   return labels[eventType] || eventType?.replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Unknown';
 };
+
+/** Ordered list of audit log action values for filter dropdowns */
+export const AUDIT_LOG_ACTIONS = [
+  'auth.login',
+  'auth.logout',
+  'auth.login_failed',
+  'user.create',
+  'user.update',
+  'user.delete',
+  'user.delete.hard',
+  'user.approve',
+  'user.block',
+  'user.exclude',
+  'rbac.role_change',
+  'config.update',
+  'allowlist.add',
+  'allowlist.remove',
+  'secret.access_attempt',
+  'consent_recorded',
+  'dsar_created',
+  'dsar_processed',
+  'data_exported',
+  'data_deleted',
+  'retention_cleanup',
+  'breach_reported',
+  'compliance_report_generated',
+  'pia_generated'
+];
 
 /**
  * Get Chip color based on event type
@@ -328,17 +361,17 @@ const formatUserApprove = (data) => {
 };
 
 const formatUserBlock = (data) => {
-  if (!data) return 'User blocked';
+  if (!data) return 'User suspended';
   const parts = [];
   if (data.email) parts.push(maskEmail(data.email));
   if (data.reason) parts.push(`Reason: ${data.reason}`);
-  return parts.length > 0 ? `Blocked user: ${parts.join(' | ')}` : 'User blocked';
+  return parts.length > 0 ? `Suspended user: ${parts.join(' | ')}` : 'User suspended';
 };
 
 const formatUserExclude = (data) => {
-  if (!data) return 'User excluded (permanent ban)';
-  if (data.email) return `Excluded user: ${maskEmail(data.email)}`;
-  return 'User excluded (permanent ban)';
+  if (!data) return 'User suspended';
+  if (data.email) return `Suspended user: ${maskEmail(data.email)}`;
+  return 'User suspended';
 };
 
 const formatAuthLogin = (data) => {

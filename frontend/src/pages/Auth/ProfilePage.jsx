@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
   Container,
@@ -36,8 +37,11 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/common/ToastProvider';
 
+const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/;
+
 const ProfilePage = () => {
-  const { user, updateProfile, theme, toggleTheme } = useAuth();
+  const navigate = useNavigate();
+  const { user, updateProfile, toggleMFA, changePassword, logout, theme, toggleTheme } = useAuth();
   const { showSuccess, showError } = useToast();
 
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -74,6 +78,7 @@ const ProfilePage = () => {
     }
   });
 
+  const currentPassword = watch('currentPassword');
   const newPassword = watch('newPassword');
 
   const handleProfileUpdate = async (data) => {
@@ -94,12 +99,38 @@ const ProfilePage = () => {
   };
 
   const handlePasswordChange = async (data) => {
+    const { currentPassword: cur, newPassword: newP, confirmPassword: conf } = data;
+    if (!cur?.trim()) {
+      showError('Current password is required.');
+      return;
+    }
+    if (!newP?.trim()) {
+      showError('New password is required.');
+      return;
+    }
+    if (newP.length < 8 || !PASSWORD_PATTERN.test(newP)) {
+      showError('New password must be at least 8 characters with one uppercase, one lowercase, and one number.');
+      return;
+    }
+    if (cur === newP) {
+      showError('New password must be different from current password.');
+      return;
+    }
+    if (conf !== newP) {
+      showError('Confirm password must match new password.');
+      return;
+    }
     try {
       setIsChangingPassword(true);
-      // This would call authService.changePassword
-      // For now, we'll simulate success
-      showSuccess('Password changed successfully!', 'Security Update');
-      resetPassword();
+      const result = await changePassword({ currentPassword: cur, newPassword: newP });
+      if (result.success) {
+        showSuccess('Password changed. Please sign in with your new password.', 'Security Update');
+        resetPassword();
+        await logout();
+        navigate('/auth/login');
+      } else {
+        showError(result.error || 'Failed to change password.');
+      }
     } catch (error) {
       showError('Failed to change password. Please try again.');
     } finally {
@@ -109,14 +140,14 @@ const ProfilePage = () => {
 
   const handleMFAToggle = async (enabled) => {
     try {
-      const result = await updateProfile({ mfaEnabled: enabled });
+      const result = await toggleMFA(enabled);
       if (result.success) {
         showSuccess(
           `Two-factor authentication ${enabled ? 'enabled' : 'disabled'}`,
           'Security Update'
         );
       } else {
-        showError('Failed to update MFA settings');
+        showError(result.error || 'Failed to update MFA settings');
       }
     } catch (error) {
       showError('Failed to update MFA settings');
@@ -136,7 +167,7 @@ const ProfilePage = () => {
     switch (status) {
       case 'active': return 'success';
       case 'pending': return 'warning';
-      case 'blocked': return 'error';
+      case 'suspended': return 'error';
       default: return 'default';
     }
   };
@@ -294,7 +325,7 @@ const ProfilePage = () => {
             <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
               <Box component="form" onSubmit={handleProfileSubmit(handleProfileUpdate)}>
                 <Grid container spacing={3}>
-                  <Grid item xs={12}>
+                  <Grid size={12}>
                     <TextField
                       fullWidth
                       label="Username"
@@ -311,7 +342,7 @@ const ProfilePage = () => {
                       }}
                     />
                   </Grid>
-                  <Grid item xs={12}>
+                  <Grid size={12}>
                     <TextField
                       fullWidth
                       label="Email Address"
@@ -490,7 +521,12 @@ const ProfilePage = () => {
                     minLength: {
                       value: 8,
                       message: 'Password must be at least 8 characters'
-                    }
+                    },
+                    pattern: {
+                      value: PASSWORD_PATTERN,
+                      message: 'Must contain at least one uppercase, one lowercase, and one number'
+                    },
+                    validate: (value) => value !== currentPassword || 'New password must differ from current password'
                   })}
                   error={!!passwordErrors.newPassword}
                   helperText={passwordErrors.newPassword?.message}

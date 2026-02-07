@@ -496,11 +496,9 @@ export const getConsentRecords = async (req, res) => {
             granted,
             callSid,
             page = 1,
-            limit = 500 
+            limit = 15
         } = req.query;
         
-        // Filter for records where consent data exists (even if false or not requested)
-        // This includes all records with consentRecorded or recordingConsent fields
         const filter = {
             $or: [
                 { 'recordingConsent.requested': { $exists: true } },
@@ -531,12 +529,18 @@ export const getConsentRecords = async (req, res) => {
             }
         }
         
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const callRecords = await CallRecord.find(filter)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(parseInt(limit))
-            .lean();
+        const limitNum = Math.min(Math.max(parseInt(limit) || 15, 1), 100);
+        const pageNum = Math.max(parseInt(page) || 1, 1);
+        const skip = (pageNum - 1) * limitNum;
+
+        const [total, callRecords] = await Promise.all([
+            CallRecord.countDocuments(filter),
+            CallRecord.find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limitNum)
+                .lean()
+        ]);
         
         // Transform to consent records format
         const consentRecords = callRecords.flatMap(record => {
@@ -617,9 +621,10 @@ export const getConsentRecords = async (req, res) => {
             success: true,
             consentRecords: filtered,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total: filtered.length
+                page: pageNum,
+                limit: limitNum,
+                total,
+                pages: Math.ceil(total / limitNum) || 1
             }
         });
     } catch (error) {

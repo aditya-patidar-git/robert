@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -8,6 +8,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   Chip,
   CircularProgress,
   Paper,
@@ -33,58 +34,26 @@ import {
 } from '@mui/icons-material';
 import { formatDateTime } from '../../../utils/formatters';
 
-// Consent Management Tab Component
+const CONSENT_TYPES = ['recording', 'processing'];
+
 const ConsentManagementTab = ({ state }) => {
   const {
-    consentRecords: initialRecords = [],
-    consentLoading
+    consentRecords = [],
+    consentLoading,
+    consentPagination = {},
+    consentPage = 0,
+    setConsentPage,
+    consentPageSize = 15,
+    setConsentPageSize,
+    consentFilters = {},
+    setConsentFilters
   } = state;
 
-  const [filters, setFilters] = useState({
-    consentType: '',
-    granted: '',
-    callSid: '',
-    startDate: '',
-    endDate: ''
-  });
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-
-  // Filter consent records
-  const filteredRecords = useMemo(() => {
-    return initialRecords.filter(record => {
-      if (filters.consentType && record.consentType !== filters.consentType) {
-        return false;
-      }
-      if (filters.granted !== '' && record.granted !== (filters.granted === 'true')) {
-        return false;
-      }
-      if (filters.callSid && record.callSid && !record.callSid.toLowerCase().includes(filters.callSid.toLowerCase())) {
-        return false;
-      }
-      if (filters.startDate) {
-        const recordDate = new Date(record.timestamp);
-        const startDate = new Date(filters.startDate);
-        if (recordDate < startDate) {
-          return false;
-        }
-      }
-      if (filters.endDate) {
-        const recordDate = new Date(record.timestamp);
-        const endDate = new Date(filters.endDate);
-        endDate.setHours(23, 59, 59, 999);
-        if (recordDate > endDate) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [initialRecords, filters]);
-
-  // Get unique consent types for filter dropdown
-  const consentTypes = useMemo(() => {
-    return [...new Set(initialRecords.map(r => r.consentType).filter(Boolean))].sort();
-  }, [initialRecords]);
+  const filters = consentFilters;
+  const setFilters = setConsentFilters;
+  const total = consentPagination?.total ?? 0;
 
   const handleViewDetails = (record) => {
     setSelectedRecord(record);
@@ -118,12 +87,12 @@ const ConsentManagementTab = ({ state }) => {
           <FormControl size="small" sx={{ minWidth: 150 }}>
             <InputLabel>Consent Type</InputLabel>
             <Select
-              value={filters.consentType}
+              value={filters.consentType || ''}
               label="Consent Type"
               onChange={(e) => setFilters({ ...filters, consentType: e.target.value })}
             >
               <MenuItem value="">All Types</MenuItem>
-              {consentTypes.map(type => (
+              {CONSENT_TYPES.map((type) => (
                 <MenuItem key={type} value={type}>
                   {type}
                 </MenuItem>
@@ -181,18 +150,16 @@ const ConsentManagementTab = ({ state }) => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredRecords.length === 0 ? (
+              {consentRecords.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
                     <Typography color="text.secondary">
-                      {initialRecords.length === 0 
-                        ? 'No consent records found' 
-                        : 'No consent records match the selected filters'}
+                      {consentLoading ? 'Loading...' : 'No consent records found'}
                     </Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredRecords.map((record) => (
+                consentRecords.map((record) => (
                   <TableRow key={record.id} hover>
                     <TableCell>
                       <Typography variant="body2">
@@ -234,6 +201,16 @@ const ConsentManagementTab = ({ state }) => {
               )}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={total}
+            page={consentPage}
+            onPageChange={(_, newPage) => setConsentPage(newPage)}
+            rowsPerPage={consentPageSize}
+            onRowsPerPageChange={(e) => setConsentPageSize(Number(e.target.value))}
+            rowsPerPageOptions={[10, 15]}
+            labelRowsPerPage="Rows per page:"
+          />
         </TableContainer>
       )}
 

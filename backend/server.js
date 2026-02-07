@@ -1,6 +1,10 @@
-// Load .env FIRST before any other imports that might need env vars
+// Load .env from backend directory so it works regardless of cwd
 import dotenv from "dotenv";
-dotenv.config();
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, ".env") });
 
 // Now import everything else
 import express from "express";
@@ -58,8 +62,11 @@ import configSyncService, { setIO as setConfigSyncIO } from "./services/configSy
 import { setIO as setWebSocketIO } from "./services/websocketService.js";
 import { proxyRecording } from "./controllers/outboundController.js";
 import { protect as authenticateToken } from "./middleware/authMiddleware.js";
+import { ipAllowlistMiddleware, logBypassIfActive } from "./middleware/ipAllowlistMiddleware.js";
+import forceHttpsMiddleware from "./middleware/forceHttpsMiddleware.js";
 
 const app = express();
+app.set('trust proxy', 1);
 const httpServer = createServer(app);
 
 // Export io for controllers
@@ -84,6 +91,9 @@ app.use(cors({
 }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(forceHttpsMiddleware);
+
+logBypassIfActive();
 
 // MongoDB connection
 const mongoUri = process.env.MONGO_URI;
@@ -114,6 +124,9 @@ mongoose.connect(mongoUri)
 
 // Health check
 app.get("/", (req, res) => res.send("Robert AI backend alive"));
+
+// IP allowlist enforcement for /api (when IP_ALLOWLIST_ENABLED=1)
+app.use("/api", ipAllowlistMiddleware);
 
 // Auth Routes
 app.use("/api/auth", authRoutes);

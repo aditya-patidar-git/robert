@@ -27,6 +27,7 @@ class UncertaintyGateService {
 
       // Check if we have enough results
       if (validation.passages.length < minPassages) {
+        validation.confidence = this.calculateConfidence(validation.passages);
         validation.recommendations.push(`Need at least ${minPassages} passages, found ${validation.passages.length}`);
         validation.fallbackAction = 'clarify';
         return validation;
@@ -35,6 +36,7 @@ class UncertaintyGateService {
       // Check similarity scores
       const validPassages = validation.passages.filter(p => p.similarityScore >= threshold);
       if (validPassages.length < minPassages) {
+        validation.confidence = this.calculateConfidence(validation.passages);
         validation.recommendations.push(`Need at least ${minPassages} passages above ${threshold} threshold, found ${validPassages.length}`);
         validation.fallbackAction = 'clarify';
         return validation;
@@ -84,7 +86,7 @@ class UncertaintyGateService {
   calculateConfidence(passages) {
     if (passages.length === 0) return 0;
 
-    const scores = passages.map(p => p.similarityScore);
+    const scores = passages.map(p => p.similarityScore ?? p.similarity_score ?? 0);
     const averageScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
     
     // Boost confidence for multiple sources
