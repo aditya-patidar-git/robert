@@ -28,6 +28,13 @@ const callRecordSchema = new mongoose.Schema({
       redactions: [{ type: String }]
     }
   ],
+  transcriptFromRecording: [{
+    role: { type: String, enum: ["user", "agent"] },
+    text: String,
+    timestamp: { type: Date, default: Date.now },
+    confidence: { type: Number, min: 0, max: 1 }
+  }],
+  afterCallTranscriptionPending: { type: Boolean, default: false },
   recordingUrl: String,
   summary: String,
   entryPath: { 

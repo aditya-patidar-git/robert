@@ -541,7 +541,8 @@ export class ResponseHandler {
           conversations[this.state.callSid].transcript.push({
             role: 'agent',
             text: fullResponseText,
-            timestamp: new Date()
+            timestamp: new Date(),
+            confidence: 1
           });
           console.log(`📝 [${this.state.callSid}] Added agent response to transcript: "${fullResponseText.substring(0, 50)}${fullResponseText.length > 50 ? '...' : ''}"`);
         }

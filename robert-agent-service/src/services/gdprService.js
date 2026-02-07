@@ -25,13 +25,13 @@ class GDRPService {
     try {
       const config = await PrivacyConfig.findOne({ isActive: true }).lean();
       if (!config) {
-        // Return defaults if no config found
         return {
           retentionSettings: {
             transcriptRetention: 90,
             recordingRetention: 90,
             metadataRetention: 365
-          }
+          },
+          transcriptRedaction: { maskPIIAtSave: false }
         };
       }
       return config;

@@ -23,6 +23,7 @@ import { validateAndLogStartupConfig } from '../utils/configValidator.js';
 import scheduler from '../jobs/scheduler.js';
 import memoryCleanupJob from '../jobs/memoryCleanupJob.js';
 import retentionCleanupJob from '../jobs/retentionCleanupJob.js';
+import afterCallTranscriptionJob from '../jobs/afterCallTranscriptionJob.js';
 import kbMigrationJob from '../jobs/kbMigrationJob.js';
 import kbDriftDetectionJob from '../jobs/kbDriftDetectionJob.js';
 import { initializeTelemetry, shutdownTelemetry } from '../utils/telemetry.js';
@@ -575,6 +576,7 @@ server.listen(PORT, async () => {
   try {
     scheduler.registerJob(memoryCleanupJob.name, memoryCleanupJob.schedule, memoryCleanupJob.run);
     scheduler.registerJob(retentionCleanupJob.name, retentionCleanupJob.schedule, retentionCleanupJob.run);
+    scheduler.registerJob(afterCallTranscriptionJob.name, afterCallTranscriptionJob.schedule, afterCallTranscriptionJob.run);
     scheduler.registerJob(kbMigrationJob.name, kbMigrationJob.schedule, kbMigrationJob.run);
     scheduler.registerJob(kbDriftDetectionJob.name, kbDriftDetectionJob.schedule, kbDriftDetectionJob.run);
     scheduler.start();

@@ -13,6 +13,9 @@ import {
     ensureCallRecordCallerIdentity,
     backfillRecordingUrlIfMissing
 } from "../services/callRecordPersistenceService.js";
+import gdprService from "../services/gdprService.js";
+import piiDetectionService from "../services/piiDetectionService.js";
+import { getProvenanceForCall } from "../services/provenanceService.js";
 
 // Call status with live updates (no Socket.IO in agent service)
 export const callStatus = async (req, res) => {
@@ -120,13 +123,22 @@ export const callStatus = async (req, res) => {
             
             if (conversation.transcript && conversation.transcript.length > 0) {
                 const identitySet = buildCallerIdentityUpdate(conversation.from || From, conversation.to || To);
+                let transcriptToSave = conversation.transcript;
                 if (consentGiven) {
+                    try {
+                        const privacyConfig = await gdprService.getPrivacyConfig();
+                        if (privacyConfig?.transcriptRedaction?.maskPIIAtSave) {
+                            transcriptToSave = piiDetectionService.redactTranscriptSegments(conversation.transcript);
+                        }
+                    } catch (_) {}
+                    const provenance = await getProvenanceForCall(CallSid);
                     try {
                         await CallRecord.findOneAndUpdate(
                             { callSid: CallSid },
                             {
                                 $set: {
-                                    transcript: conversation.transcript,
+                                    transcript: transcriptToSave,
+                                    provenance,
                                     ...identitySet,
                                     duration: conversation.duration || null,
                                     language: conversation.language || 'en-GB',

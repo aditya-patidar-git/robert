@@ -63,6 +63,9 @@ const PrivacyConfigSchema = new mongoose.Schema({
       default: "complaints@universalmct.co.uk"
     }
   },
+  transcriptRedaction: {
+    maskPIIAtSave: { type: Boolean, default: false }
+  },
   // Privacy Policy & Legal
   privacyPolicy: {
     url: {

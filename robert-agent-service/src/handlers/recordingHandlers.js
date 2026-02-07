@@ -2,6 +2,8 @@ import axios from "axios";
 import CallRecord from "../database/models/CallRecord.js";
 import { conversations } from "../shared/state.js";
 import twilioClient from "../utils/twilioClient.js";
+import gdprService from "../services/gdprService.js";
+import piiDetectionService from "../services/piiDetectionService.js";
 // dotenv is already loaded in index.js, no need to reload here
 
 /**
@@ -128,6 +130,7 @@ export const recordingStatus = async (req, res) => {
         const updateFields = {
             recordingUrl: RecordingUrl,
             recordingStatus: 'available',
+            afterCallTranscriptionPending: true,
             'recordingConsent.requested': consent?.requested || false,
             'recordingConsent.given': consent?.given !== false ? true : false,
             'recordingConsent.requestedAt': consent?.requestedAt || null,
@@ -146,8 +149,14 @@ export const recordingStatus = async (req, res) => {
         const newTranscriptLength = transcript?.length || 0;
         
         if (newTranscriptLength > 0 && newTranscriptLength > existingTranscriptLength) {
-            // Only update transcript if we have more data than existing
-            updateFields.transcript = transcript;
+            let transcriptToSave = transcript;
+            try {
+                const privacyConfig = await gdprService.getPrivacyConfig();
+                if (privacyConfig?.transcriptRedaction?.maskPIIAtSave) {
+                    transcriptToSave = piiDetectionService.redactTranscriptSegments(transcript);
+                }
+            } catch (_) {}
+            updateFields.transcript = transcriptToSave;
             updateFields.summary = `Call transcript available with ${newTranscriptLength} exchanges.`;
             console.log(`📝 [${CallSid}] Updating transcript with ${newTranscriptLength} entries (existing: ${existingTranscriptLength})`);
         } else if (existingTranscriptLength > 0) {

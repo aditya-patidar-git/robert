@@ -16,6 +16,9 @@ import turnTakingStateMachine from "../../services/turnTakingStateMachine.js";
 import proactiveAssistanceService from "../../services/proactiveAssistanceService.js";
 import CallRecord from "../../database/models/CallRecord.js";
 import recordingService from "../../services/recordingService.js";
+import gdprService from "../../services/gdprService.js";
+import piiDetectionService from "../../services/piiDetectionService.js";
+import { getProvenanceForCall } from "../../services/provenanceService.js";
 
 /**
  * Media Stream HTTP endpoint handler
@@ -442,7 +445,15 @@ export const handleMediaStreamConnection = (ws, req) => {
                             if (!shouldSetTranscript) {
                                 console.log(`⚠️ [${stateManager.callSid}] Skipping transcript write - existing (${existingLen}) longer than in-memory (${newLen})`);
                             } else {
-                                updateData.transcript = conversation.transcript;
+                                let transcriptToSave = conversation.transcript;
+                                try {
+                                    const privacyConfig = await gdprService.getPrivacyConfig();
+                                    if (privacyConfig?.transcriptRedaction?.maskPIIAtSave) {
+                                        transcriptToSave = piiDetectionService.redactTranscriptSegments(conversation.transcript);
+                                    }
+                                } catch (_) {}
+                                updateData.transcript = transcriptToSave;
+                                updateData.provenance = await getProvenanceForCall(stateManager.callSid);
                                 if (conversation.from) updateData.from = conversation.from;
                                 if (conversation.to) updateData.to = conversation.to;
                                 updateData.recordingConsent = {

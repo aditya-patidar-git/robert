@@ -365,7 +365,8 @@ export class TranscriptionHandler {
       conversations[this.state.callSid].transcript.push({
         role: 'user',
         text: transcript,
-        timestamp: new Date(transcriptionTime)
+        timestamp: new Date(transcriptionTime),
+        confidence: qualityAssessment?.confidenceScore ?? 0.8
       });
       
       // Reset silence detection
