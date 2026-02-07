@@ -141,43 +141,12 @@ export const recordingStatus = async (req, res) => {
         // Only set from/to if we have values (don't overwrite existing)
         if (from) updateFields.from = from;
         if (to) updateFields.to = to;
-        
-        // Only set transcript if we have content AND the existing record doesn't have one
-        // This prevents race condition where webhook overwrites transcript before cleanup saves it
-        const existingRecord = await CallRecord.findOne({ callSid: CallSid }).lean();
-        const existingTranscriptLength = existingRecord?.transcript?.length || 0;
-        const newTranscriptLength = transcript?.length || 0;
-        
-        if (newTranscriptLength > 0 && newTranscriptLength > existingTranscriptLength) {
-            let transcriptToSave = transcript;
-            try {
-                const privacyConfig = await gdprService.getPrivacyConfig();
-                if (privacyConfig?.transcriptRedaction?.maskPIIAtSave) {
-                    transcriptToSave = piiDetectionService.redactTranscriptSegments(transcript);
-                }
-            } catch (_) {}
-            updateFields.transcript = transcriptToSave;
-            updateFields.summary = `Call transcript available with ${newTranscriptLength} exchanges.`;
-            console.log(`📝 [${CallSid}] Updating transcript with ${newTranscriptLength} entries (existing: ${existingTranscriptLength})`);
-        } else if (existingTranscriptLength > 0) {
-            console.log(`📝 [${CallSid}] Preserving existing transcript with ${existingTranscriptLength} entries`);
-        } else {
-            console.log(`📝 [${CallSid}] No transcript available yet - will be saved by cleanup()`);
-        }
 
         await CallRecord.findOneAndUpdate(
             { callSid: CallSid },
             { $set: updateFields },
             { upsert: true, new: true }
         );
-
-        // Cleanup conversation state now that recording is saved
-        // This ensures we don't keep memory longer than necessary
-        const { conversations } = await import('../shared/state.js');
-        if (conversations[CallSid]) {
-            console.log(`🧹 [${CallSid}] Cleaning up conversation state after recording webhook processed`);
-            delete conversations[CallSid];
-        }
 
         res.sendStatus(200);
     } catch (err) {

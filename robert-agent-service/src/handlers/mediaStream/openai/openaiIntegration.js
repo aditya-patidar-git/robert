@@ -342,7 +342,9 @@ export class OpenAIIntegration {
         // Ensure required properties exist
         await this.ensureConversationState();
       }
-      
+      const { ensureCallRecordCallerIdentity } = await import('../../../services/callRecordPersistenceService.js');
+      await ensureCallRecordCallerIdentity(this.state.callSid, { from: this.state.phoneNumber, to: this.state.phoneNumber });
+
       // Add recording consent notice and question to instructions
       const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
       let privacySettings = null;

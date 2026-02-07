@@ -188,7 +188,7 @@ class KBAService {
    * @returns {boolean} True if KBA is required
    */
   requiresKBA(toolName, parameters) {
-    const kbaRequiredTools = ['update_customer', 'transfer_call'];
+    const kbaRequiredTools = ['update_customer'];
     return kbaRequiredTools.includes(toolName);
   }
 

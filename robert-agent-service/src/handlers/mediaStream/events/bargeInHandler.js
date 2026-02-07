@@ -76,13 +76,10 @@ export class BargeInHandler {
     // PRIMARY: Check if audio is actively playing right now
     const isAudioActivelyPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio;
     
-    // FALLBACK: Check recent audio timestamps (audio might still be buffered even after response.done clears activeResponseId)
-    // Extended windows (10–12s) so barge-in stays active while Twilio is still playing long responses
-    // CRITICAL: response.done clears activeResponseId but Twilio can have 20–30s of audio in pipeline
-    const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 12000; // 12 seconds
-    const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 10000; // 10 seconds
+    // FALLBACK: Dynamic tail from response length (set in response.done)
+    const isInBargeInTail = this.state.bargeInTailUntil > 0 && Date.now() < this.state.bargeInTailUntil;
     
-    const isAudioPlaying = isAudioActivelyPlaying || hasRecentAudio || hasRecentResponseCompletion;
+    const isAudioPlaying = isAudioActivelyPlaying || isInBargeInTail;
     
     if (isAudioPlaying) {
       // Check if user speech started BEFORE this response was created (not based on elapsed time)
@@ -100,7 +97,7 @@ export class BargeInHandler {
       console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered on speech_started (industry standard: <200ms) - response ${this.state.activeResponseId || 'N/A'}`);
       console.log(`   - Time since response created: ${timeSinceResponseCreated}ms`);
       console.log(`   - Audio is playing: isResponding=${this.state.isResponding}, activeResponseId=${this.state.activeResponseId}`);
-      console.log(`   - Audio indicators: hasActiveResponse=${hasActiveResponse}, hasAudioPacer=${hasAudioPacer}, hasBufferedAudio=${hasBufferedAudio}, isAudioActivelyPlaying=${isAudioActivelyPlaying}, hasRecentAudio=${hasRecentAudio}, hasRecentResponseCompletion=${hasRecentResponseCompletion}`);
+      console.log(`   - Audio indicators: hasActiveResponse=${hasActiveResponse}, hasAudioPacer=${hasAudioPacer}, hasBufferedAudio=${hasBufferedAudio}, isAudioActivelyPlaying=${isAudioActivelyPlaying}, isInBargeInTail=${isInBargeInTail}`);
       
       // Trigger immediate barge-in (will verify "stop" command via transcription later)
       this.triggerImmediateBargeIn('speech_started');

@@ -43,20 +43,23 @@ export async function executeCheckAvailability(page, args, sessionState, screens
     }
   }
 
-  // Wrap result with success flag and sessionDetails
-  // This ensures currentStep gets set to 1 and sessionDetails is available for next steps
+  const slotsToAnnounce = result.slotsToAnnounce ?? [];
+  const slotsSummary = slotsToAnnounce.length > 0
+    ? slotsToAnnounce.map(s => `${s.date} at ${s.time}, ${s.location}, ${s.price}`).join('; ')
+    : (result.selectedSlot ? `${result.selectedSlot.date} at ${result.selectedSlot.time}, ${result.selectedSlot.location}, ${result.selectedSlot.price}` : 'No slots');
+
   return {
     success: true,
-    stepCompleted: 1, // Explicitly state which step is complete
-    stepName: 'check_availability', // Explicit step name
-    nextStep: 'booking_step_authenticate', // Explicitly state next step tool to call
-    nextStepNumber: 2, // Explicitly state next step number (authenticate is Step 2 for all courses)
-    doNotRetry: true, // Explicitly prevent retry
-    message: `✅ STEP 1 COMPLETE: booking_step_check_availability has been successfully completed. Availability checked and slots retrieved. DO NOT RETRY THIS STEP. Present the available slots to the caller and confirm their selection. Once a slot is agreed upon, proceed to STEP 2 by calling booking_step_authenticate tool.`,
+    stepCompleted: 1,
+    stepName: 'check_availability',
+    nextStep: 'booking_step_authenticate',
+    nextStepNumber: 2,
+    doNotRetry: true,
+    message: `✅ STEP 1 COMPLETE. DO NOT RETRY. Present ONLY these slot(s) to the caller and confirm their selection. Do not read out any other slots. Slots to present: ${slotsSummary}. Once a slot is agreed, call booking_step_authenticate.`,
     allSlots: result.allSlots,
     selectedSlot: result.selectedSlot,
+    slotsToAnnounce,
     monthYear: result.monthYear,
-    // If a slot was selected, include it as sessionDetails for next steps
     sessionDetails: sessionDetails || null
   };
 }

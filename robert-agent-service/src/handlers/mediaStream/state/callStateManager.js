@@ -60,6 +60,8 @@ export class CallStateManager {
     this.cancelledResponseIds = new Set();
     this.cancellationTime = new Map();
     this.lastAudioChunkTime = 0;
+    this.bargeInTailUntil = 0;
+    this.audioFramesSentCountAtResponseStart = 0;
     
     // Interruption state tracking
     this.isInterrupted = false;

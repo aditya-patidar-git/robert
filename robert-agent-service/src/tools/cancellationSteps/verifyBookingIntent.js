@@ -56,8 +56,7 @@ export class VerifyBookingIntentStep extends CancellationBaseStepTool {
 
       // If verified is provided, caller has confirmed they have a booking
       if (verified === true && proceedToStep2 === true) {
-        // Update session state
-        sessionStateManager.setCurrentStep(callSid, stepNumber, { verified: true });
+        sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { verified: true });
         
         return {
           success: true,

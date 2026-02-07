@@ -111,11 +111,13 @@ export class ToolCallHandler {
         return;
       }
       
-      // Submit success result (executionResult already has success: true and result)
+      const toSubmit = (name === 'booking_step_check_availability' && executionResult.result?.allSlots)
+        ? { ...executionResult, result: { ...executionResult.result, allSlots: undefined } }
+        : executionResult;
       await this.resultSubmitter.submitResult(
         this.state.callSid,
         call_id,
-        executionResult
+        toSubmit
       );
       
       // Trigger response - pass tool name and result for special handling (e.g., client_verification)

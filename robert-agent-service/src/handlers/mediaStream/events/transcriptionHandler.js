@@ -4,6 +4,7 @@ import silenceDetectionService from '../../../services/silenceDetectionService.j
 import complaintDetectionService from '../../../services/complaintDetectionService.js';
 import promptService from '../../../services/promptService.js';
 import noiseFilterService from '../../../services/noiseFilterService.js';
+import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
 
 /**
@@ -18,6 +19,19 @@ export class TranscriptionHandler {
     this.consentHandler = consentHandler;
     this.openaiWs = openaiWs;
     this.bargeInHandler = bargeInHandler; // Reference to BargeInHandler for conditional barge-in
+  }
+
+  appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations) {
+    if (!transcript || !this.state.callSid || !conversations) return;
+    const conv = conversations[this.state.callSid];
+    if (!conv) return;
+    if (!conv.transcript) conv.transcript = [];
+    conv.transcript.push({
+      role: 'user',
+      text: transcript,
+      timestamp: new Date(transcriptionTime),
+      confidence: qualityAssessment?.confidenceScore ?? 0.8
+    });
   }
 
   /**
@@ -179,7 +193,17 @@ export class TranscriptionHandler {
     }
     
     const { conversations } = await import('../../../shared/state.js');
-    
+    this.appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations);
+    const conv = conversations[this.state.callSid];
+    if (conv?.recordingConsent?.given === true) {
+      appendTranscriptEntry(this.state.callSid, {
+        role: 'user',
+        text: transcript,
+        timestamp: new Date(transcriptionTime),
+        confidence: qualityAssessment?.confidenceScore ?? 0.8
+      }, { consentGiven: true }).catch(() => {});
+    }
+
     // Handle memory consent
     await this.consentHandler.handleMemoryConsent(transcript);
     
@@ -359,16 +383,8 @@ export class TranscriptionHandler {
       console.log(`⏳ [${this.state.callSid}] Waiting for initial greeting to complete before responding to: "${transcript}"`);
       return { processed: true, shouldCreateResponse: false };
     }
-    
-    // Add user transcription to conversation transcript
+
     if (transcript && conversations[this.state.callSid]) {
-      conversations[this.state.callSid].transcript.push({
-        role: 'user',
-        text: transcript,
-        timestamp: new Date(transcriptionTime),
-        confidence: qualityAssessment?.confidenceScore ?? 0.8
-      });
-      
       // Reset silence detection
       const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
       if (conversationBehaviorConfig?.silenceDetection?.enabled) {

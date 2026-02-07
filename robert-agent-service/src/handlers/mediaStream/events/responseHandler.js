@@ -5,6 +5,7 @@ import audioDiagnosticService from '../../../services/audioDiagnosticService.js'
 import { MemoryManager } from '../utils/index.js';
 import { conversations } from '../../../shared/state.js';
 import testClientRegistry from '../../../services/testClientRegistry.js';
+import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
 // Audio conversion removed - OpenAI is configured for g711_ulaw, we trust the configuration
 
 /**
@@ -25,6 +26,8 @@ export class ResponseHandler {
     this.state.activeResponseId = event.response?.id;
     const currentTime = Date.now();
     this.state.responseStartTime = currentTime;
+    this.state.bargeInTailUntil = 0;
+    this.state.audioFramesSentCountAtResponseStart = this.state.audioFramesSentCount || 0;
     
     // Track response latency
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
@@ -536,18 +539,17 @@ export class ResponseHandler {
       const isRefusalText = refusalPatterns.some(pattern => responseText.includes(pattern));
       const isRefusalResponse = audioTokens === 0 && hasAudioModality && textTokens > 0 && isRefusalText;
 
-      if (fullResponseText && status === 'completed') {
-        if (conversations[this.state.callSid]) {
-          conversations[this.state.callSid].transcript.push({
-            role: 'agent',
-            text: fullResponseText,
-            timestamp: new Date(),
-            confidence: 1
-          });
-          console.log(`📝 [${this.state.callSid}] Added agent response to transcript: "${fullResponseText.substring(0, 50)}${fullResponseText.length > 50 ? '...' : ''}"`);
+      if (fullResponseText && conversations[this.state.callSid]) {
+        const conv = conversations[this.state.callSid];
+        if (!conv.transcript) conv.transcript = [];
+        const entry = { role: 'agent', text: fullResponseText, timestamp: new Date(), confidence: 1 };
+        conv.transcript.push(entry);
+        console.log(`📝 [${this.state.callSid}] Added agent response to transcript: "${fullResponseText.substring(0, 50)}${fullResponseText.length > 50 ? '...' : ''}" (status: ${status})`);
+        if (conv.recordingConsent?.given === true) {
+          appendTranscriptEntry(this.state.callSid, entry, { consentGiven: true }).catch(() => {});
         }
       }
-      
+
       console.log(`✅ [${this.state.callSid}] Response done - ID: ${responseId}, status: ${status}`);
       console.log(`   📊 Tokens: audio=${audioTokens}, text=${textTokens}`);
       
@@ -576,6 +578,13 @@ export class ResponseHandler {
       
       // Mark that agent finished speaking
       this.state.agentFinishedSpeakingTime = Date.now();
+      
+      const framesThisResponse = (this.state.audioFramesSentCount || 0) - (this.state.audioFramesSentCountAtResponseStart || 0);
+      const responseDurationMs = Math.max(0, framesThisResponse) * 20;
+      const bargeInTail = configManager.getConversationBehaviorConfig()?.bargeInTail;
+      const drainBufferMs = bargeInTail?.drainBufferMs ?? 2000;
+      const maxTailMs = bargeInTail?.maxTailMs ?? 8000;
+      this.state.bargeInTailUntil = Date.now() + Math.min(responseDurationMs, maxTailMs) + drainBufferMs;
       
       // Clear response tracking
       this.state.activeResponseId = null;

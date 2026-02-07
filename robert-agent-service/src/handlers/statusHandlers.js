@@ -123,21 +123,13 @@ export const callStatus = async (req, res) => {
             
             if (conversation.transcript && conversation.transcript.length > 0) {
                 const identitySet = buildCallerIdentityUpdate(conversation.from || From, conversation.to || To);
-                let transcriptToSave = conversation.transcript;
                 if (consentGiven) {
-                    try {
-                        const privacyConfig = await gdprService.getPrivacyConfig();
-                        if (privacyConfig?.transcriptRedaction?.maskPIIAtSave) {
-                            transcriptToSave = piiDetectionService.redactTranscriptSegments(conversation.transcript);
-                        }
-                    } catch (_) {}
                     const provenance = await getProvenanceForCall(CallSid);
                     try {
                         await CallRecord.findOneAndUpdate(
                             { callSid: CallSid },
                             {
                                 $set: {
-                                    transcript: transcriptToSave,
                                     provenance,
                                     ...identitySet,
                                     duration: conversation.duration || null,
@@ -153,18 +145,17 @@ export const callStatus = async (req, res) => {
                             },
                             { upsert: true }
                         );
-                        console.log(`✅ [${CallSid}] Transcript and consent saved to CallRecord (${conversation.transcript.length} entries) - consent given`);
+                        console.log(`✅ [${CallSid}] Consent and metadata saved to CallRecord (transcript is append-only)`);
                     } catch (transcriptError) {
                         console.error(`❌ [${CallSid}] Error saving transcript to CallRecord:`, transcriptError);
                     }
                 } else {
-                    console.log(`🚫 [${CallSid}] Recording consent not given - transcript will not be stored`);
+                    console.log(`🚫 [${CallSid}] Recording consent not given - transcript not stored`);
                     try {
                         await CallRecord.findOneAndUpdate(
                             { callSid: CallSid },
                             {
                                 $set: {
-                                    transcript: [],
                                     ...identitySet,
                                     duration: conversation.duration || null,
                                     language: conversation.language || 'en-GB',
@@ -236,15 +227,20 @@ export const callStatus = async (req, res) => {
                 totalTokens = convContext.currentTokens || 0;
                 maxTokensUsed = totalTokens;
                 truncationCount = convContext.truncationHistory?.length || 0;
-            } else if (conversation?.transcript?.length > 0) {
-                const messages = conversation.transcript.map(t => ({
-                    role: t.role === 'agent' ? 'assistant' : 'user',
-                    content: t.text || ''
-                }));
-                const config = configManager.getConfigForNumber(To, conversation.language || 'en');
-                const modelId = config?.model?.id || 'gpt-4o-realtime-preview-2024-12-17';
-                totalTokens = tokenLimitService.countTokensInMessages(messages, modelId);
-                maxTokensUsed = totalTokens;
+            } else {
+                const convForTokens = conversations[CallSid] ?? (await CallRecord.findOne({ callSid: CallSid }).select('transcript language').lean());
+                const transcript = convForTokens?.transcript;
+                if (transcript?.length > 0) {
+                    const messages = transcript.map(t => ({
+                        role: t.role === 'agent' ? 'assistant' : 'user',
+                        content: t.text || ''
+                    }));
+                    const lang = convForTokens?.language || 'en-GB';
+                    const config = configManager.getConfigForNumber(To, lang);
+                    const modelId = config?.model?.id || 'gpt-4o-realtime-preview-2024-12-17';
+                    totalTokens = tokenLimitService.countTokensInMessages(messages, modelId);
+                    maxTokensUsed = totalTokens;
+                }
             }
             await CallRecord.findOneAndUpdate(
                 { callSid: CallSid },

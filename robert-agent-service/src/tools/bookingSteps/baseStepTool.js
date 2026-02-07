@@ -264,9 +264,12 @@ export class BaseStepTool {
         session
       );
 
-      // Update session state on success
       if (result.success) {
-        sessionStateManager.setCurrentStep(callSid, stepNumber, result);
+        if (this.isCancellationWorkflow) {
+          sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, result);
+        } else {
+          sessionStateManager.setCurrentStep(callSid, stepNumber, result);
+        }
         
         // Update preferences if provided
         const preferencesToUpdate = {};
@@ -354,19 +357,26 @@ export class BaseStepTool {
    */
   async validateStepExecution(callSid, stepNumber, courseType, workflowType, stepArgs) {
     const session = sessionStateManager.getSession(callSid);
-    const currentStep = session?.currentStep;
+    const currentStep = this.isCancellationWorkflow
+      ? sessionStateManager.getCancellationCurrentStep(callSid)
+      : (session?.currentStep ?? null);
+    const stepHistory = this.isCancellationWorkflow
+      ? sessionStateManager.getCancellationStepHistory(callSid)
+      : (session?.stepHistory || []);
 
-    // If no current step, must start from step 1
     if (currentStep === null && stepNumber !== 1) {
       const requiredToolName = getToolNameForStep(courseType, workflowType, 1, this.isCancellationWorkflow);
+      const startMessage = this.isCancellationWorkflow
+        ? 'Cancellation not started. Please start with step 1 (cancellation_step_verify_booking_intent).'
+        : 'Booking session not started. Please start with step 1 (checkAvailability).';
       return {
         valid: false,
-        error: `Booking session not started. Please start with step 1 (checkAvailability).`,
+        error: startMessage,
         requiresStep: 1,
         requiresTool: requiredToolName,
-        autoRetryInstruction: requiredToolName 
+        autoRetryInstruction: requiredToolName
           ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
-          : `CRITICAL: You MUST start with step 1 (checkAvailability) without waiting for user input.`
+          : `CRITICAL: You MUST start with step 1 without waiting for user input.`
       };
     }
 
@@ -407,9 +417,6 @@ export class BaseStepTool {
         };
       }
       
-      // CRITICAL: For ALL courses, Step 3 (workflow type determination) MUST be asked conversationally
-      // before allowing Step 4 (navigate_contacts) or any step that requires workflowType
-      // Even if workflowType is provided in the call, we must verify Step 3 was asked
       const workflowTypeAsked = session?.workflowTypeAsked || false;
       
       // Check if we're trying to call a step that requires workflowType (Step 4+)
@@ -462,8 +469,6 @@ export class BaseStepTool {
         const isCriticalStep = criticalPrerequisiteSteps.includes(stepNumber);
         
         if (isCriticalStep) {
-          // Check step history to see if this step previously failed
-          const stepHistory = session?.stepHistory || [];
           const previousAttempt = stepHistory.find(h => h.step === stepNumber);
           const previousFailed = previousAttempt && (
             !previousAttempt.result?.success || 

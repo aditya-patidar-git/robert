@@ -12,16 +12,18 @@ class SessionStateManager {
   constructor() {
     // State structure stored in conversations[callSid].bookingSession:
     // {
-    //   browserSessionId: string,        // Unique ID for browser session
-    //   currentStep: number | null,      // Current step number (null = not started)
-    //   workflowType: 'existing' | 'new' | null,  // Determined workflow type
-    //   courseType: string | null,       // Course type (ITM, CBT, etc.)
-    //   knownPreferences: object,        // Collected preferences (bikeType, etc.)
-    //   sessionDetails: object | null,   // Selected slot/session details
-    //   bookingDetails: object | null,   // Booking details from locateBooking step (rowIndex, bookingId, etc.)
-    //   pageRef: Page | null,            // Playwright page reference (not serialized)
-    //   lastActivity: number,            // Timestamp of last activity
-    //   stepHistory: Array<{step, timestamp, result}> // Audit trail
+    //   browserSessionId: string,
+    //   currentStep: number | null,           // Booking workflow step
+    //   cancellationCurrentStep: number | null, // Cancellation workflow step (separate so user can book then cancel in same call)
+    //   workflowType: 'existing' | 'new' | null,
+    //   courseType: string | null,
+    //   knownPreferences: object,
+    //   sessionDetails: object | null,
+    //   bookingDetails: object | null,
+    //   pageRef: Page | null,
+    //   lastActivity: number,
+    //   stepHistory: Array<...>,              // Booking step audit trail
+    //   cancellationStepHistory: Array<...>  // Cancellation step audit trail
     // }
   }
 
@@ -46,15 +48,17 @@ class SessionStateManager {
       const newSession = {
         browserSessionId: `browser_${callSid}_${Date.now()}`,
         currentStep: null,
+        cancellationCurrentStep: null,
         workflowType: null,
-        workflowTypeAsked: false, // Track if Step 3 (workflow type question) has been asked
+        workflowTypeAsked: false,
         courseType: courseType || null,
         knownPreferences: {},
         sessionDetails: null,
-        bookingDetails: null, // Booking details from locateBooking step (rowIndex, bookingId, etc.)
-        pageRef: null, // Will be set when browser page is available
+        bookingDetails: null,
+        pageRef: null,
         lastActivity: Date.now(),
-        stepHistory: []
+        stepHistory: [],
+        cancellationStepHistory: []
       };
       
       conversations[callSid].bookingSession = newSession;
@@ -117,6 +121,41 @@ class SessionStateManager {
     });
 
     console.log(`📊 [SESSION] ${callSid}: Step ${previousStep} → ${step}`);
+  }
+
+  getCancellationCurrentStep(callSid) {
+    const session = this.getSession(callSid);
+    return session && session.cancellationCurrentStep !== undefined ? session.cancellationCurrentStep : null;
+  }
+
+  setCancellationCurrentStep(callSid, step, result = null) {
+    const session = this.getSession(callSid);
+    if (!session) {
+      throw new Error(`No booking session found for ${callSid}`);
+    }
+    if (!session.cancellationStepHistory) {
+      session.cancellationStepHistory = [];
+    }
+    const previousStep = session.cancellationCurrentStep ?? null;
+    this._syncBookingSession(callSid, (s) => {
+      s.cancellationCurrentStep = step;
+      if (!s.cancellationStepHistory) s.cancellationStepHistory = [];
+      s.cancellationStepHistory.push({
+        step,
+        previousStep,
+        timestamp: Date.now(),
+        result: result ? { success: result.success, error: result.error } : null
+      });
+      if (s.cancellationStepHistory.length > 50) {
+        s.cancellationStepHistory = s.cancellationStepHistory.slice(-50);
+      }
+    });
+    console.log(`📊 [SESSION] ${callSid}: Cancellation step ${previousStep} → ${step}`);
+  }
+
+  getCancellationStepHistory(callSid) {
+    const session = this.getSession(callSid);
+    return session?.cancellationStepHistory || [];
   }
 
   /**

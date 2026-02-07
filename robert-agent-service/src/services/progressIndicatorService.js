@@ -357,14 +357,13 @@ class ProgressIndicatorService {
         }, 2000); // Wait 2 seconds for periodic update audio to start playing
         
         // Schedule second periodic update if needed (for booking_step_select_session)
-        // CRITICAL FIX: Schedule second update 8 seconds AFTER first update completes (not starts)
-        // This ensures consistent 8-second gaps between update endings and next update beginnings
+        // Second update starts (updateInterval + 5s) after first update completes
+        const secondUpdateGapMs = updateInterval + 5000;
         if (execution.periodicUpdateCount < execution.maxPeriodicUpdates) {
-          // Calculate time until second update should start (8 seconds after first update completes)
-          const timeUntilSecondUpdate = (firstUpdateCompletionTime + updateInterval) - Date.now();
+          const timeUntilSecondUpdate = (firstUpdateCompletionTime + secondUpdateGapMs) - Date.now();
           const delayForSecondUpdate = Math.max(0, timeUntilSecondUpdate);
-          
-          console.log(`⏱️ [${callSid}] Scheduling second update in ${delayForSecondUpdate}ms (${delayForSecondUpdate / 1000}s) - will start 8s after first update completes`);
+
+          console.log(`⏱️ [${callSid}] Scheduling second update in ${delayForSecondUpdate}ms (${delayForSecondUpdate / 1000}s) - will start ${secondUpdateGapMs / 1000}s after first update completes`);
           
           execution.updateTimeout = setTimeout(async () => {
             // Re-check execution state before sending second update

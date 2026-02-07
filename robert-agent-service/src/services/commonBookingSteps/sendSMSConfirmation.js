@@ -30,11 +30,13 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
       console.log('🔍 [SMS] Working with main page...');
     }
     
-    // Click Back button (reuse existing helper)
-    await stationeryHelpers.clickBackButton(page, searchContext);
-    
-    await takeScreenshot(page, 'back-clicked-sms.png', screenshotsDir);
-    
+    try {
+      await stationeryHelpers.clickBackButton(page, searchContext);
+      await takeScreenshot(page, 'back-clicked-sms.png', screenshotsDir);
+    } catch (backErr) {
+      console.log('⚠️ [SMS] Back button not found or not visible (may already be on menu):', backErr.message);
+    }
+
     // Find and click "Send SMS" button
     const sendSMSButton = await stationeryHelpers.findSendSMSButton(page, searchContext);
     
