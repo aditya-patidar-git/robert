@@ -13,6 +13,7 @@ import { makeCall, aiIntro, getAllCalls, handleIncomingCall, afterHoursTransfer,
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
 import sipRoutes from '../routes/sipRoutes.js';
+import gmailOAuthRoutes from '../routes/gmailOAuth.js';
 import secretsManager from '../services/secretsManager.js';
 import browserAgentService from '../services/browser/index.js';
 import toolExecutor from '../tools/index.js';
@@ -382,6 +383,8 @@ app.get('/api/test/email-connection', async (req, res) => {
     });
   }
 });
+
+app.use('/api/gmail', gmailOAuthRoutes);
 
 // API Routes - SIP (OpenAI Realtime SIP webhooks)
 // Add diagnostic logging middleware for ALL SIP webhook requests

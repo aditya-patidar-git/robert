@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-// dotenv is already loaded in index.js, no need to reload here
+import * as gmailTokenStore from './gmailTokenStore.js';
 
 /**
  * General Email Service for sending emails via SMTP
@@ -11,38 +11,65 @@ class EmailService {
     this.initializeTransporter();
   }
 
-  /**
-   * Initialize email transporter (SMTP)
-   * Automatically detects Gmail and configures accordingly
-   */
+  reinitializeTransporter() {
+    this.transporter = null;
+    this.initializeTransporter();
+  }
+
   initializeTransporter() {
-    // Check if SMTP is configured
     const smtpUser = process.env.SMTP_USER || '';
     const smtpHost = process.env.SMTP_HOST || '';
-    
-    // Detect Gmail automatically
-    const isGmail = smtpUser.toLowerCase().includes('@gmail.com') || 
-                    smtpHost.toLowerCase().includes('gmail.com') ||
-                    smtpHost.toLowerCase().includes('smtp.gmail.com');
+    const isGmail = smtpUser.toLowerCase().includes('@gmail.com') ||
+      smtpHost.toLowerCase().includes('gmail.com') ||
+      smtpHost.toLowerCase().includes('smtp.gmail.com');
+
+    if (isGmail && process.env.GMAIL_OAUTH_CLIENT_ID && process.env.GMAIL_OAUTH_CLIENT_SECRET) {
+      const tokens = gmailTokenStore.getTokens();
+      if (tokens?.refresh_token) {
+        try {
+          this.transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: parseInt(process.env.SMTP_PORT) || 587,
+            secure: false,
+            requireTLS: true,
+            auth: {
+              type: 'OAuth2',
+              user: process.env.SMTP_USER,
+              clientId: process.env.GMAIL_OAUTH_CLIENT_ID,
+              clientSecret: process.env.GMAIL_OAUTH_CLIENT_SECRET,
+              refreshToken: tokens.refresh_token
+            },
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000
+          });
+          console.log('✅ Email transporter initialized (Gmail OAuth2)');
+        } catch (error) {
+          console.error('❌ Error initializing Gmail OAuth transporter:', error.message);
+          this.transporter = null;
+        }
+      } else {
+        console.log('⚠️ Gmail OAuth not connected. Visit /api/gmail/auth to connect.');
+        this.transporter = null;
+      }
+      return;
+    }
 
     if (isGmail || (process.env.SMTP_HOST && process.env.SMTP_PORT)) {
       try {
-        // Gmail SMTP configuration
         const smtpConfig = isGmail ? {
           host: 'smtp.gmail.com',
           port: parseInt(process.env.SMTP_PORT) || 587,
-          secure: false, // Use TLS (port 587)
+          secure: false,
           requireTLS: true,
           auth: {
             user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASSWORD // This should be an App Password for Gmail with 2FA
+            pass: process.env.SMTP_PASSWORD
           },
-          // Gmail-specific timeout settings
           connectionTimeout: 10000,
           greetingTimeout: 10000,
           socketTimeout: 10000
         } : {
-          // Generic SMTP configuration
           host: process.env.SMTP_HOST,
           port: parseInt(process.env.SMTP_PORT) || 587,
           secure: process.env.SMTP_SECURE === 'true',
@@ -56,26 +83,15 @@ class EmailService {
         };
 
         this.transporter = nodemailer.createTransport(smtpConfig);
-        
         if (isGmail) {
-          console.log('✅ Email transporter initialized (Gmail SMTP)');
-          console.log('📧 Using Gmail SMTP with App Password authentication');
+          console.log('✅ Email transporter initialized (Gmail SMTP App Password)');
         } else {
           console.log('✅ Email transporter initialized (SMTP)');
         }
       } catch (error) {
         console.error('❌ Error initializing email transporter:', error.message);
         if (isGmail) {
-          console.error('\n💡 Gmail Setup Instructions (2FA Enabled):');
-          console.error('   1. Go to: https://myaccount.google.com/apppasswords');
-          console.error('   2. Select "Mail" and "Other (Custom name)"');
-          console.error('   3. Enter a name like "Robert Voice Agent"');
-          console.error('   4. Click "Generate"');
-          console.error('   5. Copy the 16-character password (no spaces)');
-          console.error('   6. Set SMTP_PASSWORD in your .env file to this App Password');
-          console.error('   7. Set SMTP_USER to your Gmail address');
-          console.error('   8. Set SMTP_HOST=smtp.gmail.com (optional, auto-detected)');
-          console.error('   9. Set SMTP_PORT=587 (optional, defaults to 587)');
+          console.error('\n💡 Gmail: use OAuth (set GMAIL_OAUTH_*) or App Password (SMTP_PASSWORD).');
         }
         this.transporter = null;
       }

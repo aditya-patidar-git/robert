@@ -557,7 +557,6 @@ export class OpenAIIntegration {
           // Get audio config for calibration check
           const audioConfig = configManager.getAudioConfig();
           const initialThreshold = config.vadThreshold / 1000;
-          // server_vad with create_response: false so server still commits + transcribes but we create response after intent
           const sessionUpdateMessage = {
             type: 'session.update',
             session: {
@@ -571,8 +570,7 @@ export class OpenAIIntegration {
                 type: 'server_vad',
                 threshold: initialThreshold,
                 prefix_padding_ms: config.startPadding,
-                silence_duration_ms: config.endPadding,
-                create_response: false
+                silence_duration_ms: config.endPadding
               },
               tools: tools,
               tool_choice: 'auto'
@@ -589,7 +587,7 @@ export class OpenAIIntegration {
           console.log(`   - voice: ${config.voice.id}`);
           console.log(`   - temperature: ${Math.max(0.6, effectiveTemperature)} (flow: ${flowType})`);
           console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
-          console.log(`   - turn_detection: server_vad, create_response: false (response only after intent)`);
+          console.log(`   - turn_detection: server_vad`);
           if (audioConfig?.energyThresholdAutoCalibrate !== false) {
             console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
           }
@@ -714,7 +712,6 @@ export class OpenAIIntegration {
         // Get audio config for calibration check
         const audioConfig = configManager.getAudioConfig();
         const initialThreshold = config.vadThreshold / 1000;
-        // server_vad with create_response: false so server still commits + transcribes but we create response after intent
         const sessionUpdateMessage = {
           type: 'session.update',
           session: {
@@ -728,8 +725,7 @@ export class OpenAIIntegration {
               type: 'server_vad',
               threshold: initialThreshold,
               prefix_padding_ms: config.startPadding,
-              silence_duration_ms: config.endPadding,
-              create_response: false
+              silence_duration_ms: config.endPadding
             },
             tools: tools,
             tool_choice: 'auto'
@@ -745,7 +741,7 @@ export class OpenAIIntegration {
         console.log(`   - voice: ${config.voice.id}`);
         console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
         console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
-        console.log(`   - turn_detection: server_vad, create_response: false (response only after intent)`);
+        console.log(`   - turn_detection: server_vad`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
           console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
         }

@@ -17,6 +17,9 @@ class SecretsManager {
       'SMTP_PORT',
       'SMTP_USER',
       'SMTP_PASSWORD',
+      'GMAIL_OAUTH_CLIENT_ID',
+      'GMAIL_OAUTH_CLIENT_SECRET',
+      'GMAIL_OAUTH_REDIRECT_URI',
       'OPENAI_SIP_ENDPOINT',
       'SIP_ENABLED'
     ];
