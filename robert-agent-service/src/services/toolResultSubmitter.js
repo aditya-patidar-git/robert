@@ -6,6 +6,8 @@
 
 import promptService from './promptService.js';
 import { conversations } from '../shared/state.js';
+import { AFTER_LOGIN_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
+import sessionStateManager from './browser/sessionStateManager.js';
 
 /**
  * Base class for tool result submission
@@ -248,18 +250,94 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           }
         }
       }
+
+      if (toolName === 'transfer_call' && toolResult?.allTransferNumbersFailed === true && toolResult?.messageForCaller) {
+        const msg = toolResult.messageForCaller;
+        const transferInstruction = `CRITICAL: The transfer could not be completed because all agents are busy. You MUST say exactly this to the caller: "${msg}" Then offer to help with anything else or end the call.`;
+        responseInstructions = responseInstructions
+          ? `${transferInstruction}\n\n${responseInstructions}`
+          : transferInstruction;
+        console.log(`🎯 [${callId}] Transfer all-occupied - instructing agent to say message to caller`);
+      }
+
+      let forceNextToolChoice = null;
+      const isRequiresToolRedirect = !!toolResult?.requiresTool;
+      if (isRequiresToolRedirect) {
+        forceNextToolChoice = toolResult.requiresTool;
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
+        responseInstructions = `CRITICAL: You called a step out of order. You MUST call ${toolResult.requiresTool} now with courseType: "${reqCourseType}". Do not repeat the wrong step. Call the tool in this response.`;
+        console.log(`🎯 [${callId}] Wrong step - forcing required tool: ${toolResult.requiresTool}`);
+      }
+
+      const isVerifyBookingIntentProceed = !forceNextToolChoice && toolName === 'cancellation_step_verify_booking_intent' &&
+        toolResult?.success === true &&
+        toolResult?.proceedToStep2 === true &&
+        toolResult?.nextStep === 'cancellation_step_authenticate';
+      if (isVerifyBookingIntentProceed) {
+        const authCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
+        responseInstructions = `CRITICAL: Say exactly: "${AFTER_LOGIN_MESSAGE}" Then you MUST call the tool cancellation_step_authenticate with courseType: "${authCourseType}". No other text. Do not wait for the caller. Call the tool in the same response.`;
+        forceNextToolChoice = 'cancellation_step_authenticate';
+        console.log(`🎯 [${callId}] Cancellation proceed to Step 2 - forcing immediate login tool call (courseType: ${authCourseType})`);
+      }
+
+      const isConfirmCancellationProceed = !forceNextToolChoice && toolName === 'cancellation_step_confirm_cancellation' &&
+        toolResult?.success === true &&
+        toolResult?.confirmed === true &&
+        toolResult?.nextStep === 'cancellation_step_initiate_cancellation';
+      if (isConfirmCancellationProceed) {
+        const session = sessionStateManager.getSession(callSid);
+        const bookingDetails = sessionStateManager.getBookingDetails(callSid) || session?.bookingDetails;
+        const initCourseType = courseType || session?.courseType || 'CBT';
+        const initCourseDate = bookingDetails?.courseDate || bookingDetails?.bookingDate;
+        if (initCourseDate) {
+          responseInstructions = `CRITICAL: Say exactly: "${AFTER_CONFIRM_CANCEL_MESSAGE}" Then you MUST call the tool cancellation_step_initiate_cancellation with courseType: "${initCourseType}", workflowType: "existing", courseDate: "${initCourseDate}". No other text. Do not wait for the caller. Call the tool in the same response.`;
+          forceNextToolChoice = 'cancellation_step_initiate_cancellation';
+          console.log(`🎯 [${callId}] Cancellation confirmed - forcing immediate initiate_cancellation (courseType: ${initCourseType}, courseDate: ${initCourseDate})`);
+        }
+      }
+
+      const isInitiateCancellationProceed = !forceNextToolChoice && toolName === 'cancellation_step_initiate_cancellation' &&
+        toolResult?.success === true &&
+        toolResult?.cancellationFormOpened === true;
+      if (isInitiateCancellationProceed) {
+        const fillCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
+        responseInstructions = `CRITICAL: Say exactly: "${AFTER_FORM_OPENED_MESSAGE}" Then you MUST call the tool cancellation_step_fill_cancellation_form with courseType: "${fillCourseType}", workflowType: "existing", cancellationFee (use the fee you stated to the caller), and cancellationReason if needed. No other text. Call the tool in the same response.`;
+        forceNextToolChoice = 'cancellation_step_fill_cancellation_form';
+        console.log(`🎯 [${callId}] Cancellation form opened - forcing immediate fill_cancellation_form`);
+      }
+
+      const isFillCancellationFormProceed = !forceNextToolChoice && toolName === 'cancellation_step_fill_cancellation_form' &&
+        toolResult?.success === true &&
+        toolResult?.cancellationSubmitted === true;
+      if (isFillCancellationFormProceed) {
+        const navCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
+        responseInstructions = `CRITICAL: Say exactly: "${AFTER_FORM_SUBMITTED_MESSAGE}" Then you MUST call the tool cancellation_step_navigate_communication with courseType: "${navCourseType}", workflowType: "existing". No other text. Call the tool in the same response.`;
+        forceNextToolChoice = 'cancellation_step_navigate_communication';
+        console.log(`🎯 [${callId}] Cancellation form submitted - forcing immediate navigate_communication`);
+      }
+
+      const isNavigateCommunicationProceed = !forceNextToolChoice && toolName === 'cancellation_step_navigate_communication' &&
+        toolResult?.success === true &&
+        toolResult?.templatePageOpened === true;
+      if (isNavigateCommunicationProceed) {
+        const selCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
+        responseInstructions = `CRITICAL: Say exactly: "${BEAR_WITH_ME}" Then you MUST call the tool cancellation_step_select_template with courseType: "${selCourseType}", workflowType: "existing". No other text. Call the tool in the same response.`;
+        forceNextToolChoice = 'cancellation_step_select_template';
+        console.log(`🎯 [${callId}] Template page opened - forcing immediate select_template`);
+      }
       
-      // Log retry success if we retried
       if (retryCount > 0) {
         console.log(`✅ [${callId}] Successfully acquired response lock after ${retryCount} retry attempt(s)`);
       }
-      
-      // Step 1: Disable tools before creating response (prevents tool calls during response)
-      // Lock already acquired by tryAcquireResponseLock()
+      console.log(`[RESPONSE-SOURCE] [${callId}] tool_completion`);
+      // Step 1: Set tool_choice before creating response (force next tool when chaining, else disable)
+      const toolChoiceForResponse = forceNextToolChoice
+        ? { type: 'function', name: forceNextToolChoice }
+        : 'none';
       openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
-          tool_choice: 'none'
+          tool_choice: toolChoiceForResponse
         }
       }));
       
@@ -277,7 +355,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       // PHASE 1: Include contextual instructions to ensure automatic continuation
       if (responseInstructions) {
         responseCreatePayload.response.instructions = responseInstructions;
-        console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''})`);
+        console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''}${isRequiresToolRedirect ? ', force requiresTool redirect' : ''}${isVerifyBookingIntentProceed ? ', force cancellation_step_authenticate' : ''}${isConfirmCancellationProceed ? ', force cancellation_step_initiate_cancellation' : ''}${isInitiateCancellationProceed ? ', force cancellation_step_fill_cancellation_form' : ''}${isFillCancellationFormProceed ? ', force cancellation_step_navigate_communication' : ''}${isNavigateCommunicationProceed ? ', force cancellation_step_select_template' : ''})`);
       }
       
       openaiWs.send(JSON.stringify(responseCreatePayload));

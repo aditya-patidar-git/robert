@@ -12,8 +12,12 @@ import {
     generateMediaStreamsTwiML, 
     generateBlockedCallTwiML, 
     generateErrorTwiML,
+    generateVoicemailTwiML,
+    generateDialWithActionTwiML,
+    generateAllOccupiedTwiML,
     buildMediaStreamsWsUrl
 } from '../utils/twimlGenerator.js';
+import { isAfterHours } from '../utils/afterHoursUtils.js';
 // dotenv is already loaded in index.js, no need to reload here
 
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
@@ -265,9 +269,46 @@ export const handleIncomingCall = async (req, res) => {
             span.end();
             return res.type("text/xml").send(twiml);
         }
+
+        const telephonyConfig = configManager.getTelephonyConfig();
+        const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
+
+        if (telephonyConfig?.afterHoursPolicy && isAfterHours(telephonyConfig.afterHoursPolicy)) {
+            const action = telephonyConfig.afterHoursPolicy.action || 'voicemail';
+            span.setAttribute('call.after_hours', true);
+            span.setAttribute('call.after_hours_action', action);
+
+            if (action === 'voicemail') {
+                const voicemailSettings = telephonyConfig.voicemailSettings || {};
+                const twiml = generateVoicemailTwiML({
+                    message: telephonyConfig.afterHoursPolicy.message || '',
+                    greeting: voicemailSettings.greeting || 'Please leave your name, number, and a brief message after the tone.',
+                    maxDuration: voicemailSettings.maxDuration ?? 300,
+                    recordingStatusCallback: `${baseUrl}/api/inbound/voicemail-recording-status`
+                });
+                span.setStatus({ code: SpanStatusCode.OK });
+                span.end();
+                return res.type("text/xml").send(twiml);
+            }
+
+            if (action === 'transfer') {
+                const transferNumbers = (telephonyConfig.transferNumbers || []).filter(t => t.isActive !== false && t.number).map(t => t.number);
+                if (transferNumbers.length === 0) {
+                    const twiml = generateAllOccupiedTwiML();
+                    span.setStatus({ code: SpanStatusCode.OK });
+                    span.end();
+                    return res.type("text/xml").send(twiml);
+                }
+                const firstNumber = transferNumbers[0];
+                const actionUrl = `${baseUrl}/api/inbound/after-hours-transfer?attempt=2`;
+                const twiml = generateDialWithActionTwiML(firstNumber, actionUrl, 25);
+                span.setStatus({ code: SpanStatusCode.OK });
+                span.end();
+                return res.type("text/xml").send(twiml);
+            }
+        }
         
         // Check if SIP should be used (primary path)
-        const telephonyConfig = configManager.getTelephonyConfig();
         const shouldUseSip = sipCallRouter.shouldUseSip(telephonyConfig) && sipService.isSipEnabled();
         
         let entryPath = 'Media Streams';
@@ -383,6 +424,69 @@ export const handleIncomingCall = async (req, res) => {
         const errorTwiml = generateErrorTwiML('An error occurred. Please try again later.');
         res.status(500).type("text/xml").send(errorTwiml);
     }
+};
+
+/**
+ * After-hours transfer chain: Twilio calls this when a Dial times out (no-answer/busy).
+ * Returns TwiML to dial the next transfer number or Say+Hangup when all tried.
+ */
+export const afterHoursTransfer = async (req, res) => {
+    const attempt = parseInt(req.query.attempt, 10) || 1;
+    const CallSid = req.body?.CallSid || req.query.CallSid;
+    const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
+
+    const telephonyConfig = configManager.getTelephonyConfig();
+    const transferNumbers = (telephonyConfig?.transferNumbers || [])
+        .filter(t => t.isActive !== false && t.number)
+        .map(t => t.number);
+
+    if (attempt > transferNumbers.length) {
+        const twiml = generateAllOccupiedTwiML();
+        return res.type("text/xml").send(twiml);
+    }
+
+    const number = transferNumbers[attempt - 1];
+    const nextActionUrl = `${baseUrl}/api/inbound/after-hours-transfer?attempt=${attempt + 1}`;
+    const twiml = generateDialWithActionTwiML(number, nextActionUrl, 25);
+    res.type("text/xml").send(twiml);
+};
+
+/**
+ * Voicemail recording status callback (after-hours Record verb).
+ * Creates/updates CallRecord with result=voicemail and triggers email notification.
+ */
+export const voicemailRecordingStatus = async (req, res) => {
+    const CallRecord = (await import("../database/models/CallRecord.js")).default;
+    const voicemailEmailService = (await import("../services/voicemailEmailService.js")).default;
+    const { RecordingSid, RecordingUrl, CallSid, RecordingDuration } = req.body;
+    const From = req.body.From || req.body.Caller;
+
+    try {
+        await CallRecord.findOneAndUpdate(
+            { callSid: CallSid },
+            {
+                $set: {
+                    result: 'voicemail',
+                    recordingUrl: RecordingUrl || null,
+                    recordingStatus: RecordingUrl ? 'available' : 'pending',
+                    from: From || undefined,
+                    updatedAt: new Date()
+                }
+            },
+            { upsert: true, new: true }
+        );
+
+        await voicemailEmailService.sendVoicemailNotification({
+            callSid: CallSid,
+            callerId: From || 'unknown',
+            recordingUrl: RecordingUrl,
+            duration: RecordingDuration ? `${RecordingDuration}s` : undefined,
+            timestamp: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error(`❌ [${CallSid}] Voicemail recording status error:`, err);
+    }
+    res.sendStatus(200);
 };
 
 // Get all calls

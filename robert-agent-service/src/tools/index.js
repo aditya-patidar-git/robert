@@ -98,11 +98,6 @@ class UnifiedToolExecutor {
    */
   getFilteredToolDefinitions(context = {}) {
     const allDefinitions = getToolDefinitions();
-    // TEMPORARY: bypass filtering for cancellation workflow testing; remove when re-enabling filter
-    if (process.env.DISABLE_TOOL_FILTERING === 'true') {
-      console.log(`🔧 [TOOL FILTER] DISABLED (temporary for cancellation workflow testing) - returning all ${allDefinitions.length} tools`);
-      return allDefinitions;
-    }
     const allowedToolNames = getToolsForContext(
       context.workflowPhase || 'general_inquiry',
       context

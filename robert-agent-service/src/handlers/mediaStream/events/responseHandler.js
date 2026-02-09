@@ -6,7 +6,7 @@ import { MemoryManager } from '../utils/index.js';
 import { conversations } from '../../../shared/state.js';
 import testClientRegistry from '../../../services/testClientRegistry.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
-// Audio conversion removed - OpenAI is configured for g711_ulaw, we trust the configuration
+import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
 
 /**
  * Response Handler
@@ -16,6 +16,11 @@ export class ResponseHandler {
   constructor(stateManager, ws) {
     this.state = stateManager;
     this.ws = ws;
+    this.onCreateConsentResponseNeeded = null;
+  }
+
+  setOnCreateConsentResponseNeeded(fn) {
+    this.onCreateConsentResponseNeeded = typeof fn === 'function' ? fn : null;
   }
 
 
@@ -73,7 +78,6 @@ export class ResponseHandler {
       }
     }
     
-    // Block automatic responses that we didn't explicitly request
     if (!this.state.explicitResponseRequested) {
       const currentTime = Date.now();
       const timeSinceTranscription = this.state.lastTranscriptionReceivedTime > 0 ? currentTime - this.state.lastTranscriptionReceivedTime : Infinity;
@@ -81,34 +85,38 @@ export class ResponseHandler {
       const isRecentTranscription = this.state.lastTranscriptionReceivedTime > 0 && timeSinceTranscription >= 0 && timeSinceTranscription < 3000;
       const isWithinUserSpeakingWindow = this.state.agentFinishedSpeakingTime > 0 && timeSinceAgentFinished >= 0 && timeSinceAgentFinished < this.state.userSpeakingWindowMs;
       const userSpokeBeforeResponse = this.state.userSpeechStartedTime > 0 && this.state.userSpeechStartedTime < this.state.responseStartTime;
-      
+
+      const flowState = getConversationFlowState(this.state.callSid, this.state);
+      const consentRequired = flowState.consentRequested && !flowState.consentGiven && flowState.languageSelected;
+
       const isInterrupted = this.state.isInterrupted;
       const isRespondingToDifferentResponse = this.state.isResponding && this.state.activeResponseId !== event.response?.id;
       const shouldBlockWaiting = this.state.waitingForUser && !isRecentTranscription && !isWithinUserSpeakingWindow && !userSpokeBeforeResponse;
-      
-      const shouldBlock = isInterrupted || isRespondingToDifferentResponse || shouldBlockWaiting || isLowQualitySegment;
-      
+      const shouldBlock = isInterrupted || isRespondingToDifferentResponse || shouldBlockWaiting || isLowQualitySegment || consentRequired;
+
       if (shouldBlock) {
-        // Detailed logging for why response is being blocked
-        console.log(`🚫 [${this.state.callSid}] Blocking automatic response - ID: ${this.state.activeResponseId}`);
-        console.log(`   📊 Blocking reasons:`);
-        console.log(`      - explicitResponseRequested: ${this.state.explicitResponseRequested}`);
-        console.log(`      - isInterrupted: ${isInterrupted}`);
-        console.log(`      - isResponding: ${this.state.isResponding}, activeResponseId: ${this.state.activeResponseId}, newResponseId: ${event.response?.id}`);
-        console.log(`      - isRespondingToDifferentResponse: ${isRespondingToDifferentResponse}`);
-        console.log(`      - waitingForUser: ${this.state.waitingForUser}`);
-        console.log(`      - timeSinceTranscription: ${timeSinceTranscription}ms (recent: ${isRecentTranscription})`);
-        console.log(`      - timeSinceAgentFinished: ${timeSinceAgentFinished}ms (within window: ${isWithinUserSpeakingWindow})`);
-        console.log(`      - userSpokeBeforeResponse: ${userSpokeBeforeResponse}`);
-        console.log(`      - shouldBlockWaiting: ${shouldBlockWaiting}`);
-        
+        if (consentRequired) {
+          console.log(`🚫 [${this.state.callSid}] Blocking automatic response - consent question must be asked first (ID: ${this.state.activeResponseId})`);
+        } else {
+          console.log(`🚫 [${this.state.callSid}] Blocking automatic response - ID: ${this.state.activeResponseId}`);
+          console.log(`   📊 Blocking reasons:`);
+          console.log(`      - explicitResponseRequested: ${this.state.explicitResponseRequested}`);
+          console.log(`      - isInterrupted: ${isInterrupted}`);
+          console.log(`      - isResponding: ${this.state.isResponding}, activeResponseId: ${this.state.activeResponseId}, newResponseId: ${event.response?.id}`);
+          console.log(`      - isRespondingToDifferentResponse: ${isRespondingToDifferentResponse}`);
+          console.log(`      - waitingForUser: ${this.state.waitingForUser}`);
+          console.log(`      - timeSinceTranscription: ${timeSinceTranscription}ms (recent: ${isRecentTranscription})`);
+          console.log(`      - timeSinceAgentFinished: ${timeSinceAgentFinished}ms (within window: ${isWithinUserSpeakingWindow})`);
+          console.log(`      - userSpokeBeforeResponse: ${userSpokeBeforeResponse}`);
+          console.log(`      - shouldBlockWaiting: ${shouldBlockWaiting}`);
+        }
+
         try {
-          // Use robust send method with connection manager support
           const sent = this.state.sendToOpenAI({
-              type: 'response.cancel',
-              response_id: this.state.activeResponseId
+            type: 'response.cancel',
+            response_id: this.state.activeResponseId
           }, { priority: 'high' });
-          
+
           if (sent) {
             console.log(`   ✅ Sent response.cancel to OpenAI for response ${this.state.activeResponseId}`);
           } else {
@@ -117,7 +125,13 @@ export class ResponseHandler {
           this.state.activeResponseId = null;
           this.state.isResponding = false;
           this.state.waitingForUser = true;
-          return false; // Don't process this response
+
+          if (consentRequired && this.onCreateConsentResponseNeeded) {
+            Promise.resolve(this.onCreateConsentResponseNeeded()).catch(err => {
+              console.error(`❌ [${this.state.callSid}] Error creating consent response after blocking auto-response:`, err?.message || err);
+            });
+          }
+          return false;
         } catch (err) {
           console.warn(`⚠️ [${this.state.callSid}] Error cancelling automatic response:`, err.message);
         }

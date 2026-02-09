@@ -162,7 +162,39 @@ export class ConversationService {
     }
 
     const flowState = getConversationFlowState(callSid, state);
-    const { waitingForLanguage, languageSelected } = flowState;
+    const { waitingForLanguage, languageSelected, consentRequested, consentGiven } = flowState;
+
+    let privacySettings = conversation?._cachedPrivacySettings ?? null;
+    if (!privacySettings) {
+      try {
+        const PrivacyConfig = (await import('../database/models/PrivacyConfig.js')).default;
+        privacySettings = await PrivacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        if (conversation && privacySettings) {
+          conversation._cachedPrivacySettings = privacySettings;
+        }
+      } catch {
+        privacySettings = null;
+      }
+    }
+    const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
+    const consentNotice =
+      privacySettings?.consentScript ||
+      'For training and quality, this call may be recorded and handled in line with our Privacy Policy.';
+    const consentQuestion = 'Do you consent to this call being recorded?';
+
+    if (requireExplicitConsent && consentRequested && !consentGiven && languageSelected) {
+      const consentInstructions = this.consentInstructionBuilder.buildConsentFlowInstructions({
+        consentNotice,
+        consentQuestion,
+        languageSelected: true,
+        consentGiven: false,
+        requireExplicitConsent: true,
+        baseInstructions: ''
+      });
+      if (consentInstructions) {
+        return { instructions: consentInstructions, isInitialGreeting: false };
+      }
+    }
 
     const instructions = this.promptService.getContextualInstructions({
       isInitialGreeting: false,

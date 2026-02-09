@@ -9,9 +9,10 @@ import progressIndicatorService from '../../../services/progressIndicatorService
  * Delegates execution to ToolExecutionService for code reuse
  */
 export class ToolCallHandler {
-  constructor(stateManager, openaiWs) {
+  constructor(stateManager, openaiWs, options = {}) {
     this.state = stateManager;
     this.openaiWs = openaiWs;
+    this.onBeforeTriggerResponse = options.onBeforeTriggerResponse;
     this.resultSubmitter = new WebSocketResultSubmitter(openaiWs, stateManager);
   }
 
@@ -96,11 +97,9 @@ export class ToolCallHandler {
           executionResult
         );
         
-        // Trigger response if needed - pass tool name and result for special handling
-        // CRITICAL FIX: Extract the actual tool result (same as success path) so client_verification
-        // missingFields can be detected properly. Some tools like client_verification return
-        // {success: false, verified: false, missingFields: [...]} which needs special handling
-        // to trigger automatic continuation asking for missing fields.
+        if (typeof this.onBeforeTriggerResponse === 'function') {
+          this.onBeforeTriggerResponse(this.state.callSid);
+        }
         await this.resultSubmitter.triggerResponse(this.state.callSid, { 
           toolName: name,
           toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
@@ -120,7 +119,9 @@ export class ToolCallHandler {
         toSubmit
       );
       
-      // Trigger response - pass tool name and result for special handling (e.g., client_verification)
+      if (typeof this.onBeforeTriggerResponse === 'function') {
+        this.onBeforeTriggerResponse(this.state.callSid);
+      }
       await this.resultSubmitter.triggerResponse(this.state.callSid, { 
         toolName: name,
         toolResult: executionResult.result || executionResult // Pass the tool result so triggerResponse can check for incomplete verification

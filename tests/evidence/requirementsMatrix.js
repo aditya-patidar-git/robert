@@ -55,9 +55,10 @@ export const requirementsMatrix = {
     acceptanceCriteria: 'MCP web_search with prior disclosure; result grounded.'
   },
   requirement_6_crm_tasking: {
-    description: 'CRM booking with KBA + dry-run + confirmation (§14.6)',
+    description: 'CRM booking/cancellation with KBA + dry-run + confirmation (§14.6)',
     verification: [
       { type: 'unit', testFile: 'tests/unit/services/kbaService.test.js', assertionName: 'returns true for update_customer' },
+      { type: 'unit', testFile: 'tests/unit/services/kbaService.test.js', assertionName: 'returns true for cancellation' },
       { type: 'unit', testFile: 'tests/unit/services/toolExecutionService.test.js', assertionName: 'returns true for duplicate call with same params' },
       { type: 'unit', testFile: 'tests/unit/services/sendConfirmation.test.js', assertionName: 'returns confirmationSent true after successful send' }
     ],

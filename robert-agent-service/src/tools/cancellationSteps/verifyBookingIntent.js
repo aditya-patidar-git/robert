@@ -6,7 +6,7 @@
 import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES, getStepNumber } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
-import { PROCEED_DECLINED_MESSAGE, TERMS_DISCLAIMER } from '../../config/cancellationPhrases.js';
+import { PROCEED_DECLINED_MESSAGE, TERMS_DISCLAIMER, AFTER_LOGIN_MESSAGE } from '../../config/cancellationPhrases.js';
 
 export class VerifyBookingIntentStep extends CancellationBaseStepTool {
   getStepName() {
@@ -64,7 +64,7 @@ export class VerifyBookingIntentStep extends CancellationBaseStepTool {
           proceedToStep2: true,
           nextStep: 'cancellation_step_authenticate',
           nextStepNumber: 2,
-          message: 'I\'ll now login to the system to find your profile. Please bear with me a moment.'
+          message: AFTER_LOGIN_MESSAGE
         };
       }
 

@@ -18,7 +18,7 @@
 import twilioSyncService from './twilioSyncService.js';
 import crypto from 'crypto';
 import { sanitizeForJSON } from '../utils/objectUtils.js';
-import { isNetworkError } from '../utils/isRetryableError.js';
+import { isNetworkError, isRetryableError } from '../utils/isRetryableError.js';
 
 class DistributedStateService {
   constructor() {
@@ -229,35 +229,45 @@ class DistributedStateService {
       // Continue anyway - cache update failure shouldn't block sync write
     }
     
-    // Write to Sync if available (using already-sanitized data)
+    const SYNC_SET_RETRIES = 3;
+    const SYNC_SET_RETRY_DELAY_MS = 600;
+
     if (this.useSync) {
-      try {
-        console.log(`[DIST-VERBOSE] [${callSid}] Writing to Twilio Sync (useSync=true)...`);
-        const syncStart = Date.now();
-        await twilioSyncService.setSession(callSid, sanitizedData, ttl);
-        const syncDuration = Date.now() - syncStart;
-        const totalDuration = Date.now() - startTime;
-        console.log(`[DIST-VERBOSE] [${callSid}] ✅ setSession() completed in ${totalDuration}ms (sanitize: ${Date.now() - sanitizeStart}ms, sync: ${syncDuration}ms)`);
-        return true;
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        if (isNetworkError(error)) {
-          if (!this._networkErrorLoggedForCall.has(callSid)) {
-            console.warn(`[DistributedState] Network error setting session ${callSid} in Sync (will use local cache only):`, error.message);
-            this._networkErrorLoggedForCall.add(callSid);
+      let lastError = null;
+      for (let attempt = 1; attempt <= SYNC_SET_RETRIES; attempt++) {
+        try {
+          console.log(`[DIST-VERBOSE] [${callSid}] Writing to Twilio Sync (useSync=true)${attempt > 1 ? ` (retry ${attempt}/${SYNC_SET_RETRIES})` : ''}...`);
+          const syncStart = Date.now();
+          await twilioSyncService.setSession(callSid, sanitizedData, ttl);
+          const syncDuration = Date.now() - syncStart;
+          const totalDuration = Date.now() - startTime;
+          console.log(`[DIST-VERBOSE] [${callSid}] ✅ setSession() completed in ${totalDuration}ms (sanitize: ${Date.now() - sanitizeStart}ms, sync: ${syncDuration}ms)`);
+          return true;
+        } catch (error) {
+          lastError = error;
+          if (attempt < SYNC_SET_RETRIES && isRetryableError(error)) {
+            await new Promise(r => setTimeout(r, SYNC_SET_RETRY_DELAY_MS));
+            continue;
           }
-        } else {
-          console.error(`[DIST-VERBOSE] [${callSid}] ❌ Error setting session in Sync after ${duration}ms:`, {
-            message: error.message,
-            code: error.code,
-            status: error.status,
-            stack: error.stack?.split('\n').slice(0, 10).join('\n')
-          });
-          console.error(`[DistributedState] Error setting session ${callSid} in Sync:`, error.message);
+          break;
         }
-        // Continue with local cache only
-        return true;
       }
+      const duration = Date.now() - startTime;
+      if (isNetworkError(lastError)) {
+        if (!this._networkErrorLoggedForCall.has(callSid)) {
+          console.warn(`[DistributedState] Network error setting session ${callSid} in Sync after ${SYNC_SET_RETRIES} attempts (will use local cache only):`, lastError.message);
+          this._networkErrorLoggedForCall.add(callSid);
+        }
+      } else {
+        console.error(`[DIST-VERBOSE] [${callSid}] ❌ Error setting session in Sync after ${duration}ms:`, {
+          message: lastError?.message,
+          code: lastError?.code,
+          status: lastError?.status,
+          stack: lastError?.stack?.split('\n').slice(0, 10).join('\n')
+        });
+        console.error(`[DistributedState] Error setting session ${callSid} in Sync:`, lastError?.message);
+      }
+      return true;
     } else {
       const duration = Date.now() - startTime;
       console.log(`[DIST-VERBOSE] [${callSid}] ✅ setSession() completed in ${duration}ms (cache only, useSync=false)`);

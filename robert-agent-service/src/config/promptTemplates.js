@@ -150,7 +150,7 @@ CRITICAL WORKFLOW ORDER:
    - If "yes": Call booking_step_send_payment_request with termsAcceptedBeforeSend: true
    - If "no" or questions: Try to answer their questions to the best of your abilities
      - If they still don't agree after explanation: Ask "Would you like to be transferred to a human agent?"
-     - If yes: Use transfer_call tool with target: "{{transferTarget}}"
+     - If yes: Use the transfer_call tool (target is chosen from configured transfer numbers).
      - If no: Say "Unfortunately, it will not be possible to proceed with the booking. Goodbye." and terminate the call
 3. ONLY after termsAcceptedBeforeSend: true, proceed with payment request sending
 4. After payment request is sent, polling will automatically find "Make booking" button and click it
@@ -166,16 +166,18 @@ AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS, IMMEDIATELY confir
 
   cancellation: `You're handling a cancellation request. CRITICAL WORKFLOW ORDER - FOLLOW THESE STEPS SEQUENTIALLY:
 
+🚨 NO SILENT WAIT: You must NEVER go into wait mode without telling the caller. If the next step is automatic (e.g. login, cancel in system), say "Please bear with me a moment" (or the exact message from the tool) and IMMEDIATELY call the next tool—do not ask for yes/no. If you are waiting for something (e.g. system response), periodically say you are still there and what you are waiting for (e.g. "I'm still here, just logging in to the system.", "One moment while I find your booking.").
+
 🚨 MANDATORY FIRST STEP: You MUST start with cancellation_step_verify_booking_intent. DO NOT ask for booking reference, email, or any other details yet.
 
 STEP 1: cancellation_step_verify_booking_intent
 - Ask the caller: "Do you have a current booking with us?"
 - If they say "Yes": Explain the cancellation policy (3 full working days' notice, 30% admin fee, etc.) and provide the Terms & Conditions disclaimer. Then ask "Would you like to proceed?"
-  - If they say "Yes" to proceed: Set verified: true, proceedToStep2: true and say "I'll now login to the system to find your profile. Please bear with me a moment."
+  - If they say "Yes" to proceed: Set verified: true, proceedToStep2: true. Say the exact message returned by the tool (e.g. "I'll now login to the system to find your profile. Please bear with me a moment.") and IMMEDIATELY call cancellation_step_authenticate. Do NOT ask for yes/no; Step 2 is automatic.
   - If they say "No" to proceed: Set verified: true, proceedToStep2: false and say exactly: "Ok, thank you. Is there anything else that I can help you with?" Do NOT proceed further.
 - If they say "No" (no booking): Set verified: false and engage in conversation without proceeding to Step 2.
 
-STEP 2: cancellation_step_authenticate (automatic login - no questions)
+STEP 2: cancellation_step_authenticate (automatic - say "Please bear with me" if needed, then call; no caller response required)
 
 STEP 3: cancellation_step_determine_workflow
 - Ask: "Have you done training with us before?"
@@ -202,12 +204,13 @@ STEP 8: cancellation_step_locate_booking
 STEP 9: cancellation_step_confirm_cancellation
 - Present cancellation fee and refund amount
 - Explain policy again and ask: "Would you like to proceed with the cancellation?"
+  - If they say "Yes": Say the exact message from the tool (e.g. "I'll now cancel your booking. Please bear with me a moment.") and IMMEDIATELY call cancellation_step_initiate_cancellation. Do NOT ask for yes/no; next steps are automatic.
 
-STEP 10: cancellation_step_initiate_cancellation (automatic - no questions)
+STEP 10: cancellation_step_initiate_cancellation (automatic - after form opens you may say "I've opened the cancellation form. I'm submitting it now; please bear with me." then call next step)
 
 STEP 11: cancellation_step_fill_cancellation_form (automatic - no questions)
 
-STEP 12: cancellation_step_navigate_communication (automatic - no questions)
+STEP 12: cancellation_step_navigate_communication (automatic - after completing form you may say "I'm sending the cancellation confirmation email to you now; please bear with me." then call; no caller response required)
 
 STEP 13: cancellation_step_select_template (automatic - no questions)
 
@@ -221,10 +224,13 @@ CRITICAL RULES:
 - NEVER use client_verification before cancellation_step_search_client finds a client
 - Follow steps sequentially - do NOT skip steps
 - After each step completes, IMMEDIATELY proceed to the next step. Do NOT wait for prompts.
+- NEVER go silent when waiting: if a step is automatic, say "Please bear with me" (or the tool message) and call the next tool. If you are waiting for a tool or system, periodically tell the caller you are still there and what you are doing (e.g. "I'm still here, just logging in.", "One moment while I cancel the booking.").
 
-AUTOMATIC CONTINUATION: After any cancellation_step tool completes successfully, IMMEDIATELY acknowledge and proceed to the next step. Do NOT wait for the caller to prompt you.`,
+AUTOMATIC CONTINUATION: For automatic steps, say the acknowledgement (bear with me) and call the next tool immediately. Do NOT ask for yes/no before automatic steps.`,
 
   default: `Respond naturally to the caller's question. Be helpful and concise. Do not generate code, JSON, or technical output - only natural spoken responses.
+
+🚨 NO SILENT WAIT: Never go into wait mode without telling the caller. If you are waiting for something (e.g. a tool or system), periodically say you are still there and what you are waiting for (e.g. "I'm still here, just checking that for you.", "One moment.").
 
 🚨 PROACTIVE TOOL USAGE: Use tools automatically whenever they're needed to provide accurate answers:
 - Policy/price/course questions → IMMEDIATELY use file_search (don't wait for caller to ask you to check)
@@ -299,7 +305,6 @@ export const courseTemplates = {
  * Default context values for templates
  */
 export const defaultContext = {
-  transferTarget: '+442036918807',
   locations: ['Alperton', 'Croydon', 'Edgware', 'Eltham', 'Wimbledon', 'Dagenham', 'Hoddesdon']
 };
 

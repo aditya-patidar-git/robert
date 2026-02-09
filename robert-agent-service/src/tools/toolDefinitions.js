@@ -638,20 +638,20 @@ This tool returns guidance messages directing to the appropriate tools.`,
     {
       type: 'function',
       name: 'transfer_call',
-      description: 'Transfer call to human agent',
+      description: 'Warm transfer to a human agent. Target is chosen from configured transfer numbers in Telephony Routing. If no agent is available, the caller will be told that all agents are occupied and offered to try again later or be contacted.',
       parameters: {
         type: 'object',
         properties: {
           target: {
             type: 'string',
-            description: 'Target phone number or queue for transfer'
+            description: 'Optional; target is resolved from configured transfer numbers'
           },
           reason: {
             type: 'string',
             description: 'Reason for transfer (optional)'
           }
         },
-        required: ['target']
+        required: []
       }
     },
     {
@@ -777,7 +777,7 @@ function getCancellationStepToolDefinitions() {
       description: `Step 1: Verify caller has a current booking and explain cancellation policy. This is a voice-only step that requires caller interaction.
 
 Ask the caller: "Do you have a current booking with us?"
-- If they say "Yes": Explain the cancellation policy, then say the standard Terms disclaimer (Full Terms & Conditions are available on our website). Then ask "Would you like to proceed?" If they say Yes, set verified: true, proceedToStep2: true. If they say No, set verified: true, proceedToStep2: false and say exactly: "Ok, thank you. Is there anything else that I can help you with?" and do not proceed to Step 2.
+- If they say "Yes": Explain the cancellation policy, then say the standard Terms disclaimer (Full Terms & Conditions are available on our website). Then ask "Would you like to proceed?" If they say Yes, set verified: true, proceedToStep2: true. Say the exact message returned by this tool ("I'll now login to the system to find your profile. Please bear with me a moment.") and IMMEDIATELY call cancellation_step_authenticate—do not ask for yes/no; Step 2 is automatic. If they say No to proceed, set verified: true, proceedToStep2: false and say exactly: "Ok, thank you. Is there anything else that I can help you with?" and do not proceed to Step 2.
 - If they say "No": Set verified: false and do not proceed to Step 2
 
 Cancellation policy: "If you wish to cancel your (CBT), (ITM), (Gear Conversion), (Private Motorcycling lesson) you MUST provide a minimum of 3 (Three) full working days' notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within less than 3 (three) full working days will result in the entire paid fees."`,
@@ -804,7 +804,7 @@ Cancellation policy: "If you wish to cancel your (CBT), (ITM), (Gear Conversion)
     {
       type: 'function',
       name: 'cancellation_step_authenticate',
-      description: 'Step 2: Login to CRM system. Reuses booking authentication logic.',
+      description: 'Step 2: Login to CRM system. Reuses booking authentication logic. ONLY call after cancellation_step_verify_booking_intent has been completed with verified: true and proceedToStep2: true. Do not call as the first cancellation step.',
       parameters: {
         type: 'object',
         properties: {
@@ -953,7 +953,7 @@ Always use the course type the caller stated (e.g. "Introduction to Motorcycling
       description: `Step 8: Confirm cancellation with caller and explain fees. This is a voice-only step that requires caller confirmation.
 
 Mention the Terms URL when explaining the policy (Full Terms & Conditions are available on our website). Explain the cancellation policy and fees from Step 7, then ask: "Would you like to proceed with the cancellation?"
-- If they say "Yes": Set confirmed: true
+- If they say "Yes": Set confirmed: true. Say the exact message returned by this tool ("I'll now cancel your booking. Please bear with me a moment.") and IMMEDIATELY call cancellation_step_initiate_cancellation—do not ask for yes/no; next steps are automatic.
 - If they say "No": Set confirmed: false and do not proceed`,
       parameters: {
         type: 'object',

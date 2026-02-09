@@ -110,9 +110,9 @@ const fileSearchSchema = z.object({
   files: z.array(z.string()).optional()
 });
 
-// Transfer Call Schema
+// Transfer Call Schema - target optional; resolved from telephony config transfer numbers
 const transferCallSchema = z.object({
-  target: z.string().min(1, 'Target is required'),
+  target: z.string().optional(),
   reason: z.string().optional()
 });
 

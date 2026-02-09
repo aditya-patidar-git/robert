@@ -16,6 +16,10 @@ describe('KBAService', () => {
       expect(kbaService.requiresKBA('update_customer', {})).toBe(true);
     });
 
+    it('returns true for cancellation', () => {
+      expect(kbaService.requiresKBA('cancellation_step_verify_booking_intent', {})).toBe(true);
+    });
+
     it('returns true for transfer_call', () => {
       expect(kbaService.requiresKBA('transfer_call', {})).toBe(true);
     });

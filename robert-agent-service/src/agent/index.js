@@ -9,7 +9,7 @@ import cors from 'cors';
 import configManager from './configManager.js';
 import { handleMediaStreamConnection } from '../handlers/mediaStream/index.js';
 import { handleTestClientConnection } from '../handlers/mediaStream/testClientHandler.js';
-import { makeCall, aiIntro, getAllCalls, handleIncomingCall } from '../handlers/callHandlers.js';
+import { makeCall, aiIntro, getAllCalls, handleIncomingCall, afterHoursTransfer, voicemailRecordingStatus } from '../handlers/callHandlers.js';
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
 import sipRoutes from '../routes/sipRoutes.js';
@@ -279,6 +279,8 @@ app.get('/api/outbound/recording/:callSid', proxyRecording);
 app.post('/api/inbound/incoming-call', handleIncomingCall);
 // Alias for backward compatibility (some test helpers may use this)
 app.post('/api/inbound/handle-call', handleIncomingCall);
+app.post('/api/inbound/after-hours-transfer', afterHoursTransfer);
+app.post('/api/inbound/voicemail-recording-status', voicemailRecordingStatus);
 app.post('/api/inbound/call-status', callStatus);
 app.post('/api/inbound/recording-status', recordingStatus);
 app.get('/api/inbound/recording/:callSid', proxyRecording);

@@ -23,16 +23,59 @@ export class ToolCoordinator {
     const languageDetector = new LanguageDetector(stateManager);
     const consentHandler = new ConsentHandler(stateManager, memoryManager);
     
-    // Initialize ResponseHandler first (needed by BargeInHandler for immediate audio stopping)
     this.responseHandler = new ResponseHandler(stateManager, ws);
-    
+    this.responseHandler.setOnCreateConsentResponseNeeded(async () => {
+      this.state.explicitResponseRequested = true;
+      await this.createAudioResponse();
+    });
+
     // Initialize BargeInHandler with ResponseHandler reference for immediate Twilio-level audio stopping
     this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler);
     
     this.consentHandler = consentHandler;
-    // Pass BargeInHandler reference to TranscriptionHandler so it can trigger barge-in when "stop" is detected
-    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler);
-    this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs);
+    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler, (text) => this.applyIntentFromTranscript(text));
+    this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs, {
+      onBeforeTriggerResponse: (callSid) => {
+        const conv = conversations[callSid];
+        const lastUser = conv?.transcript?.filter(t => t.role === 'user').pop();
+        if (lastUser?.text?.trim()) this.applyIntentFromTranscript(lastUser.text);
+      }
+    });
+  }
+
+  /**
+   * Run intent detection on transcript and update workflow phase/tools when needed.
+   * Used by both transcription.completed and speech_stopped (process_transcriptions) paths.
+   * @param {string} transcriptText - User transcript to analyze
+   * @returns {boolean} True if tools/phase were updated
+   */
+  applyIntentFromTranscript(transcriptText) {
+    const callSid = this.state.callSid;
+    console.log(`🔍 [INTENT] [${callSid}] applyIntentFromTranscript called, transcript: "${(transcriptText || '').trim().slice(0, 120)}"`);
+    if (!transcriptText?.trim()) {
+      console.log(`🔍 [INTENT] [${callSid}] early exit: empty transcript`);
+      return false;
+    }
+    if (!this.openaiIntegration) {
+      console.log(`🔍 [INTENT] [${callSid}] early exit: openaiIntegration is null`);
+      return false;
+    }
+    const currentPhase = this.openaiIntegration.getCurrentWorkflowPhase?.();
+    const workflowContext = conversations[callSid]?.workflowContext;
+    const intentResult = conversationService.detectIntent(transcriptText, {
+      callSid,
+      currentPhase,
+      workflowContext
+    });
+    console.log(`🔍 [INTENT] [${callSid}] detectIntent result: shouldUpdateTools=${intentResult?.shouldUpdateTools}, newWorkflowContext=${intentResult?.newWorkflowContext}, phase=${intentResult?.phase}`);
+    if (!intentResult.shouldUpdateTools || !intentResult.newWorkflowContext) return false;
+    if (!conversations[callSid]) conversations[callSid] = {};
+    conversations[callSid].workflowContext = intentResult.newWorkflowContext;
+    console.log(`🎯 [${callSid}] Intent detected: "${transcriptText.trim()}" - updating tools and workflow phase to ${intentResult.phase}`);
+    const toolsUpdated = this.openaiIntegration.updateToolsForPhase(intentResult.phase);
+    console.log(`🔍 [INTENT] [${callSid}] updateToolsForPhase(${intentResult.phase}) returned: ${toolsUpdated}`);
+    if (toolsUpdated) console.log(`✅ [${callSid}] Tools updated for phase: ${intentResult.phase}`);
+    return !!toolsUpdated;
   }
 
   /**
@@ -333,27 +376,8 @@ export class ToolCoordinator {
           const transcriptionItemId = event.item_id; // Link to committed segment
           
           const transcriptText = event.transcript || '';
-          const callSid = this.state.callSid;
-          let intentDetected = false;
+          this.applyIntentFromTranscript(transcriptText);
 
-          if (transcriptText.trim() && this.openaiIntegration) {
-            const intentResult = conversationService.detectIntent(transcriptText, {
-              callSid,
-              currentPhase: this.openaiIntegration.getCurrentWorkflowPhase?.(),
-              workflowContext: conversations[callSid]?.workflowContext
-            });
-            if (intentResult.shouldUpdateTools && intentResult.newWorkflowContext) {
-              if (!conversations[callSid]) conversations[callSid] = {};
-              conversations[callSid].workflowContext = intentResult.newWorkflowContext;
-              console.log(`🎯 [${callSid}] Intent detected: "${transcriptText}" - updating tools and workflow phase to ${intentResult.phase}`);
-              const toolsUpdated = this.openaiIntegration.updateToolsForPhase(intentResult.phase);
-              if (toolsUpdated) {
-                intentDetected = true;
-                console.log(`✅ [${callSid}] Tools updated for phase: ${intentResult.phase}`);
-              }
-            }
-          }
-          
           // CRITICAL DIAGNOSTIC: Log transcription processing result
           console.log(`📝 [${this.state.callSid}] Transcription processing result:`);
           console.log(`   - processed: ${transcriptionResult?.processed}`);
@@ -395,9 +419,8 @@ export class ToolCoordinator {
 
           if (shouldCreateResponse) {
             try {
+              console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] transcription.completed`);
               this.state.explicitResponseRequested = true;
-              
-              // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
               await this.createAudioResponse();
               console.log(`🎯 [${this.state.callSid}] Created response after high-quality transcription (quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
             } catch (err) {
@@ -417,20 +440,19 @@ export class ToolCoordinator {
           // Handle process_transcriptions return value
           if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
             const transcriptions = speechStoppedResult.transcriptions || [];
-            // CRITICAL: Don't create response if interrupted
+            if (transcriptions.length > 0) {
+              const transcriptText = transcriptions.map(t => t?.transcript).filter(Boolean).join(' ').trim();
+              if (transcriptText) this.applyIntentFromTranscript(transcriptText);
+            }
             if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
-              // Create response immediately when transcriptions are ready and agent is waiting
               try {
-                // Double-check interruption state after acquiring lock
                 if (this.state.isInterrupted) {
                   console.log(`🛑 [${this.state.callSid}] Skipping response creation - user interrupted after lock acquisition`);
                   this.state.releaseResponseLock();
                   return;
                 }
-                
+                console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] speech_stopped process_transcriptions`);
                 this.state.explicitResponseRequested = true;
-                
-                // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
                 await this.createAudioResponse();
                 console.log(`🎯 [${this.state.callSid}] Created response after processing ${transcriptions.length} transcriptions`);
               } catch (err) {
@@ -451,9 +473,8 @@ export class ToolCoordinator {
                   return;
                 }
                 
+                console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] acknowledge_interruption`);
                 this.state.explicitResponseRequested = true;
-                
-                // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
                 await this.createAudioResponse();
                 console.log(`🎯 [${this.state.callSid}] Created response to acknowledge interruption`);
               } catch (err) {

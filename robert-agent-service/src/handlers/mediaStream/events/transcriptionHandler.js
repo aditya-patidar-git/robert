@@ -3,6 +3,7 @@ import adaptiveTimingService from '../../../services/adaptiveTimingService.js';
 import silenceDetectionService from '../../../services/silenceDetectionService.js';
 import complaintDetectionService from '../../../services/complaintDetectionService.js';
 import promptService from '../../../services/promptService.js';
+import conversationService from '../../../services/conversationService.js';
 import noiseFilterService from '../../../services/noiseFilterService.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
@@ -13,12 +14,13 @@ import { LanguageDetector } from '../utils/languageDetector.js';
  * Supports partial transcription deltas for faster "stop" detection
  */
 export class TranscriptionHandler {
-  constructor(stateManager, languageDetector, consentHandler, openaiWs, bargeInHandler = null) {
+  constructor(stateManager, languageDetector, consentHandler, openaiWs, bargeInHandler = null, onApplyIntentFromTranscript = null) {
     this.state = stateManager;
     this.languageDetector = languageDetector;
     this.consentHandler = consentHandler;
     this.openaiWs = openaiWs;
-    this.bargeInHandler = bargeInHandler; // Reference to BargeInHandler for conditional barge-in
+    this.bargeInHandler = bargeInHandler;
+    this.onApplyIntentFromTranscript = onApplyIntentFromTranscript;
   }
 
   appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations) {
@@ -559,76 +561,45 @@ export class TranscriptionHandler {
           this.state.speechResumedDuringGrace = false;
           this.state.gracePeriodExtensionCount = 0;
           
+          console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] grace_period - will create response after intent check`);
           console.log(`✅ [${this.state.callSid}] Grace period expired - processing ${transcriptionsToProcess.length} transcriptions`);
-          
-          // Create response immediately if agent is waiting
-          // CRITICAL: Use atomic lock to prevent concurrent response creation
-          // CRITICAL: Don't create response if user has interrupted
+          const transcriptText = transcriptionsToProcess.map(t => t?.transcript).filter(Boolean).join(' ').trim();
+          console.log(`🔍 [INTENT] [${this.state.callSid}] grace_period transcriptText: "${(transcriptText || '').slice(0, 120)}"`);
+          if (transcriptText && typeof this.onApplyIntentFromTranscript === 'function') {
+            this.onApplyIntentFromTranscript(transcriptText);
+          }
           if (this.state.waitingForUser && this.state.hasInitialGreetingCompleted && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
             try {
-              // Lock acquired - proceed with response creation
-              // Double-check interruption state before sending
               if (this.state.isInterrupted) {
                 console.log(`🛑 [${this.state.callSid}] Skipping response creation after grace period - user interrupted`);
                 this.state.releaseResponseLock();
                 return;
               }
-
               if (this.openaiWs && this.openaiWs.readyState === 1) {
-                // CRITICAL FIX: Temporarily disable tools to ensure natural language response
-                // Step 1: Disable tools
+                const { conversations } = await import('../../../shared/state.js');
                 this.openaiWs.send(JSON.stringify({
                   type: 'session.update',
                   session: {
                     tool_choice: 'none'
                   }
                 }));
-                
                 await new Promise(resolve => setTimeout(resolve, 150));
-                
-                // Step 2: Create response - PHASE 1: Include contextual instructions to prevent code generation
-                // Determine workflow phase from state (pass callSid to access booking session)
-                const workflowPhase = await promptService.determineWorkflowPhase(this.state, this.state.callSid);
-                
-                // Get active tool name if available
-                const activeToolName = this.state.activeToolName || null;
-                
-                // Get booking session info if available
-                const { conversations } = await import('../../../shared/state.js');
-                let courseType = null;
-                let workflowType = null;
-                let currentStep = null;
-                
-                if (this.state.callSid && conversations[this.state.callSid]?.bookingSession) {
-                  const bookingSession = conversations[this.state.callSid].bookingSession;
-                  courseType = bookingSession.courseType;
-                  workflowType = bookingSession.workflowType;
-                  currentStep = bookingSession.currentStep;
-                }
-                
-                // Get contextual instructions for this response
-                const responseInstructions = promptService.getContextualInstructions({
-                  isInitialGreeting: false,
-                  workflowPhase,
-                  courseType,
-                  workflowType,
-                  currentStep,
-                  activeTool: activeToolName
+                const { instructions: responseInstructions } = await conversationService.getResponseInstructions({
+                  callSid: this.state.callSid,
+                  state: this.state,
+                  conversation: conversations[this.state.callSid] || {},
+                  hasInitialGreetingBeenSent: true
                 });
-                
                 const responseCreatePayload = {
                   type: 'response.create',
                   response: {
                     modalities: ['audio', 'text']
                   }
                 };
-                
-                // PHASE 1: Include contextual instructions to prevent model from using full prompt
                 if (responseInstructions) {
                   responseCreatePayload.response.instructions = responseInstructions;
-                  console.log(`📋 [${this.state.callSid}] Including contextual instructions in response.create after grace period (phase: ${workflowPhase})`);
+                  console.log(`📋 [${this.state.callSid}] Including contextual instructions in response.create after grace period`);
                 }
-                
                 this.openaiWs.send(JSON.stringify(responseCreatePayload));
                 
                 // Step 3: Re-enable tools after delay
