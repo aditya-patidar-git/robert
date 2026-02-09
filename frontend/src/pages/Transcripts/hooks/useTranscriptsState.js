@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../../components/common/ToastProvider';
 import { useAuth } from '../../../context/AuthContext';
 import transcriptService from '../../../services/transcriptService';
 import complaintService from '../../../services/complaintService';
+import { canAttemptPlayback } from '../utils';
 
 export const useTranscriptsState = () => {
   const { user } = useAuth();
@@ -72,6 +73,14 @@ export const useTranscriptsState = () => {
 
   const transcripts = transcriptData?.transcripts || [];
   const pagination = transcriptData?.pagination;
+
+  useEffect(() => {
+    const list = transcriptData?.transcripts;
+    if (!list?.length) return;
+    const callSids = list.filter((t) => t.callSid && canAttemptPlayback(t)).map((t) => t.callSid);
+    if (callSids.length === 0) return;
+    transcriptService.ensureRecordings(callSids).catch(() => {});
+  }, [transcriptData?.transcripts, filters.page]);
 
   const { data: complaintData, isLoading: isLoadingComplaints } = useQuery({
     queryKey: ['complaints', complaintFilters],

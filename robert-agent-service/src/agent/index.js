@@ -83,6 +83,8 @@ const {
   TWILIO_SID,
   TWILIO_AUTH_TOKEN,
   TWILIO_NUMBER,
+  VERIFIED_CALLER_ID,
+  CALL_TO,
   TUNNEL_DOMAIN,
   OPENAI_API_KEY,
   MONGO_URI,
@@ -469,48 +471,39 @@ app.post('/api/booking/itm/demo', async (req, res) => {
   }
 });
 
-// Manual call trigger (for testing)
+// Manual call trigger (for testing): VERIFIED_CALLER_ID calls CALL_TO (simulated inbound). TWILIO_NUMBER unchanged elsewhere.
 app.get('/call', async (req, res) => {
-  const to = req.query.to?.trim(); // Trim phone number to remove leading/trailing spaces
-  if (!to) return res.status(400).send('Add ?to=+918120523400');
+  const to = req.query.to?.trim() || CALL_TO;
+  if (!to) return res.status(400).send('Add ?to=<number> or set CALL_TO in .env');
+
+  const from = VERIFIED_CALLER_ID;
+  if (!from) return res.status(500).send('VERIFIED_CALLER_ID is required for /call');
 
   try {
-    // CRITICAL: Prevent duplicate calls within 3 seconds
     const now = Date.now();
-    const lastCallTime = pendingCalls.get(to);
+    const key = `${from}:${to}`;
+    const lastCallTime = pendingCalls.get(key);
     if (lastCallTime && (now - lastCallTime) < 3000) {
-      console.warn(`⚠️ [DEBUG] Duplicate call request prevented for ${to} (last call ${now - lastCallTime}ms ago)`);
+      console.warn(`⚠️ [DEBUG] Duplicate call prevented for ${key} (last ${now - lastCallTime}ms ago)`);
       return res.status(429).send(`Call already in progress. Please wait.`);
     }
-    
-    // Mark call as pending
-    pendingCalls.set(to, now);
-    
-    // Clean up old entries (older than 10 seconds)
-    for (const [phone, timestamp] of pendingCalls.entries()) {
-      if (now - timestamp > 10000) {
-        pendingCalls.delete(phone);
-      }
+    pendingCalls.set(key, now);
+    for (const [k, timestamp] of pendingCalls.entries()) {
+      if (now - timestamp > 10000) pendingCalls.delete(k);
     }
-    
-    console.log(`📞 [DEBUG] Call request received for: ${to}`);
-    // Use shared lazy-initialized Twilio client instead of creating new one per request
+
+    console.log(`📞 [DEBUG] Call: ${from} → ${to}`);
     const baseUrl = TUNNEL_DOMAIN ? `https://${TUNNEL_DOMAIN}` : `http://localhost:${PORT}`;
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const wsUrl = `${wsProtocol}://${wsHost}/media-stream`;
-    
-    console.log(`🔗 [DEBUG] WebSocket URL for Media Stream: ${wsUrl}`);
-    
-    // Build status callback URL
-    const statusCallbackUrl = TUNNEL_DOMAIN 
+    const statusCallbackUrl = TUNNEL_DOMAIN
       ? `https://${TUNNEL_DOMAIN}/api/outbound/call-status`
       : `http://localhost:${PORT}/api/outbound/call-status`;
-    
-    // Prepare Media Streams options (used as fallback or primary)
+
     const mediaStreamsOptions = {
       to,
-      from: TWILIO_NUMBER,
+      from,
       statusCallback: statusCallbackUrl,
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       twiml: `<Response>
@@ -521,31 +514,28 @@ app.get('/call', async (req, res) => {
       </Response>`
     };
 
-    // Use routing logic to decide between SIP and Media Streams
     const sipCallRouter = (await import('../services/sip/sipCallRouter.js')).default;
     const telephonyConfig = configManager.getTelephonyConfig();
-    
+
     const { call, method } = await sipCallRouter.routeCall(
       twilioClient,
       to,
-      TWILIO_NUMBER,
+      from,
       telephonyConfig,
       mediaStreamsOptions
     );
 
     if (!call) {
-      pendingCalls.delete(to);
+      pendingCalls.delete(key);
       return res.status(500).send('Failed to create call');
     }
-    
-    // Remove from pending after successful creation (call will be tracked by callSid)
-    pendingCalls.delete(to);
+    pendingCalls.delete(key);
     
     res.send(`Call ${method} created: ${call.sid}`);
   } catch (err) {
     console.error('❌ [DEBUG] Error creating call:', err);
-    // Remove from pending on error
-    pendingCalls.delete(to);
+    const key = `${VERIFIED_CALLER_ID}:${req.query.to?.trim() || CALL_TO}`;
+    pendingCalls.delete(key);
     res.status(500).send(`Error: ${err.message}`);
   }
 });
@@ -588,7 +578,8 @@ server.listen(PORT, async () => {
     // Don't fail startup if jobs fail to initialize
   }
   
-  console.log(`CALL NOW → http://localhost:${PORT}/call?to=+918120523400\n`);
+  const callTo = CALL_TO || '<CALL_TO>';
+  console.log(`CALL NOW → http://localhost:${PORT}/call?to=${callTo} (${VERIFIED_CALLER_ID || 'VERIFIED_CALLER_ID'} → ${callTo})\n`);
 });
 
 /**

@@ -1,5 +1,6 @@
 import CallRecord from "../database/models/CallRecord.js";
 import twilioClient from "../utils/twilioClient.js";
+import { conversations } from "../shared/state.js";
 
 /**
  * Build caller identity update object with only truthy from/to.
@@ -77,6 +78,9 @@ export async function backfillRecordingUrlIfMissing(callSid) {
         const recordings = await twilioClient.recordings.list({ callSid, limit: 1 });
         if (recordings?.length > 0) {
           recordingUrl = recordings[0].uri.replace(".json", "");
+          if (recordingUrl && recordingUrl.startsWith("/")) {
+            recordingUrl = "https://api.twilio.com" + recordingUrl;
+          }
           break;
         }
       } catch (err) {
@@ -98,5 +102,60 @@ export async function backfillRecordingUrlIfMissing(callSid) {
     }
   } catch (err) {
     console.error(`❌ [${callSid}] Error backfilling recording URL:`, err?.message);
+  }
+}
+
+/**
+ * Save recording consent to CallRecord. Shared by callHandlers and sipHandlers.
+ */
+export async function saveConsentToCallRecord(callSid, consentData) {
+  try {
+    await CallRecord.findOneAndUpdate(
+      { callSid },
+      { $set: { recordingConsent: consentData } },
+      { upsert: true }
+    );
+    console.log(`✅ [${callSid}] Recording consent saved to CallRecord`);
+  } catch (dbError) {
+    console.error(`⚠️ [${callSid}] Error saving consent to CallRecord:`, dbError);
+  }
+}
+
+/**
+ * Set default recording consent for a call from PrivacyConfig; persist to CallRecord.
+ * Caller must ensure conversations[callSid] exists. Shared by callHandlers and sipHandlers.
+ */
+export async function setDefaultRecordingConsent(callSid, callType = 'Twilio') {
+  if (!conversations[callSid]) return;
+  try {
+    const PrivacyConfig = (await import('../database/models/PrivacyConfig.js')).default;
+    const privacySettings = await PrivacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+    const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
+    if (!requireExplicitConsent) {
+      if (!conversations[callSid].recordingConsent) {
+        conversations[callSid].recordingConsent = {
+          requested: false,
+          given: null,
+          requestedAt: null,
+          respondedAt: null
+        };
+      }
+      const consentData = {
+        requested: false,
+        given: true,
+        respondedAt: new Date(),
+        optOutReason: null
+      };
+      conversations[callSid].recordingConsent.requested = consentData.requested;
+      conversations[callSid].recordingConsent.given = consentData.given;
+      conversations[callSid].recordingConsent.respondedAt = consentData.respondedAt;
+      conversations[callSid].recordingConsent.optOutReason = consentData.optOutReason;
+      await saveConsentToCallRecord(callSid, consentData);
+      console.log(`✅ [${callSid}] Recording consent set to opt-in by default for inbound ${callType} call (given: true)`);
+    } else {
+      console.log(`📋 [${callSid}] Recording consent will be requested explicitly for inbound ${callType} call`);
+    }
+  } catch (err) {
+    console.error(`⚠️ [${callSid}] Error setting consent for inbound ${callType} call:`, err);
   }
 }

@@ -17,6 +17,10 @@ import { HTTPResultSubmitter } from "../services/toolResultSubmitter.js";
 import CallRecord from "../database/models/CallRecord.js";
 import HandoverRecord from "../database/models/HandoverRecord.js";
 import { generateSipRoutingTwiML, generateMinimalTwiML } from "../utils/twimlGenerator.js";
+import abusePreventionService from "../services/abusePreventionService.js";
+import { isAfterHours } from "../utils/afterHoursUtils.js";
+import { incrementActiveCalls, decrementActiveCalls } from "../services/metricsService.js";
+import { setDefaultRecordingConsent } from "../services/callRecordPersistenceService.js";
 
 function escapeTwiMLText(text) {
   if (!text || typeof text !== 'string') return '';
@@ -96,6 +100,36 @@ async function acceptCallViaOpenAI(callId, sessionConfig) {
   }
   
   return response.json().catch(() => ({})); // Some responses may be empty
+}
+
+/**
+ * Reject an incoming SIP call via OpenAI Reject API. Logs and returns; does not throw on non-2xx.
+ */
+async function rejectCallViaOpenAI(callId, options = {}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.error(`❌ [SIP] Cannot reject - OPENAI_API_KEY not configured`);
+    return;
+  }
+  const url = `https://api.openai.com/v1/realtime/calls/${callId}/reject`;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status_code: options.status_code ?? 486 })
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      console.warn(`⚠️ [SIP] Reject API returned ${response.status}: ${text}`);
+    } else {
+      console.log(`✅ [SIP] Call rejected via OpenAI API: ${callId}`);
+    }
+  } catch (err) {
+    console.warn(`⚠️ [SIP] Reject API error for ${callId}:`, err?.message);
+  }
 }
 
 /**
@@ -224,8 +258,55 @@ export const handleCallAccept = async (req, res) => {
 
     console.log(`📞 [SIP] Processing incoming call - call_id: ${call_id}, from: ${from}, to: ${to}`);
 
-    // Initialize conversation state
     const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
+
+    const rateLimitCheck = await abusePreventionService.checkRateLimit(from);
+    if (!rateLimitCheck.allowed) {
+      console.log(`🚫 [SIP] Call rejected: rate limit - ${rateLimitCheck.reason}`);
+      await rejectCallViaOpenAI(call_id);
+      await CallRecord.findOneAndUpdate(
+        { callSid: call_id },
+        { callSid: call_id, callType: 'SIP', callStatus: 'rejected', rejectReason: 'rate_limit', from, to, startTime: new Date() },
+        { upsert: true }
+      ).catch(() => {});
+      return res.status(200).json({ received: true, call_id, rejected: true, reason: 'rate_limit' });
+    }
+
+    if (abusePreventionService.isBlocked(from)) {
+      console.log(`🚫 [SIP] Call rejected: caller blocked`);
+      await rejectCallViaOpenAI(call_id);
+      await CallRecord.findOneAndUpdate(
+        { callSid: call_id },
+        { callSid: call_id, callType: 'SIP', callStatus: 'rejected', rejectReason: 'caller_blocked', from, to, startTime: new Date() },
+        { upsert: true }
+      ).catch(() => {});
+      return res.status(200).json({ received: true, call_id, rejected: true, reason: 'caller_blocked' });
+    }
+
+    if (!sessionManagementService.canAcceptNewCall()) {
+      console.log(`🚫 [SIP] Call rejected: concurrent limit reached`);
+      await rejectCallViaOpenAI(call_id);
+      await CallRecord.findOneAndUpdate(
+        { callSid: call_id },
+        { callSid: call_id, callType: 'SIP', callStatus: 'rejected', rejectReason: 'concurrent_limit_reached', from, to, startTime: new Date() },
+        { upsert: true }
+      ).catch(() => {});
+      return res.status(200).json({ received: true, call_id, rejected: true, reason: 'concurrent_limit_reached' });
+    }
+
+    const telephonyConfig = configManager.getTelephonyConfig();
+    if (telephonyConfig?.afterHoursPolicy && isAfterHours(telephonyConfig.afterHoursPolicy)) {
+      console.log(`🚫 [SIP] Call rejected: after hours`);
+      await rejectCallViaOpenAI(call_id);
+      await CallRecord.findOneAndUpdate(
+        { callSid: call_id },
+        { callSid: call_id, callType: 'SIP', callStatus: 'rejected', rejectReason: 'after_hours', from, to, startTime: new Date() },
+        { upsert: true }
+      ).catch(() => {});
+      return res.status(200).json({ received: true, call_id, rejected: true, reason: 'after_hours' });
+    }
+
+    // Initialize conversation state
     if (!conversations[call_id]) {
       sessionManagementService.initializeSession(call_id, {
         language: 'en-GB',
@@ -255,6 +336,8 @@ export const handleCallAccept = async (req, res) => {
     });
     sipService.trackStatus(call_id, 'incoming', { from, to });
 
+    await setDefaultRecordingConsent(call_id, 'SIP');
+
     // Get configuration
     const phoneNumber = from || to;
     const currentLanguage = conversations[call_id]?.language || 'en';
@@ -264,7 +347,7 @@ export const handleCallAccept = async (req, res) => {
     // Build session config for OpenAI Accept API
     const sessionConfig = {
       type: 'realtime',
-      model: config.model || 'gpt-realtime',
+      model: config.model?.id ?? config.model ?? 'gpt-realtime',
       instructions: config.instructions || 'You are a helpful assistant.',
       voice: config.voice?.id || 'alloy',
       tools: tools.map(tool => ({
@@ -314,49 +397,44 @@ export const handleCallAccept = async (req, res) => {
     // Process call acceptance asynchronously
     setImmediate(async () => {
       try {
-        // Step 1: Call OpenAI's Accept API
+        abusePreventionService.recordCall(from, call_id, { direction: 'inbound', timestamp: new Date() });
+
         console.log(`📞 [SIP] Accepting call via OpenAI API: ${call_id}`);
         await acceptCallViaOpenAI(call_id, sessionConfig);
         console.log(`✅ [SIP] Call accepted via OpenAI API: ${call_id}`);
-        
+
+        incrementActiveCalls({ entry_path: 'SIP' });
         sipService.trackStatus(call_id, 'accepted', { from, to });
-        
-        // Update CallRecord
+
         await CallRecord.findOneAndUpdate(
           { callSid: call_id },
           { callStatus: 'in-progress' }
         ).catch(err => console.error(`❌ [SIP] Error updating CallRecord:`, err));
 
-        // Step 2: Open WebSocket to control the call
         openCallWebSocket(call_id, {
           initialInstructions: config.instructions,
           onEvent: (event) => {
-            // Handle events from the call
             if (event.type === 'conversation.item.created' && event.item?.type === 'function_call') {
               console.log(`🔧 [SIP] Tool call received for ${call_id}:`, event.item.name);
             }
           },
           onClose: async (code, reason) => {
             console.log(`📞 [SIP] Call ended: ${call_id}`);
+            decrementActiveCalls({ entry_path: 'SIP' });
+            if (conversations[call_id]) delete conversations[call_id];
             sipService.trackStatus(call_id, 'completed', { code, reason });
             sipService.deleteSession(call_id);
-            
-            // Cleanup
             await CallRecord.findOneAndUpdate(
               { callSid: call_id },
-              { 
-                callStatus: 'completed',
-                endTime: new Date()
-              }
+              { callStatus: 'completed', endTime: new Date() }
             ).catch(err => console.error(`❌ [SIP] Error updating CallRecord:`, err));
           }
         });
-        
       } catch (error) {
         console.error(`❌ [SIP] Error accepting call ${call_id}:`, error);
+        decrementActiveCalls({ entry_path: 'SIP' });
+        if (conversations[call_id]) delete conversations[call_id];
         sipService.trackStatus(call_id, 'failed', { error: error.message });
-        
-        // Update CallRecord
         await CallRecord.findOneAndUpdate(
           { callSid: call_id },
           { callStatus: 'failed' }

@@ -25,7 +25,11 @@ const fetchRecordingFromTwilio = async (twilioClient, callSid) => {
         
         if (recordings && recordings.length > 0) {
           const recording = recordings[0];
-          const url = recording.uri.replace('.json', '');
+          let url = recording.uri.replace('.json', '');
+          if (url && !url.startsWith('http')) {
+            url = (url.startsWith('/') ? '' : '/') + url;
+            url = 'https://api.twilio.com' + url;
+          }
           resolve({ success: true, url, status: 'available' });
         } else {
           resolve({ success: false, status: 'not_found', error: 'No recording found on Twilio' });
@@ -168,12 +172,13 @@ export const proxyRecording = async (req, res) => {
       return res.status(404).json({ error: 'Recording not available for this call' });
     }
 
-    // Construct Twilio recording URL (add .mp3 extension if not present)
-    const twilioUrl = callRecord.recordingUrl.endsWith('.mp3') 
-      ? callRecord.recordingUrl 
+    let twilioUrl = callRecord.recordingUrl.endsWith('.mp3')
+      ? callRecord.recordingUrl
       : `${callRecord.recordingUrl}.mp3`;
+    if (typeof twilioUrl === 'string' && twilioUrl.startsWith('/')) {
+      twilioUrl = 'https://api.twilio.com' + twilioUrl;
+    }
 
-    // Stream recording from Twilio
     const response = await axios.get(twilioUrl, {
       auth: {
         username: process.env.TWILIO_SID || process.env.TWILIO_ACCOUNT_SID,
@@ -244,5 +249,52 @@ export const proxyRecording = async (req, res) => {
       error: 'Error fetching recording',
       details: error.message
     });
+  }
+};
+
+const ENSURE_RECORDINGS_MAX = 20;
+const ENSURE_RECORDINGS_CONCURRENCY = 5;
+
+/**
+ * Ensure recording URLs are present and absolute for given call SIDs (for current page prefetch).
+ * POST body: { callSids: string[] }. Auth required.
+ */
+export const ensureRecordings = async (req, res) => {
+  try {
+    const { callSids } = req.body || {};
+    if (!Array.isArray(callSids) || callSids.length === 0) {
+      return res.status(200).json({ ensured: 0 });
+    }
+    const accountSid = process.env.TWILIO_SID || process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    if (!accountSid || !authToken) {
+      return res.status(200).json({ ensured: 0 });
+    }
+    const twilioClient = twilio(accountSid, authToken);
+    const toProcess = callSids.slice(0, ENSURE_RECORDINGS_MAX);
+
+    const processOne = async (callSid) => {
+      const callRecord = await CallRecord.findOne({ callSid }).lean();
+      if (!callRecord || callRecord.recordingConsent?.given === false) return 0;
+      const url = callRecord.recordingUrl;
+      if (url && !url.startsWith('/')) return 0;
+      const result = await fetchRecordingFromTwilio(twilioClient, callSid);
+      if (result.success && result.url) {
+        await updateRecordingStatus(callSid, { recordingUrl: result.url, recordingStatus: 'available' });
+        return 1;
+      }
+      return 0;
+    };
+
+    let ensured = 0;
+    for (let i = 0; i < toProcess.length; i += ENSURE_RECORDINGS_CONCURRENCY) {
+      const chunk = toProcess.slice(i, i + ENSURE_RECORDINGS_CONCURRENCY);
+      const counts = await Promise.all(chunk.map(processOne));
+      ensured += counts.reduce((a, b) => a + b, 0);
+    }
+    res.status(200).json({ ensured });
+  } catch (error) {
+    console.error('ensureRecordings error:', error.message);
+    res.status(500).json({ error: 'Failed to ensure recordings', details: error.message });
   }
 };

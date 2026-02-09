@@ -186,14 +186,14 @@ export const proxyRecording = async (req, res) => {
 
                 if (recordings && recordings.length > 0) {
                     const recording = recordings[0];
-                    const recordingUrl = recording.uri.replace('.json', '');
-                    
-                    // Update database for future requests
+                    let recordingUrl = recording.uri.replace('.json', '');
+                    if (recordingUrl && recordingUrl.startsWith('/')) {
+                        recordingUrl = 'https://api.twilio.com' + recordingUrl;
+                    }
                     await CallRecord.findOneAndUpdate(
                         { callSid: req.params.callSid },
-                        { $set: { recordingUrl: recordingUrl } }
+                        { $set: { recordingUrl } }
                     );
-                    
                     rec.recordingUrl = recordingUrl;
                     console.log(`✅ [${req.params.callSid}] Recording URL fetched from Twilio and saved`);
                 } else {
@@ -218,10 +218,12 @@ export const proxyRecording = async (req, res) => {
             });
         }
 
-        const twilioUrl = rec.recordingUrl.endsWith('.mp3') 
-            ? rec.recordingUrl 
+        let twilioUrl = rec.recordingUrl.endsWith('.mp3')
+            ? rec.recordingUrl
             : `${rec.recordingUrl}.mp3`;
-            
+        if (typeof twilioUrl === 'string' && twilioUrl.startsWith('/')) {
+            twilioUrl = 'https://api.twilio.com' + twilioUrl;
+        }
         const response = await axios.get(twilioUrl, {
             auth: { 
                 username: process.env.TWILIO_SID, 

@@ -20,7 +20,10 @@ function getOpenAIClient() {
  * @returns {Promise<Buffer|null>}
  */
 async function fetchRecordingBuffer(recordingUrl) {
-  const url = recordingUrl.endsWith('.mp3') ? recordingUrl : `${recordingUrl}.mp3`;
+  let url = recordingUrl.endsWith('.mp3') ? recordingUrl : `${recordingUrl}.mp3`;
+  if (url && url.startsWith('/')) {
+    url = 'https://api.twilio.com' + url;
+  }
   const response = await axios.get(url, {
     auth: {
       username: process.env.TWILIO_SID || '',
