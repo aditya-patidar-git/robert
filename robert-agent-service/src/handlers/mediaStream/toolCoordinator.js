@@ -176,12 +176,24 @@ export class ToolCoordinator {
     try {
       const isInitialGreeting = !this.state.hasInitialGreetingBeenSent;
 
-      const { instructions: responseInstructions } = await conversationService.getResponseInstructions({
+      const { instructions: responseInstructions, isConsentQuestion } = await conversationService.getResponseInstructions({
         callSid: this.state.callSid,
         state: this.state,
         conversation: conversations[this.state.callSid] || {},
         hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent
       });
+
+      if (isConsentQuestion) {
+        this.state.recordingConsentState.requested = true;
+        this.state.recordingConsentState.requestedAt = new Date();
+        const conv = conversations[this.state.callSid];
+        if (conv) {
+          if (!conv.recordingConsent) conv.recordingConsent = {};
+          conv.recordingConsent.requested = true;
+          conv.recordingConsent.requestedAt = new Date();
+        }
+        console.log(`📋 [${this.state.callSid}] Recording consent question being sent - marked requested`);
+      }
 
       if (isInitialGreeting && (!this.openaiWs || this.openaiWs.readyState !== 1)) {
         console.error(`❌ [${this.state.callSid}] WebSocket closed during preparation`);
@@ -346,9 +358,25 @@ export class ToolCoordinator {
           break;
           
         case 'response.text.done':
-          // Remove verbose logging
           break;
-          
+        case 'response.output_audio_transcript.done':
+          if (this.state.activeResponseId && (event.transcript != null || this.state.currentResponseOutputTranscript)) {
+            this.state.currentResponseOutputTranscript = (event.transcript != null && event.transcript !== '') ? event.transcript : (this.state.currentResponseOutputTranscript || '');
+            const t = this.state.currentResponseOutputTranscript || '';
+            const preview = t.length > 80 ? t.slice(0, 80) + '...' : t;
+            console.log(`[AGENT-DEBUG] [${this.state.callSid}] response.output_audio_transcript.done: len=${t.length}, activeResponseId=${this.state.activeResponseId}, preview="${preview}"`);
+          }
+          break;
+        case 'response.output_audio_transcript.delta':
+          if (event.delta != null && this.state.activeResponseId) {
+            const prevLen = (this.state.currentResponseOutputTranscript || '').length;
+            this.state.currentResponseOutputTranscript = (this.state.currentResponseOutputTranscript || '') + (event.delta || '');
+            if (prevLen === 0) {
+              console.log(`[AGENT-DEBUG] [${this.state.callSid}] response.output_audio_transcript.delta: first chunk for response ${this.state.activeResponseId}`);
+            }
+          }
+          break;
+
         case 'response.done':
           this.responseHandler.handleResponseDone(event);
           break;
@@ -406,6 +434,9 @@ export class ToolCoordinator {
             break;
           }
           
+          const flowState = getConversationFlowState(this.state.callSid, this.state);
+          const consentJustGivenWithRecentCompletion = flowState.consentGiven && this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime < 10000);
+          const inConsentOrLanguagePhase = flowState.waitingForLanguage || (flowState.languageSelected && !flowState.consentGiven) || consentJustGivenWithRecentCompletion;
           const stateSnapshot = {
             waitingForUser: this.state.waitingForUser,
             isResponding: this.state.isResponding,
@@ -413,7 +444,8 @@ export class ToolCoordinator {
             hasInitialGreetingCompleted: this.state.hasInitialGreetingCompleted,
             lastAudioChunkTime: this.state.lastAudioChunkTime,
             outboundAudioPacer: this.state.outboundAudioPacer,
-            outboundAudioBuffer: this.state.outboundAudioBuffer
+            outboundAudioBuffer: this.state.outboundAudioBuffer,
+            inConsentOrLanguagePhase
           };
           const shouldCreateResponse = conversationService.shouldCreateResponse(transcriptionResult, stateSnapshot);
 

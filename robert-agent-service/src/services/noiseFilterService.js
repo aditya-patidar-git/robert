@@ -7,13 +7,11 @@ import configManager from '../agent/configManager.js';
  */
 class NoiseFilterService {
   constructor() {
-    // Industry-standard noise patterns (filler words, non-speech sounds)
+    // Filler-only patterns (exclude "I" and "a" - they are content words and cause false positives)
     this.NOISE_PATTERNS = [
-      /^(uh|um|ah|eh|hmm|huh|er|erm|mm|mhm)$/i,           // Filler words
-      /^(a|e|i|o|u)$/i,                                  // Single vowels (likely noise)
-      /^[h]{1,3}$/i,                                     // Just "h" sounds
-      /^(mhm|uh-huh|uh-uh|ah-hah)$/i,                   // Non-verbal responses
-      /^[^a-zA-Z0-9\s]+$/,                              // Only special characters
+      /^(uh|um|ah|eh|hmm|huh|er|erm|mm|mhm)$/i,
+      /^[h]{1,3}$/i,
+      /^(mhm|uh-huh|uh-uh|ah-hah)$/i,
     ];
     
     // Default thresholds (can be overridden by config)
@@ -51,25 +49,24 @@ class NoiseFilterService {
   }
 
   /**
-   * Calculate noise ratio in transcript
+   * Calculate noise ratio in transcript (filler words only).
    * @param {string} transcript - Transcript text
-   * @returns {number} - Ratio of noise words (0-1)
+   * @param {boolean} forgiveFirst - If true, ignore first noise word (avoids failing on one "um")
+   * @returns {{ ratio: number, wordCount: number }} - Ratio 0-1 and word count
    */
-  calculateNoiseRatio(transcript) {
+  calculateNoiseRatio(transcript, forgiveFirst = true) {
     if (!transcript || transcript.trim().length === 0) {
-      return 1.0; // Empty = 100% noise
+      return { ratio: 1.0, wordCount: 0 };
     }
-    
     const words = transcript.trim().split(/\s+/);
     if (words.length === 0) {
-      return 1.0;
+      return { ratio: 1.0, wordCount: 0 };
     }
-    
-    const noiseWordCount = words.filter(word => 
+    const noiseWordCount = words.filter(word =>
       this.NOISE_PATTERNS.some(pattern => pattern.test(word))
     ).length;
-    
-    return noiseWordCount / words.length;
+    const effectiveNoise = forgiveFirst ? Math.max(0, noiseWordCount - 1) : noiseWordCount;
+    return { ratio: effectiveNoise / words.length, wordCount: words.length };
   }
 
   /**
@@ -112,8 +109,8 @@ class NoiseFilterService {
     
     // Factor 3: Pattern-based noise detection (30% weight)
     const isNoisePattern = this.NOISE_PATTERNS.some(pattern => pattern.test(trimmed));
-    const noiseRatio = this.calculateNoiseRatio(trimmed);
-    const passesPatternCheck = !isNoisePattern && noiseRatio <= thresholds.maxNoiseRatio;
+    const { ratio: noiseRatio, wordCount } = this.calculateNoiseRatio(trimmed);
+    const passesPatternCheck = !isNoisePattern && (wordCount < 4 || noiseRatio <= thresholds.maxNoiseRatio);
     
     // Factor 4: Character composition (10% weight)
     // Too many repeated characters = likely noise (e.g., "aaaaa", "hhhhh")
@@ -173,11 +170,9 @@ class NoiseFilterService {
     const trimmed = (transcript || '').trim();
     const isRecentResponse = timeSinceLastResponse < 2000; // Within 2 seconds
     
-    // If recent response and transcript looks like noise, prevent loop
     if (isRecentResponse) {
       const isNoisePattern = this.NOISE_PATTERNS.some(pattern => pattern.test(trimmed));
-      const noiseRatio = this.calculateNoiseRatio(trimmed);
-      
+      const { ratio: noiseRatio } = this.calculateNoiseRatio(trimmed);
       return isNoisePattern || noiseRatio > this.MAX_NOISE_RATIO || trimmed.length < this.MIN_TRANSCRIPT_LENGTH;
     }
     

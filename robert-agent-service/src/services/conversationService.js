@@ -71,17 +71,14 @@ export class ConversationService {
       !transcriptionResult?.isBackgroundNoise;
 
     const hasActiveResponse = stateSnapshot.activeResponseId != null;
-    const hasAudioPacer = stateSnapshot.outboundAudioPacer != null;
-    const hasBufferedAudio = Array.isArray(stateSnapshot.outboundAudioBuffer) && stateSnapshot.outboundAudioBuffer.length > 0;
-    const now = Date.now();
-    const hasRecentAudio =
-      stateSnapshot.lastAudioChunkTime > 0 && now - stateSnapshot.lastAudioChunkTime < 5000;
-    const isAudioPlaying =
-      stateSnapshot.isResponding ||
-      hasActiveResponse ||
-      hasAudioPacer ||
-      hasBufferedAudio ||
-      hasRecentAudio;
+    const inConsentOrLanguagePhase = stateSnapshot.inConsentOrLanguagePhase === true;
+    const isAudioPlaying = inConsentOrLanguagePhase
+      ? (stateSnapshot.isResponding || hasActiveResponse)
+      : (stateSnapshot.isResponding ||
+          hasActiveResponse ||
+          (stateSnapshot.outboundAudioPacer != null) ||
+          (Array.isArray(stateSnapshot.outboundAudioBuffer) && stateSnapshot.outboundAudioBuffer.length > 0) ||
+          (stateSnapshot.lastAudioChunkTime > 0 && Date.now() - stateSnapshot.lastAudioChunkTime < 5000));
 
     return (
       shouldCreate &&
@@ -182,7 +179,7 @@ export class ConversationService {
       'For training and quality, this call may be recorded and handled in line with our Privacy Policy.';
     const consentQuestion = 'Do you consent to this call being recorded?';
 
-    if (requireExplicitConsent && consentRequested && !consentGiven && languageSelected) {
+    if (requireExplicitConsent && !consentGiven && languageSelected) {
       const consentInstructions = this.consentInstructionBuilder.buildConsentFlowInstructions({
         consentNotice,
         consentQuestion,
@@ -192,7 +189,7 @@ export class ConversationService {
         baseInstructions: ''
       });
       if (consentInstructions) {
-        return { instructions: consentInstructions, isInitialGreeting: false };
+        return { instructions: consentInstructions, isInitialGreeting: false, isConsentQuestion: true };
       }
     }
 

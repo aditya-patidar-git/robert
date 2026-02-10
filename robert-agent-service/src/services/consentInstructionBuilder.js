@@ -57,14 +57,15 @@ ${baseInstructions}`;
       return `IMPORTANT: You must now ask the consent question. Follow this exact sequence:
 
 1. First, say: "${consentNotice}"
-2. Then immediately ask: "${consentQuestion}"
+2. For the consent question, say exactly and only: "${consentQuestion}" - do not add a greeting (e.g. no "Hi") and do not repeat the question in the same turn.
 3. WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
-4. If the caller's response is unclear, ambiguous, or you detect background noise/barge-in that prevents you from understanding their answer, IMMEDIATELY repeat the question: "${consentQuestion}" - DO NOT proceed until you receive a clear yes or no answer
+4. If the caller's response is unclear, ambiguous, or you detect background noise/barge-in, repeat the question once only, saying exactly: "${consentQuestion}"
 
 CRITICAL RULES:
 - You MUST ask the consent question NOW before proceeding with any other conversation
+- Say exactly and only "${consentQuestion}" - no greeting, no repetition in the same turn
 - You MUST NOT ask "What would you like to do today?" until consent is given
-- If you cannot clearly understand the caller's response (due to noise, barge-in, or unclear speech), you MUST repeat the question
+- If you cannot clearly understand the caller's response, repeat the question once using the exact phrase above
 - Do not assume or guess the answer - always wait for a clear response
 
 ${baseInstructions}`;
@@ -97,9 +98,9 @@ ${baseInstructions}`;
 
 4. CRITICAL: Only AFTER language preference is confirmed, you MUST ask the consent question:
    - First, say: "${consentNotice}"
-   - Then immediately ask: "${consentQuestion}"
+   - For the consent question, say exactly and only: "${consentQuestion}" - do not add a greeting or repeat the question in the same turn
    - WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
-   - If the caller's response is unclear, ambiguous, or you detect background noise/barge-in that prevents you from understanding their answer, IMMEDIATELY repeat the question: "${consentQuestion}" - DO NOT proceed until you receive a clear yes or no answer
+   - If the caller's response is unclear, repeat the question once only, saying exactly: "${consentQuestion}"
 
 5. ONLY AFTER consent is given, you may proceed to: "What would you like to do today?"
 

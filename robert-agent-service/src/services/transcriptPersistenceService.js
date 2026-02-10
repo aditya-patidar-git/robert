@@ -12,7 +12,8 @@ import piiDetectionService from './piiDetectionService.js';
  */
 export async function appendTranscriptEntry(callSid, entry, options = {}) {
   if (!callSid || !entry?.role || entry.text == null) return;
-  if (options.consentGiven !== true) return;
+  const ignoreConsent = process.env.TRANSCRIPT_PERSIST_IGNORE_CONSENT === 'true';
+  if (!ignoreConsent && options.consentGiven !== true) return;
 
   let textToSave = entry.text;
   if (typeof entry.text === 'string') {

@@ -36,6 +36,15 @@ import complaintService from '../../services/complaintService';
 import { formatDateTime } from '../../utils/formatters';
 import { useMutation } from '@tanstack/react-query';
 
+function parseSummary(summary) {
+  if (typeof summary !== 'string' || !summary.trim()) return null;
+  try {
+    const parsed = JSON.parse(summary);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+  return null;
+}
+
 const TranscriptsComplaintsPage = () => {
   const [currentTab, setCurrentTab] = useState(0);
   
@@ -684,12 +693,54 @@ const TranscriptsComplaintsPage = () => {
               })()}
               
               {/* Display summary */}
-              {(fullTranscriptData?.transcript?.summary || fullTranscriptData?.summary || selectedTranscript?.summary) && (
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" gutterBottom>AI Summary</Typography>
-                  <Typography variant="body2">{(fullTranscriptData?.transcript?.summary || fullTranscriptData?.summary || selectedTranscript?.summary)}</Typography>
-                </Box>
-              )}
+              {(() => {
+                const summaryRaw = fullTranscriptData?.transcript?.summary ?? fullTranscriptData?.summary ?? selectedTranscript?.summary;
+                if (!summaryRaw) return null;
+                const summaryObj = parseSummary(summaryRaw);
+                return (
+                  <Box sx={{ mt: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+                    <Typography variant="subtitle2" gutterBottom>AI Summary</Typography>
+                    {summaryObj ? (
+                      <Box component="dl" sx={{ m: 0, '& > *': { mb: 1.5 } }}>
+                        {summaryObj.purpose != null && (
+                          <>
+                            <Typography component="dt" variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Purpose</Typography>
+                            <Typography component="dd" variant="body2" sx={{ ml: 0, mt: 0.25 }}>{summaryObj.purpose}</Typography>
+                          </>
+                        )}
+                        {summaryObj.outcome != null && (
+                          <>
+                            <Typography component="dt" variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Outcome</Typography>
+                            <Typography component="dd" variant="body2" sx={{ ml: 0, mt: 0.25 }}>{summaryObj.outcome}</Typography>
+                          </>
+                        )}
+                        {summaryObj.nextSteps != null && (
+                          <>
+                            <Typography component="dt" variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Next steps</Typography>
+                            <Typography component="dd" variant="body2" sx={{ ml: 0, mt: 0.25 }}>{summaryObj.nextSteps}</Typography>
+                          </>
+                        )}
+                        {Array.isArray(summaryObj.keyFacts) && summaryObj.keyFacts.length > 0 && (
+                          <>
+                            <Typography component="dt" variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>Key facts</Typography>
+                            <Box component="dd" sx={{ ml: 0, mt: 0.25 }}>
+                              <List dense disablePadding sx={{ listStyleType: 'disc', pl: 2.5 }}>
+                                {summaryObj.keyFacts.map((fact, i) => (
+                                  <ListItem key={i} disablePadding sx={{ display: 'list-item', py: 0.25 }}>
+                                    <Typography variant="body2">{fact}</Typography>
+                                  </ListItem>
+                                ))}
+                              </List>
+                            </Box>
+                          </>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography variant="body2">{summaryRaw}</Typography>
+                    )}
+                  </Box>
+                );
+              })()}
 
               {/* Display confidence scores */}
               {(() => {

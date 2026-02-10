@@ -1,6 +1,7 @@
 import CallRecord from "../database/models/CallRecord.js";
 import twilioClient from "../utils/twilioClient.js";
 import { conversations } from "../shared/state.js";
+import { isRetryableError } from "../utils/isRetryableError.js";
 
 /**
  * Build caller identity update object with only truthy from/to.
@@ -72,6 +73,7 @@ export async function backfillRecordingUrlIfMissing(callSid) {
     let recordingUrl = null;
     let retries = 3;
     let delay = 3000;
+    const maxDelay = 15000;
 
     while (retries > 0 && !recordingUrl) {
       try {
@@ -84,11 +86,16 @@ export async function backfillRecordingUrlIfMissing(callSid) {
           break;
         }
       } catch (err) {
-        if (err.status === 404 || err.code === 20404) {
+        const isRetryable = err.status === 404 || err.code === 20404 || isRetryableError(err);
+        if (isRetryable) {
           retries--;
-          if (retries > 0) await new Promise((r) => setTimeout(r, delay));
-          delay *= 2;
-        } else throw err;
+          if (retries > 0) {
+            await new Promise((r) => setTimeout(r, delay));
+            delay = Math.min(delay * 2, maxDelay);
+          }
+        } else {
+          throw err;
+        }
       }
     }
 

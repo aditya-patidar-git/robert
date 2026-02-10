@@ -62,7 +62,8 @@ export class CallStateManager {
     this.lastAudioChunkTime = 0;
     this.bargeInTailUntil = 0;
     this.audioFramesSentCountAtResponseStart = 0;
-    
+    this.currentResponseOutputTranscript = null;
+
     // Interruption state tracking
     this.isInterrupted = false;
     this.interruptionStartTime = 0;

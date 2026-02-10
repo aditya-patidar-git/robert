@@ -6,6 +6,7 @@ import promptService from '../../../services/promptService.js';
 import conversationService from '../../../services/conversationService.js';
 import noiseFilterService from '../../../services/noiseFilterService.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
+import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
 
 /**
@@ -197,14 +198,12 @@ export class TranscriptionHandler {
     const { conversations } = await import('../../../shared/state.js');
     this.appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations);
     const conv = conversations[this.state.callSid];
-    if (conv?.recordingConsent?.given === true) {
-      appendTranscriptEntry(this.state.callSid, {
-        role: 'user',
-        text: transcript,
-        timestamp: new Date(transcriptionTime),
-        confidence: qualityAssessment?.confidenceScore ?? 0.8
-      }, { consentGiven: true }).catch(() => {});
-    }
+    appendTranscriptEntry(this.state.callSid, {
+      role: 'user',
+      text: transcript,
+      timestamp: new Date(transcriptionTime),
+      confidence: qualityAssessment?.confidenceScore ?? 0.8
+    }, { consentGiven: conv?.recordingConsent?.given === true }).catch(() => {});
 
     // Handle memory consent
     await this.consentHandler.handleMemoryConsent(transcript);
@@ -229,6 +228,16 @@ export class TranscriptionHandler {
     // Also check if response was recently completed (audio might still be playing)
     const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 10000; // Within last 10 seconds
     const isAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio || hasRecentResponseCompletion;
+    const flowState = getConversationFlowState(this.state.callSid, this.state);
+    const inConsentOrLanguagePhase = flowState.waitingForLanguage || (flowState.languageSelected && !flowState.consentGiven);
+    const consentJustGivenWithRecentCompletion = flowState.consentGiven && hasRecentResponseCompletion;
+    const useRelaxedBlocking = inConsentOrLanguagePhase || consentJustGivenWithRecentCompletion;
+    const isAudioPlayingStrict = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio;
+    const isPlayingInConsentPhase = this.state.isResponding || hasActiveResponse;
+    const isAudioPlayingForBlocking = useRelaxedBlocking ? isPlayingInConsentPhase : isAudioPlaying;
+    if (inConsentOrLanguagePhase) {
+      console.log(`🔍 [${this.state.callSid}] Consent/language phase: isPlayingInConsentPhase=${isPlayingInConsentPhase}, hasAudioPacer=${hasAudioPacer}, hasBufferedAudio=${hasBufferedAudio}, isAudioPlayingForBlocking=${isAudioPlayingForBlocking}`);
+    }
     
     // Log detection details for debugging when "stop" is detected
     if (containsStop) {
@@ -277,14 +286,12 @@ export class TranscriptionHandler {
     
     // EDGE CASE 2: Transcription arrives but audio is playing and transcript does NOT contain "stop"
     // Let audio continue normally - this is a normal interruption, not a stop command
-    // CRITICAL: Don't create responses when audio is playing (unless "stop" was detected)
-    if (isAudioPlaying && !containsStop) {
-      // Clear pendingBargeInCheck flag since we've processed the transcription
+    // In consent/language phase we use strict "playing" only (no recent windows) so we don't block the consent question after "Let's go with English"
+    if (isAudioPlayingForBlocking && !containsStop) {
       if (this.state.pendingBargeInCheck) {
         this.state.pendingBargeInCheck = false;
         console.log(`👂 [${this.state.callSid}] Transcription received during audio playback but does not contain "stop" - audio continues, NO response created: "${transcript}"`);
       }
-      // Return early - don't create responses when audio is playing
       return { processed: true, shouldCreateResponse: false };
     }
     
@@ -443,11 +450,11 @@ export class TranscriptionHandler {
     // Update last processed transcription time
     this.state.lastProcessedTranscriptionTime = transcriptionTime;
     
-    // Return flag indicating transcription was processed and response can be created (if audio is not playing)
-    // Include quality information for response creation checks
+    // In consent/language phase use only isResponding/activeResponse so we allow consent question after language selection (ignore pacer/buffer drain)
+    const allowResponse = inConsentOrLanguagePhase ? !isPlayingInConsentPhase : !isAudioPlaying;
     return { 
       processed: true, 
-      shouldCreateResponse: !isAudioPlaying,
+      shouldCreateResponse: allowResponse,
       qualityScore: qualityAssessment.qualityScore,
       isBackgroundNoise: false,
       isHighQuality: true

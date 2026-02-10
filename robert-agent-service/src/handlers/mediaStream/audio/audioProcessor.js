@@ -189,7 +189,8 @@ export class AudioProcessor {
             type: 'server_vad',
             threshold: calibrated,
             prefix_padding_ms: finalStartPadding,
-            silence_duration_ms: finalEndPadding
+            silence_duration_ms: finalEndPadding,
+            create_response: false
           }
         }
       }, { priority: 'high' });

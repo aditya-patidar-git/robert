@@ -368,20 +368,31 @@ export class OpenAIIntegration {
       // NEW ORDER: Language preference (greeting) → Consent question → Main follow-up
       let modifiedInstructions = config.instructions;
       if (requireExplicitConsent && !consentAlreadySet) {
-        // Only modify instructions if explicit consent is required AND consent hasn't been set yet
-        // Use reusable instruction builder to avoid duplication
         modifiedInstructions = consentInstructionBuilder.buildSessionInstructions({
           consentNotice,
           consentQuestion,
           baseInstructions: config.instructions
         });
-        
-        // Mark consent as requested
-        this.state.recordingConsentState.requested = true;
-        this.state.recordingConsentState.requestedAt = new Date();
-        conversations[this.state.callSid].recordingConsent.requested = true;
-        conversations[this.state.callSid].recordingConsent.requestedAt = new Date();
-        console.log(`📋 [${this.state.callSid}] Recording consent will be requested - instructions modified to include consent flow (NEW ORDER: greeting → consent → follow-up)`);
+        if (!conversations[this.state.callSid].recordingConsent) {
+          conversations[this.state.callSid].recordingConsent = {};
+        }
+        conversations[this.state.callSid].recordingConsent.requested = false;
+        conversations[this.state.callSid].recordingConsent.given = null;
+        this.state.waitingForLanguage = true;
+        this.state.languagePreferenceState.asked = false;
+        if (conversations[this.state.callSid]) {
+          conversations[this.state.callSid].waitingForLanguage = true;
+          if (!conversations[this.state.callSid].languagePreferenceState) {
+            conversations[this.state.callSid].languagePreferenceState = {
+              asked: false,
+              selected: false,
+              language: null,
+              askedAt: null,
+              selectedAt: null
+            };
+          }
+        }
+        console.log(`📋 [${this.state.callSid}] Recording consent will be requested after language selection - instructions include flow (greeting → consent → follow-up)`);
       } else if (consentAlreadySet) {
         // Consent was already set by handleIncomingCall - use it and skip consent question
         this.state.recordingConsentState.requested = existingConsent.requested || false;
@@ -570,10 +581,12 @@ export class OpenAIIntegration {
                 type: 'server_vad',
                 threshold: initialThreshold,
                 prefix_padding_ms: config.startPadding,
-                silence_duration_ms: config.endPadding
+                silence_duration_ms: config.endPadding,
+                create_response: false
               },
               tools: tools,
-              tool_choice: 'auto'
+              tool_choice: 'auto',
+              input_audio_transcription: { model: 'gpt-4o-transcribe' }
             }
           };
           
@@ -588,6 +601,7 @@ export class OpenAIIntegration {
           console.log(`   - temperature: ${Math.max(0.6, effectiveTemperature)} (flow: ${flowType})`);
           console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
           console.log(`   - turn_detection: server_vad`);
+          console.log(`   - input_transcription: gpt-4o-transcribe (flat input_audio_transcription)`);
           if (audioConfig?.energyThresholdAutoCalibrate !== false) {
             console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
           }
@@ -725,10 +739,12 @@ export class OpenAIIntegration {
               type: 'server_vad',
               threshold: initialThreshold,
               prefix_padding_ms: config.startPadding,
-              silence_duration_ms: config.endPadding
+              silence_duration_ms: config.endPadding,
+              create_response: false
             },
             tools: tools,
-            tool_choice: 'auto'
+            tool_choice: 'auto',
+            input_audio_transcription: { model: 'gpt-4o-transcribe' }
           }
         };
         
@@ -742,6 +758,7 @@ export class OpenAIIntegration {
         console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
         console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
         console.log(`   - turn_detection: server_vad`);
+        console.log(`   - input_transcription: gpt-4o-transcribe (flat input_audio_transcription)`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
           console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
         }
@@ -763,7 +780,8 @@ export class OpenAIIntegration {
         
         // Only log format info - essential for debugging
         if (event.type === 'session.updated') {
-          console.log(`📋 [${this.state.callSid}] Session config - output_audio_format: ${event.session?.output_audio_format || 'N/A'}`);
+          const trans = event.session?.audio?.input?.transcription;
+          console.log(`📋 [${this.state.callSid}] Session config - output_audio_format: ${event.session?.output_audio_format || 'N/A'}, input_transcription: ${trans ? JSON.stringify(trans) : 'null'}`);
         }
         
         // Handle error events

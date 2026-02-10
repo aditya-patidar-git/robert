@@ -29,6 +29,7 @@ export class ResponseHandler {
    */
   handleResponseCreated(event) {
     this.state.activeResponseId = event.response?.id;
+    this.state.currentResponseOutputTranscript = null;
     const currentTime = Date.now();
     this.state.responseStartTime = currentTime;
     this.state.bargeInTailUntil = 0;
@@ -534,11 +535,27 @@ export class ResponseHandler {
         const textItems = outputItems.filter(item => item.type === 'message' && item.content);
         if (textItems.length > 0) {
           fullResponseText = textItems.map(item =>
-            item.content.map(c => c.type === 'text' ? c.text : '').join('')
+            item.content.map(c => {
+              if (c.type === 'text') return c.text || '';
+              if (c.type === 'output_audio' && c.transcript) return c.transcript;
+              if (c.type === 'audio' && c.transcript) return c.transcript;
+              return '';
+            }).join('')
           ).join(' ').trim();
           responseText = fullResponseText.toLowerCase();
         }
       }
+      if (!fullResponseText && this.state.currentResponseOutputTranscript) {
+        fullResponseText = this.state.currentResponseOutputTranscript.trim();
+        responseText = fullResponseText.toLowerCase();
+      }
+      const streamedLen = (this.state.currentResponseOutputTranscript || '').length;
+      console.log(`[AGENT-DEBUG] [${this.state.callSid}] response.done: outputItems=${outputItems?.length ?? 0}, fullResponseText.len=${fullResponseText.length}, currentResponseOutputTranscript.len=${streamedLen}`);
+      if (outputItems?.length > 0) {
+        const shape = outputItems.map(o => ({ type: o.type, contentTypes: (o.content || []).map(c => c.type) }));
+        console.log(`[AGENT-DEBUG] [${this.state.callSid}] response.output shape: ${JSON.stringify(shape)}`);
+      }
+      this.state.currentResponseOutputTranscript = null;
 
       const refusalPatterns = [
         "i'm sorry, but i'm not able to continue",
@@ -561,9 +578,7 @@ export class ResponseHandler {
         const maxLogLen = 500;
         const logText = fullResponseText.length > maxLogLen ? `${fullResponseText.substring(0, maxLogLen)}... (${fullResponseText.length} chars)` : fullResponseText;
         console.log(`[AGENT] [${this.state.callSid}] "${logText}"`);
-        if (conv.recordingConsent?.given === true) {
-          appendTranscriptEntry(this.state.callSid, entry, { consentGiven: true }).catch(() => {});
-        }
+        appendTranscriptEntry(this.state.callSid, entry, { consentGiven: conv.recordingConsent?.given === true }).catch(() => {});
       }
 
       console.log(`✅ [${this.state.callSid}] Response done - ID: ${responseId}, status: ${status}`);
