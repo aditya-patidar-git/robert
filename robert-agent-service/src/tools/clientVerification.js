@@ -311,7 +311,7 @@ class ClientVerificationTool {
             requiresExplicitConfirmation: true,
             requiresImmediateNextStep: false,
             offerUpdatePhone: true,
-            offerUpdatePhoneInstruction: 'Ask the caller: "Would you like us to update your telephone number to the one you just provided?" If they say yes, collect their new UK mobile (11 digits starting with 07) and call the update_customer tool with telephoneNumber set to the new number and customerEmail or customerMobile to identify the customer.'
+            offerUpdatePhoneInstruction: 'Ask the caller: "Would you like us to update your telephone number to the one you just provided?" If they say yes, offer to transfer them to an agent and use the transfer_call tool.'
           };
         } else {
           // TelephoneNumber mismatch - first offer last-four-digits confirmation per doc (A)

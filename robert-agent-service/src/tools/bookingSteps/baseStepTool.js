@@ -760,6 +760,16 @@ export class BaseStepTool {
       }
     }
 
+    // Step 1 (check_availability): require preference questions before opening the availability table
+    const hasAnyPreference = !!(stepArgs.preferredDate || stepArgs.preferredTime || stepArgs.location || stepArgs.instructor);
+    if (stepNumber === 1 && !hasAnyPreference) {
+      return {
+        valid: false,
+        requiresPreferences: true,
+        message: 'Before checking availability, ask the caller: "Do you have a preferred date or time?" and "Any location preference?" (e.g. Alperton, Croydon, Edgware). If they have none, say so and you will suggest some options. Then call this tool again with their preferences, or with no preferences if they said they have none.'
+      };
+    }
+
     // CRITICAL FIX: For selectBookingOptions, defer preference validation until AFTER navigation
     // This ensures the agent is on the booking options page before asking for preferences
     // The step will navigate to the page first, then check preferences and return requiresPreferences if needed

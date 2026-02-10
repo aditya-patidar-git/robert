@@ -91,7 +91,9 @@ export class TranscriptionHandler {
     const confidence = event.confidence || 1.0;
     const itemId = event.item_id || null; // Link to committed audio segment
     const transcriptionTime = Date.now();
-    
+
+    console.log(`[CALLER] [${this.state.callSid}] "${transcript}"`);
+
     // CRITICAL: Industry-standard multi-factor background noise filtering
     // Uses confidence, pattern matching, length, and character composition
     const qualityAssessment = noiseFilterService.assessTranscriptionQuality(
@@ -173,10 +175,8 @@ export class TranscriptionHandler {
         qualityScore: qualityAssessment.qualityScore
       };
     }
-    
+
     // High-quality transcription - proceed normally
-    console.log(`👤 User said: "${transcript}" (confidence: ${qualityAssessment.confidenceScore}, quality: ${qualityAssessment.qualityScore})`);
-    
     // Mark segment as having received high-quality transcription
     if (itemId && this.state.pendingAudioSegments.has(itemId)) {
       const segment = this.state.pendingAudioSegments.get(itemId);

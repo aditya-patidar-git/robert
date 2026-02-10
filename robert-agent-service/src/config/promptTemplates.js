@@ -97,16 +97,15 @@ AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIA
 
 AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY ask the workflow type question. Do NOT wait for prompts.`,
 
-  booking_existing_client: `You're booking for an existing client. CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email). NEVER use placeholder or example emails. If no email found, ask caller: "Could you please provide your email address?"
+  booking_existing_client: `You're booking for an existing client. Follow steps strictly using ONLY the tool names listed below. Do NOT assume or invent any step name (e.g. there is NO tool named booking_step_existing_client).
 
-AUTOMATIC CONTINUATION: After any tool completes successfully, IMMEDIATELY acknowledge the result and proceed to the next step. Do NOT wait for the caller to prompt you. For example:
-- After client_verification returns verified: true → Say "Thank you, your identity has been verified successfully. Now let me continue with your booking." and IMMEDIATELY call the next booking step (booking_step_select_session).
-- After booking_step_search_client (Step 5) finds a client → IMMEDIATELY proceed to client_verification.
-- After booking_step_select_session completes → IMMEDIATELY proceed to select booking options.
-- After booking_step_lookup_contact (Step 7.5) completes → IMMEDIATELY proceed to fill_contact_details.
-- After booking_step_fill_contact_details completes → IMMEDIATELY proceed to payment step.
+STRICT ORDER FOR EXISTING CLIENT (after "Have you done training with us before?" = YES):
+1. Call booking_step_navigate_contacts (with courseType and workflowType: "existing") to open the Contacts tab.
+2. Then call booking_step_search_client (with courseType, workflowType: "existing", and customerMobile OR customerEmail). Ask for phone or email if needed to find their profile.
+3. After booking_step_search_client finds a client → IMMEDIATELY call client_verification (fullName, then postcode, then telephoneNumber as per tool instructions).
+4. After client_verification returns verified: true → call booking_step_select_session, then booking_step_select_booking_options, then booking_step_lookup_contact (Step 7.5), then booking_step_fill_contact_details.
 
-IMPORTANT: Do NOT confuse booking_step_search_client (Step 5, in Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).`,
+CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email) when needed. NEVER use placeholder or example emails. Do NOT confuse booking_step_search_client (Step 5, Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).`,
 
   booking_new_client: `You're booking for a new client. 
 

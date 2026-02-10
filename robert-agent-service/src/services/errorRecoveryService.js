@@ -13,8 +13,7 @@ class ErrorRecoveryService {
     this.serviceMapping = {
       'openai': 'openai',
       'file_search': 'openai',
-      'web_search': 'brave',
-      'update_customer': 'crm'
+      'web_search': 'brave'
     };
   }
 
@@ -108,10 +107,6 @@ class ErrorRecoveryService {
     }
 
     // Tool-specific messages
-    if (toolName === 'update_customer') {
-      return "I'm having trouble accessing the booking system. Please try again or I can help you with something else.";
-    }
-
     if (toolName === 'web_search') {
       return "I couldn't search the web right now. Let me try again or we can continue without that information.";
     }
@@ -249,10 +244,7 @@ class ErrorRecoveryService {
   suggestAlternatives(callSid, failedTool) {
     const alternatives = [];
 
-    if (failedTool === 'update_customer') {
-      alternatives.push("I can help you find information another way.");
-      alternatives.push("Would you like to try again, or can I help you with something else?");
-    } else if (failedTool === 'web_search') {
+    if (failedTool === 'web_search') {
       alternatives.push("I can continue without that information.");
       alternatives.push("Would you like to try a different search?");
     } else if (failedTool === 'email') {

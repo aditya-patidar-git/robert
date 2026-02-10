@@ -265,11 +265,6 @@ class BrowserAgentService {
     return await cancelBooking(page, args, auditId, this.screenshotsDir);
   }
 
-  async updateCustomer(page, args, auditId) {
-    const { updateCustomer } = await import('./tasks/updateCustomer.js');
-    return await updateCustomer(page, args, auditId, this.screenshotsDir);
-  }
-
   async checkAvailability(page, args, auditId) {
     const { checkAvailability } = await import('./tasks/checkAvailability.js');
     return await checkAvailability(page, args, auditId, this.screenshotsDir);

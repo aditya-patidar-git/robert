@@ -487,25 +487,6 @@ export function getToolDefinitions() {
     },
     {
       type: 'function',
-      name: 'update_customer',
-      description: 'Update customer record fields (telephone, email, postcode, name, address). Requires customerEmail or customerMobile to locate the customer. At least one field to update must be provided (telephoneNumber, email, postcode, firstName, surname, or address).',
-      parameters: {
-        type: 'object',
-        properties: {
-          customerEmail: { type: 'string', description: 'Customer email to locate the customer (provide one of customerEmail or customerMobile)' },
-          customerMobile: { type: 'string', description: 'Customer mobile to locate the customer (provide one of customerEmail or customerMobile)' },
-          telephoneNumber: { type: 'string', description: 'New telephone/mobile number to set' },
-          email: { type: 'string', description: 'New email address to set' },
-          postcode: { type: 'string', description: 'New postcode to set' },
-          firstName: { type: 'string', description: 'New first name to set' },
-          surname: { type: 'string', description: 'New surname to set' },
-          address: { type: 'string', description: 'New address to set' }
-        },
-        required: []
-      }
-    },
-    {
-      type: 'function',
       name: 'email',
       description: 'Send and manage emails',
       parameters: {
@@ -702,7 +683,7 @@ This tool returns guidance messages directing to the appropriate tools.`,
 3. THIRD: After postcode is verified, ask for telephone number using: "Thank you. Finally, could you please confirm your telephone number?"
    - Call this tool with fullName, postcode (already verified) AND telephoneNumber parameter
    - Wait for verification result
-   - If verified, verification is complete; if the tool returns offerUpdatePhone: true, ask "Would you like us to update your telephone number to the new one?" and if yes collect new UK mobile and call the update_customer tool with telephoneNumber and customerEmail or customerMobile
+   - If verified, verification is complete; if the tool returns offerUpdatePhone: true, ask "Would you like us to update your telephone number to the new one?" and if yes offer to transfer to an agent (use transfer_call)
    - If mismatch: when the tool returns a "last four digits" confirmation prompt, use that exact message to ask the caller to confirm the number on file; otherwise use the exact error message provided and ask again (up to 7 attempts)
 
 🚨 CRITICAL SECURITY RULE: You MUST ONLY use values that the caller ACTUALLY SPOKE in this conversation. DO NOT use values from stored client details, CRM data, or conversation context. Extract ONLY what the caller says.

@@ -50,12 +50,7 @@ export class ToolCallHandler {
       getWsRef
     );
 
-    // Create progress callback for browser operations
-    const progressCallback = (['update_customer'].includes(name)) ? (progress) => {
-      if (progress && progress.message && this.openaiWs && this.openaiWs.readyState === 1) {
-        progressIndicatorService.sendProgressUpdate(this.state.callSid, progress.message, this.openaiWs);
-      }
-    } : null;
+    const progressCallback = null;
     
     // Execute tool using unified service
     const executionResult = await toolExecutionService.executeTool({

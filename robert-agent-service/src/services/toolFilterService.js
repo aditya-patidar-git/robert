@@ -95,7 +95,6 @@ const TOOL_SETS = {
 
   // Update customer workflow
   booking_modification: [
-    'update_customer',
     'kba_verification',
     'client_verification',
     'file_search',
@@ -149,7 +148,6 @@ const TOOL_SETS = {
 
   // CRM operations (admin/update)
   crm_operations: [
-    'update_customer',
     'kba_verification',
     'client_verification',
     'transfer_call'
@@ -170,9 +168,7 @@ const CONTEXTUAL_TOOLS = {
   ],
 
   // Add CRM tools when admin operations are needed
-  adminAccess: [
-    'update_customer'
-  ],
+  adminAccess: [],
 
   // Add legacy tools when backward compatibility is needed
   legacyMode: [

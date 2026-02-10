@@ -558,7 +558,9 @@ export class ResponseHandler {
         if (!conv.transcript) conv.transcript = [];
         const entry = { role: 'agent', text: fullResponseText, timestamp: new Date(), confidence: 1 };
         conv.transcript.push(entry);
-        console.log(`📝 [${this.state.callSid}] Added agent response to transcript: "${fullResponseText.substring(0, 50)}${fullResponseText.length > 50 ? '...' : ''}" (status: ${status})`);
+        const maxLogLen = 500;
+        const logText = fullResponseText.length > maxLogLen ? `${fullResponseText.substring(0, maxLogLen)}... (${fullResponseText.length} chars)` : fullResponseText;
+        console.log(`[AGENT] [${this.state.callSid}] "${logText}"`);
         if (conv.recordingConsent?.given === true) {
           appendTranscriptEntry(this.state.callSid, entry, { consentGiven: true }).catch(() => {});
         }

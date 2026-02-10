@@ -93,6 +93,59 @@ class ToolExecutor {
   }
 
   /**
+   * Map course display strings to schema enum. Handles "ITM - Introduction to Motorcycle - £125" etc.
+   */
+  _normalizeCourseTypeValue(value) {
+    if (value == null || typeof value !== 'string') return value;
+    const s = value.trim();
+    if (/^ITM$|^Introduction to Motorcycling$/i.test(s)) return s.match(/^ITM$/i) ? 'ITM' : 'Introduction to Motorcycling';
+    if (/ITM|Introduction to Motorcycl(e|ing)/i.test(s)) return 'ITM';
+    return value;
+  }
+
+  /**
+   * Normalize parameters for booking/cancellation step tools so model-sent aliases match schema.
+   * Maps course_name -> courseType, start_date/date/preferred_date -> preferredDate.
+   * Derives courseType from selectedSlot.course when missing; normalizes courseType to schema enum.
+   */
+  normalizeStepToolParameters(toolName, parameters) {
+    if (!parameters || typeof parameters !== 'object') {
+      return parameters;
+    }
+    const isStepTool = toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_');
+    if (!isStepTool) {
+      return parameters;
+    }
+    const normalized = { ...parameters };
+    if (normalized.course_name != null && normalized.courseType == null) {
+      normalized.courseType = normalized.course_name;
+      delete normalized.course_name;
+    }
+    if (normalized.selectedSlot?.course != null && normalized.courseType == null) {
+      normalized.courseType = this._normalizeCourseTypeValue(normalized.selectedSlot.course);
+    }
+    if (normalized.courseType != null) {
+      normalized.courseType = this._normalizeCourseTypeValue(normalized.courseType);
+    }
+    if (normalized.start_date != null && normalized.preferredDate == null) {
+      normalized.preferredDate = normalized.start_date;
+      delete normalized.start_date;
+    }
+    if (normalized.date != null && normalized.preferredDate == null) {
+      normalized.preferredDate = normalized.date;
+      delete normalized.date;
+    }
+    if (normalized.preferred_date != null && normalized.preferredDate == null) {
+      normalized.preferredDate = normalized.preferred_date;
+      delete normalized.preferred_date;
+    }
+    if (normalized.end_date != null) {
+      delete normalized.end_date;
+    }
+    return normalized;
+  }
+
+  /**
    * Execute a tool asynchronously with timeout protection
    * @param {string} toolName - Name of the tool to execute
    * @param {object} parameters - Tool parameters
@@ -103,17 +156,21 @@ class ToolExecutor {
    */
   async execute(toolName, parameters, callContext = {}, progressCallback = null, timeout = this.defaultTimeout) {
     const startTime = Date.now();
+    let resolvedToolName = toolName;
+    if (toolName === 'booking_step_initiate') {
+      resolvedToolName = 'booking_step_check_availability';
+    }
     const callSid = callContext.callSid || 'unknown';
     const phoneNumber = callContext.phoneNumber || 'unknown';
 
-    if (toolName.startsWith('cancellation_step_')) {
+    if (resolvedToolName.startsWith('cancellation_step_')) {
       setCancellationContext(callSid);
     }
 
     // Create span for tool execution
-    const span = tracer.startSpan(`tool.execute.${toolName}`, {
+    const span = tracer.startSpan(`tool.execute.${resolvedToolName}`, {
       attributes: {
-        'tool.name': toolName,
+        'tool.name': resolvedToolName,
         'call.sid': callSid,
         'call.phone_number': phoneNumber
       }
@@ -138,20 +195,26 @@ class ToolExecutor {
       }
       // ================================================
 
-      if (!this.toolRegistry.has(toolName)) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message: `Tool not found: ${toolName}` });
+      if (!this.toolRegistry.has(resolvedToolName)) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: `Tool not found: ${resolvedToolName}` });
         span.end();
-        console.error(`❌ [${callSid}] Tool not found: ${toolName}`);
-        throw new Error(`Unknown tool: ${toolName}`);
+        console.error(`❌ [${callSid}] Tool not found: ${resolvedToolName}`);
+        throw new Error(`Unknown tool: ${resolvedToolName}`);
+      }
+
+      let normalizedParams = this.normalizeStepToolParameters(resolvedToolName, parameters);
+      if (resolvedToolName === 'client_verification' && normalizedParams.phone_number != null && normalizedParams.telephoneNumber == null) {
+        normalizedParams = { ...normalizedParams, telephoneNumber: normalizedParams.phone_number };
+        delete normalizedParams.phone_number;
       }
 
       // Validate tool parameters using Zod schema
-      const validation = validateToolParameters(toolName, parameters);
+      const validation = validateToolParameters(resolvedToolName, normalizedParams);
       if (!validation.success) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: `Parameter validation failed: ${validation.error}` });
         span.end();
-        console.error(`❌ [${callSid}] Tool parameter validation failed for ${toolName}:`, validation.error);
-        throw new Error(`Invalid parameters for tool ${toolName}: ${validation.error}`);
+        console.error(`❌ [${callSid}] Tool parameter validation failed for ${resolvedToolName}:`, validation.error);
+        throw new Error(`Invalid parameters for tool ${resolvedToolName}: ${validation.error}`);
       }
       
       // Use validated parameters
@@ -159,23 +222,23 @@ class ToolExecutor {
       span.setAttribute('tool.parameters_validated', true);
 
       // Get tool configuration from ConfigManager
-      const toolConfig = this.configManager.getToolConfig(toolName);
+      const toolConfig = this.configManager.getToolConfig(resolvedToolName);
       
       // Check if tool is enabled (per-tool setting)
       if (!toolConfig.enabled) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: 'Tool is disabled' });
         span.end();
-        console.error(`❌ [${callSid}] Tool ${toolName} is disabled`);
-        throw new Error(`Tool ${toolName} is disabled`);
+        console.error(`❌ [${callSid}] Tool ${resolvedToolName} is disabled`);
+        throw new Error(`Tool ${resolvedToolName} is disabled`);
       }
 
       // Check per-tool rate limit (simple in-memory tracking per tool executor instance)
       // Note: For distributed systems, this should be in Redis or similar
-      if (!this.checkRateLimit(toolName, toolConfig.rateLimit)) {
+      if (!this.checkRateLimit(resolvedToolName, toolConfig.rateLimit)) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: 'Rate limit exceeded' });
         span.end();
-        console.error(`❌ [${callSid}] Rate limit exceeded for tool ${toolName}`);
-        throw new Error(`Rate limit exceeded for tool ${toolName}`);
+        console.error(`❌ [${callSid}] Rate limit exceeded for tool ${resolvedToolName}`);
+        throw new Error(`Rate limit exceeded for tool ${resolvedToolName}`);
       }
 
       // Check domain allowlist if URL is provided
@@ -187,17 +250,17 @@ class ToolExecutor {
             domain === allowedDomain || domain.endsWith('.' + allowedDomain)
           );
           if (!isAllowed) {
-            console.error(`❌ [${callSid}] Domain ${domain} not allowed for tool ${toolName}`);
-            throw new Error(`Domain ${domain} not allowed for tool ${toolName}`);
+            console.error(`❌ [${callSid}] Domain ${domain} not allowed for tool ${resolvedToolName}`);
+            throw new Error(`Domain ${domain} not allowed for tool ${resolvedToolName}`);
           }
         } catch (urlError) {
           console.error(`❌ [${callSid}] Invalid URL in parameters:`, urlError);
-          throw new Error(`Invalid URL provided for tool ${toolName}`);
+          throw new Error(`Invalid URL provided for tool ${resolvedToolName}`);
         }
       }
 
       // Get tool instance BEFORE checking timeout (fixes ReferenceError)
-      const tool = this.toolRegistry.get(toolName);
+      const tool = this.toolRegistry.get(resolvedToolName);
 
       // ========== TIMEOUT PRIORITY ==========
       // Priority: tool.getTimeout() > toolConfig.maxTime > globalMCPTimeout > hardcoded defaults
@@ -208,14 +271,14 @@ class ToolExecutor {
         toolSpecificTimeout = tool.getTimeout();
         if (toolSpecificTimeout !== null && toolSpecificTimeout > 0) {
           timeout = toolSpecificTimeout;
-          console.log(`⏱️ [${callSid}] Using tool-specific timeout for ${toolName}: ${timeout}ms`);
+          console.log(`⏱️ [${callSid}] Using tool-specific timeout for ${resolvedToolName}: ${timeout}ms`);
         }
       }
       
       // 2. Use per-tool configured maxTime if available and no tool-specific timeout was set
       if (toolConfig.maxTime && toolSpecificTimeout === null) {
         timeout = toolConfig.maxTime;
-        console.log(`⏱️ [${callSid}] Using per-tool maxTime for ${toolName}: ${timeout}ms`);
+        console.log(`⏱️ [${callSid}] Using per-tool maxTime for ${resolvedToolName}: ${timeout}ms`);
       }
       
       // 3. Use global MCP timeout as fallback if no other timeout was set
@@ -223,19 +286,22 @@ class ToolExecutor {
         const globalTimeoutMs = this.configManager.getMCPTimeoutMs();
         if (globalTimeoutMs && globalTimeoutMs > 0) {
           timeout = globalTimeoutMs;
-          console.log(`⏱️ [${callSid}] Using global MCP timeout for ${toolName}: ${timeout}ms`);
+          console.log(`⏱️ [${callSid}] Using global MCP timeout for ${resolvedToolName}: ${timeout}ms`);
         }
       }
       
       // 4. Increase timeout for browser automation tools - they need more time
       // Only if no tool-specific timeout, no per-tool maxTime, and not using global timeout override
-      const browserToolNames = ['update_customer'];
-      if (browserToolNames.includes(toolName) && toolSpecificTimeout === null && !toolConfig.maxTime) {
+      const browserToolNames = [];
+      if (browserToolNames.includes(resolvedToolName) && toolSpecificTimeout === null && !toolConfig.maxTime) {
         timeout = Math.max(timeout, 360000);
-        console.log(`⏱️ [${callSid}] Extended timeout for ${toolName} to ${timeout}ms`);
+        console.log(`⏱️ [${callSid}] Extended timeout for ${resolvedToolName} to ${timeout}ms`);
       }
       // ==========================================
-      console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Executing tool: ${toolName}`);
+      if (resolvedToolName !== toolName) {
+        console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Redirected ${toolName} -> ${resolvedToolName}`);
+      }
+      console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Executing tool: ${resolvedToolName}`);
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Parameters:`, JSON.stringify(validatedParameters, null, 2));
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Timeout: ${timeout}ms`);
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Call Context:`, { callSid, phoneNumber });
@@ -259,7 +325,7 @@ class ToolExecutor {
         }
         
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error(`Tool execution timeout: ${toolName} (exceeded ${timeout}ms)`)), timeout);
+          setTimeout(() => reject(new Error(`Tool execution timeout: ${resolvedToolName} (exceeded ${timeout}ms)`)), timeout);
         });
 
         const result = await Promise.race([executionPromise, timeoutPromise]);
@@ -272,17 +338,17 @@ class ToolExecutor {
         
         // Record tool metrics
         recordToolMetrics({
-          toolName,
+          toolName: resolvedToolName,
           duration: executionTimeSeconds,
           success: true
         });
         
-        console.log(`✅ [${callSid}] [TOOL EXECUTOR] Tool ${toolName} completed successfully`);
+        console.log(`✅ [${callSid}] [TOOL EXECUTOR] Tool ${resolvedToolName} completed successfully`);
         console.log(`✅ [${callSid}] [TOOL EXECUTOR] Execution time: ${executionTime}ms`);
         console.log(`✅ [${callSid}] [TOOL EXECUTOR] Result preview:`, JSON.stringify(result, null, 2).substring(0, 300));
 
         // Update usage statistics in database (async, don't wait)
-        this.updateToolUsage(toolName).catch(err => {
+        this.updateToolUsage(resolvedToolName).catch(err => {
           console.warn(`⚠️ [${callSid}] Failed to update tool usage stats:`, err.message);
         });
 
@@ -302,13 +368,13 @@ class ToolExecutor {
         
         // Record tool metrics with error
         recordToolMetrics({
-          toolName,
+          toolName: resolvedToolName,
           duration: executionTimeSeconds,
           error: { type: error.name || 'unknown', message: error.message },
           success: false
         });
         
-        console.error(`❌ [${callSid}] [TOOL EXECUTOR] Tool ${toolName} failed`);
+        console.error(`❌ [${callSid}] [TOOL EXECUTOR] Tool ${resolvedToolName} failed`);
         console.error(`❌ [${callSid}] [TOOL EXECUTOR] Execution time before failure: ${executionTime}ms`);
         console.error(`❌ [${callSid}] [TOOL EXECUTOR] Error:`, error.message || error);
 

@@ -72,9 +72,13 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     }
 
     const preferredDateNorm = preferences.preferredDate ? normalizeDateToYYYYMMDD(preferences.preferredDate) : null;
+    const hasPreferences = !!(preferences.preferredDate || preferences.preferredTime || preferences.location || preferences.instructor);
+    const MAX_SLOTS_WHEN_NO_PREFERENCES = 25;
+
     let rowsToScan = allDataRows;
     let rowCountToUse = rowCount;
     let rowIndexOffset = 0;
+    let scanStartIndex = 0;
 
     if (preferredDateNorm) {
       const rowsForDate = availabilityTable.locator(`tbody tr.availabilityDataRow[data-start_date^="${preferredDateNorm}"]`);
@@ -85,6 +89,10 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
         rowIndexOffset = -1;
         console.log(`📅 [AVAILABILITY] Using smart path: ${countForDate} rows for preferred date ${preferredDateNorm}`);
       }
+    } else if (!hasPreferences && rowCount > MAX_SLOTS_WHEN_NO_PREFERENCES) {
+      scanStartIndex = rowCount - MAX_SLOTS_WHEN_NO_PREFERENCES;
+      rowCountToUse = MAX_SLOTS_WHEN_NO_PREFERENCES;
+      console.log(`📅 [AVAILABILITY] No preferences provided - scanning last ${rowCountToUse} slots only (from row ${scanStartIndex})`);
     }
 
     const allSlots = [];
@@ -94,7 +102,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     })() : null;
 
     for (let i = 0; i < rowCountToUse; i++) {
-      const dataRow = rowsToScan.nth(i);
+      const dataRow = rowsToScan.nth(scanStartIndex + i);
       await dataRow.waitFor({ state: 'visible' }).catch(() => null);
 
       let startDateAttr = null;
@@ -120,7 +128,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
           instructor: (await dataRow.locator('td').nth(6).textContent()).trim().replace(/^Instructor:\s*/i, ''),
           startDate: startDateAttr,
           monthYear: latestMonthYear,
-          rowIndex: rowIndexOffset >= 0 ? i : undefined
+          rowIndex: (rowIndexOffset >= 0 || scanStartIndex > 0) ? (scanStartIndex + i) : undefined
         };
 
         if (slot.date && slot.time) {
@@ -217,8 +225,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     // Select the best matching slot based on preferences
     // Only auto-select if preferences are provided
     let selectedSlot = null;
-    const hasPreferences = preferences.preferredDate || preferences.preferredTime || preferences.location;
-    
+
     if (hasPreferences) {
       selectedSlot = selectBestMatchingSlot(allSlots, preferences);
       if (selectedSlot) {
