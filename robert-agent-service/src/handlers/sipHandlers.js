@@ -1,11 +1,15 @@
 /**
  * SIP Handlers
  * Handle OpenAI Realtime SIP webhook events (realtime.call.incoming, etc.)
- * 
+ *
  * Flow per OpenAI documentation:
  * 1. OpenAI sends realtime.call.incoming webhook with data.id (call_id) and data.sip_headers
  * 2. Server calls OpenAI's Accept API: POST /v1/realtime/calls/{call_id}/accept
  * 3. Server opens WebSocket to wss://api.openai.com/v1/realtime?call_id={call_id} to control the call
+ *
+ * ConversationBehaviorConfig on SIP: used for progress indicators (handleToolExecution) and
+ * silence detection (response.done, transcription completed). bargeInTail/conversationFlow
+ * (response delays, speech continuation) are Media Streams–specific; Realtime handles turn-taking on SIP.
  */
 
 import { conversations } from "../shared/state.js";
@@ -13,6 +17,8 @@ import configManager from "../agent/configManager.js";
 import toolExecutor from "../tools/index.js";
 import sipService from "../services/sipService.js";
 import toolExecutionService from "../services/toolExecutionService.js";
+import progressIndicatorService from "../services/progressIndicatorService.js";
+import conversationService from "../services/conversationService.js";
 import { HTTPResultSubmitter } from "../services/toolResultSubmitter.js";
 import CallRecord from "../database/models/CallRecord.js";
 import HandoverRecord from "../database/models/HandoverRecord.js";
@@ -21,6 +27,9 @@ import abusePreventionService from "../services/abusePreventionService.js";
 import { isAfterHours } from "../utils/afterHoursUtils.js";
 import { incrementActiveCalls, decrementActiveCalls } from "../services/metricsService.js";
 import { setDefaultRecordingConsent } from "../services/callRecordPersistenceService.js";
+import consentInstructionBuilder from "../services/consentInstructionBuilder.js";
+import { ConsentHandler } from "./mediaStream/events/index.js";
+import silenceDetectionService from "../services/silenceDetectionService.js";
 
 function escapeTwiMLText(text) {
   if (!text || typeof text !== 'string') return '';
@@ -173,9 +182,11 @@ function openCallWebSocket(callId, context = {}) {
       const event = JSON.parse(data.toString());
       console.log(`📨 [SIP] WebSocket event for call ${callId}:`, event.type);
       
-      // Handle different event types
       if (event.type === 'response.done') {
         console.log(`✅ [SIP] Response completed for call ${callId}`);
+        silenceDetectionService.agentFinishedSpeaking(callId);
+        const behaviorConfig = configManager.getConversationBehaviorConfig();
+        silenceDetectionService.startMonitoring(callId, ws, behaviorConfig);
       } else if (event.type === 'error') {
         console.error(`❌ [SIP] WebSocket error event for call ${callId}:`, event.error);
       }
@@ -327,6 +338,8 @@ export const handleCallAccept = async (req, res) => {
         }
       });
     }
+    conversations[call_id].workflowPhase = 'greeting';
+    conversations[call_id].workflowContext = null;
 
     // Create SIP session and track status
     sipService.createSession(call_id, {
@@ -342,30 +355,20 @@ export const handleCallAccept = async (req, res) => {
     const phoneNumber = from || to;
     const currentLanguage = conversations[call_id]?.language || 'en';
     const config = configManager.getConfigForNumber(phoneNumber, currentLanguage);
-    const tools = toolExecutor.getToolDefinitions();
+    const filteredTools = toolExecutor.getFilteredToolDefinitions({ workflowPhase: 'greeting', clientVerified: false });
 
-    // Build session config for OpenAI Accept API
+    const voiceId = config.voice?.id || 'alloy';
     const sessionConfig = {
       type: 'realtime',
       model: config.model?.id ?? config.model ?? 'gpt-realtime',
       instructions: config.instructions || 'You are a helpful assistant.',
-      voice: config.voice?.id || 'alloy',
-      tools: tools.map(tool => ({
+      audio: { output: { voice: voiceId } },
+      tools: filteredTools.map(tool => ({
         type: 'function',
         name: tool.name,
         description: tool.description,
         parameters: tool.parameters
-      })),
-      // Audio configuration
-      input_audio_format: 'g711_ulaw',
-      output_audio_format: 'g711_ulaw',
-      // Turn detection
-      turn_detection: {
-        type: 'server_vad',
-        threshold: config.vadThreshold ? config.vadThreshold / 1000 : 0.5,
-        prefix_padding_ms: config.startPadding || 300,
-        silence_duration_ms: config.endPadding || 500
-      }
+      }))
     };
 
     console.log(`📞 [SIP] Session config for Accept API:`, JSON.stringify(sessionConfig, null, 2));
@@ -399,6 +402,28 @@ export const handleCallAccept = async (req, res) => {
       try {
         abusePreventionService.recordCall(from, call_id, { direction: 'inbound', timestamp: new Date() });
 
+        const PrivacyConfig = (await import("../database/models/PrivacyConfig.js")).default;
+        const privacySettings = await PrivacyConfig?.findOne({ isActive: true }).lean().catch(() => null) ?? null;
+        const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
+        const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
+        const consentQuestion = "Do you consent to this call being recorded?";
+        const existingConsent = conversations[call_id]?.recordingConsent;
+        const consentAlreadySet = existingConsent?.given === true;
+
+        if (requireExplicitConsent && !consentAlreadySet) {
+          sessionConfig.instructions = consentInstructionBuilder.buildSessionInstructions({
+            consentNotice,
+            consentQuestion,
+            baseInstructions: config.instructions || ''
+          });
+          if (conversations[call_id]) {
+            conversations[call_id].recordingConsent = conversations[call_id].recordingConsent || {};
+            conversations[call_id].recordingConsent.requested = true;
+            conversations[call_id].recordingConsent.requestedAt = new Date();
+          }
+          console.log(`📋 [SIP] [${call_id}] Consent flow injected into session instructions`);
+        }
+
         console.log(`📞 [SIP] Accepting call via OpenAI API: ${call_id}`);
         await acceptCallViaOpenAI(call_id, sessionConfig);
         console.log(`✅ [SIP] Call accepted via OpenAI API: ${call_id}`);
@@ -412,13 +437,59 @@ export const handleCallAccept = async (req, res) => {
         ).catch(err => console.error(`❌ [SIP] Error updating CallRecord:`, err));
 
         openCallWebSocket(call_id, {
-          initialInstructions: config.instructions,
-          onEvent: (event) => {
+          initialInstructions: sessionConfig.instructions,
+          onEvent: async (event) => {
             if (event.type === 'conversation.item.created' && event.item?.type === 'function_call') {
               console.log(`🔧 [SIP] Tool call received for ${call_id}:`, event.item.name);
             }
+            if (event.type === 'conversation.item.input_audio_transcription.completed') {
+              const transcript = event.transcript || '';
+              const consent = conversations[call_id]?.recordingConsent;
+              if (transcript && consent?.requested && consent.given === null) {
+                const consentHandler = new ConsentHandler({ callSid: call_id }, null);
+                const { consentDetected, declineDetected } = consentHandler.detectConsent(transcript);
+                if (consentDetected && !declineDetected) {
+                  conversations[call_id].recordingConsent.given = true;
+                  conversations[call_id].recordingConsent.respondedAt = new Date();
+                  conversations[call_id].recordingConsent.optOutReason = null;
+                  await CallRecord.findOneAndUpdate(
+                    { callSid: call_id },
+                    { $set: { recordingConsent: conversations[call_id].recordingConsent } },
+                    { upsert: true }
+                  ).catch(() => {});
+                  console.log(`✅ [SIP] [${call_id}] Recording consent given via transcript`);
+                } else if (declineDetected) {
+                  conversations[call_id].recordingConsent.given = false;
+                  conversations[call_id].recordingConsent.respondedAt = new Date();
+                  await CallRecord.findOneAndUpdate(
+                    { callSid: call_id },
+                    { $set: { recordingConsent: conversations[call_id].recordingConsent } },
+                    { upsert: true }
+                  ).catch(() => {});
+                  console.log(`✅ [SIP] [${call_id}] Recording consent declined via transcript`);
+                }
+              }
+              const currentPhase = conversations[call_id]?.workflowPhase ?? 'greeting';
+              const workflowContext = conversations[call_id]?.workflowContext ?? null;
+              if (transcript && configManager.getConversationBehaviorConfig()?.silenceDetection?.enabled) {
+                silenceDetectionService.userSpoke(call_id);
+              }
+              const result = conversationService.detectIntent(transcript, { callSid: call_id, currentPhase, workflowContext });
+              if (result.shouldUpdateTools && result.phase) {
+                conversations[call_id].workflowPhase = result.phase;
+                conversations[call_id].workflowContext = result.newWorkflowContext ?? conversations[call_id].workflowContext;
+                const toolContext = { workflowPhase: result.phase, clientVerified: conversations[call_id]?.kba?.verified ?? false };
+                const toolsForPhase = toolExecutor.getFilteredToolDefinitions(toolContext);
+                const ws = sipCallWebSockets.get(call_id);
+                if (ws && ws.readyState === 1) {
+                  ws.send(JSON.stringify({ type: 'session.update', session: { tools: toolsForPhase.map(t => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters })), tool_choice: 'auto' } }));
+                  console.log(`🔄 [SIP] Workflow phase transition for ${call_id}: ${currentPhase} -> ${result.phase}, ${toolsForPhase.length} tools`);
+                }
+              }
+            }
           },
           onClose: async (code, reason) => {
+            silenceDetectionService.reset(call_id);
             console.log(`📞 [SIP] Call ended: ${call_id}`);
             decrementActiveCalls({ entry_path: 'SIP' });
             if (conversations[call_id]) delete conversations[call_id];
@@ -618,6 +689,17 @@ export const handleToolExecution = async (req, res) => {
         lastActivity: Date.now()
       });
     }
+
+    const sipWs = getSipCallWebSocket(call_id);
+    const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+    progressIndicatorService.scheduleAcknowledgmentAndPeriodicUpdates(
+      call_id,
+      name,
+      sipWs,
+      conversationBehaviorConfig,
+      null,
+      () => getSipCallWebSocket(call_id)
+    );
 
     // Execute tool using unified service
     const executionResult = await toolExecutionService.executeTool({

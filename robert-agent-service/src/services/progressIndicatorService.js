@@ -88,6 +88,34 @@ class ProgressIndicatorService {
   }
 
   /**
+   * Schedule acknowledgment and periodic updates (shared by Media Streams and SIP).
+   * @param {string} callId - Call identifier (callSid or SIP call_id)
+   * @param {string} toolName - Tool name (for step-based threshold)
+   * @param {WebSocket} openaiWs - WebSocket to send items
+   * @param {Object} config - ConversationBehaviorConfig
+   * @param {Object|null} stateManager - Optional; null for SIP
+   * @param {function(): WebSocket|null} [getWsRef] - Optional; re-fetch WS in timeout (e.g. () => getSipCallWebSocket(callId))
+   */
+  scheduleAcknowledgmentAndPeriodicUpdates(callId, toolName, openaiWs, config, stateManager, getWsRef) {
+    if (!config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) {
+      return;
+    }
+    this.startToolExecution(callId, toolName, stateManager);
+    const baseThreshold = config.progressIndicators.acknowledgmentThresholdMs || 2000;
+    const isStepBasedTool = toolName && toolName.startsWith('booking_step_');
+    const threshold = isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold;
+    setTimeout(() => {
+      const ws = getWsRef ? getWsRef() : openaiWs;
+      if (!ws || ws.readyState !== 1) return;
+      const sent = this.checkAndSendAcknowledgment(callId, ws, config);
+      if (!sent) {
+        const exec = this.getExecutionInfo(callId);
+        if (exec) this.startPeriodicUpdates(callId, ws, config);
+      }
+    }, threshold);
+  }
+
+  /**
    * Check if acknowledgment should be sent and send it
    * @param {string} callSid - Call SID
    * @param {WebSocket} openaiWs - OpenAI WebSocket connection

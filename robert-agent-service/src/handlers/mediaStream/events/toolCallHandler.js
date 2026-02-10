@@ -39,34 +39,17 @@ export class ToolCallHandler {
       startTime: toolStartTime
     });
     
-    // Start progress tracking (Media Streams specific)
-    // Enable progress tracking for all tools, including step-based tools
-    // Step-based tools use longer thresholds to avoid redundant messages for quick steps
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
-    const isStepBasedTool = name && name.startsWith('booking_step_');
-    
-    if (conversationBehaviorConfig?.progressIndicators?.enabled) {
-      // Pass stateManager for thread-safe response state checks
-      progressIndicatorService.startToolExecution(this.state.callSid, name, this.state);
-      
-      // Use longer threshold for step-based tools (5 seconds) vs regular tools (2 seconds)
-      const baseThreshold = conversationBehaviorConfig.progressIndicators.acknowledgmentThresholdMs || 2000;
-      const threshold = isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold;
-      
-      setTimeout(() => {
-        if (!this.state.isClosed && this.openaiWs && this.openaiWs.readyState === 1) {
-          const sentAck = progressIndicatorService.checkAndSendAcknowledgment(this.state.callSid, this.openaiWs, conversationBehaviorConfig);
-          
-          if (!sentAck) {
-            const execution = progressIndicatorService.getExecutionInfo(this.state.callSid);
-            if (execution) {
-              progressIndicatorService.startPeriodicUpdates(this.state.callSid, this.openaiWs, conversationBehaviorConfig);
-            }
-          }
-        }
-      }, threshold);
-    }
-    
+    const getWsRef = () => (this.state.isClosed ? null : this.openaiWs);
+    progressIndicatorService.scheduleAcknowledgmentAndPeriodicUpdates(
+      this.state.callSid,
+      name,
+      this.openaiWs,
+      conversationBehaviorConfig,
+      this.state,
+      getWsRef
+    );
+
     // Create progress callback for browser operations
     const progressCallback = (['update_customer'].includes(name)) ? (progress) => {
       if (progress && progress.message && this.openaiWs && this.openaiWs.readyState === 1) {

@@ -668,15 +668,12 @@ class ToolExecutionService {
           console.warn(`⚠️ [${callSid || callId}] Failed to save tool usage to CallRecord:`, err.message);
         });
 
-      // Clean up active execution tracking (only for Media Streams)
+      progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+      progressIndicatorService.endToolExecution(callSid || callId);
+
       if (stateManager) {
-        // CRITICAL RACE CONDITION FIX: Set completion flag BEFORE stopping updates
-        // This prevents periodic updates from firing during tool completion
         stateManager.toolExecutionCompleting = true;
         console.log(`🔒 [${callSid || callId}] Set toolExecutionCompleting flag to prevent periodic update race condition`);
-        
-        // Safety timeout: Auto-clear flag after 30 seconds if not cleared normally
-        // This prevents the flag from getting stuck if submitResult/triggerResponse fail silently
         if (stateManager.toolExecutionCompletingTimeout) {
           clearTimeout(stateManager.toolExecutionCompletingTimeout);
         }
@@ -685,18 +682,8 @@ class ToolExecutionService {
             console.warn(`⚠️ [${callSid || callId}] Safety timeout: Auto-clearing stuck toolExecutionCompleting flag`);
             stateManager.clearToolExecutionCompleting();
           }
-        }, 30000); // 30 seconds safety net
-        
-        // Stop periodic updates immediately (before tool result submission)
-        progressIndicatorService.stopPeriodicUpdates(callSid || callId);
-        
-        // Clear active tool execution
+        }, 30000);
         stateManager.activeToolExecutions.delete(toolName);
-        
-        // End tool execution tracking
-        progressIndicatorService.endToolExecution(callSid || callId);
-        
-        // Transition state
         turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
       }
 
@@ -716,15 +703,12 @@ class ToolExecutionService {
           console.warn(`⚠️ [${callSid || callId}] Failed to save failed tool usage to CallRecord:`, err.message);
         });
 
-      // Clean up active execution tracking (only for Media Streams)
+      progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+      progressIndicatorService.endToolExecution(callSid || callId);
+
       if (stateManager) {
-        // CRITICAL RACE CONDITION FIX: Set completion flag BEFORE stopping updates
-        // This prevents periodic updates from firing during tool completion (even on error)
         stateManager.toolExecutionCompleting = true;
         console.log(`🔒 [${callSid || callId}] Set toolExecutionCompleting flag to prevent periodic update race condition (error path)`);
-        
-        // Safety timeout: Auto-clear flag after 30 seconds if not cleared normally
-        // This prevents the flag from getting stuck if submitResult/triggerResponse fail silently
         if (stateManager.toolExecutionCompletingTimeout) {
           clearTimeout(stateManager.toolExecutionCompletingTimeout);
         }
@@ -733,18 +717,8 @@ class ToolExecutionService {
             console.warn(`⚠️ [${callSid || callId}] Safety timeout: Auto-clearing stuck toolExecutionCompleting flag (error path)`);
             stateManager.clearToolExecutionCompleting();
           }
-        }, 30000); // 30 seconds safety net
-        
-        // Stop periodic updates immediately
-        progressIndicatorService.stopPeriodicUpdates(callSid || callId);
-        
-        // Clear active tool execution
+        }, 30000);
         stateManager.activeToolExecutions.delete(toolName);
-        
-        // End tool execution tracking
-        progressIndicatorService.endToolExecution(callSid || callId);
-        
-        // Transition state
         turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
       }
 

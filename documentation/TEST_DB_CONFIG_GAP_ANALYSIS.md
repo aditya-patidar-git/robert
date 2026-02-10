@@ -82,7 +82,7 @@ Agent uses: vadThreshold, startPadding, endPadding, defaultVoice, usePerNumberPr
 | privacyconfigs | Ad-hoc (no cache) | Partial | consentScript, retentionSettings, recording.requireExplicitConsent used; consentSettings, lawfulBasis, ukGdprCompliance, privacyPolicy not used |
 | crmtasksconfigs | Yes | Yes | — |
 | toolconfigs | Yes | Yes | — |
-| conversationbehaviorconfigs | Yes | Yes | — |
+| conversationbehaviorconfigs | Yes | Yes | SIP uses progressIndicators + silenceDetection only; bargeInTail/conversationFlow are Media Streams–specific |
 | languagevoicemappings | Yes (multilingualService) | Yes | — |
 | flowparameteroverrides | Yes | Yes (when data exists) | Collection empty in test DB |
 | paymentgatewayconfigs | No | No | Empty; no model in agent |
