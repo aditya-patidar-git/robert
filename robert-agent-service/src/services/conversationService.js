@@ -9,6 +9,7 @@ import { getPhaseForIntent } from './toolFilterService.js';
 import promptService from './promptService.js';
 import consentInstructionBuilder from './consentInstructionBuilder.js';
 import { getConversationFlowState } from '../handlers/mediaStream/utils/conversationStateHelpers.js';
+import { isAgentAudioPlaying } from '../handlers/mediaStream/utils/audioPlayingState.js';
 
 export class ConversationService {
   constructor(options = {}) {
@@ -60,7 +61,7 @@ export class ConversationService {
    * Decide whether to create a response after a transcription.
    * Pure function: no side effects.
    * @param {Object} transcriptionResult - { processed, shouldCreateResponse, qualityScore, isBackgroundNoise }
-   * @param {Object} stateSnapshot - { waitingForUser, isResponding, activeResponseId, hasInitialGreetingCompleted, lastAudioChunkTime, outboundAudioPacer, outboundAudioBuffer }
+   * @param {Object} stateSnapshot - { waitingForUser, isResponding, activeResponseId, hasInitialGreetingCompleted, outboundAudioPacer, outboundAudioBuffer, bargeInTailUntil, inConsentOrLanguagePhase }
    * @returns {boolean}
    */
   shouldCreateResponse(transcriptionResult, stateSnapshot = {}) {
@@ -70,15 +71,10 @@ export class ConversationService {
       (transcriptionResult?.qualityScore ?? 1) >= 0.7 &&
       !transcriptionResult?.isBackgroundNoise;
 
-    const hasActiveResponse = stateSnapshot.activeResponseId != null;
     const inConsentOrLanguagePhase = stateSnapshot.inConsentOrLanguagePhase === true;
-    const isAudioPlaying = inConsentOrLanguagePhase
-      ? (stateSnapshot.isResponding || hasActiveResponse)
-      : (stateSnapshot.isResponding ||
-          hasActiveResponse ||
-          (stateSnapshot.outboundAudioPacer != null) ||
-          (Array.isArray(stateSnapshot.outboundAudioBuffer) && stateSnapshot.outboundAudioBuffer.length > 0) ||
-          (stateSnapshot.lastAudioChunkTime > 0 && Date.now() - stateSnapshot.lastAudioChunkTime < 5000));
+    const isAudioPlaying = isAgentAudioPlaying(stateSnapshot, {
+      consentPhaseRelaxed: inConsentOrLanguagePhase
+    });
 
     return (
       shouldCreate &&

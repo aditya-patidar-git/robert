@@ -8,6 +8,7 @@ import noiseFilterService from '../../../services/noiseFilterService.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
 import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
+import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
 
 /**
  * Transcription Handler
@@ -53,23 +54,13 @@ export class TranscriptionHandler {
     
     if (containsStop) {
       console.log(`🚨 [${this.state.callSid}] "stop" detected in PARTIAL transcription: "${partialTranscript}"`);
-      
-      // Check if audio might be playing (use extended window for safety)
-      const hasActiveResponse = this.state.activeResponseId !== null;
-      const hasAudioPacer = this.state.outboundAudioPacer !== null;
-      const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
-      const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 15000;
-      const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 10000;
-      const mightHaveAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio || hasRecentResponseCompletion;
-      
+      const mightHaveAudioPlaying = isAgentAudioPlaying(this.state);
       console.log(`   - Audio might be playing: ${mightHaveAudioPlaying}`);
       console.log(`   - isResponding: ${this.state.isResponding}, activeResponseId: ${this.state.activeResponseId}`);
       console.log(`   - Barge-in already triggered: ${this.state.isInterrupted}`);
-      
-      // If barge-in already triggered on speech_started, verify "stop" command
+
       if (this.state.isInterrupted) {
         console.log(`✅ [${this.state.callSid}] Barge-in already triggered - partial transcription confirms "stop" command`);
-        // Ensure audio is fully stopped
         if (this.bargeInHandler && this.bargeInHandler.responseHandler) {
           this.bargeInHandler.responseHandler.immediatelyStopAudio();
         }
@@ -131,24 +122,10 @@ export class TranscriptionHandler {
       // CRITICAL FIX: Even if transcription is filtered, check if it contains "stop" and audio might be playing
       // This prevents "stop" commands from being ignored due to quality filtering
       if (containsStop) {
-        // Check if audio might still be playing (use extended window for safety)
-        const hasActiveResponse = this.state.activeResponseId !== null;
-        const hasAudioPacer = this.state.outboundAudioPacer !== null;
-        const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
-        // EXTENDED: Use 15 seconds instead of 5 to catch audio that's still playing in Twilio's buffer
-        const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 15000;
-        const mightHaveAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio;
-        
+        const mightHaveAudioPlaying = isAgentAudioPlaying(this.state);
         console.log(`⚠️ [${this.state.callSid}] "stop" detected in FILTERED transcription - checking if audio might be playing`);
-        console.log(`   - isResponding: ${this.state.isResponding}`);
-        console.log(`   - activeResponseId: ${this.state.activeResponseId}`);
-        console.log(`   - hasAudioPacer: ${hasAudioPacer}`);
-        console.log(`   - hasBufferedAudio: ${hasBufferedAudio} (buffer length: ${this.state.outboundAudioBuffer?.length || 0})`);
-        console.log(`   - hasRecentAudio: ${hasRecentAudio} (lastAudioChunkTime: ${this.state.lastAudioChunkTime}, age: ${this.state.lastAudioChunkTime > 0 ? Date.now() - this.state.lastAudioChunkTime : 'N/A'}ms)`);
         console.log(`   - mightHaveAudioPlaying: ${mightHaveAudioPlaying}`);
-        
-        // SAFETY FIX: If "stop" is detected and audio might be playing, trigger barge-in anyway
-        // This ensures "stop" commands are never ignored, even if transcription quality is low
+
         if (mightHaveAudioPlaying && this.bargeInHandler) {
           console.log(`🛑 [${this.state.callSid}] SAFETY TRIGGER: Barge-in triggered for "stop" in filtered transcription (audio might be playing)`);
           this.bargeInHandler.triggerBargeInFromTranscription(transcript);
@@ -218,38 +195,21 @@ export class TranscriptionHandler {
     // Note: containsStop was already checked above (before filtering) - reuse that value
     // stopPattern and containsStop are already declared at the top of the function
     
-    // IMPROVED: Check if audio is currently playing (multiple indicators to catch all cases)
-    // Audio might still be playing even if isResponding is false (buffered audio)
-    // EXTENDED WINDOW: Increased from 5 seconds to 15 seconds to catch audio still playing in Twilio's buffer
-    const hasActiveResponse = this.state.activeResponseId !== null;
-    const hasAudioPacer = this.state.outboundAudioPacer !== null;
-    const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
-    const hasRecentAudio = this.state.lastAudioChunkTime > 0 && (Date.now() - this.state.lastAudioChunkTime) < 15000; // EXTENDED: Audio sent within last 15 seconds (was 5)
-    // Also check if response was recently completed (audio might still be playing)
-    const hasRecentResponseCompletion = this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime) < 10000; // Within last 10 seconds
-    const isAudioPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio || hasRecentAudio || hasRecentResponseCompletion;
+    const isAudioPlaying = isAgentAudioPlaying(this.state);
     const flowState = getConversationFlowState(this.state.callSid, this.state);
     const inConsentOrLanguagePhase = flowState.waitingForLanguage || (flowState.languageSelected && !flowState.consentGiven);
-    const consentJustGivenWithRecentCompletion = flowState.consentGiven && hasRecentResponseCompletion;
-    const useRelaxedBlocking = inConsentOrLanguagePhase || consentJustGivenWithRecentCompletion;
-    const isAudioPlayingStrict = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio;
-    const isPlayingInConsentPhase = this.state.isResponding || hasActiveResponse;
-    const isAudioPlayingForBlocking = useRelaxedBlocking ? isPlayingInConsentPhase : isAudioPlaying;
-    if (inConsentOrLanguagePhase) {
-      console.log(`🔍 [${this.state.callSid}] Consent/language phase: isPlayingInConsentPhase=${isPlayingInConsentPhase}, hasAudioPacer=${hasAudioPacer}, hasBufferedAudio=${hasBufferedAudio}, isAudioPlayingForBlocking=${isAudioPlayingForBlocking}`);
-    }
-    
-    // Log detection details for debugging when "stop" is detected
+    const consentJustGiven =
+      flowState.consentGiven &&
+      this.state.agentFinishedSpeakingTime > 0 &&
+      Date.now() - this.state.agentFinishedSpeakingTime < 5000;
+    const useRelaxedBlocking = inConsentOrLanguagePhase || consentJustGiven;
+    const isAudioPlayingForBlocking = useRelaxedBlocking
+      ? isAgentAudioPlaying(this.state, { consentPhaseRelaxed: true })
+      : isAudioPlaying;
+
     if (containsStop) {
       console.log(`🔍 [${this.state.callSid}] "stop" detected in completed transcript: "${transcript}"`);
-      console.log(`   - isResponding: ${this.state.isResponding}`);
-      console.log(`   - activeResponseId: ${this.state.activeResponseId}`);
-      console.log(`   - hasAudioPacer: ${hasAudioPacer}`);
-      console.log(`   - hasBufferedAudio: ${hasBufferedAudio} (buffer length: ${this.state.outboundAudioBuffer?.length || 0})`);
-      console.log(`   - hasRecentAudio: ${hasRecentAudio} (lastAudioChunkTime: ${this.state.lastAudioChunkTime}, age: ${this.state.lastAudioChunkTime > 0 ? Date.now() - this.state.lastAudioChunkTime : 'N/A'}ms)`);
-      console.log(`   - isAudioPlaying: ${isAudioPlaying}`);
-      console.log(`   - Barge-in already triggered: ${this.state.isInterrupted}`);
-      console.log(`   - Note: Barge-in should have triggered on speech_started (<200ms), this is verification`);
+      console.log(`   - isAudioPlaying: ${isAudioPlaying}, Barge-in already triggered: ${this.state.isInterrupted}`);
     }
     
     // EDGE CASE 1: Handle transcription that arrives while audio is playing and contains "stop"
@@ -450,8 +410,7 @@ export class TranscriptionHandler {
     // Update last processed transcription time
     this.state.lastProcessedTranscriptionTime = transcriptionTime;
     
-    // In consent/language phase use only isResponding/activeResponse so we allow consent question after language selection (ignore pacer/buffer drain)
-    const allowResponse = inConsentOrLanguagePhase ? !isPlayingInConsentPhase : !isAudioPlaying;
+    const allowResponse = !isAudioPlayingForBlocking;
     return { 
       processed: true, 
       shouldCreateResponse: allowResponse,

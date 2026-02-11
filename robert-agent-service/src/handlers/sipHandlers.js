@@ -824,8 +824,8 @@ export const handleSipCallHandler = async (req, res) => {
 };
 
 /**
- * GET /api/sip/agent-call-handler?originalCallSid=...
- * Twilio requests this URL when the outbound call to the agent connects.
+ * GET or POST /api/sip/agent-call-handler?originalCallSid=...
+ * Twilio may request this URL with GET or POST when the outbound agent call connects/answers.
  * Returns TwiML: Say handover summary then Dial agent into same conference as caller.
  */
 export const handleAgentCallHandler = async (req, res) => {

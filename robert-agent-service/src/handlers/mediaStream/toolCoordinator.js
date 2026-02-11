@@ -6,6 +6,8 @@ import { getRecordingConsent, updateRecordingConsent, conversationExists } from 
 import promptService from '../../services/promptService.js';
 import consentInstructionBuilder from '../../services/consentInstructionBuilder.js';
 import conversationService from '../../services/conversationService.js';
+import { isTransferToHumanRequest } from '../../services/intentFromTranscript.js';
+import transferCallTool from '../../tools/transferCall.js';
 
 /**
  * Tool Coordinator
@@ -435,16 +437,22 @@ export class ToolCoordinator {
           }
           
           const flowState = getConversationFlowState(this.state.callSid, this.state);
-          const consentJustGivenWithRecentCompletion = flowState.consentGiven && this.state.agentFinishedSpeakingTime > 0 && (Date.now() - this.state.agentFinishedSpeakingTime < 10000);
-          const inConsentOrLanguagePhase = flowState.waitingForLanguage || (flowState.languageSelected && !flowState.consentGiven) || consentJustGivenWithRecentCompletion;
+          const consentJustGiven =
+            flowState.consentGiven &&
+            this.state.agentFinishedSpeakingTime > 0 &&
+            Date.now() - this.state.agentFinishedSpeakingTime < 5000;
+          const inConsentOrLanguagePhase =
+            flowState.waitingForLanguage ||
+            (flowState.languageSelected && !flowState.consentGiven) ||
+            consentJustGiven;
           const stateSnapshot = {
             waitingForUser: this.state.waitingForUser,
             isResponding: this.state.isResponding,
             activeResponseId: this.state.activeResponseId,
             hasInitialGreetingCompleted: this.state.hasInitialGreetingCompleted,
-            lastAudioChunkTime: this.state.lastAudioChunkTime,
             outboundAudioPacer: this.state.outboundAudioPacer,
             outboundAudioBuffer: this.state.outboundAudioBuffer,
+            bargeInTailUntil: this.state.bargeInTailUntil,
             inConsentOrLanguagePhase
           };
           const shouldCreateResponse = conversationService.shouldCreateResponse(transcriptionResult, stateSnapshot);
@@ -455,6 +463,19 @@ export class ToolCoordinator {
               this.state.explicitResponseRequested = true;
               await this.createAudioResponse();
               console.log(`🎯 [${this.state.callSid}] Created response after high-quality transcription (quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
+              if (isTransferToHumanRequest(transcriptText)) {
+                try {
+                  const callContext = { callSid: this.state.callSid, phoneNumber: this.state.phoneNumber };
+                  const result = await transferCallTool.execute({ reason: 'user_request' }, callContext);
+                  if (result?.transferInitiated) {
+                    console.log(`✅ [${this.state.callSid}] App-invoked transfer_call after user request (Option B)`);
+                  } else if (result?.allTransferNumbersFailed) {
+                    console.warn(`⚠️ [${this.state.callSid}] Transfer requested but all numbers failed: ${result?.messageForCaller || 'agents busy'}`);
+                  }
+                } catch (transferErr) {
+                  console.error(`❌ [${this.state.callSid}] Error invoking transfer_call after user request:`, transferErr?.message || transferErr);
+                }
+              }
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
             }
@@ -483,10 +504,24 @@ export class ToolCoordinator {
                   this.state.releaseResponseLock();
                   return;
                 }
+                const transcriptTextFromBatch = transcriptions.map(t => t?.transcript).filter(Boolean).join(' ').trim();
                 console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] speech_stopped process_transcriptions`);
                 this.state.explicitResponseRequested = true;
                 await this.createAudioResponse();
                 console.log(`🎯 [${this.state.callSid}] Created response after processing ${transcriptions.length} transcriptions`);
+                if (transcriptTextFromBatch && isTransferToHumanRequest(transcriptTextFromBatch)) {
+                  try {
+                    const callContext = { callSid: this.state.callSid, phoneNumber: this.state.phoneNumber };
+                    const result = await transferCallTool.execute({ reason: 'user_request' }, callContext);
+                    if (result?.transferInitiated) {
+                      console.log(`✅ [${this.state.callSid}] App-invoked transfer_call after user request (Option B, grace-period path)`);
+                    } else if (result?.allTransferNumbersFailed) {
+                      console.warn(`⚠️ [${this.state.callSid}] Transfer requested but all numbers failed: ${result?.messageForCaller || 'agents busy'}`);
+                    }
+                  } catch (transferErr) {
+                    console.error(`❌ [${this.state.callSid}] Error invoking transfer_call after user request:`, transferErr?.message || transferErr);
+                  }
+                }
               } catch (err) {
                 console.error(`❌ [${this.state.callSid}] Error creating response after processing transcriptions:`, err);
                 this.state.releaseResponseLock();

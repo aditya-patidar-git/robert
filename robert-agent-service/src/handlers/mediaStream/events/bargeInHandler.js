@@ -2,6 +2,7 @@ import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
 import adaptiveTimingService from '../../../services/adaptiveTimingService.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
+import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
 
 /**
  * Barge-in Handler
@@ -67,37 +68,20 @@ export class BargeInHandler {
     // This achieves <200ms interruptible latency (industry best practice)
     // We'll verify "stop" command via transcription.delta/completed events
     
-    // CRITICAL FIX: Prioritize checking if audio is ACTUALLY playing right now
-    // Only use recent timestamps as fallback when we have an active response
-    const hasActiveResponse = this.state.activeResponseId !== null;
-    const hasAudioPacer = this.state.outboundAudioPacer !== null;
-    const hasBufferedAudio = this.state.outboundAudioBuffer !== null && this.state.outboundAudioBuffer.length > 0;
-    
-    // PRIMARY: Check if audio is actively playing right now
-    const isAudioActivelyPlaying = this.state.isResponding || hasActiveResponse || hasAudioPacer || hasBufferedAudio;
-    
-    // FALLBACK: Dynamic tail from response length (set in response.done)
-    const isInBargeInTail = this.state.bargeInTailUntil > 0 && Date.now() < this.state.bargeInTailUntil;
-    
-    const isAudioPlaying = isAudioActivelyPlaying || isInBargeInTail;
-    
+    const isAudioPlaying = isAgentAudioPlaying(this.state);
+
     if (isAudioPlaying) {
-      // Check if user speech started BEFORE this response was created (not based on elapsed time)
-      // Only exclude barge-in if user actually spoke before response creation
       const timeSinceResponseCreated = this.state.responseStartTime > 0 ? Date.now() - this.state.responseStartTime : Infinity;
       const userSpokeBeforeResponse = this.state.responseStartTime > 0 && this.state.userSpeechStartedTime < this.state.responseStartTime;
-      
+
       if (userSpokeBeforeResponse) {
         console.log(`👤 [${this.state.callSid}] User speech started before response was created (normal input, not barge-in) - response created ${timeSinceResponseCreated}ms ago`);
-        return; // Don't treat as barge-in
+        return;
       }
-      
-      // INDUSTRY STANDARD: Trigger immediate barge-in when user speaks during agent response
-      // This achieves <200ms response time (vs 300-800ms if waiting for transcription)
+
       console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered on speech_started (industry standard: <200ms) - response ${this.state.activeResponseId || 'N/A'}`);
       console.log(`   - Time since response created: ${timeSinceResponseCreated}ms`);
-      console.log(`   - Audio is playing: isResponding=${this.state.isResponding}, activeResponseId=${this.state.activeResponseId}`);
-      console.log(`   - Audio indicators: hasActiveResponse=${hasActiveResponse}, hasAudioPacer=${hasAudioPacer}, hasBufferedAudio=${hasBufferedAudio}, isAudioActivelyPlaying=${isAudioActivelyPlaying}, isInBargeInTail=${isInBargeInTail}`);
+      console.log(`   - Audio is playing: ${isAudioPlaying}`);
       
       // Trigger immediate barge-in (will verify "stop" command via transcription later)
       this.triggerImmediateBargeIn('speech_started');
