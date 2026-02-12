@@ -14,6 +14,7 @@ import turnTakingStateMachine, { STATES } from '../services/turnTakingStateMachi
 import { conversations } from '../shared/state.js';
 import uncertaintyGateService from './uncertaintyGateService.js';
 import unansweredQuestionService from './unansweredQuestionService.js';
+import errorRecoveryService from './errorRecoveryService.js';
 
 /**
  * Unified Tool Execution Service
@@ -326,20 +327,74 @@ class ToolExecutionService {
     };
 
     // Execute tool
+    let executionResult = null;
     try {
-      executionStartTime = Date.now();
-      const executionResult = await toolExecutor.execute(
+      executionResult = await toolExecutor.execute(
         toolName,
         parameters,
         callContext,
         progressCallback
       );
-      
-      // Calculate execution time (use result's time if available, otherwise calculate)
-      executionTime = executionResult.executionTime || (Date.now() - executionStartTime);
+    } catch (error) {
+      console.error(`❌ [${callSid || callId}] Tool ${toolName} execution error:`, error);
+      let lastError = error;
+      let recovery;
+      for (;;) {
+        const config = configManager.getConversationBehaviorConfig();
+        recovery = errorRecoveryService.handleToolError(callSid || callId, toolName, lastError, config);
+        if (!recovery.shouldRetry || recovery.delay == null) break;
+        await new Promise(r => setTimeout(r, recovery.delay));
+        try {
+          executionResult = await toolExecutor.execute(
+            toolName,
+            parameters,
+            callContext,
+            progressCallback
+          );
+          lastError = null;
+          break;
+        } catch (e) {
+          lastError = e;
+          console.error(`❌ [${callSid || callId}] Tool ${toolName} retry execution error:`, e);
+        }
+      }
+      if (executionResult === null) {
+        const executionTimeFailed = Date.now() - executionStartTime;
+        this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTimeFailed, false)
+          .catch(err => {
+            console.warn(`⚠️ [${callSid || callId}] Failed to save failed tool usage to CallRecord:`, err.message);
+          });
+        progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+        progressIndicatorService.endToolExecution(callSid || callId);
+        if (stateManager) {
+          stateManager.toolExecutionCompleting = true;
+          console.log(`🔒 [${callSid || callId}] Set toolExecutionCompleting flag to prevent periodic update race condition (error path)`);
+          if (stateManager.toolExecutionCompletingTimeout) {
+            clearTimeout(stateManager.toolExecutionCompletingTimeout);
+          }
+          stateManager.toolExecutionCompletingTimeout = setTimeout(() => {
+            if (stateManager.toolExecutionCompleting) {
+              console.warn(`⚠️ [${callSid || callId}] Safety timeout: Auto-clearing stuck toolExecutionCompleting flag (error path)`);
+              stateManager.clearToolExecutionCompleting();
+            }
+          }, 30000);
+          stateManager.activeToolExecutions.delete(toolName);
+          turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
+        }
+        return {
+          success: false,
+          error: recovery.userMessage,
+          details: lastError.toString(),
+          alternatives: recovery.alternatives
+        };
+      }
+    }
 
-      // Extract actual tool result (toolExecutor wraps it in { success, result, executionTime })
-      const toolResult = executionResult.result || executionResult;
+    // Success path (executionResult set from try or from retry)
+    executionTime = executionResult.executionTime || (Date.now() - executionStartTime);
+
+    // Extract actual tool result (toolExecutor wraps it in { success, result, executionTime })
+    const toolResult = executionResult.result || executionResult;
       
       if (toolName === 'file_search') {
         const totalExecutionTime = Date.now() - toolExecutionStartTime;
@@ -691,43 +746,6 @@ class ToolExecutionService {
 
       // Return execution result as-is (already has success flag and result)
       return executionResult;
-    } catch (error) {
-      console.error(`❌ [${callSid || callId}] Tool ${toolName} execution error:`, error);
-
-      // Calculate execution time for failed execution
-      const executionTime = Date.now() - executionStartTime;
-
-      // Save failed tool usage to CallRecord (async, don't wait)
-      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, false)
-        .catch(err => {
-          console.warn(`⚠️ [${callSid || callId}] Failed to save failed tool usage to CallRecord:`, err.message);
-        });
-
-      progressIndicatorService.stopPeriodicUpdates(callSid || callId);
-      progressIndicatorService.endToolExecution(callSid || callId);
-
-      if (stateManager) {
-        stateManager.toolExecutionCompleting = true;
-        console.log(`🔒 [${callSid || callId}] Set toolExecutionCompleting flag to prevent periodic update race condition (error path)`);
-        if (stateManager.toolExecutionCompletingTimeout) {
-          clearTimeout(stateManager.toolExecutionCompletingTimeout);
-        }
-        stateManager.toolExecutionCompletingTimeout = setTimeout(() => {
-          if (stateManager.toolExecutionCompleting) {
-            console.warn(`⚠️ [${callSid || callId}] Safety timeout: Auto-clearing stuck toolExecutionCompleting flag (error path)`);
-            stateManager.clearToolExecutionCompleting();
-          }
-        }, 30000);
-        stateManager.activeToolExecutions.delete(toolName);
-        turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
-      }
-
-      return {
-        success: false,
-        error: error.message || 'Tool execution failed',
-        details: error.toString()
-      };
-    }
   }
 
   /**
