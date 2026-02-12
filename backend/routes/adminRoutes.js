@@ -1,7 +1,7 @@
 import express from "express";
 import { protect } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/rbacMiddleware.js";
-import { getUsers, createUser, updateUser, approveUser, blockUser, excludeUser, deleteUser } from "../controllers/userController.js";
+import { getUsers, createUser, updateUser, approveUser, blockUser, excludeUser, deleteUser, bulkBlockUsers, bulkApproveUsers, bulkDeleteUsers } from "../controllers/userController.js";
 import { addPrompt, getPrompts, updatePrompt } from "../controllers/promptController.js";
 import { getAllowlist, addToAllowlist, removeFromAllowlist, checkAllowlist } from "../controllers/allowlistController.js";
 import { getAuditLogs, getAuditLog, exportAuditLogs, runAuditRetention } from "../controllers/auditLogController.js";
@@ -20,6 +20,9 @@ router.patch("/users/:id/approve", approveUser);
 router.patch("/users/:id/block", blockUser);
 router.patch("/users/:id/exclude", excludeUser);
 router.delete("/users/:id", deleteUser);
+router.post("/users/bulk-block", bulkBlockUsers);
+router.post("/users/bulk-approve", bulkApproveUsers);
+router.post("/users/bulk-delete", bulkDeleteUsers);
 
 // Allowlist
 router.get("/allowlist", getAllowlist);

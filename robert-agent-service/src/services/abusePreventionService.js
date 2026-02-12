@@ -81,8 +81,11 @@ class AbusePreventionService {
       return { allowed: true };
     } catch (error) {
       console.error('Error checking rate limit:', error);
-      // Fail open (allow call) on error
-      return { allowed: true };
+      // Fail closed: block call when abuse layer errors so attackers do not get full access
+      return {
+        allowed: false,
+        reason: 'Temporarily unable to verify. Please try again later.'
+      };
     }
   }
 

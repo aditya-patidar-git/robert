@@ -5,6 +5,7 @@
 
 import express from "express";
 import { handleCallAccept, handleCallStatus, handleToolExecution, handleSipCallHandler, handleAgentCallHandler } from "../handlers/sipHandlers.js";
+import { openaiWebhookAuth } from "../middleware/openaiWebhookAuth.js";
 
 const router = express.Router();
 
@@ -45,14 +46,10 @@ router.post("/call-handler", handleSipCallHandler);
 router.get("/agent-call-handler", handleAgentCallHandler);
 router.post("/agent-call-handler", handleAgentCallHandler);
 
-// OpenAI Realtime SIP webhook: call.accept
-router.post("/call-accept", handleCallAccept);
-
-// OpenAI Realtime SIP webhook: call status updates
-router.post("/call-status", handleCallStatus);
-
-// OpenAI Realtime SIP webhook: tool execution
-router.post("/tool-execution", handleToolExecution);
+// OpenAI Realtime SIP webhooks (optional IP allowlist via OPENAI_WEBHOOK_IP_ALLOWLIST)
+router.post("/call-accept", openaiWebhookAuth, handleCallAccept);
+router.post("/call-status", openaiWebhookAuth, handleCallStatus);
+router.post("/tool-execution", openaiWebhookAuth, handleToolExecution);
 
 export default router;
 

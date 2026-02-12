@@ -74,7 +74,7 @@ export class BaseStepTool {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
       loginName: process.env.CRM_LOGIN || 'universalmct',
       username: process.env.CRM_USERNAME || 'auagent',
-      password: process.env.CRM_PASSWORD || 'Robert2025!',
+      password: process.env.CRM_PASSWORD,
       userAgent: 'auagent'
     };
     this.browserManager = new BrowserManager(

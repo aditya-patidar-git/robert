@@ -215,31 +215,35 @@ export const generateDSARExport = async (req, res) => {
     }
 };
 
-// Download DSAR export
+// Download DSAR export (filename is derived from DB only - never from req.params to prevent path traversal)
 export const downloadDSARExport = async (req, res) => {
     try {
-        const { requestId, fileName } = req.params;
-        
+        const { requestId } = req.params;
+        const path = await import('path');
+        const fs = await import('fs');
+
         const request = await gdprService.getDSARRequestStatus(requestId);
-        
+        if (!request) {
+            return res.status(404).json({ success: false, error: 'Request not found' });
+        }
         if (!request.exportUrl) {
             return res.status(404).json({ success: false, error: 'Export not found' });
         }
-
         if (request.exportExpiresAt && new Date(request.exportExpiresAt) < new Date()) {
             return res.status(410).json({ success: false, error: 'Export has expired' });
         }
 
-        // In production, serve from S3 or secure storage
-        const fs = await import('fs');
-        const path = await import('path');
-        const exportPath = path.join('./audit-logs/exports', fileName);
-        
+        const canonicalFileName = path.basename(request.exportUrl);
+        if (!canonicalFileName || canonicalFileName.includes('..') || canonicalFileName.includes('/')) {
+            return res.status(400).json({ success: false, error: 'Invalid export reference' });
+        }
+
+        const exportPath = path.join('./audit-logs', 'exports', canonicalFileName);
         if (!fs.existsSync(exportPath)) {
             return res.status(404).json({ success: false, error: 'Export file not found' });
         }
 
-        res.download(exportPath, fileName);
+        res.download(exportPath, canonicalFileName);
     } catch (error) {
         observabilityService.error('Download DSAR export error', { requestId: req.params.requestId, error: error.message });
         res.status(500).json({ success: false, error: error.message });

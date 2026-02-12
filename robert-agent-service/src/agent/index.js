@@ -12,6 +12,7 @@ import { handleTestClientConnection } from '../handlers/mediaStream/testClientHa
 import { makeCall, aiIntro, getAllCalls, handleIncomingCall, afterHoursTransfer, voicemailRecordingStatus } from '../handlers/callHandlers.js';
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
+import { twilioWebhookAuth } from '../middleware/twilioWebhookAuth.js';
 import sipRoutes from '../routes/sipRoutes.js';
 import gmailOAuthRoutes from '../routes/gmailOAuth.js';
 import secretsManager from '../services/secretsManager.js';
@@ -103,6 +104,9 @@ const pendingCalls = new Map(); // phoneNumber -> timestamp
 wss.on('error', (error) => {
   console.error('❌ WebSocket server error:', error.message);
 });
+
+// Trust proxy so req.protocol and req.ip are correct when behind a reverse proxy (needed for Twilio webhook URL validation)
+app.set('trust proxy', 1);
 
 // Middleware
 app.use(cors());
@@ -270,22 +274,21 @@ wss.on('test-connection', (testWs, req) => {
   }
 });
 
-// API Routes - Outbound
+// API Routes - Outbound (make-call and ai-intro are not Twilio callbacks; call-status and recording-status are)
 app.post('/api/outbound/make-call', makeCall);
-app.post('/api/outbound/ai-intro', aiIntro);
+app.post('/api/outbound/ai-intro', twilioWebhookAuth, aiIntro);
 app.get('/api/outbound/get-all-calls', getAllCalls);
-app.post('/api/outbound/call-status', callStatus);
-app.post('/api/outbound/recording-status', recordingStatus);
+app.post('/api/outbound/call-status', twilioWebhookAuth, callStatus);
+app.post('/api/outbound/recording-status', twilioWebhookAuth, recordingStatus);
 app.get('/api/outbound/recording/:callSid', proxyRecording);
 
-// API Routes - Inbound
-app.post('/api/inbound/incoming-call', handleIncomingCall);
-// Alias for backward compatibility (some test helpers may use this)
-app.post('/api/inbound/handle-call', handleIncomingCall);
-app.post('/api/inbound/after-hours-transfer', afterHoursTransfer);
-app.post('/api/inbound/voicemail-recording-status', voicemailRecordingStatus);
-app.post('/api/inbound/call-status', callStatus);
-app.post('/api/inbound/recording-status', recordingStatus);
+// API Routes - Inbound (all POSTs are Twilio webhooks)
+app.post('/api/inbound/incoming-call', twilioWebhookAuth, handleIncomingCall);
+app.post('/api/inbound/handle-call', twilioWebhookAuth, handleIncomingCall);
+app.post('/api/inbound/after-hours-transfer', twilioWebhookAuth, afterHoursTransfer);
+app.post('/api/inbound/voicemail-recording-status', twilioWebhookAuth, voicemailRecordingStatus);
+app.post('/api/inbound/call-status', twilioWebhookAuth, callStatus);
+app.post('/api/inbound/recording-status', twilioWebhookAuth, recordingStatus);
 app.get('/api/inbound/recording/:callSid', proxyRecording);
 
 // API Routes - Diagnostics (non-intrusive, optional)

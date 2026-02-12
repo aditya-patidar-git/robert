@@ -8,7 +8,8 @@ class SecretsManager {
       'TWILIO_SID',
       'TWILIO_AUTH_TOKEN',
       'TWILIO_NUMBER',
-      'OPENAI_API_KEY'
+      'OPENAI_API_KEY',
+      'CRM_PASSWORD'
     ];
     this.optionalSecrets = [
       'DOMAIN',
