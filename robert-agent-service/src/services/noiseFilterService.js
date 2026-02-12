@@ -14,11 +14,15 @@ class NoiseFilterService {
       /^(mhm|uh-huh|uh-uh|ah-hah)$/i,
     ];
     
-    // Default thresholds (can be overridden by config)
-    this.MIN_CONFIDENCE = 0.70;  // Stricter: 70% (industry: 0.65-0.75)
-    this.MIN_TRANSCRIPT_LENGTH = 4;  // At least 4 characters
-    this.MAX_NOISE_RATIO = 0.3;  // Max 30% of transcript can be noise patterns
-    this.MIN_QUALITY_SCORE = 0.7;  // Minimum composite quality score
+    this.MIN_CONFIDENCE = 0.70;
+    this.MIN_TRANSCRIPT_LENGTH = 4;
+    this.MAX_NOISE_RATIO = 0.3;
+    this.MIN_QUALITY_SCORE = 0.7;
+    this.CONFIRMATION_WHITELIST = new Set(['yes', 'no', 'ok', 'okay', 'yep', 'nope', 'yeah', 'nah', 'sure', 'right']);
+  }
+
+  isConfirmationWord(trimmed) {
+    return trimmed && this.CONFIRMATION_WHITELIST.has(trimmed.toLowerCase());
   }
 
   /**
@@ -103,9 +107,8 @@ class NoiseFilterService {
     // Factor 1: Confidence score (primary indicator - 40% weight)
     const passesConfidence = confidenceScore >= thresholds.minConfidence;
     
-    // Factor 2: Length check (20% weight)
     const length = trimmed.length;
-    const passesLength = length >= thresholds.minTranscriptLength;
+    const passesLength = length >= thresholds.minTranscriptLength || this.isConfirmationWord(trimmed);
     
     // Factor 3: Pattern-based noise detection (30% weight)
     const isNoisePattern = this.NOISE_PATTERNS.some(pattern => pattern.test(trimmed));
@@ -171,6 +174,7 @@ class NoiseFilterService {
     const isRecentResponse = timeSinceLastResponse < 2000; // Within 2 seconds
     
     if (isRecentResponse) {
+      if (this.isConfirmationWord(trimmed)) return false;
       const isNoisePattern = this.NOISE_PATTERNS.some(pattern => pattern.test(trimmed));
       const { ratio: noiseRatio } = this.calculateNoiseRatio(trimmed);
       return isNoisePattern || noiseRatio > this.MAX_NOISE_RATIO || trimmed.length < this.MIN_TRANSCRIPT_LENGTH;

@@ -273,13 +273,14 @@ const bookingStepSendPaymentRequestSchema = z.object({
 });
 
 const cancellationStepVerifyBookingIntentSchema = z.object({
-  courseType: courseTypeEnum,
+  courseType: courseTypeEnum.optional(), // Optional - will be determined from booking in Step 6
   verified: z.boolean().optional(),
   proceedToStep2: z.boolean().optional()
 });
 
+const courseTypeForAuthenticate = z.union([courseTypeEnum, z.literal('TBD')]);
 const cancellationStepAuthenticateSchema = z.object({
-  courseType: courseTypeEnum
+  courseType: courseTypeForAuthenticate
 });
 
 const cancellationStepDetermineWorkflowSchema = z.object({
@@ -366,6 +367,9 @@ const toolSchemas = {
   kba_verification: kbaVerificationSchema,
   client_verification: clientVerificationSchema,
   complaint_submission: complaintSubmissionSchema,
+  start_workflow: z.object({
+    workflow: z.enum(['cancellation', 'booking', 'complaint'])
+  }),
   // Booking step tools
   booking_step_check_availability: bookingStepCheckAvailabilitySchema,
   booking_step_authenticate: bookingStepAuthenticateSchema,

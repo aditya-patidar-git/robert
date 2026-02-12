@@ -14,10 +14,11 @@ export class OpenAIIntegration {
     this.state = stateManager;
     this.ws = ws;
     this.audioProcessor = audioProcessor;
-    this.onEvent = onEvent; // Callback for event handling
+    this.onEvent = onEvent;
     this.openaiTimeout = null;
-    this.connectionManager = null; // Will be initialized after WebSocket connection
-    this.currentWorkflowPhase = 'greeting'; // Track current workflow phase for tool filtering
+    this.connectionManager = null;
+    this.currentWorkflowPhase = 'greeting';
+    this._lastSessionLogKey = new Map();
   }
 
   /**
@@ -778,10 +779,15 @@ export class OpenAIIntegration {
       try {
         const event = JSON.parse(data.toString());
         
-        // Only log format info - essential for debugging
         if (event.type === 'session.updated') {
+          const outFmt = event.session?.output_audio_format || 'N/A';
           const trans = event.session?.audio?.input?.transcription;
-          console.log(`📋 [${this.state.callSid}] Session config - output_audio_format: ${event.session?.output_audio_format || 'N/A'}, input_transcription: ${trans ? JSON.stringify(trans) : 'null'}`);
+          const key = `${outFmt}-${trans ? JSON.stringify(trans) : 'null'}`;
+          const callSid = this.state.callSid;
+          if (this._lastSessionLogKey.get(callSid) !== key) {
+            this._lastSessionLogKey.set(callSid, key);
+            console.log(`📋 [${callSid}] Session config - output_audio_format: ${outFmt}, input_transcription: ${trans ? JSON.stringify(trans) : 'null'}`);
+          }
         }
         
         // Handle error events

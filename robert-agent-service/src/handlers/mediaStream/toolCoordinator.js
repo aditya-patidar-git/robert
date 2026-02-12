@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { BargeInHandler, ConsentHandler, ResponseHandler, TranscriptionHandler, ToolCallHandler } from './events/index.js';
 import { MemoryManager, LanguageDetector } from './utils/index.js';
 import { getConversationFlowState } from './utils/conversationStateHelpers.js';
@@ -8,6 +9,9 @@ import consentInstructionBuilder from '../../services/consentInstructionBuilder.
 import conversationService from '../../services/conversationService.js';
 import { isTransferToHumanRequest } from '../../services/intentFromTranscript.js';
 import transferCallTool from '../../tools/transferCall.js';
+import sessionStateManager from '../../services/browser/sessionStateManager.js';
+import { AFTER_LOGIN_MESSAGE } from '../../config/cancellationPhrases.js';
+import toolExecutionService from '../../services/toolExecutionService.js';
 
 /**
  * Tool Coordinator
@@ -30,17 +34,27 @@ export class ToolCoordinator {
       this.state.explicitResponseRequested = true;
       await this.createAudioResponse();
     });
+    this.responseHandler.setOnResponseDone((event) => {
+      this.runPendingChainedToolIfAny().catch(err => {
+        console.error(`❌ [${this.state.callSid}] runPendingChainedToolIfAny error:`, err);
+      });
+    });
 
     // Initialize BargeInHandler with ResponseHandler reference for immediate Twilio-level audio stopping
     this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler);
     
     this.consentHandler = consentHandler;
-    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler, (text) => this.applyIntentFromTranscript(text));
+    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler, (text) => this.applyIntentFromTranscript(text), () => this.openaiIntegration?.getCurrentWorkflowPhase?.());
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs, {
       onBeforeTriggerResponse: (callSid) => {
         const conv = conversations[callSid];
         const lastUser = conv?.transcript?.filter(t => t.role === 'user').pop();
         if (lastUser?.text?.trim()) this.applyIntentFromTranscript(lastUser.text);
+      },
+      onWorkflowSwitch: (callSid, phase) => {
+        if (this.openaiIntegration) {
+          this.openaiIntegration.updateToolsForPhase(phase);
+        }
       }
     });
   }
@@ -105,6 +119,53 @@ export class ToolCoordinator {
       }));
     } catch (err) {
       console.error(`❌ [${this.state.callSid}] Error injecting text content:`, err);
+    }
+  }
+
+  /**
+   * After a "say-only" response completes, run any pending chained tool (inject function_call, execute, submit, trigger).
+   */
+  async runPendingChainedToolIfAny() {
+    const pending = this.state.pendingChainedToolCall;
+    if (!pending || !this.openaiWs || this.openaiWs.readyState !== 1 || this.state.isClosed) {
+      if (pending && (!this.openaiWs || this.openaiWs.readyState !== 1)) {
+        console.warn(`⚠️ [${this.state.callSid}] Pending chained tool ${pending.toolName} skipped - ws not ready`);
+      }
+      return;
+    }
+    this.state.pendingChainedToolCall = null;
+    const callSid = this.state.callSid;
+    const callId = `ch_${crypto.randomBytes(4).toString('hex')}`;
+    const { toolName, args } = pending;
+    const argsStr = typeof args === 'string' ? args : JSON.stringify(args || {});
+    try {
+      this.openaiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: { type: 'function_call', call_id: callId, name: toolName, arguments: argsStr }
+      }));
+      const executionResult = await toolExecutionService.executeTool({
+        callId,
+        callSid,
+        toolCallId: callId,
+        toolName,
+        arguments: args,
+        phoneNumber: this.state.phoneNumber,
+        stateManager: this.state,
+        progressCallback: null
+      });
+      await this.toolCallHandler.resultSubmitter.submitResult(callSid, callId, executionResult);
+      if (typeof this.toolCallHandler.onBeforeTriggerResponse === 'function') {
+        this.toolCallHandler.onBeforeTriggerResponse(callSid);
+      }
+      await this.toolCallHandler.resultSubmitter.triggerResponse(callSid, {
+        toolName,
+        toolResult: executionResult.result || executionResult
+      });
+      console.log(`✅ [${callSid}] Chained tool ${toolName} executed and response triggered`);
+    } catch (err) {
+      console.error(`❌ [${callSid}] Chained tool ${toolName} failed:`, err);
+      this.state.pendingChainedToolCall = null;
+      throw err;
     }
   }
 
@@ -177,12 +238,14 @@ export class ToolCoordinator {
     
     try {
       const isInitialGreeting = !this.state.hasInitialGreetingBeenSent;
+      const overrideWorkflowPhase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? undefined;
 
       const { instructions: responseInstructions, isConsentQuestion } = await conversationService.getResponseInstructions({
         callSid: this.state.callSid,
         state: this.state,
         conversation: conversations[this.state.callSid] || {},
-        hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent
+        hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent,
+        overrideWorkflowPhase
       });
 
       if (isConsentQuestion) {
@@ -205,14 +268,22 @@ export class ToolCoordinator {
         return;
       }
 
-      // Step 2: ALWAYS disable tools before creating response
-      // CRITICAL FIX: Tools are set to 'auto' in session setup, so we MUST disable them
-      // to prevent tool calls during greeting (which causes JSON/URL output instead of speech)
-      console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
+      const { toolChoice, workflowPhase } = await conversationService.getToolChoiceForResponse({
+        callSid: this.state.callSid,
+        state: this.state,
+        conversation: conversations[this.state.callSid] || {},
+        hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent,
+        overrideWorkflowPhase
+      });
+      if (toolChoice === 'auto') {
+        console.log(`📤 [${this.state.callSid}] Sending session.update - tool_choice: auto for phase ${workflowPhase ?? 'unknown'}`);
+      } else {
+        console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
+      }
       this.openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
-          tool_choice: 'none'
+          tool_choice: toolChoice
         }
       }));
 
@@ -221,7 +292,7 @@ export class ToolCoordinator {
       } else {
         try {
           await this.waitForSessionUpdate(10000);
-          console.log(`✅ [${this.state.callSid}] Session update confirmed - tools disabled`);
+          console.log(`✅ [${this.state.callSid}] Session update confirmed${toolChoice === 'none' ? ' - tools disabled' : ''}`);
         } catch (err) {
           console.error(`❌ [${this.state.callSid}] Session update timeout:`, err.message);
           console.warn(`⚠️ [${this.state.callSid}] Continuing without session update confirmation`);
@@ -278,6 +349,53 @@ export class ToolCoordinator {
       this.state.releaseResponseLock();
       this.state.pendingSessionUpdatePromise = null;
       this.state.pendingItemCreatePromise = null;
+    }
+  }
+
+  /**
+   * Dedicated path: user said "yes proceed" in cancellation phase → force CRM login step
+   * without relying on a tool call in that turn (tools are normally disabled for transcription responses).
+   * @param {{ alreadyHaveLock?: boolean }} options - Set alreadyHaveLock true when caller already holds response lock (e.g. speech_stopped path).
+   */
+  async handleCancellationProceedToLogin(options = {}) {
+    const callSid = this.state.callSid;
+    if (!this.openaiWs || this.openaiWs.readyState !== 1) return;
+    if (!options.alreadyHaveLock && !this.state.tryAcquireResponseLock()) {
+      console.warn(`⚠️ [${callSid}] Skipping cancellation proceed - response lock busy`);
+      return;
+    }
+    try {
+      const session = sessionStateManager.getSession(callSid);
+      const courseType = session?.courseType || conversations[callSid]?.bookingSession?.courseType || 'CBT';
+      sessionStateManager.initializeSession(callSid, courseType);
+      sessionStateManager.setCancellationCurrentStep(callSid, 1, { verified: true });
+      const instructions = `CRITICAL: Say exactly: "${AFTER_LOGIN_MESSAGE}" Then you MUST call the tool cancellation_step_authenticate with courseType: "${courseType}". No other text. Do not wait for the caller. Call the tool in the same response.`;
+      this.openaiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: { tool_choice: { type: 'function', name: 'cancellation_step_authenticate' } }
+      }));
+      try {
+        await this.waitForSessionUpdate(5000);
+      } catch (err) {
+        console.warn(`⚠️ [${callSid}] Session update wait timeout, continuing with response.create:`, err.message);
+      }
+      if (this.openaiWs.readyState !== 1) {
+        if (!options.alreadyHaveLock) this.state.releaseResponseLock();
+        return;
+      }
+      this.openaiWs.send(JSON.stringify({
+        type: 'response.create',
+        response: { modalities: ['audio', 'text'], instructions }
+      }));
+      console.log(`🎯 [${callSid}] Cancellation proceed: forced cancellation_step_authenticate (courseType: ${courseType})`);
+      setTimeout(() => {
+        if (this.openaiWs && this.openaiWs.readyState === 1) {
+          this.openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'auto' } }));
+        }
+      }, 3000);
+    } catch (err) {
+      console.error(`❌ [${callSid}] handleCancellationProceedToLogin error:`, err);
+      if (!options.alreadyHaveLock) this.state.releaseResponseLock();
     }
   }
 

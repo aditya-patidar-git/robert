@@ -7,6 +7,7 @@ import { conversations } from '../../../shared/state.js';
 import testClientRegistry from '../../../services/testClientRegistry.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
 import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
+import progressIndicatorService from '../../../services/progressIndicatorService.js';
 
 /**
  * Response Handler
@@ -17,10 +18,15 @@ export class ResponseHandler {
     this.state = stateManager;
     this.ws = ws;
     this.onCreateConsentResponseNeeded = null;
+    this.onResponseDone = null;
   }
 
   setOnCreateConsentResponseNeeded(fn) {
     this.onCreateConsentResponseNeeded = typeof fn === 'function' ? fn : null;
+  }
+
+  setOnResponseDone(fn) {
+    this.onResponseDone = typeof fn === 'function' ? fn : null;
   }
 
 
@@ -170,13 +176,15 @@ export class ResponseHandler {
     // Track outbound audio separately
     this.state.outboundAudioChunkCount++;
     
-    // DIAGNOSTIC: Log first audio chunk from OpenAI
     if (this.state.outboundAudioChunkCount === 1) {
       console.log(`🎵 [${this.state.callSid}] FIRST audio chunk received from OpenAI (response: ${currentResponseId || 'unknown'})`);
     }
-    
-    // Track in diagnostic service (non-intrusive, optional)
-    audioDiagnosticService.trackAudioDelta(this.state.callSid, event);
+
+    const isActiveResponse = this.state.activeResponseId !== null &&
+      (!event.response_id || event.response_id === this.state.activeResponseId);
+    if (isActiveResponse) {
+      audioDiagnosticService.trackAudioDelta(this.state.callSid, event, { isActiveResponse: true });
+    }
     
     this.state.isResponding = true;
     this.state.lastAudioChunkTime = Date.now();
@@ -622,8 +630,12 @@ export class ResponseHandler {
       this.state.responseItemId = null;
       this.state.responseStartTime = null;
       this.state.isResponding = false;
-      this.state.waitingForUser = true;
-      
+      const activeToolExecution = progressIndicatorService.getExecutionInfo(this.state.callSid);
+      this.state.waitingForUser = !activeToolExecution;
+      if (activeToolExecution) {
+        console.log(`📢 [${this.state.callSid}] Response done during tool execution (periodic update) - NOT setting waitingForUser`);
+      }
+
       // Mark initial greeting as completed if this was the first response
       if (!this.state.hasInitialGreetingCompleted && this.state.hasInitialGreetingBeenSent) {
         this.state.hasInitialGreetingCompleted = true;
@@ -681,6 +693,10 @@ export class ResponseHandler {
       
       // Stop pacer when response is done
       this.stopAudioPacer();
+
+      if (status === 'completed' && this.onResponseDone) {
+        this.onResponseDone(event);
+      }
     } else {
       // Response completed but it's not the active one (might have been cancelled)
       console.log(`ℹ️ [${this.state.callSid}] Response done for non-active response - ID: ${responseId}, status: ${status}, activeResponseId: ${this.state.activeResponseId}`);

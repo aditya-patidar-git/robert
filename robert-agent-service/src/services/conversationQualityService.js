@@ -24,8 +24,10 @@ class ConversationQualityService {
       conversations[callSid].qualityMetrics = {
         responseLatencies: [],
         interruptions: [],
+        bargeInResponseTimes: [],
         toolExecutions: [],
         averageLatency: null,
+        averageBargeInResponseTime: null,
         interruptionCount: 0,
         toolSuccessRate: null
       };
@@ -143,8 +145,10 @@ class ConversationQualityService {
       conversations[callSid].qualityMetrics = {
         responseLatencies: [],
         interruptions: [],
+        bargeInResponseTimes: [],
         toolExecutions: [],
         averageLatency: null,
+        averageBargeInResponseTime: null,
         interruptionCount: 0,
         toolSuccessRate: null
       };

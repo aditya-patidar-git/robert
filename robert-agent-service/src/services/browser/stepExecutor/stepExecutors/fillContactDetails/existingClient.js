@@ -176,118 +176,19 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
     
     // CRITICAL FIX 4: Only check for missing fields if we're confirmed to be on client details page
     if (isOnClientDetailsPage && eventBookingIframeExists) {
-      // Wait for form to be fully loaded
       await page.waitForTimeout(2000);
-      
-      // Sequential field checking - check fields one at a time in documented order
-      // This matches the client_verification pattern where fields are checked sequentially
+
       const fieldOrder = [
-        { 
-          label: 'Contact e-mail', 
-          id: 'cnt_email', 
-          name: 'email', 
-          paramName: 'customerEmail',
-          question: 'I can see in your profile that we currently don\'t have your email address; could you please provide me with your full email address?',
-          confirmationQuestion: 'Could you please confirm to me your full email address again?'
-        },
-        { 
-          label: 'Contact mobile number', 
-          id: 'cnt_mobile_number', 
-          name: 'mobileNumber',
-          paramName: 'customerMobile',
-          question: 'I can see in your profile that we currently don\'t have your mobile number; could you please provide me with your full mobile number?',
-          confirmationQuestion: 'Could you please confirm to me your full mobile number again?'
-        },
-        { 
-          label: 'Post Code', 
-          id: 'cmp_post_code', 
-          name: 'postcode',
-          paramName: 'postcode',
-          question: 'I can see in your profile that we currently don\'t have your postcode; could you please provide me with your postcode?',
-          confirmationQuestion: 'Could you please confirm to me your postcode again?'
-        },
-        { 
-          label: 'House number or name', 
-          id: 'cmp_buildingnumber', 
-          name: 'houseNumber',
-          paramName: 'houseNumber',
-          question: 'I can see in your profile that we currently don\'t have your house number or name; could you please provide me with your house number or name?',
-          confirmationQuestion: 'Could you please confirm to me your house number or house name?'
-        },
-        { 
-          label: 'Licence held', 
-          id: 'cnt_licence_held', 
-          name: 'licenceHeld',
-          paramName: 'licenceHeld',
-          question: 'I can see in your profile that we currently don\'t have your licence held information; could you please provide me with your licence held type?',
-          confirmationQuestion: null // No confirmation needed for dropdown
-        },
-        { 
-          label: 'National Insurance number', 
-          id: 'cnt_national_insurance_number', 
-          name: 'nationalInsuranceNumber',
-          paramName: 'nationalInsurance',
-          question: 'I can see in your profile that we currently don\'t have your National Insurance number; could you please provide me with your National Insurance number?',
-          confirmationQuestion: 'Could you please confirm to me your National Insurance number again?'
-        },
-        { 
-          label: 'Driving licence number', 
-          id: 'cnt_driving_licence_number', 
-          name: 'drivingLicenceNumber',
-          paramName: 'drivingLicenceNumber',
-          question: 'I can see in your profile that we currently don\'t have your driving licence number; could you please provide me with your driving licence number?',
-          confirmationQuestion: 'Could you please confirm to me your driving licence number again?'
-        }
+        { label: 'Contact e-mail', id: 'cnt_email', name: 'email', paramName: 'customerEmail', labelShort: 'email address' },
+        { label: 'Contact mobile number', id: 'cnt_mobile_number', name: 'mobileNumber', paramName: 'customerMobile', labelShort: 'mobile number' },
+        { label: 'Post Code', id: 'cmp_post_code', name: 'postcode', paramName: 'postcode', labelShort: 'postcode' },
+        { label: 'House number or name', id: 'cmp_buildingnumber', name: 'houseNumber', paramName: 'houseNumber', labelShort: 'house number or name' },
+        { label: 'Licence held', id: 'cnt_licence_held', name: 'licenceHeld', paramName: 'licenceHeld', labelShort: 'licence held type' },
+        { label: 'National Insurance number', id: 'cnt_national_insurance_number', name: 'nationalInsuranceNumber', paramName: 'nationalInsurance', labelShort: 'National Insurance number' },
+        { label: 'Driving licence number', id: 'cnt_driving_licence_number', name: 'drivingLicenceNumber', paramName: 'drivingLicenceNumber', labelShort: 'driving licence number' }
       ];
-      
-      // Check fields sequentially - return immediately when first missing field is found
-      for (const field of fieldOrder) {
-        try {
-          let fieldLocator = eventBookingIframe.getByLabel(field.label);
-          if (await fieldLocator.count() === 0) {
-            fieldLocator = eventBookingIframe.locator(`#${field.id} .dx-texteditor-input`);
-          }
-          if (await fieldLocator.count() === 0) {
-            fieldLocator = eventBookingIframe.locator(`#${field.id}`);
-          }
-          
-          if (await fieldLocator.count() > 0) {
-            // For dropdown fields (like Licence held), check selected value differently
-            let currentValue = '';
-            if (field.name === 'licenceHeld') {
-              // For dropdown, check selected option
-              currentValue = await fieldLocator.evaluate(el => {
-                if (el.tagName === 'SELECT') {
-                  return el.value || '';
-                }
-                return el.textContent?.trim() || '';
-              }).catch(() => '');
-            } else {
-              currentValue = await fieldLocator.inputValue().catch(() => '');
-            }
-            
-            if (!currentValue || currentValue.trim() === '') {
-              // Found missing field - return immediately to ask for this field
-              console.log(`⚠️ [STEP 8] Missing field detected: ${field.name} (${field.label})`);
-              return {
-                success: true,
-                requiresField: field.name,
-                fieldName: field.name,
-                paramName: field.paramName,
-                question: field.question,
-                message: field.question,
-                instruction: `Ask the client for their ${field.label.toLowerCase()}. After collecting it, call this tool again with ${field.paramName} parameter.`
-              };
-            }
-          }
-        } catch (error) {
-          console.warn(`⚠️ [STEP 8] Could not check ${field.label}:`, error.message);
-          // Continue to next field if this one fails
-        }
-      }
-      
-      // All required fields are present - fill any provided field values before clicking Next
-      // This handles cases where the agent provides field values after being asked
+
+      // Fill all provided args first (so one tool call with all params fills everything, then we re-scan)
       
       // Fill email if provided
       if (args.customerEmail) {
@@ -425,6 +326,51 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             await page.waitForTimeout(500);
           }
         }
+      }
+
+      // Build full list of missing fields (one scan, same selectors as before)
+      const missingFields = [];
+      for (const field of fieldOrder) {
+        try {
+          let fieldLocator = eventBookingIframe.getByLabel(field.label);
+          if (await fieldLocator.count() === 0) {
+            fieldLocator = eventBookingIframe.locator(`#${field.id} .dx-texteditor-input`);
+          }
+          if (await fieldLocator.count() === 0) {
+            fieldLocator = eventBookingIframe.locator(`#${field.id}`);
+          }
+          if (await fieldLocator.count() > 0) {
+            let currentValue = '';
+            if (field.name === 'licenceHeld') {
+              currentValue = await fieldLocator.evaluate(el => {
+                if (el.tagName === 'SELECT') return el.value || '';
+                return el.textContent?.trim() || '';
+              }).catch(() => '');
+            } else {
+              currentValue = await fieldLocator.inputValue().catch(() => '');
+            }
+            if (!currentValue || currentValue.trim() === '') {
+              missingFields.push(field);
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ [STEP 8] Could not check ${field.label}:`, error.message);
+        }
+      }
+
+      if (missingFields.length > 0) {
+        const paramNames = missingFields.map(f => f.paramName);
+        const labelsList = missingFields.map(f => f.labelShort).join(', ');
+        const message = `I need your ${labelsList}; could you please provide them?`;
+        const instruction = `Collect ALL missing details from the caller iteratively (one or more conversational turns). Do NOT call this tool again until you have every value. Then call booking_step_fill_contact_details ONCE with all parameters: ${paramNames.join(', ')}.`;
+        console.log(`⚠️ [STEP 8] Missing fields (${missingFields.length}): ${paramNames.join(', ')}`);
+        return {
+          success: true,
+          missingFields: paramNames,
+          message,
+          question: message,
+          instruction
+        };
       }
     } else {
       // Not on client details page yet - just proceed without checking missing fields

@@ -188,7 +188,8 @@ class KBAService {
    * @returns {boolean} True if KBA is required
    */
   requiresKBA(toolName, parameters) {
-    const kbaRequiredTools = ['transfer_call', 'cancellation_step_verify_booking_intent'];
+    // cancellation_step_* tools use in-flow client_verification (Step 6); do not require KBA
+    const kbaRequiredTools = ['transfer_call'];
     return kbaRequiredTools.includes(toolName);
   }
 

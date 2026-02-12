@@ -86,12 +86,57 @@ export class ConversationService {
   }
 
   /**
+   * Detect if transcript indicates user said "yes" to proceed (cancellation Step 1 → Step 2).
+   * Used to trigger the dedicated path that runs CRM login without relying on a tool call in that turn.
+   * @param {string} transcript - User transcript (single or combined)
+   * @returns {boolean}
+   */
+  isCancellationProceedConfirmation(transcript) {
+    if (!transcript || typeof transcript !== 'string') return false;
+    const t = transcript.trim().toLowerCase();
+    if (!t) return false;
+    const proceedPatterns = [
+      /yes\s*(,?\s*)?(please\s*)?proceed/i,
+      /(yes|yeah|yep|ok|okay|sure)\s*(,?\s*)?(please\s*)?proceed/i,
+      /proceed\s*(please)?/i,
+      /^yes\s*\.?\s*$/i,
+      /go\s*ahead/i,
+      /(let'?s?\s+)?proceed/i
+    ];
+    return proceedPatterns.some((p) => p.test(t));
+  }
+
+  /**
+   * Decide tool_choice for transcript-driven response (single place for Media Streams and SIP).
+   * Use 'none' only for greeting, consent question, or language_selection; otherwise 'auto'.
+   * @param {Object} context - { callSid, state, conversation, hasInitialGreetingBeenSent, overrideWorkflowPhase }
+   * @returns {Promise<{ toolChoice: 'none'|'auto', workflowPhase: string|null }>}
+   */
+  async getToolChoiceForResponse(context = {}) {
+    const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false, overrideWorkflowPhase } = context;
+    if (!hasInitialGreetingBeenSent) {
+      return { toolChoice: 'none', workflowPhase: 'greeting' };
+    }
+    const result = await this.getResponseInstructions(context);
+    if (result.isConsentQuestion === true) {
+      return { toolChoice: 'none', workflowPhase: null };
+    }
+    const workflowPhase = overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
+      ? overrideWorkflowPhase
+      : await this.promptService.determineWorkflowPhase(state, callSid);
+    if (workflowPhase === 'language_selection') {
+      return { toolChoice: 'none', workflowPhase };
+    }
+    return { toolChoice: 'auto', workflowPhase };
+  }
+
+  /**
    * Get instructions for response.create (initial greeting or subsequent).
    * @param {Object} context - { callSid, state, conversation, hasInitialGreetingBeenSent }
    * @returns {Promise<{ instructions: string|null, isInitialGreeting: boolean }>}
    */
   async getResponseInstructions(context = {}) {
-    const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false } = context;
+    const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false, overrideWorkflowPhase } = context;
     const isInitialGreeting = !hasInitialGreetingBeenSent;
 
     if (isInitialGreeting) {
@@ -141,7 +186,9 @@ export class ConversationService {
       return { instructions, isInitialGreeting: true };
     }
 
-    const workflowPhase = await this.promptService.determineWorkflowPhase(state, callSid);
+    const workflowPhase = overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
+      ? overrideWorkflowPhase
+      : await this.promptService.determineWorkflowPhase(state, callSid);
     const activeToolName =
       state?.activeToolName || (state?.activeResponseId ? 'processing_response' : null);
     let courseType = null;

@@ -40,23 +40,25 @@ SAFETY:
 
 TOOLS - PROACTIVE USAGE:
 🚨 CRITICAL: Use tools proactively whenever they're needed to provide accurate answers, even if the caller doesn't explicitly ask you to use them.
-- If a caller wants to book (e.g. "I want to book a course", "book Introduction to Motorcycling") → IMMEDIATELY use booking_step_check_availability first. Do NOT use file_search for booking; use file_search only for informational questions about courses (what is a course, pricing, procedures), not when the caller wants to make a booking.
+- When the caller says what they want (e.g. cancel my booking, want to book, file a complaint) in ANY language → IMMEDIATELY call start_workflow with the right workflow (cancellation, booking, or complaint). In the SAME response also speak a short acknowledgment and the first question of that workflow (e.g. for cancellation: "Do you have a current booking with us?"). Do NOT ask for booking reference, email or phone before starting cancellation.
+- If a caller wants to book (e.g. "I want to book a course", "book Introduction to Motorcycling") and you already have booking tools → use booking_step_check_availability first. Do NOT use file_search for booking; use file_search only for informational questions about courses (what is a course, pricing, procedures), not when the caller wants to make a booking.
 - If a caller asks about policies, prices, or course information (what a course is, content, procedures) → use file_search
-- If a caller asks about availability → IMMEDIATELY use booking_step_check_availability
+- If a caller asks about availability and you have booking tools → IMMEDIATELY use booking_step_check_availability
 - If a caller asks about current/external information not in KB → IMMEDIATELY use web_search
-- If a caller needs to book or cancel → IMMEDIATELY use appropriate booking_step_* tools
-- If a caller expresses dissatisfaction or wants to complain → IMMEDIATELY use complaint_submission tool
+- If a caller expresses dissatisfaction or wants to complain and you do not have complaint tools yet → call start_workflow(workflow: "complaint") first
 - If a caller needs verification → IMMEDIATELY use kba_verification or client_verification tools
 - If a caller needs a summary or confirmation sent → IMMEDIATELY use email or send_sms tools
 
 DO NOT hesitate or ask permission before using tools - use them automatically when they're needed to answer accurately. The caller expects accurate, grounded answers, not guesses.
 
 TOOLS AVAILABLE:
-- booking_step_* tools for all bookings (preferred, step-based)
+- start_workflow: call when the caller clearly says they want to cancel a booking, make a booking, or file a complaint (works in any language). Then you will receive the right tools for that workflow.
+- booking_step_* tools for all bookings (after start_workflow(booking) or when already in booking)
+- cancellation_step_* tools for cancellations (after start_workflow(cancellation))
 - file_search to find information in knowledge base (use proactively for policy/price/course questions)
 - web_search for time-sensitive facts not in KB (use proactively when needed)
 - email and send_sms for sending confirmations/summaries
-- complaint_submission for formal complaints
+- complaint_submission for formal complaints (after start_workflow(complaint) or when already in complaint)
 - kba_verification and client_verification for identity verification
 - transfer_call for human escalation
 
@@ -167,7 +169,7 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
 
     // Add critical rules if in cancellation flow
     if (workflowPhase === 'cancellation') {
-      instructions += `\n\nCRITICAL CANCELLATION RULES:\n- MUST start with cancellation_step_verify_booking_intent - ask "Do you have a current booking with us?" FIRST\n- NEVER ask for booking reference, email, or phone number before Step 1\n- NEVER use client_verification before cancellation_step_search_client finds a client (Step 5)\n- Follow steps sequentially - do NOT skip steps`;
+      instructions += `\n\nCRITICAL CANCELLATION RULES:\n- MUST start with cancellation_step_verify_booking_intent - ask "Do you have a current booking with us?" FIRST\n- ALWAYS invoke the tool for the current step; do not reply with only speech when the workflow requires a cancellation_step_* tool call. Interpret the caller's words in context of the last question (e.g. "Do you have a booking?" vs "Would you like to proceed?") and call the tool with the correct parameters.\n- NEVER speak tool parameters or JSON (e.g. do not say {"courseType": "CBT"}); call the tool instead.\n- NEVER ask for booking reference, email, or phone number before Step 1\n- NEVER use client_verification before cancellation_step_search_client finds a client (Step 5)\n- Follow steps sequentially - do NOT skip steps`;
     }
 
     // Add tool-specific context if tool is active

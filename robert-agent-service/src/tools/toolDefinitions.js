@@ -255,7 +255,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_fill_contact_details',
-      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. For existing clients: this happens AFTER booking_step_lookup_contact (Step 7.5) and fills only missing fields. For new clients: this happens AFTER booking_step_create_new_contact (Step 6) and fills all fields from scratch.`,
+      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. For existing clients: runs AFTER booking_step_lookup_contact (Step 7.5); checks all required fields and returns a full list of missing ones (missingFields). Collect all missing details from the caller iteratively (one or more turns), then call this tool ONCE with all parameters to fill and proceed. For new clients: runs AFTER booking_step_create_new_contact (Step 6) and fills all fields from scratch.`,
       parameters: {
         type: 'object',
         properties: {
@@ -637,6 +637,22 @@ This tool returns guidance messages directing to the appropriate tools.`,
     },
     {
       type: 'function',
+      name: 'start_workflow',
+      description: 'Start a specific workflow when you understand the caller\'s intent. Call this as soon as the caller clearly indicates what they want (in any language). Then in the SAME response, speak a short acknowledgment and the first question of that workflow. Allowed workflows: cancellation (cancel a booking), booking (make a new booking or check availability), complaint (file a complaint). Do NOT ask for booking reference, email or phone before starting cancellation—start cancellation and ask "Do you have a current booking with us?" first.',
+      parameters: {
+        type: 'object',
+        properties: {
+          workflow: {
+            type: 'string',
+            enum: ['cancellation', 'booking', 'complaint'],
+            description: 'Workflow to start: cancellation = cancel a booking; booking = make/check booking; complaint = file a complaint'
+          }
+        },
+        required: ['workflow']
+      }
+    },
+    {
+      type: 'function',
       name: 'kba_verification',
       description: 'Verify caller identity using Knowledge-Based Authentication (KBA). Required before accessing or changing personal booking data. Use email + postcode + booking reference (if available). If mobile number is registered, an OTP will be sent. Provide the OTP code in a subsequent call to complete verification.',
       parameters: {
@@ -755,19 +771,23 @@ function getCancellationStepToolDefinitions() {
     {
       type: 'function',
       name: 'cancellation_step_verify_booking_intent',
-      description: `Step 1: Verify caller has a current booking and explain cancellation policy. This is a voice-only step that requires caller interaction.
+      description: `Step 1: Verify caller has a current booking and explain cancellation policy. You MUST invoke this tool—do not output courseType or parameters as speech or JSON.
 
-Ask the caller: "Do you have a current booking with us?"
-- If they say "Yes": Explain the cancellation policy, then say the standard Terms disclaimer (Full Terms & Conditions are available on our website). Then ask "Would you like to proceed?" If they say Yes, set verified: true, proceedToStep2: true. Say the exact message returned by this tool ("I'll now login to the system to find your profile. Please bear with me a moment.") and IMMEDIATELY call cancellation_step_authenticate—do not ask for yes/no; Step 2 is automatic. If they say No to proceed, set verified: true, proceedToStep2: false and say exactly: "Ok, thank you. Is there anything else that I can help you with?" and do not proceed to Step 2.
-- If they say "No": Set verified: false and do not proceed to Step 2
+🚨 CRITICAL: courseType is OPTIONAL at this step. It will be determined from the booking found in Step 6 (locateBooking). You do NOT need to ask for course type here.
 
-Cancellation policy: "If you wish to cancel your (CBT), (ITM), (Gear Conversion), (Private Motorcycling lesson) you MUST provide a minimum of 3 (Three) full working days' notice before the start of your course. Be aware that there is a charge of 30% for administration fee. Cancellations made within less than 3 (three) full working days will result in the entire paid fees."`,
+When to call (interpret caller response in context of the last question you asked):
+- After "Do you have a current booking with us?" and caller confirms they have a booking (yes, yeah, I do, sure, etc.): call with verified: true (courseType is optional). Then in your next turn explain the policy and ask "Would you like to proceed?" Do not call cancellation_step_authenticate yet.
+- After you have explained the policy and asked "Would you like to proceed?" and caller agrees to proceed (yes, proceed, go ahead, etc.): call with verified: true, proceedToStep2: true; then immediately call cancellation_step_authenticate.
+- If caller says they do not have a booking: call with verified: false.
+- If caller has a booking but declines to proceed: call with verified: true, proceedToStep2: false.
+
+Cancellation policy: minimum 3 full working days' notice, 30% admin fee; less than 3 days = entire fee. Full Terms on website.`,
       parameters: {
         type: 'object',
         properties: {
           courseType: {
             type: 'string',
-            description: 'Course type being cancelled',
+            description: 'Course type being cancelled (OPTIONAL - will be determined from booking in Step 6)',
             enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
           },
           verified: {
@@ -779,13 +799,13 @@ Cancellation policy: "If you wish to cancel your (CBT), (ITM), (Gear Conversion)
             description: 'Whether to proceed to Step 2 (set to true if verified: true)'
           }
         },
-        required: ['courseType']
+        required: []
       }
     },
     {
       type: 'function',
       name: 'cancellation_step_authenticate',
-      description: 'Step 2: Login to CRM system. Reuses booking authentication logic. ONLY call after cancellation_step_verify_booking_intent has been completed with verified: true and proceedToStep2: true. Do not call as the first cancellation step.',
+      description: 'Step 2: Login to CRM system. You MUST invoke this tool when proceeding to Step 2—do not output courseType or JSON as speech. Call ONLY after the caller has agreed to proceed (after you explained the policy and asked "Would you like to proceed?") and after cancellation_step_verify_booking_intent was called with verified: true, proceedToStep2: true. Say the exact message from the previous tool (e.g. "I\'ll now login to the system...") then call this tool immediately.',
       parameters: {
         type: 'object',
         properties: {

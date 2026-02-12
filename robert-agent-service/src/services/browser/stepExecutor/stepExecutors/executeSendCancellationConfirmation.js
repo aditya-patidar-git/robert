@@ -94,10 +94,8 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
     await okButton.waitFor({ state: 'visible', timeout: 30000 });
     await okButton.click();
     
-    // Wait for navigation back to profile or exit
     await page.waitForTimeout(2000);
-    await page.waitForLoadState('networkidle');
-    
+
     await takeScreenshot(page, 'send-cancellation-confirmation-complete.png', screenshotsDir);
     
     return {

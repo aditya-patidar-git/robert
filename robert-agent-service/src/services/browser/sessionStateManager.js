@@ -20,6 +20,7 @@ class SessionStateManager {
     //   knownPreferences: object,
     //   sessionDetails: object | null,
     //   bookingDetails: object | null,
+    //   cancellationFee: number | null,
     //   pageRef: Page | null,
     //   lastActivity: number,
     //   stepHistory: Array<...>,              // Booking step audit trail
@@ -55,6 +56,7 @@ class SessionStateManager {
         knownPreferences: {},
         sessionDetails: null,
         bookingDetails: null,
+        cancellationFee: null,
         pageRef: null,
         lastActivity: Date.now(),
         stepHistory: [],
@@ -70,9 +72,11 @@ class SessionStateManager {
       
       console.log(`✅ [SESSION] Initialized booking session for ${callSid} (course: ${courseType})`);
     } else {
-      // Update last activity
       this._syncBookingSession(callSid, (session) => {
         session.lastActivity = Date.now();
+        if (courseType != null && courseType !== 'TBD') {
+          session.courseType = courseType;
+        }
       });
     }
 
@@ -274,6 +278,17 @@ class SessionStateManager {
   setBookingDetails(callSid, bookingDetails) {
     this._syncBookingSession(callSid, (session) => {
       session.bookingDetails = bookingDetails;
+    });
+  }
+
+  getCancellationFee(callSid) {
+    const session = this.getSession(callSid);
+    return session?.cancellationFee ?? null;
+  }
+
+  setCancellationFee(callSid, fee) {
+    this._syncBookingSession(callSid, (session) => {
+      session.cancellationFee = fee;
     });
   }
 

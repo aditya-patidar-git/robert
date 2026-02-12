@@ -21,7 +21,7 @@ const ConversationBehaviorConfigSchema = new mongoose.Schema({
     },
     updateIntervalMs: { 
       type: Number, 
-      default: 5000,
+      default: 12000,
       min: 1000,
       max: 30000
     },

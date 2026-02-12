@@ -179,9 +179,14 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
     
     // Lock acquired successfully - proceed with response creation
     try {
-      // PHASE 1: Get contextual instructions for automatic continuation after tool execution
       const callSid = callId;
-      const workflowPhase = await promptService.determineWorkflowPhase(this.stateManager, callSid);
+      let workflowPhase = await promptService.determineWorkflowPhase(this.stateManager, callSid);
+      if ((options?.toolName && options.toolName.startsWith('cancellation_step_')) || conversations[callSid]?.workflowContext === 'cancellation') {
+        workflowPhase = 'cancellation';
+      }
+      if ((options?.toolName && options.toolName.startsWith('booking_step_')) || conversations[callSid]?.workflowContext === 'booking') {
+        workflowPhase = workflowPhase || 'booking_start';
+      }
       
       // Get booking session info if available
       let courseType = null;
@@ -231,9 +236,19 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           // Verification successful - agent must confirm and ask for explicit yes/no before proceeding
           const nextStepTool = toolResult.nextStepTool || 'booking_step_select_session';
           
+          // Check if we're in a cancellation workflow
+          const isCancellationWorkflow = (options?.toolName && options.toolName.startsWith('cancellation_step_')) || 
+                                         conversations[callSid]?.workflowContext === 'cancellation' ||
+                                         workflowPhase === 'cancellation';
+          
+          // Use appropriate fallback message based on workflow type
+          const fallbackMessage = isCancellationWorkflow
+            ? 'You are successfully verified. Would you like to proceed with cancelling your booking? Please say yes or no.'
+            : 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.';
+          
           if (toolResult.requiresExplicitConfirmation) {
             // New behavior: Ask for explicit confirmation before proceeding
-            const confirmationInstruction = `CRITICAL: You MUST say EXACTLY: "${toolResult.message || 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.'}" Then WAIT for the caller to respond with "yes" or "no". DO NOT proceed to the next step until the caller explicitly confirms with "yes". If the caller says "no", ask how you can help them instead. Only after the caller says "yes", proceed to call the next step tool: ${nextStepTool}.`;
+            const confirmationInstruction = `CRITICAL: You MUST say EXACTLY: "${toolResult.message || fallbackMessage}" Then WAIT for the caller to respond with "yes" or "no". DO NOT proceed to the next step until the caller explicitly confirms with "yes". If the caller says "no", ask how you can help them instead. Only after the caller says "yes", proceed to call the next step tool: ${nextStepTool}.`;
             
             responseInstructions = responseInstructions 
               ? `${confirmationInstruction}\n\n${responseInstructions}`
@@ -241,7 +256,10 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
             console.log(`🎯 [${callId}] Client verification successful - instructing explicit confirmation before proceeding: ${nextStepTool}`);
           } else {
             // Legacy behavior: Immediate continuation (for backward compatibility)
-            const immediateResponseInstruction = `CRITICAL: You MUST speak immediately without waiting. Start with EXACTLY: "You are successfully verified." Then IMMEDIATELY in the SAME response, continue with: "Now let me continue with your booking." Then IMMEDIATELY call the next step tool: ${nextStepTool} WITHOUT waiting for any user response or prompt. Do NOT pause after saying "You are successfully verified" - immediately continue and call the tool in the same response. Do NOT wait for prompts or user input. The verification is complete - proceed automatically to the next booking step.`;
+            const continuationMessage = isCancellationWorkflow
+              ? 'Now let me continue with your cancellation.'
+              : 'Now let me continue with your booking.';
+            const immediateResponseInstruction = `CRITICAL: You MUST speak immediately without waiting. Start with EXACTLY: "You are successfully verified." Then IMMEDIATELY in the SAME response, continue with: "${continuationMessage}" Then IMMEDIATELY call the next step tool: ${nextStepTool} WITHOUT waiting for any user response or prompt. Do NOT pause after saying "You are successfully verified" - immediately continue and call the tool in the same response. Do NOT wait for prompts or user input. The verification is complete - proceed automatically to the next step.`;
             
             responseInstructions = responseInstructions 
               ? `${immediateResponseInstruction}\n\n${responseInstructions}`
@@ -249,6 +267,19 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
             console.log(`🎯 [${callId}] Client verification successful - instructing immediate confirmation and next step: ${nextStepTool}${toolResult.requiresImmediateNextStep ? ' (requires immediate next step)' : ''}`);
           }
         }
+      }
+
+      const isFillContactDetailsMissing = toolName === 'booking_step_fill_contact_details' &&
+        toolResult?.success === true &&
+        Array.isArray(toolResult?.missingFields) &&
+        toolResult.missingFields.length > 0;
+      if (isFillContactDetailsMissing) {
+        const msg = toolResult.message || `I need your ${(toolResult.missingFields || []).join(', ')}; could you please provide them?`;
+        const instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". Collect them iteratively (one or more conversational turns). Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] Fill contact details incomplete - instructing to collect all missing then call once: ${toolResult.missingFields?.join(', ')}`);
       }
 
       if (toolName === 'transfer_call' && toolResult?.allTransferNumbersFailed === true && toolResult?.messageForCaller) {
@@ -264,8 +295,11 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       const isRequiresToolRedirect = !!toolResult?.requiresTool;
       if (isRequiresToolRedirect) {
         forceNextToolChoice = toolResult.requiresTool;
-        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
-        responseInstructions = `CRITICAL: You called a step out of order. You MUST call ${toolResult.requiresTool} now with courseType: "${reqCourseType}". Do not repeat the wrong step. Call the tool in this response.`;
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (!reqCourseType) {
+          console.warn(`⚠️ [${callId}] courseType not available for ${toolResult.requiresTool} - will be determined from booking`);
+        }
+        responseInstructions = `CRITICAL: You called a step out of order. SPEAK a short phrase like "Let me do that now." then IN THIS SAME RESPONSE invoke the tool ${toolResult.requiresTool} with courseType "${reqCourseType}". Do NOT output JSON or parameters as text—say words, then call the tool.`;
         console.log(`🎯 [${callId}] Wrong step - forcing required tool: ${toolResult.requiresTool}`);
       }
 
@@ -274,10 +308,14 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         toolResult?.proceedToStep2 === true &&
         toolResult?.nextStep === 'cancellation_step_authenticate';
       if (isVerifyBookingIntentProceed) {
-        const authCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
-        responseInstructions = `CRITICAL: Say exactly: "${AFTER_LOGIN_MESSAGE}" Then you MUST call the tool cancellation_step_authenticate with courseType: "${authCourseType}". No other text. Do not wait for the caller. Call the tool in the same response.`;
-        forceNextToolChoice = 'cancellation_step_authenticate';
-        console.log(`🎯 [${callId}] Cancellation proceed to Step 2 - forcing immediate login tool call (courseType: ${authCourseType})`);
+        // courseType is optional - will be determined from booking in Step 6
+        // Use placeholder 'TBD' if not available yet
+        const authCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'TBD';
+        responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${AFTER_LOGIN_MESSAGE}"`;
+        if (this.stateManager) {
+          this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_authenticate', args: { courseType: authCourseType } };
+        }
+        console.log(`🎯 [${callId}] Cancellation proceed to Step 2 - say-only then inject cancellation_step_authenticate (courseType: ${authCourseType})`);
       }
 
       const isConfirmCancellationProceed = !forceNextToolChoice && toolName === 'cancellation_step_confirm_cancellation' &&
@@ -287,12 +325,18 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       if (isConfirmCancellationProceed) {
         const session = sessionStateManager.getSession(callSid);
         const bookingDetails = sessionStateManager.getBookingDetails(callSid) || session?.bookingDetails;
-        const initCourseType = courseType || session?.courseType || 'CBT';
+        const initCourseType = courseType || session?.courseType;
+        const validCourseType = initCourseType && initCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for initiate_cancellation - skipping chained call (set in locateBooking/confirm_cancellation)`);
+        }
         const initCourseDate = bookingDetails?.courseDate || bookingDetails?.bookingDate;
-        if (initCourseDate) {
-          responseInstructions = `CRITICAL: Say exactly: "${AFTER_CONFIRM_CANCEL_MESSAGE}" Then you MUST call the tool cancellation_step_initiate_cancellation with courseType: "${initCourseType}", workflowType: "existing", courseDate: "${initCourseDate}". No other text. Do not wait for the caller. Call the tool in the same response.`;
-          forceNextToolChoice = 'cancellation_step_initiate_cancellation';
-          console.log(`🎯 [${callId}] Cancellation confirmed - forcing immediate initiate_cancellation (courseType: ${initCourseType}, courseDate: ${initCourseDate})`);
+        if (initCourseDate && validCourseType) {
+          responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${AFTER_CONFIRM_CANCEL_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_initiate_cancellation', args: { courseType: initCourseType, workflowType: 'existing', courseDate: initCourseDate } };
+          }
+          console.log(`🎯 [${callId}] Cancellation confirmed - say-only then inject initiate_cancellation (courseType: ${initCourseType}, courseDate: ${initCourseDate})`);
         }
       }
 
@@ -300,30 +344,54 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         toolResult?.success === true &&
         toolResult?.cancellationFormOpened === true;
       if (isInitiateCancellationProceed) {
-        const fillCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
-        responseInstructions = `CRITICAL: Say exactly: "${AFTER_FORM_OPENED_MESSAGE}" Then you MUST call the tool cancellation_step_fill_cancellation_form with courseType: "${fillCourseType}", workflowType: "existing", cancellationFee (use the fee you stated to the caller), and cancellationReason if needed. No other text. Call the tool in the same response.`;
-        forceNextToolChoice = 'cancellation_step_fill_cancellation_form';
-        console.log(`🎯 [${callId}] Cancellation form opened - forcing immediate fill_cancellation_form`);
+        const fillCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const cancellationFee = sessionStateManager.getCancellationFee(callSid);
+        const validCourseType = fillCourseType && fillCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for fill_cancellation_form - skipping chained call`);
+        } else if (cancellationFee == null || cancellationFee === undefined) {
+          console.error(`❌ [${callId}] cancellationFee not available for chained fill_cancellation_form - skipping`);
+        } else {
+          responseInstructions = `CRITICAL: You must output ONLY this single sentence, no other words or tools: "${AFTER_FORM_OPENED_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_fill_cancellation_form', args: { courseType: fillCourseType, workflowType: 'existing', cancellationFee: Number(cancellationFee) } };
+          }
+          console.log(`🎯 [${callId}] Cancellation form opened - say-only then inject fill_cancellation_form`);
+        }
       }
 
       const isFillCancellationFormProceed = !forceNextToolChoice && toolName === 'cancellation_step_fill_cancellation_form' &&
         toolResult?.success === true &&
         toolResult?.cancellationSubmitted === true;
       if (isFillCancellationFormProceed) {
-        const navCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
-        responseInstructions = `CRITICAL: Say exactly: "${AFTER_FORM_SUBMITTED_MESSAGE}" Then you MUST call the tool cancellation_step_navigate_communication with courseType: "${navCourseType}", workflowType: "existing". No other text. Call the tool in the same response.`;
-        forceNextToolChoice = 'cancellation_step_navigate_communication';
-        console.log(`🎯 [${callId}] Cancellation form submitted - forcing immediate navigate_communication`);
+        const navCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const validCourseType = navCourseType && navCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for navigate_communication - skipping chained call`);
+        } else {
+          responseInstructions = `CRITICAL: You must output ONLY this single sentence, no other words or tools: "${AFTER_FORM_SUBMITTED_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_navigate_communication', args: { courseType: navCourseType, workflowType: 'existing' } };
+          }
+          console.log(`🎯 [${callId}] Cancellation form submitted - say-only then inject navigate_communication`);
+        }
       }
 
       const isNavigateCommunicationProceed = !forceNextToolChoice && toolName === 'cancellation_step_navigate_communication' &&
         toolResult?.success === true &&
         toolResult?.templatePageOpened === true;
       if (isNavigateCommunicationProceed) {
-        const selCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'CBT';
-        responseInstructions = `CRITICAL: Say exactly: "${BEAR_WITH_ME}" Then you MUST call the tool cancellation_step_select_template with courseType: "${selCourseType}", workflowType: "existing". No other text. Call the tool in the same response.`;
-        forceNextToolChoice = 'cancellation_step_select_template';
-        console.log(`🎯 [${callId}] Template page opened - forcing immediate select_template`);
+        const selCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const validCourseType = selCourseType && selCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for select_template - skipping chained call`);
+        } else {
+          responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${BEAR_WITH_ME}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_select_template', args: { courseType: selCourseType, workflowType: 'existing' } };
+          }
+          console.log(`🎯 [${callId}] Template page opened - say-only then inject select_template`);
+        }
       }
       
       if (retryCount > 0) {
@@ -344,6 +412,24 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       // Small delay to ensure session update is processed
       await new Promise(resolve => setTimeout(resolve, 150));
       
+      // Track when selectBookingOptions completes successfully to delay periodic updates
+      if (toolName === 'booking_step_select_booking_options' && toolResult?.success === true) {
+        // Estimate acknowledgment end time based on response instructions
+        const acknowledgmentText = responseInstructions || 'Booking options selected successfully';
+        const estimatedDuration = this.estimateAcknowledgmentDuration(acknowledgmentText);
+        const acknowledgmentEndTime = Date.now() + estimatedDuration;
+        
+        // Store in conversation state for delayed periodic update start
+        if (!conversations[callSid]) {
+          conversations[callSid] = {};
+        }
+        conversations[callSid].bikeTypeQuestionsCompleted = {
+          acknowledgmentEndTime: acknowledgmentEndTime,
+          estimatedDuration: estimatedDuration
+        };
+        console.log(`📊 [${callId}] Bike type questions completed - acknowledgment will end at ${new Date(acknowledgmentEndTime).toISOString()} (estimated ${estimatedDuration}ms)`);
+      }
+      
       // Step 2: Create response with contextual instructions
       const responseCreatePayload = {
         type: 'response.create',
@@ -355,7 +441,8 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       // PHASE 1: Include contextual instructions to ensure automatic continuation
       if (responseInstructions) {
         responseCreatePayload.response.instructions = responseInstructions;
-        console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''}${isRequiresToolRedirect ? ', force requiresTool redirect' : ''}${isVerifyBookingIntentProceed ? ', force cancellation_step_authenticate' : ''}${isConfirmCancellationProceed ? ', force cancellation_step_initiate_cancellation' : ''}${isInitiateCancellationProceed ? ', force cancellation_step_fill_cancellation_form' : ''}${isFillCancellationFormProceed ? ', force cancellation_step_navigate_communication' : ''}${isNavigateCommunicationProceed ? ', force cancellation_step_select_template' : ''})`);
+        const chained = isVerifyBookingIntentProceed || isConfirmCancellationProceed || isInitiateCancellationProceed || isFillCancellationFormProceed || isNavigateCommunicationProceed;
+        console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''}${isRequiresToolRedirect ? ', force requiresTool redirect' : ''}${chained ? ', say-only then chained tool' : ''})`);
       }
       
       openaiWs.send(JSON.stringify(responseCreatePayload));
@@ -427,6 +514,25 @@ export class HTTPResultSubmitter extends ToolResultSubmitter {
    */
   async triggerResponse(callId, options = {}) {
     // No-op for HTTP/SIP - OpenAI handles response triggering
+  }
+
+  /**
+   * Estimate acknowledgment duration for bike type questions completion
+   * @param {string} text - Response text
+   * @returns {number} Estimated duration in milliseconds
+   */
+  estimateAcknowledgmentDuration(text) {
+    if (!text || typeof text !== 'string') {
+      return 3000; // Default 3 seconds
+    }
+    // Extract actual message text (remove CRITICAL instructions)
+    const messageMatch = text.match(/"([^"]+)"/);
+    const messageText = messageMatch ? messageMatch[1] : text.split('\n')[0];
+    const wordCount = messageText.trim().split(/\s+/).filter(word => word.length > 0).length;
+    // Average speech rate: ~2.5 words/second (150 words/minute)
+    // Add 1 second buffer for natural pauses
+    const durationMs = (wordCount / 2.5) * 1000 + 1000;
+    return Math.ceil(durationMs);
   }
 }
 

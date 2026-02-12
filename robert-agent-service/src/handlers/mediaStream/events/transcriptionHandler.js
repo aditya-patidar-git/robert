@@ -16,13 +16,14 @@ import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
  * Supports partial transcription deltas for faster "stop" detection
  */
 export class TranscriptionHandler {
-  constructor(stateManager, languageDetector, consentHandler, openaiWs, bargeInHandler = null, onApplyIntentFromTranscript = null) {
+  constructor(stateManager, languageDetector, consentHandler, openaiWs, bargeInHandler = null, onApplyIntentFromTranscript = null, onGetWorkflowPhase = null) {
     this.state = stateManager;
     this.languageDetector = languageDetector;
     this.consentHandler = consentHandler;
     this.openaiWs = openaiWs;
     this.bargeInHandler = bargeInHandler;
     this.onApplyIntentFromTranscript = onApplyIntentFromTranscript;
+    this.onGetWorkflowPhase = onGetWorkflowPhase;
   }
 
   appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations) {
@@ -543,10 +544,18 @@ export class TranscriptionHandler {
               }
               if (this.openaiWs && this.openaiWs.readyState === 1) {
                 const { conversations } = await import('../../../shared/state.js');
+                const overrideWorkflowPhase = this.onGetWorkflowPhase?.() ?? undefined;
+                const { toolChoice } = await conversationService.getToolChoiceForResponse({
+                  callSid: this.state.callSid,
+                  state: this.state,
+                  conversation: conversations[this.state.callSid] || {},
+                  hasInitialGreetingBeenSent: true,
+                  overrideWorkflowPhase
+                });
                 this.openaiWs.send(JSON.stringify({
                   type: 'session.update',
                   session: {
-                    tool_choice: 'none'
+                    tool_choice: toolChoice
                   }
                 }));
                 await new Promise(resolve => setTimeout(resolve, 150));
@@ -554,7 +563,8 @@ export class TranscriptionHandler {
                   callSid: this.state.callSid,
                   state: this.state,
                   conversation: conversations[this.state.callSid] || {},
-                  hasInitialGreetingBeenSent: true
+                  hasInitialGreetingBeenSent: true,
+                  overrideWorkflowPhase
                 });
                 const responseCreatePayload = {
                   type: 'response.create',

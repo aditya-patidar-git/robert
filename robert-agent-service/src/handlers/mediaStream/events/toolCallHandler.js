@@ -13,6 +13,7 @@ export class ToolCallHandler {
     this.state = stateManager;
     this.openaiWs = openaiWs;
     this.onBeforeTriggerResponse = options.onBeforeTriggerResponse;
+    this.onWorkflowSwitch = options.onWorkflowSwitch;
     this.resultSubmitter = new WebSocketResultSubmitter(openaiWs, stateManager);
   }
 
@@ -96,6 +97,12 @@ export class ToolCallHandler {
         call_id,
         toSubmit
       );
+
+      if (name === 'start_workflow' && executionResult.success && executionResult.result?.phase) {
+        if (typeof this.onWorkflowSwitch === 'function') {
+          this.onWorkflowSwitch(this.state.callSid, executionResult.result.phase);
+        }
+      }
       
       if (typeof this.onBeforeTriggerResponse === 'function') {
         this.onBeforeTriggerResponse(this.state.callSid);

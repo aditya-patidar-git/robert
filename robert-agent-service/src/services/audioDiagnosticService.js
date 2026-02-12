@@ -76,16 +76,21 @@ class AudioDiagnosticService {
    * Track audio delta event
    * @param {string} callSid - Call SID
    * @param {Object} event - Audio delta event
+   * @param {Object} [options] - { isActiveResponse: boolean } - skip verbose logs when no active response
    */
-  trackAudioDelta(callSid, event) {
+  trackAudioDelta(callSid, event, options = {}) {
     if (!this.enabled) return;
 
     const diagnostic = this.diagnostics.get(callSid);
     if (!diagnostic) return;
 
+    const isActiveResponse = options.isActiveResponse !== false;
+
     if (!diagnostic.audioEvents.firstAudioDeltaReceived) {
       diagnostic.audioEvents.firstAudioDeltaReceived = true;
-      console.log(`✅ [DIAGNOSTIC] [${callSid}] First audio delta received from OpenAI`);
+      if (isActiveResponse) {
+        console.log(`✅ [DIAGNOSTIC] [${callSid}] First audio delta received from OpenAI`);
+      }
     }
 
     diagnostic.audioEvents.audioDeltaCount++;
@@ -98,8 +103,7 @@ class AudioDiagnosticService {
       diagnostic.errors.emptyAudioPayloads++;
     }
 
-    // Log every 10th chunk for monitoring
-    if (diagnostic.audioEvents.audioDeltaCount % 10 === 0) {
+    if (isActiveResponse && diagnostic.audioEvents.audioDeltaCount % 10 === 0) {
       const payloadSize = event.delta ? event.delta.length : 0;
       const decodedSize = event.delta ? Buffer.from(event.delta, 'base64').length : 0;
       console.log(`🔍 [DIAGNOSTIC] [${callSid}] Audio delta #${diagnostic.audioEvents.audioDeltaCount}: payload=${payloadSize} bytes, decoded=${decodedSize} bytes`);

@@ -20,7 +20,8 @@ const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search'];
 const TOOL_SETS = {
   // Initial greeting phase - minimal tools
   greeting: [
-    'transfer_call'
+    'transfer_call',
+    'start_workflow'
   ],
 
   // Language selection phase - minimal tools
@@ -33,6 +34,7 @@ const TOOL_SETS = {
     'file_search',
     'web_search',
     'transfer_call',
+    'start_workflow',
     'complaint_submission',
     'email',
     'send_sms',
