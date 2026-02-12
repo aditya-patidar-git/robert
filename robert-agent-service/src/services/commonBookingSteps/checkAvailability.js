@@ -40,15 +40,11 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     console.log(`📅 [AVAILABILITY] Checking availability for ${courseType}...`);
     console.log(`📅 Navigating to availability page: ${availabilityUrl}`);
     
-    // Navigate to public availability page with increased timeout for network latency
-    await page.goto(availabilityUrl, { 
+    await page.goto(availabilityUrl, {
       waitUntil: 'domcontentloaded',
-      timeout: 60000 // 60 seconds - increased for network latency
+      timeout: 20000
     });
-    await page.waitForLoadState('networkidle', { timeout: 60000 });
-    
-    // Take screenshot of availability page
-    
+
     // Wait for the availability table to be visible
     await page.waitForSelector('#availabilityTable', { timeout: 10000 });
     
@@ -74,18 +70,55 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     if (rowCount === 0) {
       throw new Error('No availability entries found');
     }
-    
-    // Extract ALL available slots (limit to next 50 slots for performance)
-    const maxSlots = Math.min(rowCount, 50);
+
+    const preferredDateNorm = preferences.preferredDate ? normalizeDateToYYYYMMDD(preferences.preferredDate) : null;
+    const hasPreferences = !!(preferences.preferredDate || preferences.preferredTime || preferences.location || preferences.instructor);
+    const MAX_SLOTS_WHEN_NO_PREFERENCES = 25;
+
+    let rowsToScan = allDataRows;
+    let rowCountToUse = rowCount;
+    let rowIndexOffset = 0;
+    let scanStartIndex = 0;
+
+    if (preferredDateNorm) {
+      const rowsForDate = availabilityTable.locator(`tbody tr.availabilityDataRow[data-start_date^="${preferredDateNorm}"]`);
+      const countForDate = await rowsForDate.count();
+      if (countForDate > 0) {
+        rowsToScan = rowsForDate;
+        rowCountToUse = countForDate;
+        rowIndexOffset = -1;
+        console.log(`📅 [AVAILABILITY] Using smart path: ${countForDate} rows for preferred date ${preferredDateNorm}`);
+      }
+    } else if (!hasPreferences && rowCount > MAX_SLOTS_WHEN_NO_PREFERENCES) {
+      scanStartIndex = rowCount - MAX_SLOTS_WHEN_NO_PREFERENCES;
+      rowCountToUse = MAX_SLOTS_WHEN_NO_PREFERENCES;
+      console.log(`📅 [AVAILABILITY] No preferences provided - scanning last ${rowCountToUse} slots only (from row ${scanStartIndex})`);
+    }
+
     const allSlots = [];
-    
-    for (let i = 0; i < maxSlots; i++) {
-      const dataRow = allDataRows.nth(i);
+    const preferredEndOfDay = preferredDateNorm ? (() => {
+      const d = new Date(preferredDateNorm + 'T23:59:59.999Z');
+      return isNaN(d.getTime()) ? null : d.getTime();
+    })() : null;
+
+    for (let i = 0; i < rowCountToUse; i++) {
+      const dataRow = rowsToScan.nth(scanStartIndex + i);
       await dataRow.waitFor({ state: 'visible' }).catch(() => null);
-      
+
+      let startDateAttr = null;
       try {
-        // Extract details from columns based on actual table structure
-        // Column order: 0=date, 1=course, 2=location, 3=time, 4=price, 5=spaces button, 6=instructor
+        startDateAttr = await dataRow.getAttribute('data-start_date');
+      } catch (e) { /* ignore */ }
+
+      if (preferredEndOfDay !== null && startDateAttr) {
+        const rowTime = new Date(startDateAttr).getTime();
+        if (!isNaN(rowTime) && rowTime > preferredEndOfDay) {
+          console.log(`📅 [AVAILABILITY] Break: row date exceeds preferred date (stopped at index ${i})`);
+          break;
+        }
+      }
+
+      try {
         const slot = {
           date: (await dataRow.locator('td').nth(0).textContent()).trim(),
           course: (await dataRow.locator('td').nth(1).textContent()).trim(),
@@ -93,24 +126,36 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
           time: (await dataRow.locator('td').nth(3).textContent()).trim(),
           price: (await dataRow.locator('td').nth(4).textContent()).trim(),
           instructor: (await dataRow.locator('td').nth(6).textContent()).trim().replace(/^Instructor:\s*/i, ''),
-          // Extract precise date from data attribute for calendar selection
-          startDate: await dataRow.getAttribute('data-start_date'),
-          // Use the latest month/year we extracted
+          startDate: startDateAttr,
           monthYear: latestMonthYear,
-          // Store row index for later selection
-          rowIndex: i
+          rowIndex: (rowIndexOffset >= 0 || scanStartIndex > 0) ? (scanStartIndex + i) : undefined
         };
-        
-        // Only add slots with valid data
+
         if (slot.date && slot.time) {
           allSlots.push(slot);
         }
       } catch (rowError) {
         console.warn(`⚠️ [AVAILABILITY] Error extracting slot ${i}:`, rowError.message);
-        // Continue with next slot
       }
     }
-    
+
+    if (rowIndexOffset < 0 && allSlots.length > 0) {
+      const startDateToIndex = await page.evaluate(() => {
+        const rows = document.querySelectorAll('#availabilityTable tbody tr.availabilityDataRow');
+        const map = {};
+        rows.forEach((tr, i) => {
+          const sd = tr.getAttribute('data-start_date');
+          if (sd) map[sd] = i;
+        });
+        return map;
+      }).catch(() => ({}));
+      allSlots.forEach(slot => {
+        if (slot.startDate && startDateToIndex[slot.startDate] !== undefined) {
+          slot.rowIndex = startDateToIndex[slot.startDate];
+        }
+      });
+    }
+
     console.log(`📋 [AVAILABILITY] Extracted ${allSlots.length} available slots for ${courseType}`);
     
     if (allSlots.length === 0) {
@@ -180,8 +225,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     // Select the best matching slot based on preferences
     // Only auto-select if preferences are provided
     let selectedSlot = null;
-    const hasPreferences = preferences.preferredDate || preferences.preferredTime || preferences.location;
-    
+
     if (hasPreferences) {
       selectedSlot = selectBestMatchingSlot(allSlots, preferences);
       if (selectedSlot) {
@@ -195,15 +239,27 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       console.log(`📋 [AVAILABILITY] No preferences provided - returning all slots for user selection`);
     }
     
-    // Return the earliest month for reference (from first slot after sorting)
-    const returnMonthYear = allSlots.length > 0 && allSlots[0].monthYear 
-      ? allSlots[0].monthYear 
+    const returnMonthYear = allSlots.length > 0 && allSlots[0].monthYear
+      ? allSlots[0].monthYear
       : latestMonthYear;
-    
+
+    let slotsToAnnounce;
+    if (preferredDateNorm) {
+      slotsToAnnounce = allSlots.filter(s => s.startDate && s.startDate.startsWith(preferredDateNorm));
+    } else {
+      const lastSlot = allSlots[allSlots.length - 1];
+      const latestDateStr = lastSlot?.startDate ? lastSlot.startDate.split('T')[0] : null;
+      slotsToAnnounce = latestDateStr
+        ? allSlots.filter(s => s.startDate && s.startDate.startsWith(latestDateStr))
+        : allSlots.slice(-1);
+    }
+    if (slotsToAnnounce.length === 0 && allSlots.length > 0) slotsToAnnounce = [allSlots[0]];
+
     return {
-      allSlots: allSlots,
-      selectedSlot: selectedSlot, // Will be null if no preferences or no match
-      monthYear: returnMonthYear // Return earliest month
+      allSlots,
+      selectedSlot: selectedSlot ?? null,
+      monthYear: returnMonthYear,
+      slotsToAnnounce
     };
   
   } catch (error) {
@@ -324,25 +380,28 @@ export function selectBestMatchingSlot(allSlots, preferences = {}) {
 }
 
 /**
+ * Normalize date string to YYYY-MM-DD for comparison and selectors
+ * @param {string} dateStr - Date string in various formats
+ * @returns {string|null} - YYYY-MM-DD or null
+ */
+function normalizeDateToYYYYMMDD(dateStr) {
+  if (!dateStr) return null;
+  try {
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+/**
  * Normalize date string for comparison
  * @param {string} dateStr - Date string in various formats
  * @returns {string} - Normalized date string (YYYY-MM-DD format if possible)
  */
 function normalizeDate(dateStr) {
-  if (!dateStr) return null;
-  
-  // Try to parse and format as YYYY-MM-DD
-  try {
-    const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
-      return date.toISOString().split('T')[0];
-    }
-  } catch (e) {
-    // Continue with string matching
-  }
-  
-  // Return lowercase for case-insensitive matching
-  return dateStr.toLowerCase().trim();
+  const ymd = normalizeDateToYYYYMMDD(dateStr);
+  if (ymd) return ymd;
+  return dateStr ? dateStr.toLowerCase().trim() : null;
 }
 
 /**

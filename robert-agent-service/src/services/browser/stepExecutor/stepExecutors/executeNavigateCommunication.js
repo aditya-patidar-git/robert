@@ -64,41 +64,42 @@ export async function executeNavigateCommunication(page, args, sessionState, scr
     await standardLettersOption.waitFor({ state: 'visible', timeout: 5000 });
     await standardLettersOption.click();
     
-    // Wait for template selection page to load
-    console.log('⏳ [NAVIGATE_COMMUNICATION] Waiting for template selection page...');
-    await page.waitForTimeout(3000);
-    await page.waitForLoadState('networkidle');
-    
-    // Verify template selection page opened
-    // Look for template selection indicators
-    console.log('🔍 [NAVIGATE_COMMUNICATION] Verifying template selection page opened...');
-    const templateIndicators = [
-      page.getByText(/Correspondence letter/i),
-      page.getByText(/Cancellation confirmation/i),
-      page.locator('text=/template/i'),
-      page.getByRole('link', { name: /Cancellation confirmation/i })
-    ];
-    
+    console.log('⏳ [NAVIGATE_COMMUNICATION] Waiting for template selection page (stationerySender_iframe)...');
+    await page.waitForLoadState('load');
     let templatePageOpened = false;
-    for (const indicator of templateIndicators) {
-      const count = await indicator.count();
-      if (count > 0) {
+    const maxWaitAttempts = 10;
+    const waitBetweenAttempts = 2000;
+
+    for (let i = 0; i < maxWaitAttempts; i++) {
+      const iframeExists = await page.locator('#stationerySender_iframe').count() > 0;
+      if (!iframeExists) {
+        console.log(`⏳ [NAVIGATE_COMMUNICATION] stationerySender_iframe not yet present, waiting (${i + 1}/${maxWaitAttempts})...`);
+        await page.waitForTimeout(waitBetweenAttempts);
+        continue;
+      }
+      const stationeryIframe = page.frameLocator('#stationerySender_iframe');
+      try {
+        const correspondenceInFrame = stationeryIframe.getByText(/Correspondence letter/i);
+        await correspondenceInFrame.first().waitFor({ state: 'visible', timeout: 5000 });
         templatePageOpened = true;
-        console.log(`✅ [NAVIGATE_COMMUNICATION] Template selection page indicator found`);
+        console.log('✅ [NAVIGATE_COMMUNICATION] Template selection page opened (stationerySender_iframe content visible)');
         break;
+      } catch (e) {
+        try {
+          const gridInFrame = stationeryIframe.locator('#stationeryGrid_page');
+          await gridInFrame.waitFor({ state: 'visible', timeout: 3000 });
+          templatePageOpened = true;
+          console.log('✅ [NAVIGATE_COMMUNICATION] Template selection page opened (stationeryGrid_page visible)');
+          break;
+        } catch (e2) {
+          console.log(`⚠️ [NAVIGATE_COMMUNICATION] Iframe present but content not ready, retrying (${i + 1}/${maxWaitAttempts})...`);
+          await page.waitForTimeout(waitBetweenAttempts);
+        }
       }
     }
-    
+
     if (!templatePageOpened) {
-      // Try waiting a bit more
-      console.log('⚠️ [NAVIGATE_COMMUNICATION] Template indicators not found, waiting longer...');
-      await page.waitForTimeout(2000);
-      const retryIndicator = page.getByText(/Correspondence letter/i);
-      templatePageOpened = await retryIndicator.count() > 0;
-    }
-    
-    if (!templatePageOpened) {
-      throw new Error('Template selection page did not open. Could not find template selection indicators.');
+      throw new Error('Template selection page did not open: stationerySender_iframe did not load or template list not visible.');
     }
     
     console.log(`✅ [NAVIGATE_COMMUNICATION] Template selection page opened successfully`);

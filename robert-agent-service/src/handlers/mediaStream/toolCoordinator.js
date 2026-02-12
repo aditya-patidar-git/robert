@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { BargeInHandler, ConsentHandler, ResponseHandler, TranscriptionHandler, ToolCallHandler } from './events/index.js';
 import { MemoryManager, LanguageDetector } from './utils/index.js';
 import { getConversationFlowState } from './utils/conversationStateHelpers.js';
@@ -6,6 +7,11 @@ import { getRecordingConsent, updateRecordingConsent, conversationExists } from 
 import promptService from '../../services/promptService.js';
 import consentInstructionBuilder from '../../services/consentInstructionBuilder.js';
 import conversationService from '../../services/conversationService.js';
+import { isTransferToHumanRequest } from '../../services/intentFromTranscript.js';
+import transferCallTool from '../../tools/transferCall.js';
+import sessionStateManager from '../../services/browser/sessionStateManager.js';
+import { AFTER_LOGIN_MESSAGE } from '../../config/cancellationPhrases.js';
+import toolExecutionService from '../../services/toolExecutionService.js';
 
 /**
  * Tool Coordinator
@@ -23,16 +29,69 @@ export class ToolCoordinator {
     const languageDetector = new LanguageDetector(stateManager);
     const consentHandler = new ConsentHandler(stateManager, memoryManager);
     
-    // Initialize ResponseHandler first (needed by BargeInHandler for immediate audio stopping)
     this.responseHandler = new ResponseHandler(stateManager, ws);
-    
+    this.responseHandler.setOnCreateConsentResponseNeeded(async () => {
+      this.state.explicitResponseRequested = true;
+      await this.createAudioResponse();
+    });
+    this.responseHandler.setOnResponseDone((event) => {
+      this.runPendingChainedToolIfAny().catch(err => {
+        console.error(`❌ [${this.state.callSid}] runPendingChainedToolIfAny error:`, err);
+      });
+    });
+
     // Initialize BargeInHandler with ResponseHandler reference for immediate Twilio-level audio stopping
     this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler);
     
     this.consentHandler = consentHandler;
-    // Pass BargeInHandler reference to TranscriptionHandler so it can trigger barge-in when "stop" is detected
-    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler);
-    this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs);
+    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler, (text) => this.applyIntentFromTranscript(text), () => this.openaiIntegration?.getCurrentWorkflowPhase?.());
+    this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs, {
+      onBeforeTriggerResponse: (callSid) => {
+        const conv = conversations[callSid];
+        const lastUser = conv?.transcript?.filter(t => t.role === 'user').pop();
+        if (lastUser?.text?.trim()) this.applyIntentFromTranscript(lastUser.text);
+      },
+      onWorkflowSwitch: (callSid, phase) => {
+        if (this.openaiIntegration) {
+          this.openaiIntegration.updateToolsForPhase(phase);
+        }
+      }
+    });
+  }
+
+  /**
+   * Run intent detection on transcript and update workflow phase/tools when needed.
+   * Used by both transcription.completed and speech_stopped (process_transcriptions) paths.
+   * @param {string} transcriptText - User transcript to analyze
+   * @returns {boolean} True if tools/phase were updated
+   */
+  applyIntentFromTranscript(transcriptText) {
+    const callSid = this.state.callSid;
+    console.log(`🔍 [INTENT] [${callSid}] applyIntentFromTranscript called, transcript: "${(transcriptText || '').trim().slice(0, 120)}"`);
+    if (!transcriptText?.trim()) {
+      console.log(`🔍 [INTENT] [${callSid}] early exit: empty transcript`);
+      return false;
+    }
+    if (!this.openaiIntegration) {
+      console.log(`🔍 [INTENT] [${callSid}] early exit: openaiIntegration is null`);
+      return false;
+    }
+    const currentPhase = this.openaiIntegration.getCurrentWorkflowPhase?.();
+    const workflowContext = conversations[callSid]?.workflowContext;
+    const intentResult = conversationService.detectIntent(transcriptText, {
+      callSid,
+      currentPhase,
+      workflowContext
+    });
+    console.log(`🔍 [INTENT] [${callSid}] detectIntent result: shouldUpdateTools=${intentResult?.shouldUpdateTools}, newWorkflowContext=${intentResult?.newWorkflowContext}, phase=${intentResult?.phase}`);
+    if (!intentResult.shouldUpdateTools || !intentResult.newWorkflowContext) return false;
+    if (!conversations[callSid]) conversations[callSid] = {};
+    conversations[callSid].workflowContext = intentResult.newWorkflowContext;
+    console.log(`🎯 [${callSid}] Intent detected: "${transcriptText.trim()}" - updating tools and workflow phase to ${intentResult.phase}`);
+    const toolsUpdated = this.openaiIntegration.updateToolsForPhase(intentResult.phase);
+    console.log(`🔍 [INTENT] [${callSid}] updateToolsForPhase(${intentResult.phase}) returned: ${toolsUpdated}`);
+    if (toolsUpdated) console.log(`✅ [${callSid}] Tools updated for phase: ${intentResult.phase}`);
+    return !!toolsUpdated;
   }
 
   /**
@@ -60,6 +119,53 @@ export class ToolCoordinator {
       }));
     } catch (err) {
       console.error(`❌ [${this.state.callSid}] Error injecting text content:`, err);
+    }
+  }
+
+  /**
+   * After a "say-only" response completes, run any pending chained tool (inject function_call, execute, submit, trigger).
+   */
+  async runPendingChainedToolIfAny() {
+    const pending = this.state.pendingChainedToolCall;
+    if (!pending || !this.openaiWs || this.openaiWs.readyState !== 1 || this.state.isClosed) {
+      if (pending && (!this.openaiWs || this.openaiWs.readyState !== 1)) {
+        console.warn(`⚠️ [${this.state.callSid}] Pending chained tool ${pending.toolName} skipped - ws not ready`);
+      }
+      return;
+    }
+    this.state.pendingChainedToolCall = null;
+    const callSid = this.state.callSid;
+    const callId = `ch_${crypto.randomBytes(4).toString('hex')}`;
+    const { toolName, args } = pending;
+    const argsStr = typeof args === 'string' ? args : JSON.stringify(args || {});
+    try {
+      this.openaiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: { type: 'function_call', call_id: callId, name: toolName, arguments: argsStr }
+      }));
+      const executionResult = await toolExecutionService.executeTool({
+        callId,
+        callSid,
+        toolCallId: callId,
+        toolName,
+        arguments: args,
+        phoneNumber: this.state.phoneNumber,
+        stateManager: this.state,
+        progressCallback: null
+      });
+      await this.toolCallHandler.resultSubmitter.submitResult(callSid, callId, executionResult);
+      if (typeof this.toolCallHandler.onBeforeTriggerResponse === 'function') {
+        this.toolCallHandler.onBeforeTriggerResponse(callSid);
+      }
+      await this.toolCallHandler.resultSubmitter.triggerResponse(callSid, {
+        toolName,
+        toolResult: executionResult.result || executionResult
+      });
+      console.log(`✅ [${callSid}] Chained tool ${toolName} executed and response triggered`);
+    } catch (err) {
+      console.error(`❌ [${callSid}] Chained tool ${toolName} failed:`, err);
+      this.state.pendingChainedToolCall = null;
+      throw err;
     }
   }
 
@@ -132,13 +238,27 @@ export class ToolCoordinator {
     
     try {
       const isInitialGreeting = !this.state.hasInitialGreetingBeenSent;
+      const overrideWorkflowPhase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? undefined;
 
-      const { instructions: responseInstructions } = await conversationService.getResponseInstructions({
+      const { instructions: responseInstructions, isConsentQuestion } = await conversationService.getResponseInstructions({
         callSid: this.state.callSid,
         state: this.state,
         conversation: conversations[this.state.callSid] || {},
-        hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent
+        hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent,
+        overrideWorkflowPhase
       });
+
+      if (isConsentQuestion) {
+        this.state.recordingConsentState.requested = true;
+        this.state.recordingConsentState.requestedAt = new Date();
+        const conv = conversations[this.state.callSid];
+        if (conv) {
+          if (!conv.recordingConsent) conv.recordingConsent = {};
+          conv.recordingConsent.requested = true;
+          conv.recordingConsent.requestedAt = new Date();
+        }
+        console.log(`📋 [${this.state.callSid}] Recording consent question being sent - marked requested`);
+      }
 
       if (isInitialGreeting && (!this.openaiWs || this.openaiWs.readyState !== 1)) {
         console.error(`❌ [${this.state.callSid}] WebSocket closed during preparation`);
@@ -148,14 +268,22 @@ export class ToolCoordinator {
         return;
       }
 
-      // Step 2: ALWAYS disable tools before creating response
-      // CRITICAL FIX: Tools are set to 'auto' in session setup, so we MUST disable them
-      // to prevent tool calls during greeting (which causes JSON/URL output instead of speech)
-      console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
+      const { toolChoice, workflowPhase } = await conversationService.getToolChoiceForResponse({
+        callSid: this.state.callSid,
+        state: this.state,
+        conversation: conversations[this.state.callSid] || {},
+        hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent,
+        overrideWorkflowPhase
+      });
+      if (toolChoice === 'auto') {
+        console.log(`📤 [${this.state.callSid}] Sending session.update - tool_choice: auto for phase ${workflowPhase ?? 'unknown'}`);
+      } else {
+        console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
+      }
       this.openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
-          tool_choice: 'none'
+          tool_choice: toolChoice
         }
       }));
 
@@ -164,7 +292,7 @@ export class ToolCoordinator {
       } else {
         try {
           await this.waitForSessionUpdate(10000);
-          console.log(`✅ [${this.state.callSid}] Session update confirmed - tools disabled`);
+          console.log(`✅ [${this.state.callSid}] Session update confirmed${toolChoice === 'none' ? ' - tools disabled' : ''}`);
         } catch (err) {
           console.error(`❌ [${this.state.callSid}] Session update timeout:`, err.message);
           console.warn(`⚠️ [${this.state.callSid}] Continuing without session update confirmation`);
@@ -221,6 +349,53 @@ export class ToolCoordinator {
       this.state.releaseResponseLock();
       this.state.pendingSessionUpdatePromise = null;
       this.state.pendingItemCreatePromise = null;
+    }
+  }
+
+  /**
+   * Dedicated path: user said "yes proceed" in cancellation phase → force CRM login step
+   * without relying on a tool call in that turn (tools are normally disabled for transcription responses).
+   * @param {{ alreadyHaveLock?: boolean }} options - Set alreadyHaveLock true when caller already holds response lock (e.g. speech_stopped path).
+   */
+  async handleCancellationProceedToLogin(options = {}) {
+    const callSid = this.state.callSid;
+    if (!this.openaiWs || this.openaiWs.readyState !== 1) return;
+    if (!options.alreadyHaveLock && !this.state.tryAcquireResponseLock()) {
+      console.warn(`⚠️ [${callSid}] Skipping cancellation proceed - response lock busy`);
+      return;
+    }
+    try {
+      const session = sessionStateManager.getSession(callSid);
+      const courseType = session?.courseType || conversations[callSid]?.bookingSession?.courseType || 'CBT';
+      sessionStateManager.initializeSession(callSid, courseType);
+      sessionStateManager.setCancellationCurrentStep(callSid, 1, { verified: true });
+      const instructions = `CRITICAL: Say exactly: "${AFTER_LOGIN_MESSAGE}" Then you MUST call the tool cancellation_step_authenticate with courseType: "${courseType}". No other text. Do not wait for the caller. Call the tool in the same response.`;
+      this.openaiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: { tool_choice: { type: 'function', name: 'cancellation_step_authenticate' } }
+      }));
+      try {
+        await this.waitForSessionUpdate(5000);
+      } catch (err) {
+        console.warn(`⚠️ [${callSid}] Session update wait timeout, continuing with response.create:`, err.message);
+      }
+      if (this.openaiWs.readyState !== 1) {
+        if (!options.alreadyHaveLock) this.state.releaseResponseLock();
+        return;
+      }
+      this.openaiWs.send(JSON.stringify({
+        type: 'response.create',
+        response: { modalities: ['audio', 'text'], instructions }
+      }));
+      console.log(`🎯 [${callSid}] Cancellation proceed: forced cancellation_step_authenticate (courseType: ${courseType})`);
+      setTimeout(() => {
+        if (this.openaiWs && this.openaiWs.readyState === 1) {
+          this.openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'auto' } }));
+        }
+      }, 3000);
+    } catch (err) {
+      console.error(`❌ [${callSid}] handleCancellationProceedToLogin error:`, err);
+      if (!options.alreadyHaveLock) this.state.releaseResponseLock();
     }
   }
 
@@ -303,9 +478,25 @@ export class ToolCoordinator {
           break;
           
         case 'response.text.done':
-          // Remove verbose logging
           break;
-          
+        case 'response.output_audio_transcript.done':
+          if (this.state.activeResponseId && (event.transcript != null || this.state.currentResponseOutputTranscript)) {
+            this.state.currentResponseOutputTranscript = (event.transcript != null && event.transcript !== '') ? event.transcript : (this.state.currentResponseOutputTranscript || '');
+            const t = this.state.currentResponseOutputTranscript || '';
+            const preview = t.length > 80 ? t.slice(0, 80) + '...' : t;
+            console.log(`[AGENT-DEBUG] [${this.state.callSid}] response.output_audio_transcript.done: len=${t.length}, activeResponseId=${this.state.activeResponseId}, preview="${preview}"`);
+          }
+          break;
+        case 'response.output_audio_transcript.delta':
+          if (event.delta != null && this.state.activeResponseId) {
+            const prevLen = (this.state.currentResponseOutputTranscript || '').length;
+            this.state.currentResponseOutputTranscript = (this.state.currentResponseOutputTranscript || '') + (event.delta || '');
+            if (prevLen === 0) {
+              console.log(`[AGENT-DEBUG] [${this.state.callSid}] response.output_audio_transcript.delta: first chunk for response ${this.state.activeResponseId}`);
+            }
+          }
+          break;
+
         case 'response.done':
           this.responseHandler.handleResponseDone(event);
           break;
@@ -333,27 +524,8 @@ export class ToolCoordinator {
           const transcriptionItemId = event.item_id; // Link to committed segment
           
           const transcriptText = event.transcript || '';
-          const callSid = this.state.callSid;
-          let intentDetected = false;
+          this.applyIntentFromTranscript(transcriptText);
 
-          if (transcriptText.trim() && this.openaiIntegration) {
-            const intentResult = conversationService.detectIntent(transcriptText, {
-              callSid,
-              currentPhase: this.openaiIntegration.getCurrentWorkflowPhase?.(),
-              workflowContext: conversations[callSid]?.workflowContext
-            });
-            if (intentResult.shouldUpdateTools && intentResult.newWorkflowContext) {
-              if (!conversations[callSid]) conversations[callSid] = {};
-              conversations[callSid].workflowContext = intentResult.newWorkflowContext;
-              console.log(`🎯 [${callSid}] Intent detected: "${transcriptText}" - updating tools and workflow phase to ${intentResult.phase}`);
-              const toolsUpdated = this.openaiIntegration.updateToolsForPhase(intentResult.phase);
-              if (toolsUpdated) {
-                intentDetected = true;
-                console.log(`✅ [${callSid}] Tools updated for phase: ${intentResult.phase}`);
-              }
-            }
-          }
-          
           // CRITICAL DIAGNOSTIC: Log transcription processing result
           console.log(`📝 [${this.state.callSid}] Transcription processing result:`);
           console.log(`   - processed: ${transcriptionResult?.processed}`);
@@ -382,24 +554,46 @@ export class ToolCoordinator {
             break;
           }
           
+          const flowState = getConversationFlowState(this.state.callSid, this.state);
+          const consentJustGiven =
+            flowState.consentGiven &&
+            this.state.agentFinishedSpeakingTime > 0 &&
+            Date.now() - this.state.agentFinishedSpeakingTime < 5000;
+          const inConsentOrLanguagePhase =
+            flowState.waitingForLanguage ||
+            (flowState.languageSelected && !flowState.consentGiven) ||
+            consentJustGiven;
           const stateSnapshot = {
             waitingForUser: this.state.waitingForUser,
             isResponding: this.state.isResponding,
             activeResponseId: this.state.activeResponseId,
             hasInitialGreetingCompleted: this.state.hasInitialGreetingCompleted,
-            lastAudioChunkTime: this.state.lastAudioChunkTime,
             outboundAudioPacer: this.state.outboundAudioPacer,
-            outboundAudioBuffer: this.state.outboundAudioBuffer
+            outboundAudioBuffer: this.state.outboundAudioBuffer,
+            bargeInTailUntil: this.state.bargeInTailUntil,
+            inConsentOrLanguagePhase
           };
           const shouldCreateResponse = conversationService.shouldCreateResponse(transcriptionResult, stateSnapshot);
 
           if (shouldCreateResponse) {
             try {
+              console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] transcription.completed`);
               this.state.explicitResponseRequested = true;
-              
-              // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
               await this.createAudioResponse();
               console.log(`🎯 [${this.state.callSid}] Created response after high-quality transcription (quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
+              if (isTransferToHumanRequest(transcriptText)) {
+                try {
+                  const callContext = { callSid: this.state.callSid, phoneNumber: this.state.phoneNumber };
+                  const result = await transferCallTool.execute({ reason: 'user_request' }, callContext);
+                  if (result?.transferInitiated) {
+                    console.log(`✅ [${this.state.callSid}] App-invoked transfer_call after user request (Option B)`);
+                  } else if (result?.allTransferNumbersFailed) {
+                    console.warn(`⚠️ [${this.state.callSid}] Transfer requested but all numbers failed: ${result?.messageForCaller || 'agents busy'}`);
+                  }
+                } catch (transferErr) {
+                  console.error(`❌ [${this.state.callSid}] Error invoking transfer_call after user request:`, transferErr?.message || transferErr);
+                }
+              }
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after transcription:`, err);
             }
@@ -417,22 +611,35 @@ export class ToolCoordinator {
           // Handle process_transcriptions return value
           if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
             const transcriptions = speechStoppedResult.transcriptions || [];
-            // CRITICAL: Don't create response if interrupted
+            if (transcriptions.length > 0) {
+              const transcriptText = transcriptions.map(t => t?.transcript).filter(Boolean).join(' ').trim();
+              if (transcriptText) this.applyIntentFromTranscript(transcriptText);
+            }
             if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
-              // Create response immediately when transcriptions are ready and agent is waiting
               try {
-                // Double-check interruption state after acquiring lock
                 if (this.state.isInterrupted) {
                   console.log(`🛑 [${this.state.callSid}] Skipping response creation - user interrupted after lock acquisition`);
                   this.state.releaseResponseLock();
                   return;
                 }
-                
+                const transcriptTextFromBatch = transcriptions.map(t => t?.transcript).filter(Boolean).join(' ').trim();
+                console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] speech_stopped process_transcriptions`);
                 this.state.explicitResponseRequested = true;
-                
-                // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
                 await this.createAudioResponse();
                 console.log(`🎯 [${this.state.callSid}] Created response after processing ${transcriptions.length} transcriptions`);
+                if (transcriptTextFromBatch && isTransferToHumanRequest(transcriptTextFromBatch)) {
+                  try {
+                    const callContext = { callSid: this.state.callSid, phoneNumber: this.state.phoneNumber };
+                    const result = await transferCallTool.execute({ reason: 'user_request' }, callContext);
+                    if (result?.transferInitiated) {
+                      console.log(`✅ [${this.state.callSid}] App-invoked transfer_call after user request (Option B, grace-period path)`);
+                    } else if (result?.allTransferNumbersFailed) {
+                      console.warn(`⚠️ [${this.state.callSid}] Transfer requested but all numbers failed: ${result?.messageForCaller || 'agents busy'}`);
+                    }
+                  } catch (transferErr) {
+                    console.error(`❌ [${this.state.callSid}] Error invoking transfer_call after user request:`, transferErr?.message || transferErr);
+                  }
+                }
               } catch (err) {
                 console.error(`❌ [${this.state.callSid}] Error creating response after processing transcriptions:`, err);
                 this.state.releaseResponseLock();
@@ -451,9 +658,8 @@ export class ToolCoordinator {
                   return;
                 }
                 
+                console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] acknowledge_interruption`);
                 this.state.explicitResponseRequested = true;
-                
-                // CRITICAL FIX: Use createAudioResponse to disable tools and ensure natural language
                 await this.createAudioResponse();
                 console.log(`🎯 [${this.state.callSid}] Created response to acknowledge interruption`);
               } catch (err) {

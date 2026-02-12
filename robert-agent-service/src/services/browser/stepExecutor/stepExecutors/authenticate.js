@@ -20,7 +20,7 @@ export async function executeAuthenticate(page, args, sessionState, screenshotsD
     loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
     loginName: process.env.CRM_LOGIN || 'universalmct',
     username: process.env.CRM_USERNAME || 'auagent',
-    password: process.env.CRM_PASSWORD || 'Robert2025!'
+    password: process.env.CRM_PASSWORD
   };
 
   await commonSteps.loginToCRM(page, crmCredentials, screenshotsDir);
@@ -32,6 +32,10 @@ export async function executeAuthenticate(page, args, sessionState, screenshotsD
     stepName: 'authenticate', // Explicit step name
     // Note: Step 3 is conversational (no tool) - AI must ask "Have you done training with us before?"
     // After getting the answer, proceed with workflowType: "existing" or "new" in subsequent steps
-    message: `✅ STEP 2 COMPLETE: booking_step_authenticate has been successfully completed. CRM authentication successful. DO NOT RETRY THIS STEP. Now you MUST ask the caller conversationally: "Have you done training with us before?" Wait for their response, then proceed with the appropriate workflow type (existing or new) in the next step.`
+    message: `✅ STEP 2 COMPLETE: booking_step_authenticate has been successfully completed. CRM authentication successful. DO NOT RETRY THIS STEP. Now you MUST ask the caller conversationally: "Have you done training with us before?" Wait for their response.
+
+STRICT NEXT STEPS (use ONLY these tool names; do not assume or invent any other step name):
+- If they say YES (existing client): Call booking_step_navigate_contacts with courseType and workflowType: "existing". After it completes, call booking_step_search_client with courseType, workflowType: "existing", and either customerMobile or customerEmail (ask for phone or email if needed). There is NO tool named booking_step_existing_client.
+- If they say NO (new client): Proceed with workflowType "new" and the next step will be booking_step_select_session (Step 4 for new).`
   };
 }

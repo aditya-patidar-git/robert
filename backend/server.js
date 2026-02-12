@@ -6,6 +6,10 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
 
+// Fail fast if required secrets are missing (before any services start)
+const assertEnv = (await import("./scripts/assertEnv.js")).default;
+assertEnv();
+
 // Now import everything else
 import express from "express";
 import cors from "cors";
@@ -64,6 +68,9 @@ import { proxyRecording } from "./controllers/outboundController.js";
 import { protect as authenticateToken } from "./middleware/authMiddleware.js";
 import { ipAllowlistMiddleware, logBypassIfActive } from "./middleware/ipAllowlistMiddleware.js";
 import forceHttpsMiddleware from "./middleware/forceHttpsMiddleware.js";
+import cookieParser from "cookie-parser";
+import rateLimit from "express-rate-limit";
+import { generateToken, requireCsrf, getCsrfCookieOptions, COOKIE_NAME } from "./middleware/csrfMiddleware.js";
 
 const app = express();
 app.set('trust proxy', 1);
@@ -91,27 +98,24 @@ app.use(cors({
 }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cookieParser());
 app.use(forceHttpsMiddleware);
 
 logBypassIfActive();
 
-// MongoDB connection
+// MongoDB connection (MONGO_URI already asserted in assertEnv)
 const mongoUri = process.env.MONGO_URI;
-if (!mongoUri) {
-  console.error("❌ [backend] MONGO_URI environment variable is not set");
-  process.exit(1);
-}
-
 mongoose.connect(mongoUri)
   .then(async () => {
     console.log(`✅ [backend] Connected to MongoDB: ${mongoose.connection.db.databaseName}`);
 
-    // Initialize services after MongoDB connection
+    // Initialize services after MongoDB connection; exit process on failure
     try {
       const initializeServices = (await import('./scripts/initializeServices.js')).default;
       await initializeServices();
     } catch (error) {
       console.error("❌ Service initialization error:", error);
+      process.exit(1);
     }
 
     // Start call cleanup service after MongoDB connection is ready
@@ -125,14 +129,41 @@ mongoose.connect(mongoUri)
 // Health check
 app.get("/", (req, res) => res.send("Robert AI backend alive"));
 
+// Rate limit: strict for login (brute-force protection)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use("/api/auth/login", authLimiter);
+
+// Rate limit: admin API (DoS / abuse protection)
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 150,
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use("/api/admin", adminLimiter);
+
 // IP allowlist enforcement for /api (when IP_ALLOWLIST_ENABLED=1)
 app.use("/api", ipAllowlistMiddleware);
 
-// Auth Routes
-app.use("/api/auth", authRoutes);
+// CSRF token endpoint (no CSRF check; call before state-changing auth/admin requests)
+app.get("/api/csrf-token", (req, res) => {
+  const token = generateToken();
+  res.cookie(COOKIE_NAME, token, getCsrfCookieOptions());
+  res.json({ csrfToken: token });
+});
 
-// Admin Routes
-app.use("/api/admin", adminRoutes);
+// Auth Routes (CSRF required for state-changing requests)
+app.use("/api/auth", requireCsrf, authRoutes);
+
+// Admin Routes (CSRF required for state-changing requests)
+app.use("/api/admin", requireCsrf, adminRoutes);
 
 // Booking Routes
 app.use("/api/booking", bookingRoutes);

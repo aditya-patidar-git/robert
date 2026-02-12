@@ -9,6 +9,7 @@ import { getPhaseForIntent } from './toolFilterService.js';
 import promptService from './promptService.js';
 import consentInstructionBuilder from './consentInstructionBuilder.js';
 import { getConversationFlowState } from '../handlers/mediaStream/utils/conversationStateHelpers.js';
+import { isAgentAudioPlaying } from '../handlers/mediaStream/utils/audioPlayingState.js';
 
 export class ConversationService {
   constructor(options = {}) {
@@ -60,7 +61,7 @@ export class ConversationService {
    * Decide whether to create a response after a transcription.
    * Pure function: no side effects.
    * @param {Object} transcriptionResult - { processed, shouldCreateResponse, qualityScore, isBackgroundNoise }
-   * @param {Object} stateSnapshot - { waitingForUser, isResponding, activeResponseId, hasInitialGreetingCompleted, lastAudioChunkTime, outboundAudioPacer, outboundAudioBuffer }
+   * @param {Object} stateSnapshot - { waitingForUser, isResponding, activeResponseId, hasInitialGreetingCompleted, outboundAudioPacer, outboundAudioBuffer, bargeInTailUntil, inConsentOrLanguagePhase }
    * @returns {boolean}
    */
   shouldCreateResponse(transcriptionResult, stateSnapshot = {}) {
@@ -70,18 +71,10 @@ export class ConversationService {
       (transcriptionResult?.qualityScore ?? 1) >= 0.7 &&
       !transcriptionResult?.isBackgroundNoise;
 
-    const hasActiveResponse = stateSnapshot.activeResponseId != null;
-    const hasAudioPacer = stateSnapshot.outboundAudioPacer != null;
-    const hasBufferedAudio = Array.isArray(stateSnapshot.outboundAudioBuffer) && stateSnapshot.outboundAudioBuffer.length > 0;
-    const now = Date.now();
-    const hasRecentAudio =
-      stateSnapshot.lastAudioChunkTime > 0 && now - stateSnapshot.lastAudioChunkTime < 5000;
-    const isAudioPlaying =
-      stateSnapshot.isResponding ||
-      hasActiveResponse ||
-      hasAudioPacer ||
-      hasBufferedAudio ||
-      hasRecentAudio;
+    const inConsentOrLanguagePhase = stateSnapshot.inConsentOrLanguagePhase === true;
+    const isAudioPlaying = isAgentAudioPlaying(stateSnapshot, {
+      consentPhaseRelaxed: inConsentOrLanguagePhase
+    });
 
     return (
       shouldCreate &&
@@ -93,12 +86,57 @@ export class ConversationService {
   }
 
   /**
+   * Detect if transcript indicates user said "yes" to proceed (cancellation Step 1 → Step 2).
+   * Used to trigger the dedicated path that runs CRM login without relying on a tool call in that turn.
+   * @param {string} transcript - User transcript (single or combined)
+   * @returns {boolean}
+   */
+  isCancellationProceedConfirmation(transcript) {
+    if (!transcript || typeof transcript !== 'string') return false;
+    const t = transcript.trim().toLowerCase();
+    if (!t) return false;
+    const proceedPatterns = [
+      /yes\s*(,?\s*)?(please\s*)?proceed/i,
+      /(yes|yeah|yep|ok|okay|sure)\s*(,?\s*)?(please\s*)?proceed/i,
+      /proceed\s*(please)?/i,
+      /^yes\s*\.?\s*$/i,
+      /go\s*ahead/i,
+      /(let'?s?\s+)?proceed/i
+    ];
+    return proceedPatterns.some((p) => p.test(t));
+  }
+
+  /**
+   * Decide tool_choice for transcript-driven response (single place for Media Streams and SIP).
+   * Use 'none' only for greeting, consent question, or language_selection; otherwise 'auto'.
+   * @param {Object} context - { callSid, state, conversation, hasInitialGreetingBeenSent, overrideWorkflowPhase }
+   * @returns {Promise<{ toolChoice: 'none'|'auto', workflowPhase: string|null }>}
+   */
+  async getToolChoiceForResponse(context = {}) {
+    const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false, overrideWorkflowPhase } = context;
+    if (!hasInitialGreetingBeenSent) {
+      return { toolChoice: 'none', workflowPhase: 'greeting' };
+    }
+    const result = await this.getResponseInstructions(context);
+    if (result.isConsentQuestion === true) {
+      return { toolChoice: 'none', workflowPhase: null };
+    }
+    const workflowPhase = overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
+      ? overrideWorkflowPhase
+      : await this.promptService.determineWorkflowPhase(state, callSid);
+    if (workflowPhase === 'language_selection') {
+      return { toolChoice: 'none', workflowPhase };
+    }
+    return { toolChoice: 'auto', workflowPhase };
+  }
+
+  /**
    * Get instructions for response.create (initial greeting or subsequent).
    * @param {Object} context - { callSid, state, conversation, hasInitialGreetingBeenSent }
    * @returns {Promise<{ instructions: string|null, isInitialGreeting: boolean }>}
    */
   async getResponseInstructions(context = {}) {
-    const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false } = context;
+    const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false, overrideWorkflowPhase } = context;
     const isInitialGreeting = !hasInitialGreetingBeenSent;
 
     if (isInitialGreeting) {
@@ -148,7 +186,9 @@ export class ConversationService {
       return { instructions, isInitialGreeting: true };
     }
 
-    const workflowPhase = await this.promptService.determineWorkflowPhase(state, callSid);
+    const workflowPhase = overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
+      ? overrideWorkflowPhase
+      : await this.promptService.determineWorkflowPhase(state, callSid);
     const activeToolName =
       state?.activeToolName || (state?.activeResponseId ? 'processing_response' : null);
     let courseType = null;
@@ -162,9 +202,41 @@ export class ConversationService {
     }
 
     const flowState = getConversationFlowState(callSid, state);
-    const { waitingForLanguage, languageSelected } = flowState;
+    const { waitingForLanguage, languageSelected, consentRequested, consentGiven } = flowState;
 
-    const instructions = this.promptService.getContextualInstructions({
+    let privacySettings = conversation?._cachedPrivacySettings ?? null;
+    if (!privacySettings) {
+      try {
+        const PrivacyConfig = (await import('../database/models/PrivacyConfig.js')).default;
+        privacySettings = await PrivacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        if (conversation && privacySettings) {
+          conversation._cachedPrivacySettings = privacySettings;
+        }
+      } catch {
+        privacySettings = null;
+      }
+    }
+    const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
+    const consentNotice =
+      privacySettings?.consentScript ||
+      'For training and quality, this call may be recorded and handled in line with our Privacy Policy.';
+    const consentQuestion = 'Do you consent to this call being recorded?';
+
+    if (requireExplicitConsent && !consentGiven && languageSelected) {
+      const consentInstructions = this.consentInstructionBuilder.buildConsentFlowInstructions({
+        consentNotice,
+        consentQuestion,
+        languageSelected: true,
+        consentGiven: false,
+        requireExplicitConsent: true,
+        baseInstructions: ''
+      });
+      if (consentInstructions) {
+        return { instructions: consentInstructions, isInitialGreeting: false, isConsentQuestion: true };
+      }
+    }
+
+    let instructions = this.promptService.getContextualInstructions({
       isInitialGreeting: false,
       workflowPhase,
       courseType,
@@ -174,6 +246,14 @@ export class ConversationService {
       waitingForLanguage: waitingForLanguage && !languageSelected,
       languageSelected
     });
+
+    // Verification pending: transcript-driven responses must also get "call client_verification only" so the model doesn't call booking_step_search_client again
+    const verificationPending = conversation?.clientDetails && !conversation?.clientVerified &&
+      (workflowPhase === 'booking_existing_client' || currentStep === 5);
+    if (verificationPending) {
+      const verificationInstruction = `CRITICAL: You are in client verification. Do NOT call booking_step_search_client again. Call client_verification with ONLY what the caller has just said—one field at a time. Ask for full name first and call with fullName only when they provide it. Then ask for postcode and call with fullName (from previous result) and postcode only when the caller says their postcode. Then ask for telephone number and call with fullName, postcode, and telephoneNumber only when the caller says their number. Do NOT pass postcode or telephoneNumber from the conversation or stored clientDetails—only use what the caller actually says. After client_verification returns verified: true, call booking_step_select_session.`;
+      instructions = instructions ? `${verificationInstruction}\n\n${instructions}` : verificationInstruction;
+    }
 
     return { instructions, isInitialGreeting: false };
   }

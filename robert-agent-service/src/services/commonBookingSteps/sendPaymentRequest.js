@@ -46,7 +46,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
         termsNotAccepted: true,
         requiresRetry: true,
         message: 'The client did not agree with the terms. Try to answer their questions to the best of your abilities. If they still don\'t agree after explanation, ask if they wish to be transferred to a human agent.',
-        instruction: 'Try to address the client\'s concerns. If they still don\'t agree, ask: "Would you like to be transferred to a human agent?" If yes, use transfer_call tool with target: "+442036918807". If no, say "Unfortunately, it will not be possible to proceed with the booking. Goodbye." and terminate the call.'
+        instruction: 'Try to address the client\'s concerns. If they still don\'t agree, ask: "Would you like to be transferred to a human agent?" If yes, use the transfer_call tool. If no, say "Unfortunately, it will not be possible to proceed with the booking. Goodbye." and terminate the call.'
       };
     }
     

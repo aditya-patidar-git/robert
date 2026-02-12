@@ -20,7 +20,8 @@ const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search'];
 const TOOL_SETS = {
   // Initial greeting phase - minimal tools
   greeting: [
-    'transfer_call'
+    'transfer_call',
+    'start_workflow'
   ],
 
   // Language selection phase - minimal tools
@@ -33,6 +34,7 @@ const TOOL_SETS = {
     'file_search',
     'web_search',
     'transfer_call',
+    'start_workflow',
     'complaint_submission',
     'email',
     'send_sms',
@@ -95,7 +97,6 @@ const TOOL_SETS = {
 
   // Update customer workflow
   booking_modification: [
-    'update_customer',
     'kba_verification',
     'client_verification',
     'file_search',
@@ -149,7 +150,6 @@ const TOOL_SETS = {
 
   // CRM operations (admin/update)
   crm_operations: [
-    'update_customer',
     'kba_verification',
     'client_verification',
     'transfer_call'
@@ -170,9 +170,7 @@ const CONTEXTUAL_TOOLS = {
   ],
 
   // Add CRM tools when admin operations are needed
-  adminAccess: [
-    'update_customer'
-  ],
+  adminAccess: [],
 
   // Add legacy tools when backward compatibility is needed
   legacyMode: [

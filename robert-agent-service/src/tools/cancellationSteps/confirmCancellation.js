@@ -7,7 +7,7 @@ import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
 import { getStepNumber } from '../../services/browser/stepConfiguration.js';
-import { TERMS_DISCLAIMER } from '../../config/cancellationPhrases.js';
+import { TERMS_DISCLAIMER, AFTER_CONFIRM_CANCEL_MESSAGE } from '../../config/cancellationPhrases.js';
 
 export class ConfirmCancellationStep extends CancellationBaseStepTool {
   getStepName() {
@@ -57,7 +57,7 @@ export class ConfirmCancellationStep extends CancellationBaseStepTool {
       // If confirmed is provided, caller has confirmed cancellation
       if (confirmed === true) {
         // Update session state
-        sessionStateManager.setCurrentStep(callSid, stepNumber, { confirmed: true });
+        sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { confirmed: true });
         
         return {
           success: true,
@@ -65,7 +65,7 @@ export class ConfirmCancellationStep extends CancellationBaseStepTool {
           proceedToStep9: true,
           nextStep: 'cancellation_step_initiate_cancellation',
           nextStepNumber: 9,
-          message: 'I\'ll now cancel your booking. Please bear with me a moment.'
+          message: AFTER_CONFIRM_CANCEL_MESSAGE
         };
       }
 

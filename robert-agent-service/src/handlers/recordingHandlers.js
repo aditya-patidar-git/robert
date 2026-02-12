@@ -2,6 +2,8 @@ import axios from "axios";
 import CallRecord from "../database/models/CallRecord.js";
 import { conversations } from "../shared/state.js";
 import twilioClient from "../utils/twilioClient.js";
+import gdprService from "../services/gdprService.js";
+import piiDetectionService from "../services/piiDetectionService.js";
 // dotenv is already loaded in index.js, no need to reload here
 
 /**
@@ -128,6 +130,7 @@ export const recordingStatus = async (req, res) => {
         const updateFields = {
             recordingUrl: RecordingUrl,
             recordingStatus: 'available',
+            afterCallTranscriptionPending: true,
             'recordingConsent.requested': consent?.requested || false,
             'recordingConsent.given': consent?.given !== false ? true : false,
             'recordingConsent.requestedAt': consent?.requestedAt || null,
@@ -138,37 +141,12 @@ export const recordingStatus = async (req, res) => {
         // Only set from/to if we have values (don't overwrite existing)
         if (from) updateFields.from = from;
         if (to) updateFields.to = to;
-        
-        // Only set transcript if we have content AND the existing record doesn't have one
-        // This prevents race condition where webhook overwrites transcript before cleanup saves it
-        const existingRecord = await CallRecord.findOne({ callSid: CallSid }).lean();
-        const existingTranscriptLength = existingRecord?.transcript?.length || 0;
-        const newTranscriptLength = transcript?.length || 0;
-        
-        if (newTranscriptLength > 0 && newTranscriptLength > existingTranscriptLength) {
-            // Only update transcript if we have more data than existing
-            updateFields.transcript = transcript;
-            updateFields.summary = `Call transcript available with ${newTranscriptLength} exchanges.`;
-            console.log(`📝 [${CallSid}] Updating transcript with ${newTranscriptLength} entries (existing: ${existingTranscriptLength})`);
-        } else if (existingTranscriptLength > 0) {
-            console.log(`📝 [${CallSid}] Preserving existing transcript with ${existingTranscriptLength} entries`);
-        } else {
-            console.log(`📝 [${CallSid}] No transcript available yet - will be saved by cleanup()`);
-        }
 
         await CallRecord.findOneAndUpdate(
             { callSid: CallSid },
             { $set: updateFields },
             { upsert: true, new: true }
         );
-
-        // Cleanup conversation state now that recording is saved
-        // This ensures we don't keep memory longer than necessary
-        const { conversations } = await import('../shared/state.js');
-        if (conversations[CallSid]) {
-            console.log(`🧹 [${CallSid}] Cleaning up conversation state after recording webhook processed`);
-            delete conversations[CallSid];
-        }
 
         res.sendStatus(200);
     } catch (err) {
@@ -208,14 +186,14 @@ export const proxyRecording = async (req, res) => {
 
                 if (recordings && recordings.length > 0) {
                     const recording = recordings[0];
-                    const recordingUrl = recording.uri.replace('.json', '');
-                    
-                    // Update database for future requests
+                    let recordingUrl = recording.uri.replace('.json', '');
+                    if (recordingUrl && recordingUrl.startsWith('/')) {
+                        recordingUrl = 'https://api.twilio.com' + recordingUrl;
+                    }
                     await CallRecord.findOneAndUpdate(
                         { callSid: req.params.callSid },
-                        { $set: { recordingUrl: recordingUrl } }
+                        { $set: { recordingUrl } }
                     );
-                    
                     rec.recordingUrl = recordingUrl;
                     console.log(`✅ [${req.params.callSid}] Recording URL fetched from Twilio and saved`);
                 } else {
@@ -240,10 +218,12 @@ export const proxyRecording = async (req, res) => {
             });
         }
 
-        const twilioUrl = rec.recordingUrl.endsWith('.mp3') 
-            ? rec.recordingUrl 
+        let twilioUrl = rec.recordingUrl.endsWith('.mp3')
+            ? rec.recordingUrl
             : `${rec.recordingUrl}.mp3`;
-            
+        if (typeof twilioUrl === 'string' && twilioUrl.startsWith('/')) {
+            twilioUrl = 'https://api.twilio.com' + twilioUrl;
+        }
         const response = await axios.get(twilioUrl, {
             auth: { 
                 username: process.env.TWILIO_SID, 

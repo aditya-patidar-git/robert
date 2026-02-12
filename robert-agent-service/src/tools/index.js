@@ -2,13 +2,13 @@ import webSearchTool from './webSearch.js';
 import emailTool from './email.js';
 import sendSMSTool from './sendSMS.js';
 import generateReferenceIdTool from './generateReferenceId.js';
-import updateCustomerTool from './updateCustomer.js';
 import paymentsTool from './payments.js';
 import fileSearchTool from './fileSearch.js';
 import transferCallTool from './transferCall.js';
 import kbaVerificationTool from './kbaVerification.js';
 import complaintSubmissionTool from './complaintSubmission.js';
 import clientVerificationTool from './clientVerification.js';
+import startWorkflowTool from './startWorkflow.js';
 import configManager from '../agent/configManager.js';
 import ToolRegistry from './toolRegistry.js';
 import ToolExecutor from './toolExecutor.js';
@@ -48,13 +48,13 @@ class UnifiedToolExecutor {
       ['email', emailTool],
       ['send_sms', sendSMSTool],
       ['generate_reference_id', generateReferenceIdTool],
-      ['update_customer', updateCustomerTool],
       ['payments', paymentsTool],
       ['file_search', fileSearchTool],
       ['transfer_call', transferCallTool],
       ['kba_verification', kbaVerificationTool],
       ['complaint_submission', complaintSubmissionTool],
-      ['client_verification', clientVerificationTool]
+      ['client_verification', clientVerificationTool],
+      ['start_workflow', startWorkflowTool]
     ]);
     
     // Register step-based booking tools
@@ -98,11 +98,6 @@ class UnifiedToolExecutor {
    */
   getFilteredToolDefinitions(context = {}) {
     const allDefinitions = getToolDefinitions();
-    // TEMPORARY: bypass filtering for cancellation workflow testing; remove when re-enabling filter
-    if (process.env.DISABLE_TOOL_FILTERING === 'true') {
-      console.log(`🔧 [TOOL FILTER] DISABLED (temporary for cancellation workflow testing) - returning all ${allDefinitions.length} tools`);
-      return allDefinitions;
-    }
     const allowedToolNames = getToolsForContext(
       context.workflowPhase || 'general_inquiry',
       context

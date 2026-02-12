@@ -9,9 +9,11 @@ import progressIndicatorService from '../../../services/progressIndicatorService
  * Delegates execution to ToolExecutionService for code reuse
  */
 export class ToolCallHandler {
-  constructor(stateManager, openaiWs) {
+  constructor(stateManager, openaiWs, options = {}) {
     this.state = stateManager;
     this.openaiWs = openaiWs;
+    this.onBeforeTriggerResponse = options.onBeforeTriggerResponse;
+    this.onWorkflowSwitch = options.onWorkflowSwitch;
     this.resultSubmitter = new WebSocketResultSubmitter(openaiWs, stateManager);
   }
 
@@ -38,40 +40,18 @@ export class ToolCallHandler {
       startTime: toolStartTime
     });
     
-    // Start progress tracking (Media Streams specific)
-    // Enable progress tracking for all tools, including step-based tools
-    // Step-based tools use longer thresholds to avoid redundant messages for quick steps
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
-    const isStepBasedTool = name && name.startsWith('booking_step_');
-    
-    if (conversationBehaviorConfig?.progressIndicators?.enabled) {
-      // Pass stateManager for thread-safe response state checks
-      progressIndicatorService.startToolExecution(this.state.callSid, name, this.state);
-      
-      // Use longer threshold for step-based tools (5 seconds) vs regular tools (2 seconds)
-      const baseThreshold = conversationBehaviorConfig.progressIndicators.acknowledgmentThresholdMs || 2000;
-      const threshold = isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold;
-      
-      setTimeout(() => {
-        if (!this.state.isClosed && this.openaiWs && this.openaiWs.readyState === 1) {
-          const sentAck = progressIndicatorService.checkAndSendAcknowledgment(this.state.callSid, this.openaiWs, conversationBehaviorConfig);
-          
-          if (!sentAck) {
-            const execution = progressIndicatorService.getExecutionInfo(this.state.callSid);
-            if (execution) {
-              progressIndicatorService.startPeriodicUpdates(this.state.callSid, this.openaiWs, conversationBehaviorConfig);
-            }
-          }
-        }
-      }, threshold);
-    }
-    
-    // Create progress callback for browser operations
-    const progressCallback = (['update_customer'].includes(name)) ? (progress) => {
-      if (progress && progress.message && this.openaiWs && this.openaiWs.readyState === 1) {
-        progressIndicatorService.sendProgressUpdate(this.state.callSid, progress.message, this.openaiWs);
-      }
-    } : null;
+    const getWsRef = () => (this.state.isClosed ? null : this.openaiWs);
+    progressIndicatorService.scheduleAcknowledgmentAndPeriodicUpdates(
+      this.state.callSid,
+      name,
+      this.openaiWs,
+      conversationBehaviorConfig,
+      this.state,
+      getWsRef
+    );
+
+    const progressCallback = null;
     
     // Execute tool using unified service
     const executionResult = await toolExecutionService.executeTool({
@@ -96,13 +76,12 @@ export class ToolCallHandler {
           executionResult
         );
         
-        // Trigger response if needed - pass tool name and result for special handling
-        // CRITICAL FIX: Extract the actual tool result (same as success path) so client_verification
-        // missingFields can be detected properly. Some tools like client_verification return
-        // {success: false, verified: false, missingFields: [...]} which needs special handling
-        // to trigger automatic continuation asking for missing fields.
+        if (typeof this.onBeforeTriggerResponse === 'function') {
+          this.onBeforeTriggerResponse(this.state.callSid);
+        }
+        const effectiveToolName = executionResult.resolvedToolName || name;
         await this.resultSubmitter.triggerResponse(this.state.callSid, { 
-          toolName: name,
+          toolName: effectiveToolName,
           toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
         });
         
@@ -111,16 +90,27 @@ export class ToolCallHandler {
         return;
       }
       
-      // Submit success result (executionResult already has success: true and result)
+      const toSubmit = (name === 'booking_step_check_availability' && executionResult.result?.allSlots)
+        ? { ...executionResult, result: { ...executionResult.result, allSlots: undefined } }
+        : executionResult;
       await this.resultSubmitter.submitResult(
         this.state.callSid,
         call_id,
-        executionResult
+        toSubmit
       );
+
+      if (name === 'start_workflow' && executionResult.success && executionResult.result?.phase) {
+        if (typeof this.onWorkflowSwitch === 'function') {
+          this.onWorkflowSwitch(this.state.callSid, executionResult.result.phase);
+        }
+      }
       
-      // Trigger response - pass tool name and result for special handling (e.g., client_verification)
+      if (typeof this.onBeforeTriggerResponse === 'function') {
+        this.onBeforeTriggerResponse(this.state.callSid);
+      }
+      const effectiveToolName = executionResult.resolvedToolName || name;
       await this.resultSubmitter.triggerResponse(this.state.callSid, { 
-        toolName: name,
+        toolName: effectiveToolName,
         toolResult: executionResult.result || executionResult // Pass the tool result so triggerResponse can check for incomplete verification
       });
       

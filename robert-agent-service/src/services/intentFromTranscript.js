@@ -32,10 +32,36 @@ const CANCELLATION_PHRASES = [
   'cancel'
 ];
 
+const TRANSFER_TO_HUMAN_PHRASES = [
+  'talk to a human',
+  'talk to human',
+  'speak to a human',
+  'speak to human',
+  'human agent',
+  'transfer to human',
+  'transfer to a human',
+  'transfer me to',
+  'speak with an agent',
+  'talk to an agent',
+  'real person',
+  'real agent',
+  'live agent',
+  'live person'
+];
+
+export function isTransferToHumanRequest(transcriptText) {
+  if (!transcriptText || typeof transcriptText !== 'string') return false;
+  const normalized = transcriptText.trim().toLowerCase();
+  if (!normalized) return false;
+  return TRANSFER_TO_HUMAN_PHRASES.some(phrase => normalized.includes(phrase));
+}
+
 export function getIntentFromTranscript(transcriptText) {
   if (!transcriptText || typeof transcriptText !== 'string') return null;
   const normalized = transcriptText.trim().toLowerCase();
   if (!normalized) return null;
+
+  if (isTransferToHumanRequest(transcriptText)) return 'transfer_to_human';
 
   for (const phrase of CANCELLATION_PHRASES) {
     if (normalized.includes(phrase)) {

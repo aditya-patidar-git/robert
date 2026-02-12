@@ -16,7 +16,7 @@ class BrowserAgentService {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
       loginName: process.env.CRM_LOGIN || 'universalmct',
       username: process.env.CRM_USERNAME || 'auagent',
-      password: process.env.CRM_PASSWORD || 'Robert2025!',
+      password: process.env.CRM_PASSWORD,
       userAgent: 'auagent'
     };
     this.screenshotsDir = './screenshots';
@@ -56,6 +56,11 @@ class BrowserAgentService {
     if (this.initialized) {
       console.log('⚠️ BrowserAgentService already initialized');
       return;
+    }
+
+    if (!process.env.CRM_PASSWORD) {
+      console.error('❌ CRM_PASSWORD environment variable is required for browser agent. Set it and restart.');
+      process.exit(1);
     }
 
     console.log('🚀 Initializing BrowserAgentService...');
@@ -263,11 +268,6 @@ class BrowserAgentService {
   async cancelBooking(page, args, auditId) {
     const { cancelBooking } = await import('./tasks/cancelBooking.js');
     return await cancelBooking(page, args, auditId, this.screenshotsDir);
-  }
-
-  async updateCustomer(page, args, auditId) {
-    const { updateCustomer } = await import('./tasks/updateCustomer.js');
-    return await updateCustomer(page, args, auditId, this.screenshotsDir);
   }
 
   async checkAvailability(page, args, auditId) {

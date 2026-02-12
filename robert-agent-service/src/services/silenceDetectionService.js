@@ -101,24 +101,10 @@ class SilenceDetectionService {
       openaiWs.send(JSON.stringify({
         type: 'response.create',
         response: {
-          modalities: ['audio', 'text']
+          modalities: ['audio', 'text'],
+          instructions: `Say exactly: "${message}"`
         }
       }));
-      
-      openaiWs.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'assistant',
-          content: [
-            {
-              type: 'text',
-              text: message
-            }
-          ]
-        }
-      }));
-      
       console.log(`💬 [${callSid}] Sent proactive message (attempt ${state.proactiveCount}): "${message}"`);
       
       // Reset agent finished time after sending message

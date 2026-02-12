@@ -9,10 +9,12 @@ import cors from 'cors';
 import configManager from './configManager.js';
 import { handleMediaStreamConnection } from '../handlers/mediaStream/index.js';
 import { handleTestClientConnection } from '../handlers/mediaStream/testClientHandler.js';
-import { makeCall, aiIntro, getAllCalls, handleIncomingCall } from '../handlers/callHandlers.js';
+import { makeCall, aiIntro, getAllCalls, handleIncomingCall, afterHoursTransfer, voicemailRecordingStatus } from '../handlers/callHandlers.js';
 import { callStatus } from '../handlers/statusHandlers.js';
 import { recordingStatus, proxyRecording } from '../handlers/recordingHandlers.js';
+import { twilioWebhookAuth } from '../middleware/twilioWebhookAuth.js';
 import sipRoutes from '../routes/sipRoutes.js';
+import gmailOAuthRoutes from '../routes/gmailOAuth.js';
 import secretsManager from '../services/secretsManager.js';
 import browserAgentService from '../services/browser/index.js';
 import toolExecutor from '../tools/index.js';
@@ -23,10 +25,12 @@ import { validateAndLogStartupConfig } from '../utils/configValidator.js';
 import scheduler from '../jobs/scheduler.js';
 import memoryCleanupJob from '../jobs/memoryCleanupJob.js';
 import retentionCleanupJob from '../jobs/retentionCleanupJob.js';
+import afterCallTranscriptionJob from '../jobs/afterCallTranscriptionJob.js';
 import kbMigrationJob from '../jobs/kbMigrationJob.js';
 import kbDriftDetectionJob from '../jobs/kbDriftDetectionJob.js';
 import { initializeTelemetry, shutdownTelemetry } from '../utils/telemetry.js';
 import { initializeMetrics } from '../services/metricsService.js';
+import configSyncClient from '../services/configSyncClient.js';
 
 // Initialize OpenTelemetry before other imports
 initializeTelemetry();
@@ -82,6 +86,8 @@ const {
   TWILIO_SID,
   TWILIO_AUTH_TOKEN,
   TWILIO_NUMBER,
+  VERIFIED_CALLER_ID,
+  CALL_TO,
   TUNNEL_DOMAIN,
   OPENAI_API_KEY,
   MONGO_URI,
@@ -95,10 +101,16 @@ const wss = new WebSocketServer({ noServer: true });
 // In-memory lock to prevent duplicate calls (simple debouncing)
 const pendingCalls = new Map(); // phoneNumber -> timestamp
 
+// Cached sipService for root health route (avoids repeated dynamic import)
+let _sipService = null;
+
 // Add error handler to WebSocket server
 wss.on('error', (error) => {
   console.error('❌ WebSocket server error:', error.message);
 });
+
+// Trust proxy so req.protocol and req.ip are correct when behind a reverse proxy (needed for Twilio webhook URL validation)
+app.set('trust proxy', 1);
 
 // Middleware
 app.use(cors());
@@ -107,12 +119,17 @@ app.use(express.urlencoded({ extended: true })); // Required for Twilio form-enc
 
 // Initialize config manager
 await configManager.initialize();
+if (process.env.BACKEND_URL) {
+  configSyncClient.start(configManager);
+}
 
 // Basic health check (backward compatible)
 app.get('/', async (_, res) => {
-  const sipService = (await import('../services/sipService.js')).default;
-  const sipStats = sipService.getStats();
-  const sipValidation = sipService.validateOnStartup();
+  if (_sipService === null) {
+    _sipService = (await import('../services/sipService.js')).default;
+  }
+  const sipStats = _sipService.getStats();
+  const sipValidation = _sipService.validateOnStartup();
   
   res.json({ 
     status: 'ok', 
@@ -266,20 +283,21 @@ wss.on('test-connection', (testWs, req) => {
   }
 });
 
-// API Routes - Outbound
+// API Routes - Outbound (make-call and ai-intro are not Twilio callbacks; call-status and recording-status are)
 app.post('/api/outbound/make-call', makeCall);
-app.post('/api/outbound/ai-intro', aiIntro);
+app.post('/api/outbound/ai-intro', twilioWebhookAuth, aiIntro);
 app.get('/api/outbound/get-all-calls', getAllCalls);
-app.post('/api/outbound/call-status', callStatus);
-app.post('/api/outbound/recording-status', recordingStatus);
+app.post('/api/outbound/call-status', twilioWebhookAuth, callStatus);
+app.post('/api/outbound/recording-status', twilioWebhookAuth, recordingStatus);
 app.get('/api/outbound/recording/:callSid', proxyRecording);
 
-// API Routes - Inbound
-app.post('/api/inbound/incoming-call', handleIncomingCall);
-// Alias for backward compatibility (some test helpers may use this)
-app.post('/api/inbound/handle-call', handleIncomingCall);
-app.post('/api/inbound/call-status', callStatus);
-app.post('/api/inbound/recording-status', recordingStatus);
+// API Routes - Inbound (all POSTs are Twilio webhooks)
+app.post('/api/inbound/incoming-call', twilioWebhookAuth, handleIncomingCall);
+app.post('/api/inbound/handle-call', twilioWebhookAuth, handleIncomingCall);
+app.post('/api/inbound/after-hours-transfer', twilioWebhookAuth, afterHoursTransfer);
+app.post('/api/inbound/voicemail-recording-status', twilioWebhookAuth, voicemailRecordingStatus);
+app.post('/api/inbound/call-status', twilioWebhookAuth, callStatus);
+app.post('/api/inbound/recording-status', twilioWebhookAuth, recordingStatus);
 app.get('/api/inbound/recording/:callSid', proxyRecording);
 
 // API Routes - Diagnostics (non-intrusive, optional)
@@ -378,15 +396,20 @@ app.get('/api/test/email-connection', async (req, res) => {
   }
 });
 
-// API Routes - SIP (OpenAI Realtime SIP webhooks)
-// Add diagnostic logging middleware for ALL SIP webhook requests
+app.use('/api/gmail', gmailOAuthRoutes);
+
+// API Routes - SIP (OpenAI Realtime SIP webhooks) - verbose logging only when SIP_DEBUG=true
 app.use('/api/sip', (req, res, next) => {
   const timestamp = new Date().toISOString();
-  console.log(`🔍 [SIP WEBHOOK] ${timestamp} - ${req.method} ${req.path}`);
-  console.log(`🔍 [SIP WEBHOOK] Headers:`, JSON.stringify(req.headers, null, 2));
-  console.log(`🔍 [SIP WEBHOOK] Body:`, JSON.stringify(req.body, null, 2));
-  console.log(`🔍 [SIP WEBHOOK] Query:`, JSON.stringify(req.query, null, 2));
-  console.log(`🔍 [SIP WEBHOOK] IP: ${req.ip}, User-Agent: ${req.get('user-agent')}`);
+  if (process.env.SIP_DEBUG === 'true') {
+    console.log(`🔍 [SIP WEBHOOK] ${timestamp} - ${req.method} ${req.path}`);
+    console.log(`🔍 [SIP WEBHOOK] Headers:`, JSON.stringify(req.headers, null, 2));
+    console.log(`🔍 [SIP WEBHOOK] Body:`, JSON.stringify(req.body, null, 2));
+    console.log(`🔍 [SIP WEBHOOK] Query:`, JSON.stringify(req.query, null, 2));
+    console.log(`🔍 [SIP WEBHOOK] IP: ${req.ip}, User-Agent: ${req.get('user-agent')}`);
+  } else {
+    console.log(`🔍 [SIP WEBHOOK] ${timestamp} ${req.method} ${req.path}`);
+  }
   next();
 });
 
@@ -466,48 +489,39 @@ app.post('/api/booking/itm/demo', async (req, res) => {
   }
 });
 
-// Manual call trigger (for testing)
+// Manual call trigger (for testing): VERIFIED_CALLER_ID calls CALL_TO (simulated inbound). TWILIO_NUMBER unchanged elsewhere.
 app.get('/call', async (req, res) => {
-  const to = req.query.to?.trim(); // Trim phone number to remove leading/trailing spaces
-  if (!to) return res.status(400).send('Add ?to=+918120523400');
+  const to = req.query.to?.trim() || CALL_TO;
+  if (!to) return res.status(400).send('Add ?to=<number> or set CALL_TO in .env');
+
+  const from = VERIFIED_CALLER_ID;
+  if (!from) return res.status(500).send('VERIFIED_CALLER_ID is required for /call');
 
   try {
-    // CRITICAL: Prevent duplicate calls within 3 seconds
     const now = Date.now();
-    const lastCallTime = pendingCalls.get(to);
+    const key = `${from}:${to}`;
+    const lastCallTime = pendingCalls.get(key);
     if (lastCallTime && (now - lastCallTime) < 3000) {
-      console.warn(`⚠️ [DEBUG] Duplicate call request prevented for ${to} (last call ${now - lastCallTime}ms ago)`);
+      console.warn(`⚠️ [DEBUG] Duplicate call prevented for ${key} (last ${now - lastCallTime}ms ago)`);
       return res.status(429).send(`Call already in progress. Please wait.`);
     }
-    
-    // Mark call as pending
-    pendingCalls.set(to, now);
-    
-    // Clean up old entries (older than 10 seconds)
-    for (const [phone, timestamp] of pendingCalls.entries()) {
-      if (now - timestamp > 10000) {
-        pendingCalls.delete(phone);
-      }
+    pendingCalls.set(key, now);
+    for (const [k, timestamp] of pendingCalls.entries()) {
+      if (now - timestamp > 10000) pendingCalls.delete(k);
     }
-    
-    console.log(`📞 [DEBUG] Call request received for: ${to}`);
-    // Use shared lazy-initialized Twilio client instead of creating new one per request
+
+    console.log(`📞 [DEBUG] Call: ${from} → ${to}`);
     const baseUrl = TUNNEL_DOMAIN ? `https://${TUNNEL_DOMAIN}` : `http://localhost:${PORT}`;
     const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
     const wsHost = baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const wsUrl = `${wsProtocol}://${wsHost}/media-stream`;
-    
-    console.log(`🔗 [DEBUG] WebSocket URL for Media Stream: ${wsUrl}`);
-    
-    // Build status callback URL
-    const statusCallbackUrl = TUNNEL_DOMAIN 
+    const statusCallbackUrl = TUNNEL_DOMAIN
       ? `https://${TUNNEL_DOMAIN}/api/outbound/call-status`
       : `http://localhost:${PORT}/api/outbound/call-status`;
-    
-    // Prepare Media Streams options (used as fallback or primary)
+
     const mediaStreamsOptions = {
       to,
-      from: TWILIO_NUMBER,
+      from,
       statusCallback: statusCallbackUrl,
       statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
       twiml: `<Response>
@@ -518,31 +532,28 @@ app.get('/call', async (req, res) => {
       </Response>`
     };
 
-    // Use routing logic to decide between SIP and Media Streams
     const sipCallRouter = (await import('../services/sip/sipCallRouter.js')).default;
     const telephonyConfig = configManager.getTelephonyConfig();
-    
+
     const { call, method } = await sipCallRouter.routeCall(
       twilioClient,
       to,
-      TWILIO_NUMBER,
+      from,
       telephonyConfig,
       mediaStreamsOptions
     );
 
     if (!call) {
-      pendingCalls.delete(to);
+      pendingCalls.delete(key);
       return res.status(500).send('Failed to create call');
     }
-    
-    // Remove from pending after successful creation (call will be tracked by callSid)
-    pendingCalls.delete(to);
+    pendingCalls.delete(key);
     
     res.send(`Call ${method} created: ${call.sid}`);
   } catch (err) {
     console.error('❌ [DEBUG] Error creating call:', err);
-    // Remove from pending on error
-    pendingCalls.delete(to);
+    const key = `${VERIFIED_CALLER_ID}:${req.query.to?.trim() || CALL_TO}`;
+    pendingCalls.delete(key);
     res.status(500).send(`Error: ${err.message}`);
   }
 });
@@ -575,16 +586,20 @@ server.listen(PORT, async () => {
   try {
     scheduler.registerJob(memoryCleanupJob.name, memoryCleanupJob.schedule, memoryCleanupJob.run);
     scheduler.registerJob(retentionCleanupJob.name, retentionCleanupJob.schedule, retentionCleanupJob.run);
+    scheduler.registerJob(afterCallTranscriptionJob.name, afterCallTranscriptionJob.schedule, afterCallTranscriptionJob.run);
     scheduler.registerJob(kbMigrationJob.name, kbMigrationJob.schedule, kbMigrationJob.run);
     scheduler.registerJob(kbDriftDetectionJob.name, kbDriftDetectionJob.schedule, kbDriftDetectionJob.run);
     scheduler.start();
     console.log(`⏰ Scheduled jobs initialized: ${scheduler.getJobs().length} jobs registered`);
+    const abusePreventionService = (await import('../services/abusePreventionService.js')).default;
+    abusePreventionService.startPruneInterval?.();
   } catch (error) {
     console.error('❌ Error initializing scheduled jobs:', error);
     // Don't fail startup if jobs fail to initialize
   }
   
-  console.log(`CALL NOW → http://localhost:${PORT}/call?to=+918120523400\n`);
+  const callTo = CALL_TO || '<CALL_TO>';
+  console.log(`CALL NOW → http://localhost:${PORT}/call?to=${callTo} (${VERIFIED_CALLER_ID || 'VERIFIED_CALLER_ID'} → ${callTo})\n`);
 });
 
 /**
@@ -624,6 +639,7 @@ async function cleanupAllActiveConnections() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  configSyncClient.stop();
   await cleanupAllActiveConnections();
   scheduler.stop();
   await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
@@ -636,6 +652,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  configSyncClient.stop();
   await cleanupAllActiveConnections();
   scheduler.stop();
   await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup

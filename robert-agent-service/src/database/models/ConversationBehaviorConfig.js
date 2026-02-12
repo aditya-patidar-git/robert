@@ -21,7 +21,7 @@ const ConversationBehaviorConfigSchema = new mongoose.Schema({
     },
     updateIntervalMs: { 
       type: Number, 
-      default: 5000,
+      default: 12000,
       min: 1000,
       max: 30000
     },
@@ -134,6 +134,20 @@ const ConversationBehaviorConfigSchema = new mongoose.Schema({
         min: 0,
         max: 5
       }
+    }
+  },
+  bargeInTail: {
+    drainBufferMs: {
+      type: Number,
+      default: 2000,
+      min: 500,
+      max: 5000
+    },
+    maxTailMs: {
+      type: Number,
+      default: 8000,
+      min: 1000,
+      max: 30000
     }
   },
   // Error Handling Settings

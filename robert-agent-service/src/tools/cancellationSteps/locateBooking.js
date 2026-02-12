@@ -12,7 +12,7 @@ export class LocateBookingStep extends CancellationBaseStepTool {
   }
 
   getRequiredPreferences() {
-    return ['courseDate', 'courseType']; // Need course date and type to locate booking
+    return ['courseDate']; // Only need course date - courseType will be extracted from booking found
   }
 
   getTimeout() {

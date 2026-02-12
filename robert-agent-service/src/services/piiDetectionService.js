@@ -288,6 +288,27 @@ class PIIDetectionService {
   }
 
   /**
+   * Redact PII in transcript segments. Returns a deep copy; does not mutate input.
+   * @param {Array<{role, text, timestamp?, confidence?, redactions?}>} segments
+   * @returns {Array<{role, text, timestamp?, confidence?, redactions?}>}
+   */
+  redactTranscriptSegments(segments) {
+    if (!Array.isArray(segments)) return segments;
+    return segments.map(seg => {
+      const copy = { ...seg, text: seg.text != null ? String(seg.text) : '' };
+      const detection = this.detectPII(copy.text);
+      if (!detection.detected) {
+        copy.redactions = seg.redactions || [];
+        return copy;
+      }
+      const types = [...new Set(detection.pii.map(p => p.type))];
+      copy.text = this.maskPII(copy.text);
+      copy.redactions = types;
+      return copy;
+    });
+  }
+
+  /**
    * Get PII summary (counts by type)
    * @param {string} text - Text to analyze
    * @returns {Object} PII summary

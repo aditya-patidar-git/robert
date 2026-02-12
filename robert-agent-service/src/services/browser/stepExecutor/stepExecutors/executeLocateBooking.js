@@ -17,7 +17,7 @@ import feeCalculationService from '../../../feeCalculationService.js';
  */
 export async function executeLocateBooking(page, args, sessionState, screenshotsDir) {
   const courseDate = args.courseDate;
-  const courseType = args.courseType || sessionState?.courseType;
+  const requestedCourseType = args.courseType || sessionState?.courseType;
   
   if (!courseDate) {
     return {
@@ -25,16 +25,9 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
       error: 'Course date is required to locate the booking'
     };
   }
-  
-  if (!courseType) {
-    return {
-      success: false,
-      error: 'Course type is required'
-    };
-  }
 
   try {
-    console.log(`🔍 [LOCATE_BOOKING] Looking for booking on date: ${courseDate}, course type: ${courseType}`);
+    console.log(`🔍 [LOCATE_BOOKING] Looking for booking on date: ${courseDate}${requestedCourseType ? `, requested course type: ${requestedCourseType}` : ' (course type will be determined from booking)'}`);
     
     // Work within contactEdit_iframe context (should already be set from Step 6)
     console.log('🔄 [LOCATE_BOOKING] Switching to contactEdit_iframe context...');
@@ -103,6 +96,24 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
       const aliases = courseTypeAliases[requestedType] || [requestedType];
       return aliases.some(a => normalized.toLowerCase().includes(a.toLowerCase()));
     };
+    
+    // Helper to extract courseType from course name
+    const extractCourseTypeFromName = (courseName) => {
+      if (!courseName) return null;
+      const courseNameLower = courseName.toLowerCase();
+      if (courseNameLower.includes('cbt executive') || courseNameLower.includes('executive')) {
+        return 'CBT Executive 1-2-1';
+      } else if (courseNameLower.includes('cbt') || courseNameLower.includes('compulsory basic training')) {
+        return 'CBT';
+      } else if (courseNameLower.includes('itm') || courseNameLower.includes('introduction to motorcycling')) {
+        return 'Introduction to Motorcycling';
+      } else if (courseNameLower.includes('gear conversion')) {
+        return 'Gear Conversion';
+      } else if (courseNameLower.includes('private lesson')) {
+        return 'Private Lesson';
+      }
+      return null;
+    };
 
     // Helper function to parse Course Date button text (format: "Mon 30 Mar 2026 09:00")
     const parseCourseDateButton = (buttonText) => {
@@ -126,6 +137,7 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
     let bookingDetails = null;
     let bookingRow = null;
     let extractedPrice = null;
+    let courseType = null; // Will be set when booking is found (extracted or requested)
     
     // Iterate through booking rows to find matching date
     for (let i = 0; i < rowCount; i++) {
@@ -159,12 +171,28 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
           
           if (parsedDateOnly.getTime() === targetDateOnly.getTime()) {
             const courseName = await row.getAttribute('data-etp_name');
-            if (!matchesCourseType(courseType, courseName)) {
-              console.log(`⏭️ [LOCATE_BOOKING] Row ${i} date matches but course type mismatch: requested="${courseType}", row="${courseName}"`);
+            // Extract courseType from booking if not provided
+            let extractedCourseType = requestedCourseType;
+            if (!extractedCourseType && courseName) {
+              extractedCourseType = extractCourseTypeFromName(courseName);
+              if (!extractedCourseType) {
+                // Default fallback if extraction fails
+                extractedCourseType = 'CBT';
+                console.log(`⚠️ [LOCATE_BOOKING] Could not determine course type from "${courseName}", defaulting to CBT`);
+              } else {
+                console.log(`✅ [LOCATE_BOOKING] Extracted course type from booking: "${extractedCourseType}" (from course name: "${courseName}")`);
+              }
+            }
+            
+            // If courseType was requested, verify it matches
+            if (requestedCourseType && !matchesCourseType(requestedCourseType, courseName)) {
+              console.log(`⏭️ [LOCATE_BOOKING] Row ${i} date matches but course type mismatch: requested="${requestedCourseType}", row="${courseName}"`);
               continue;
             }
+            
             bookingRow = row;
             bookingFound = true;
+            courseType = extractedCourseType; // Use extracted or requested courseType
 
             const bookingId = await row.getAttribute('data-jcd_booking_id');
 
@@ -179,12 +207,13 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
             
             bookingDetails = {
               courseDate: courseDate,
-              courseType: courseType,
+              courseType: courseType, // Use extracted or requested courseType
               rowIndex: i,
               bookingId: bookingId,
               courseName: courseName,
               displayDate: buttonText,
-              extractedPrice: extractedPrice
+              extractedPrice: extractedPrice,
+              courseTypeExtracted: !requestedCourseType // Flag indicating if courseType was extracted from booking
             };
             
             console.log(`✅ [LOCATE_BOOKING] Found booking row at index ${i}`);
@@ -205,12 +234,27 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
             const parsedDateOnly = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
             if (parsedDateOnly.getTime() === targetDateOnly.getTime()) {
               const courseName = await row.getAttribute('data-etp_name');
-              if (!matchesCourseType(courseType, courseName)) {
-                console.log(`⏭️ [LOCATE_BOOKING] Row ${i} (plain) date matches but course type mismatch: requested="${courseType}", row="${courseName}"`);
+              // Extract courseType from booking if not provided
+              let extractedCourseType = requestedCourseType;
+              if (!extractedCourseType && courseName) {
+                extractedCourseType = extractCourseTypeFromName(courseName);
+                if (!extractedCourseType) {
+                  extractedCourseType = 'CBT';
+                  console.log(`⚠️ [LOCATE_BOOKING] Could not determine course type from "${courseName}", defaulting to CBT`);
+                } else {
+                  console.log(`✅ [LOCATE_BOOKING] Extracted course type from booking: "${extractedCourseType}" (from course name: "${courseName}")`);
+                }
+              }
+              
+              // If courseType was requested, verify it matches
+              if (requestedCourseType && !matchesCourseType(requestedCourseType, courseName)) {
+                console.log(`⏭️ [LOCATE_BOOKING] Row ${i} (plain) date matches but course type mismatch: requested="${requestedCourseType}", row="${courseName}"`);
                 continue;
               }
+              
               bookingRow = row;
               bookingFound = true;
+              courseType = extractedCourseType; // Use extracted or requested courseType
 
               const bookingId = await row.getAttribute('data-jcd_booking_id');
 
@@ -223,12 +267,13 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
               
               bookingDetails = {
                 courseDate: courseDate,
-                courseType: courseType,
+                courseType: courseType, // Use extracted or requested courseType
                 rowIndex: i,
                 bookingId: bookingId,
                 courseName: courseName,
                 displayDate: courseDateText,
-                extractedPrice: extractedPrice
+                extractedPrice: extractedPrice,
+                courseTypeExtracted: !requestedCourseType
               };
               
               console.log(`✅ [LOCATE_BOOKING] Found booking row at index ${i} (plain text date)`);
@@ -242,10 +287,25 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
     if (!bookingFound) {
       return {
         success: false,
-        error: `Booking not found for date ${courseDate} and course type "${courseType}". Please verify the date and course with the caller.`,
-        retryPrompt: 'I could not find a booking for that date and course. Could you confirm the exact date and which course (e.g. Introduction to Motorcycling or CBT)?'
+        error: `Booking not found for date ${courseDate}${requestedCourseType ? ` and course type "${requestedCourseType}"` : ''}. Please verify the date with the caller.`,
+        retryPrompt: 'I could not find a booking for that date. Could you confirm the exact date your course is booked for?'
       };
     }
+    
+    // Ensure courseType is set (should be extracted from booking by now)
+    if (!courseType) {
+      // courseType should have been set when booking was found, but double-check
+      courseType = bookingDetails?.courseType;
+      if (!courseType) {
+        return {
+          success: false,
+          error: 'Could not determine course type from booking. Please try again.',
+          retryPrompt: 'I found the booking but could not determine the course type. Could you tell me which course you booked?'
+        };
+      }
+    }
+    
+    console.log(`✅ [LOCATE_BOOKING] Course type determined: "${courseType}"${bookingDetails?.courseTypeExtracted ? ' (extracted from booking)' : ' (provided by caller)'}`);
 
     // Validate date is in future (already checked via data-isinfuture="Y", but double-check)
     const bookingDate = new Date(targetDateOnly);

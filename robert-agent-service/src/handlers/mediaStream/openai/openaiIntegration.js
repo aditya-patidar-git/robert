@@ -14,10 +14,11 @@ export class OpenAIIntegration {
     this.state = stateManager;
     this.ws = ws;
     this.audioProcessor = audioProcessor;
-    this.onEvent = onEvent; // Callback for event handling
+    this.onEvent = onEvent;
     this.openaiTimeout = null;
-    this.connectionManager = null; // Will be initialized after WebSocket connection
-    this.currentWorkflowPhase = 'greeting'; // Track current workflow phase for tool filtering
+    this.connectionManager = null;
+    this.currentWorkflowPhase = 'greeting';
+    this._lastSessionLogKey = new Map();
   }
 
   /**
@@ -342,7 +343,9 @@ export class OpenAIIntegration {
         // Ensure required properties exist
         await this.ensureConversationState();
       }
-      
+      const { ensureCallRecordCallerIdentity } = await import('../../../services/callRecordPersistenceService.js');
+      await ensureCallRecordCallerIdentity(this.state.callSid, { from: this.state.phoneNumber, to: this.state.phoneNumber });
+
       // Add recording consent notice and question to instructions
       const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
       let privacySettings = null;
@@ -366,20 +369,31 @@ export class OpenAIIntegration {
       // NEW ORDER: Language preference (greeting) → Consent question → Main follow-up
       let modifiedInstructions = config.instructions;
       if (requireExplicitConsent && !consentAlreadySet) {
-        // Only modify instructions if explicit consent is required AND consent hasn't been set yet
-        // Use reusable instruction builder to avoid duplication
         modifiedInstructions = consentInstructionBuilder.buildSessionInstructions({
           consentNotice,
           consentQuestion,
           baseInstructions: config.instructions
         });
-        
-        // Mark consent as requested
-        this.state.recordingConsentState.requested = true;
-        this.state.recordingConsentState.requestedAt = new Date();
-        conversations[this.state.callSid].recordingConsent.requested = true;
-        conversations[this.state.callSid].recordingConsent.requestedAt = new Date();
-        console.log(`📋 [${this.state.callSid}] Recording consent will be requested - instructions modified to include consent flow (NEW ORDER: greeting → consent → follow-up)`);
+        if (!conversations[this.state.callSid].recordingConsent) {
+          conversations[this.state.callSid].recordingConsent = {};
+        }
+        conversations[this.state.callSid].recordingConsent.requested = false;
+        conversations[this.state.callSid].recordingConsent.given = null;
+        this.state.waitingForLanguage = true;
+        this.state.languagePreferenceState.asked = false;
+        if (conversations[this.state.callSid]) {
+          conversations[this.state.callSid].waitingForLanguage = true;
+          if (!conversations[this.state.callSid].languagePreferenceState) {
+            conversations[this.state.callSid].languagePreferenceState = {
+              asked: false,
+              selected: false,
+              language: null,
+              askedAt: null,
+              selectedAt: null
+            };
+          }
+        }
+        console.log(`📋 [${this.state.callSid}] Recording consent will be requested after language selection - instructions include flow (greeting → consent → follow-up)`);
       } else if (consentAlreadySet) {
         // Consent was already set by handleIncomingCall - use it and skip consent question
         this.state.recordingConsentState.requested = existingConsent.requested || false;
@@ -554,11 +568,7 @@ export class OpenAIIntegration {
           
           // Get audio config for calibration check
           const audioConfig = configManager.getAudioConfig();
-          
-          // Use base threshold initially (will be updated after calibration if enabled)
-          const initialThreshold = config.vadThreshold / 1000; // Convert ms to seconds
-          
-          // Apply dynamic config to OpenAI session
+          const initialThreshold = config.vadThreshold / 1000;
           const sessionUpdateMessage = {
             type: 'session.update',
             session: {
@@ -572,10 +582,13 @@ export class OpenAIIntegration {
                 type: 'server_vad',
                 threshold: initialThreshold,
                 prefix_padding_ms: config.startPadding,
-                silence_duration_ms: config.endPadding
+                silence_duration_ms: config.endPadding,
+                create_response: false,
+                interrupt_response: (audioConfig?.bargeInPolicy === 'stop')
               },
               tools: tools,
-              tool_choice: 'auto'
+              tool_choice: 'auto',
+              input_audio_transcription: { model: 'gpt-4o-transcribe' }
             }
           };
           
@@ -589,6 +602,9 @@ export class OpenAIIntegration {
           console.log(`   - voice: ${config.voice.id}`);
           console.log(`   - temperature: ${Math.max(0.6, effectiveTemperature)} (flow: ${flowType})`);
           console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
+          console.log(`   - turn_detection: server_vad`);
+          console.log(`   - barge_in_policy: ${audioConfig?.bargeInPolicy ?? 'pause'}, interrupt_response: ${audioConfig?.bargeInPolicy === 'stop'}`);
+          console.log(`   - input_transcription: gpt-4o-transcribe (flat input_audio_transcription)`);
           if (audioConfig?.energyThresholdAutoCalibrate !== false) {
             console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
           }
@@ -712,11 +728,7 @@ export class OpenAIIntegration {
         
         // Get audio config for calibration check
         const audioConfig = configManager.getAudioConfig();
-        
-        // Use base threshold initially (will be updated after calibration if enabled)
-        const initialThreshold = config.vadThreshold / 1000; // Convert ms to seconds
-        
-        // Apply dynamic config to OpenAI session
+        const initialThreshold = config.vadThreshold / 1000;
         const sessionUpdateMessage = {
           type: 'session.update',
           session: {
@@ -730,10 +742,13 @@ export class OpenAIIntegration {
               type: 'server_vad',
               threshold: initialThreshold,
               prefix_padding_ms: config.startPadding,
-              silence_duration_ms: config.endPadding
+              silence_duration_ms: config.endPadding,
+              create_response: false,
+              interrupt_response: (audioConfig?.bargeInPolicy === 'stop')
             },
             tools: tools,
-            tool_choice: 'auto'
+            tool_choice: 'auto',
+            input_audio_transcription: { model: 'gpt-4o-transcribe' }
           }
         };
         
@@ -746,14 +761,11 @@ export class OpenAIIntegration {
         console.log(`   - voice: ${config.voice.id}`);
         console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
         console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
-        console.log(`🔍 [TEST-3] [${this.state.callSid}] VAD CONFIGURATION:`);
-        console.log(`   - threshold: ${initialThreshold}s (${config.vadThreshold}ms)`);
-        console.log(`   - prefix_padding_ms: ${config.startPadding}ms (target: 250ms)`);
-        console.log(`   - silence_duration_ms: ${config.endPadding}ms (target: 500-700ms)`);
-        console.log(`   - turn_detection type: server_vad`);
+        console.log(`   - turn_detection: server_vad`);
+        console.log(`   - barge_in_policy: ${audioConfig?.bargeInPolicy ?? 'pause'}, interrupt_response: ${audioConfig?.bargeInPolicy === 'stop'}`);
+        console.log(`   - input_transcription: gpt-4o-transcribe (flat input_audio_transcription)`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
           console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
-          console.log(`🔍 [TEST-3] [${this.state.callSid}] Auto-calibration will update threshold after ${this.state.CALIBRATION_DURATION_MS}ms`);
         }
       } catch (err) {
         this.state.incrementErrorCount();
@@ -771,9 +783,15 @@ export class OpenAIIntegration {
       try {
         const event = JSON.parse(data.toString());
         
-        // Only log format info - essential for debugging
         if (event.type === 'session.updated') {
-          console.log(`📋 [${this.state.callSid}] Session config - output_audio_format: ${event.session?.output_audio_format || 'N/A'}`);
+          const outFmt = event.session?.output_audio_format || 'N/A';
+          const trans = event.session?.audio?.input?.transcription;
+          const key = `${outFmt}-${trans ? JSON.stringify(trans) : 'null'}`;
+          const callSid = this.state.callSid;
+          if (this._lastSessionLogKey.get(callSid) !== key) {
+            this._lastSessionLogKey.set(callSid, key);
+            console.log(`📋 [${callSid}] Session config - output_audio_format: ${outFmt}, input_transcription: ${trans ? JSON.stringify(trans) : 'null'}`);
+          }
         }
         
         // Handle error events

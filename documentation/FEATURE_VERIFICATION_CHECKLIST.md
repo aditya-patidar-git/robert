@@ -481,15 +481,6 @@ This document maps **every** checklist item (1–690) to whether it can be verif
 | 321 | Reschedule: Confirm new details to caller | Yes | ✓ Confirmation |
 | 322 | Reschedule: Send updated confirmation by email/SMS | Yes | ✓ Send confirmation |
 | 323 | Reschedule: Add internal note documenting the change | Yes | ✓ Internal note |
-| 324 | Update customer: Identify field to update | Yes | ✓ updateCustomer step |
-| 325 | Update customer: Verify current information | Yes | ✓ Verification in flow |
-| 326 | Update customer: Request new information | Yes | ✓ Tool args |
-| 327 | Update customer: Dry-run: show what will change | Yes | ✓ dryRunUpdateCustomer |
-| 328 | Update customer: Obtain explicit consent | Yes | ✓ Consent |
-| 329 | Update customer: Commit update in CRM | Yes | ✓ updateCustomer commit |
-| 330 | Update customer: Verify success via DOM assertion | Yes | ✓ DOM assertion |
-| 331 | Update customer: Confirm update to caller | Yes | ✓ Confirmation |
-| 332 | Update customer: Send confirmation if appropriate | Yes | ✓ Optional send |
 | 333 | Issue refund: Check T&Cs for refund eligibility | Yes | ✓ KB and policy |
 | 334 | Issue refund: Verify reason for refund request | Yes | ✓ Refund flow |
 | 335 | Issue refund: Calculate refund amount per policy | Yes | ✓ Policy and tool |

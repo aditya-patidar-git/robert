@@ -8,6 +8,7 @@ import {
   submitComplaint,
   getEscalationTimeline
 } from "../controllers/transcriptController.js";
+import { ensureRecordings } from "../controllers/outboundController.js";
 import { protect as authenticateToken } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -17,6 +18,7 @@ router.use(authenticateToken);
 
 // Transcript management routes
 router.get("/", getAllTranscripts);
+router.post("/ensure-recordings", ensureRecordings);
 router.get("/search", searchTranscripts);
 router.get("/export", exportTranscripts);
 router.get("/:id", getTranscript);

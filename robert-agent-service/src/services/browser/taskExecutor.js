@@ -163,7 +163,7 @@ export class TaskExecutor {
         context = await this.browserManager.getPublicContext();
         shouldCloseContext = true; // Mark this context for cleanup since it's not the pooled one
       } else {
-        // For other tasks (create_booking, cancel, update_customer), use authenticated context
+        // For other tasks (create_booking, cancel), use authenticated context
         context = await this.browserManager.getContext(reportProgress);
       }
       
@@ -385,8 +385,6 @@ export class TaskExecutor {
       switch (task) {
         case 'cancel_booking':
           return await taskHandlers.dryRunCancelBooking(page, args, auditId, this.screenshotsDir);
-        case 'update_customer':
-          return await taskHandlers.dryRunUpdateCustomer(page, args, auditId, this.screenshotsDir);
         case 'check_availability':
           return await taskHandlers.dryRunCheckAvailability(page, args, auditId, this.screenshotsDir);
         default:
@@ -405,8 +403,6 @@ export class TaskExecutor {
       switch (task) {
         case 'cancel_booking':
           return await taskHandlers.cancelBooking(page, args, auditId, this.screenshotsDir);
-        case 'update_customer':
-          return await taskHandlers.updateCustomer(page, args, auditId, this.screenshotsDir);
         case 'check_availability':
           return await taskHandlers.checkAvailability(page, args, auditId, this.screenshotsDir);
         default:

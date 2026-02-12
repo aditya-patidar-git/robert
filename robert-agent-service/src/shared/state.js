@@ -139,6 +139,8 @@ export async function getConversation(callSid) {
         };
       }
 
+      merged.workflowContext = localConversation?.workflowContext ?? distributed?.workflowContext;
+
       conversations[callSid] = merged;
       return merged;
     }
@@ -214,6 +216,7 @@ export async function updateConversation(callSid, updates, ttl = undefined) {
   if (localVerificationState != null && typeof localVerificationState === 'object') {
     merged.verificationState = localVerificationState;
   }
+  merged.workflowContext = local?.workflowContext ?? merged.workflowContext;
 
   return setConversation(callSid, merged, ttl);
 }

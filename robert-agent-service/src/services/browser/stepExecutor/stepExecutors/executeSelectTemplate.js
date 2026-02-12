@@ -51,9 +51,9 @@ export async function executeSelectTemplate(page, args, sessionState, screenshot
     // Wait for template list to load
     await page.waitForTimeout(2000);
     
-    // Scroll to "Correspondence letter" section (if needed)
-    console.log(`📜 [SELECT_TEMPLATE] Looking for "Correspondence letter" section...`);
-    const correspondenceSection = stationerySenderIframe.locator('text=/Correspondence letter/i');
+    // Scroll to "Correspondence letters" section (exact text to avoid matching "New Correspondence letter")
+    console.log(`📜 [SELECT_TEMPLATE] Looking for "Correspondence letters" section...`);
+    const correspondenceSection = stationerySenderIframe.getByText('Correspondence letters', { exact: true });
     await correspondenceSection.scrollIntoViewIfNeeded();
     await page.waitForTimeout(2000);
     

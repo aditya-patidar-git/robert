@@ -42,7 +42,7 @@ const generateReferenceIdSchema = z.object({
 
 // CRM Schema
 const crmSchema = z.object({
-  action: z.enum(['get_customer', 'update_customer', 'create_booking']),
+  action: z.enum(['get_customer', 'create_booking']),
   customerId: z.string().optional(),
   data: z.record(z.any()).optional()
 });
@@ -92,7 +92,7 @@ const crmBrowserArgsSchema = z.object({
 });
 
 const crmBrowserSchema = z.object({
-  task: z.enum(['create_booking', 'cancel_booking', 'update_customer', 'check_availability']),
+  task: z.enum(['create_booking', 'cancel_booking', 'check_availability']),
   args: crmBrowserArgsSchema
 });
 
@@ -110,9 +110,9 @@ const fileSearchSchema = z.object({
   files: z.array(z.string()).optional()
 });
 
-// Transfer Call Schema
+// Transfer Call Schema - target optional; resolved from telephony config transfer numbers
 const transferCallSchema = z.object({
-  target: z.string().min(1, 'Target is required'),
+  target: z.string().optional(),
   reason: z.string().optional()
 });
 
@@ -273,13 +273,14 @@ const bookingStepSendPaymentRequestSchema = z.object({
 });
 
 const cancellationStepVerifyBookingIntentSchema = z.object({
-  courseType: courseTypeEnum,
+  courseType: courseTypeEnum.optional(), // Optional - will be determined from booking in Step 6
   verified: z.boolean().optional(),
   proceedToStep2: z.boolean().optional()
 });
 
+const courseTypeForAuthenticate = z.union([courseTypeEnum, z.literal('TBD')]);
 const cancellationStepAuthenticateSchema = z.object({
-  courseType: courseTypeEnum
+  courseType: courseTypeForAuthenticate
 });
 
 const cancellationStepDetermineWorkflowSchema = z.object({
@@ -354,31 +355,21 @@ const cancellationStepVoiceConfirmationSchema = z.object({
   workflowType: z.enum(['existing'])
 });
 
-const updateCustomerSchema = z.object({
-  customerEmail: z.string().email().optional(),
-  customerMobile: z.string().optional(),
-  telephoneNumber: z.string().optional(),
-  email: z.string().email().optional(),
-  postcode: z.string().optional(),
-  firstName: z.string().optional(),
-  surname: z.string().optional(),
-  address: z.string().optional()
-}).refine(data => data.customerEmail || data.customerMobile, { message: 'customerEmail or customerMobile required' })
-  .refine(data => data.telephoneNumber || data.email || data.postcode || data.firstName || data.surname || data.address, { message: 'At least one update field required' });
-
 // Schema map for all tools
 const toolSchemas = {
   web_search: webSearchSchema,
   email: emailSchema,
   send_sms: sendSMSSchema,
   generate_reference_id: generateReferenceIdSchema,
-  update_customer: updateCustomerSchema,
   payments: paymentsSchema,
   file_search: fileSearchSchema,
   transfer_call: transferCallSchema,
   kba_verification: kbaVerificationSchema,
   client_verification: clientVerificationSchema,
   complaint_submission: complaintSubmissionSchema,
+  start_workflow: z.object({
+    workflow: z.enum(['cancellation', 'booking', 'complaint'])
+  }),
   // Booking step tools
   booking_step_check_availability: bookingStepCheckAvailabilitySchema,
   booking_step_authenticate: bookingStepAuthenticateSchema,

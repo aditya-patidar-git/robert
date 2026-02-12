@@ -57,14 +57,14 @@ export class DetermineWorkflowStep extends CancellationBaseStepTool {
       // Cancellation workflows always use 'existing' workflow type
       // Set workflowType in session
       sessionStateManager.setWorkflowType(callSid, 'existing');
-      sessionStateManager.setCurrentStep(callSid, stepNumber, { workflowType: 'existing' });
+      sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { workflowType: 'existing' });
       
       return {
         success: true,
         workflowType: 'existing',
         nextStep: 'cancellation_step_navigate_contacts',
         nextStepNumber: 4,
-        message: 'I\'ll now search for your profile in our system.'
+        message: 'I\'ll now search for your profile in our system. Please say yes or no to proceed with your cancellation.'
       };
 
     } catch (error) {

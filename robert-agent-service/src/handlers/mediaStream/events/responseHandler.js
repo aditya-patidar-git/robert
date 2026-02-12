@@ -5,7 +5,9 @@ import audioDiagnosticService from '../../../services/audioDiagnosticService.js'
 import { MemoryManager } from '../utils/index.js';
 import { conversations } from '../../../shared/state.js';
 import testClientRegistry from '../../../services/testClientRegistry.js';
-// Audio conversion removed - OpenAI is configured for g711_ulaw, we trust the configuration
+import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
+import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
+import progressIndicatorService from '../../../services/progressIndicatorService.js';
 
 /**
  * Response Handler
@@ -15,6 +17,16 @@ export class ResponseHandler {
   constructor(stateManager, ws) {
     this.state = stateManager;
     this.ws = ws;
+    this.onCreateConsentResponseNeeded = null;
+    this.onResponseDone = null;
+  }
+
+  setOnCreateConsentResponseNeeded(fn) {
+    this.onCreateConsentResponseNeeded = typeof fn === 'function' ? fn : null;
+  }
+
+  setOnResponseDone(fn) {
+    this.onResponseDone = typeof fn === 'function' ? fn : null;
   }
 
 
@@ -23,8 +35,11 @@ export class ResponseHandler {
    */
   handleResponseCreated(event) {
     this.state.activeResponseId = event.response?.id;
+    this.state.currentResponseOutputTranscript = null;
     const currentTime = Date.now();
     this.state.responseStartTime = currentTime;
+    this.state.bargeInTailUntil = 0;
+    this.state.audioFramesSentCountAtResponseStart = this.state.audioFramesSentCount || 0;
     
     // Track response latency
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
@@ -70,7 +85,6 @@ export class ResponseHandler {
       }
     }
     
-    // Block automatic responses that we didn't explicitly request
     if (!this.state.explicitResponseRequested) {
       const currentTime = Date.now();
       const timeSinceTranscription = this.state.lastTranscriptionReceivedTime > 0 ? currentTime - this.state.lastTranscriptionReceivedTime : Infinity;
@@ -78,34 +92,38 @@ export class ResponseHandler {
       const isRecentTranscription = this.state.lastTranscriptionReceivedTime > 0 && timeSinceTranscription >= 0 && timeSinceTranscription < 3000;
       const isWithinUserSpeakingWindow = this.state.agentFinishedSpeakingTime > 0 && timeSinceAgentFinished >= 0 && timeSinceAgentFinished < this.state.userSpeakingWindowMs;
       const userSpokeBeforeResponse = this.state.userSpeechStartedTime > 0 && this.state.userSpeechStartedTime < this.state.responseStartTime;
-      
+
+      const flowState = getConversationFlowState(this.state.callSid, this.state);
+      const consentRequired = flowState.consentRequested && !flowState.consentGiven && flowState.languageSelected;
+
       const isInterrupted = this.state.isInterrupted;
       const isRespondingToDifferentResponse = this.state.isResponding && this.state.activeResponseId !== event.response?.id;
       const shouldBlockWaiting = this.state.waitingForUser && !isRecentTranscription && !isWithinUserSpeakingWindow && !userSpokeBeforeResponse;
-      
-      const shouldBlock = isInterrupted || isRespondingToDifferentResponse || shouldBlockWaiting || isLowQualitySegment;
-      
+      const shouldBlock = isInterrupted || isRespondingToDifferentResponse || shouldBlockWaiting || isLowQualitySegment || consentRequired;
+
       if (shouldBlock) {
-        // Detailed logging for why response is being blocked
-        console.log(`🚫 [${this.state.callSid}] Blocking automatic response - ID: ${this.state.activeResponseId}`);
-        console.log(`   📊 Blocking reasons:`);
-        console.log(`      - explicitResponseRequested: ${this.state.explicitResponseRequested}`);
-        console.log(`      - isInterrupted: ${isInterrupted}`);
-        console.log(`      - isResponding: ${this.state.isResponding}, activeResponseId: ${this.state.activeResponseId}, newResponseId: ${event.response?.id}`);
-        console.log(`      - isRespondingToDifferentResponse: ${isRespondingToDifferentResponse}`);
-        console.log(`      - waitingForUser: ${this.state.waitingForUser}`);
-        console.log(`      - timeSinceTranscription: ${timeSinceTranscription}ms (recent: ${isRecentTranscription})`);
-        console.log(`      - timeSinceAgentFinished: ${timeSinceAgentFinished}ms (within window: ${isWithinUserSpeakingWindow})`);
-        console.log(`      - userSpokeBeforeResponse: ${userSpokeBeforeResponse}`);
-        console.log(`      - shouldBlockWaiting: ${shouldBlockWaiting}`);
-        
+        if (consentRequired) {
+          console.log(`🚫 [${this.state.callSid}] Blocking automatic response - consent question must be asked first (ID: ${this.state.activeResponseId})`);
+        } else {
+          console.log(`🚫 [${this.state.callSid}] Blocking automatic response - ID: ${this.state.activeResponseId}`);
+          console.log(`   📊 Blocking reasons:`);
+          console.log(`      - explicitResponseRequested: ${this.state.explicitResponseRequested}`);
+          console.log(`      - isInterrupted: ${isInterrupted}`);
+          console.log(`      - isResponding: ${this.state.isResponding}, activeResponseId: ${this.state.activeResponseId}, newResponseId: ${event.response?.id}`);
+          console.log(`      - isRespondingToDifferentResponse: ${isRespondingToDifferentResponse}`);
+          console.log(`      - waitingForUser: ${this.state.waitingForUser}`);
+          console.log(`      - timeSinceTranscription: ${timeSinceTranscription}ms (recent: ${isRecentTranscription})`);
+          console.log(`      - timeSinceAgentFinished: ${timeSinceAgentFinished}ms (within window: ${isWithinUserSpeakingWindow})`);
+          console.log(`      - userSpokeBeforeResponse: ${userSpokeBeforeResponse}`);
+          console.log(`      - shouldBlockWaiting: ${shouldBlockWaiting}`);
+        }
+
         try {
-          // Use robust send method with connection manager support
           const sent = this.state.sendToOpenAI({
-              type: 'response.cancel',
-              response_id: this.state.activeResponseId
+            type: 'response.cancel',
+            response_id: this.state.activeResponseId
           }, { priority: 'high' });
-          
+
           if (sent) {
             console.log(`   ✅ Sent response.cancel to OpenAI for response ${this.state.activeResponseId}`);
           } else {
@@ -114,7 +132,13 @@ export class ResponseHandler {
           this.state.activeResponseId = null;
           this.state.isResponding = false;
           this.state.waitingForUser = true;
-          return false; // Don't process this response
+
+          if (consentRequired && this.onCreateConsentResponseNeeded) {
+            Promise.resolve(this.onCreateConsentResponseNeeded()).catch(err => {
+              console.error(`❌ [${this.state.callSid}] Error creating consent response after blocking auto-response:`, err?.message || err);
+            });
+          }
+          return false;
         } catch (err) {
           console.warn(`⚠️ [${this.state.callSid}] Error cancelling automatic response:`, err.message);
         }
@@ -152,13 +176,15 @@ export class ResponseHandler {
     // Track outbound audio separately
     this.state.outboundAudioChunkCount++;
     
-    // DIAGNOSTIC: Log first audio chunk from OpenAI
     if (this.state.outboundAudioChunkCount === 1) {
       console.log(`🎵 [${this.state.callSid}] FIRST audio chunk received from OpenAI (response: ${currentResponseId || 'unknown'})`);
     }
-    
-    // Track in diagnostic service (non-intrusive, optional)
-    audioDiagnosticService.trackAudioDelta(this.state.callSid, event);
+
+    const isActiveResponse = this.state.activeResponseId !== null &&
+      (!event.response_id || event.response_id === this.state.activeResponseId);
+    if (isActiveResponse) {
+      audioDiagnosticService.trackAudioDelta(this.state.callSid, event, { isActiveResponse: true });
+    }
     
     this.state.isResponding = true;
     this.state.lastAudioChunkTime = Date.now();
@@ -517,11 +543,27 @@ export class ResponseHandler {
         const textItems = outputItems.filter(item => item.type === 'message' && item.content);
         if (textItems.length > 0) {
           fullResponseText = textItems.map(item =>
-            item.content.map(c => c.type === 'text' ? c.text : '').join('')
+            item.content.map(c => {
+              if (c.type === 'text') return c.text || '';
+              if (c.type === 'output_audio' && c.transcript) return c.transcript;
+              if (c.type === 'audio' && c.transcript) return c.transcript;
+              return '';
+            }).join('')
           ).join(' ').trim();
           responseText = fullResponseText.toLowerCase();
         }
       }
+      if (!fullResponseText && this.state.currentResponseOutputTranscript) {
+        fullResponseText = this.state.currentResponseOutputTranscript.trim();
+        responseText = fullResponseText.toLowerCase();
+      }
+      const streamedLen = (this.state.currentResponseOutputTranscript || '').length;
+      console.log(`[AGENT-DEBUG] [${this.state.callSid}] response.done: outputItems=${outputItems?.length ?? 0}, fullResponseText.len=${fullResponseText.length}, currentResponseOutputTranscript.len=${streamedLen}`);
+      if (outputItems?.length > 0) {
+        const shape = outputItems.map(o => ({ type: o.type, contentTypes: (o.content || []).map(c => c.type) }));
+        console.log(`[AGENT-DEBUG] [${this.state.callSid}] response.output shape: ${JSON.stringify(shape)}`);
+      }
+      this.state.currentResponseOutputTranscript = null;
 
       const refusalPatterns = [
         "i'm sorry, but i'm not able to continue",
@@ -536,17 +578,17 @@ export class ResponseHandler {
       const isRefusalText = refusalPatterns.some(pattern => responseText.includes(pattern));
       const isRefusalResponse = audioTokens === 0 && hasAudioModality && textTokens > 0 && isRefusalText;
 
-      if (fullResponseText && status === 'completed') {
-        if (conversations[this.state.callSid]) {
-          conversations[this.state.callSid].transcript.push({
-            role: 'agent',
-            text: fullResponseText,
-            timestamp: new Date()
-          });
-          console.log(`📝 [${this.state.callSid}] Added agent response to transcript: "${fullResponseText.substring(0, 50)}${fullResponseText.length > 50 ? '...' : ''}"`);
-        }
+      if (fullResponseText && conversations[this.state.callSid]) {
+        const conv = conversations[this.state.callSid];
+        if (!conv.transcript) conv.transcript = [];
+        const entry = { role: 'agent', text: fullResponseText, timestamp: new Date(), confidence: 1 };
+        conv.transcript.push(entry);
+        const maxLogLen = 500;
+        const logText = fullResponseText.length > maxLogLen ? `${fullResponseText.substring(0, maxLogLen)}... (${fullResponseText.length} chars)` : fullResponseText;
+        console.log(`[AGENT] [${this.state.callSid}] "${logText}"`);
+        appendTranscriptEntry(this.state.callSid, entry, { consentGiven: conv.recordingConsent?.given === true }).catch(() => {});
       }
-      
+
       console.log(`✅ [${this.state.callSid}] Response done - ID: ${responseId}, status: ${status}`);
       console.log(`   📊 Tokens: audio=${audioTokens}, text=${textTokens}`);
       
@@ -576,13 +618,24 @@ export class ResponseHandler {
       // Mark that agent finished speaking
       this.state.agentFinishedSpeakingTime = Date.now();
       
+      const framesThisResponse = (this.state.audioFramesSentCount || 0) - (this.state.audioFramesSentCountAtResponseStart || 0);
+      const responseDurationMs = Math.max(0, framesThisResponse) * 20;
+      const bargeInTail = configManager.getConversationBehaviorConfig()?.bargeInTail;
+      const drainBufferMs = bargeInTail?.drainBufferMs ?? 2000;
+      const maxTailMs = bargeInTail?.maxTailMs ?? 8000;
+      this.state.bargeInTailUntil = Date.now() + Math.min(responseDurationMs, maxTailMs) + drainBufferMs;
+      
       // Clear response tracking
       this.state.activeResponseId = null;
       this.state.responseItemId = null;
       this.state.responseStartTime = null;
       this.state.isResponding = false;
-      this.state.waitingForUser = true;
-      
+      const activeToolExecution = progressIndicatorService.getExecutionInfo(this.state.callSid);
+      this.state.waitingForUser = !activeToolExecution;
+      if (activeToolExecution) {
+        console.log(`📢 [${this.state.callSid}] Response done during tool execution (periodic update) - NOT setting waitingForUser`);
+      }
+
       // Mark initial greeting as completed if this was the first response
       if (!this.state.hasInitialGreetingCompleted && this.state.hasInitialGreetingBeenSent) {
         this.state.hasInitialGreetingCompleted = true;
@@ -640,6 +693,10 @@ export class ResponseHandler {
       
       // Stop pacer when response is done
       this.stopAudioPacer();
+
+      if (status === 'completed' && this.onResponseDone) {
+        this.onResponseDone(event);
+      }
     } else {
       // Response completed but it's not the active one (might have been cancelled)
       console.log(`ℹ️ [${this.state.callSid}] Response done for non-active response - ID: ${responseId}, status: ${status}, activeResponseId: ${this.state.activeResponseId}`);

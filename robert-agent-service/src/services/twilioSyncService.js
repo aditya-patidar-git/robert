@@ -16,7 +16,10 @@
 
 import twilio from 'twilio';
 import { isPlaceholder, validateTwilioSyncConfig, logValidationResult } from '../utils/configValidator.js';
-import { isNetworkError } from '../utils/isRetryableError.js';
+import { isNetworkError, isRetryableError } from '../utils/isRetryableError.js';
+
+const INIT_MAX_RETRIES = parseInt(process.env.TWILIO_SYNC_INIT_MAX_RETRIES, 10) || 3;
+const INIT_RETRY_DELAY_MS = parseInt(process.env.TWILIO_SYNC_INIT_RETRY_DELAY_MS, 10) || 3000;
 
 class TwilioSyncService {
   constructor() {
@@ -131,40 +134,49 @@ class TwilioSyncService {
   }
 
   /**
-   * Internal initialization logic.
+   * Internal initialization logic with retries for transient network/DNS errors.
    * @private
    */
   async _doInitialize() {
-    try {
-      console.log('[TwilioSyncService] Initializing...');
-      
-      // Validate configuration (logs warnings if placeholder detected)
-      this.validateConfiguration();
-      
-      // Create Twilio client
-      const accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
-      const authToken = process.env.TWILIO_AUTH_TOKEN;
-      
-      this.client = twilio(accountSid, authToken);
-      this.syncServiceSid = process.env.TWILIO_SYNC_SERVICE_SID;
-      
-      // Ensure sessions map exists
-      this.sessionsMapSid = await this._ensureMapExists(this.config.sessionsMapName);
-      
-      // Ensure locks document exists
-      this.locksDocumentSid = await this._ensureDocumentExists(this.config.locksDocumentName, {});
-      
-      this.initialized = true;
-      console.log('[TwilioSyncService] Initialized successfully');
-      console.log(`  - Sessions Map SID: ${this.sessionsMapSid}`);
-      console.log(`  - Locks Document SID: ${this.locksDocumentSid}`);
-      
-      return true;
-    } catch (error) {
-      console.error('[TwilioSyncService] Initialization failed:', error.message);
-      this.initialized = false;
-      return false;
+    let lastError;
+    for (let attempt = 1; attempt <= INIT_MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[TwilioSyncService] Initializing... (attempt ${attempt}/${INIT_MAX_RETRIES})`);
+
+        this.validateConfiguration();
+
+        const accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
+        const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+        this.client = twilio(accountSid, authToken);
+        this.syncServiceSid = process.env.TWILIO_SYNC_SERVICE_SID;
+
+        this.sessionsMapSid = await this._ensureMapExists(this.config.sessionsMapName);
+        this.locksDocumentSid = await this._ensureDocumentExists(this.config.locksDocumentName, {});
+
+        this.initialized = true;
+        console.log('[TwilioSyncService] Initialized successfully');
+        console.log(`  - Sessions Map SID: ${this.sessionsMapSid}`);
+        console.log(`  - Locks Document SID: ${this.locksDocumentSid}`);
+        return true;
+      } catch (error) {
+        lastError = error;
+        const retryable = isRetryableError(error);
+        if (retryable && attempt < INIT_MAX_RETRIES) {
+          const delay = INIT_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+          console.warn(`[TwilioSyncService] Init failed (${error.message}), retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          break;
+        }
+      }
     }
+    console.error('[TwilioSyncService] Initialization failed:', lastError?.message);
+    this.initialized = false;
+    this.client = null;
+    this.sessionsMapSid = null;
+    this.locksDocumentSid = null;
+    return false;
   }
 
   /**

@@ -1,8 +1,10 @@
 import { MemoryManager } from '../utils/memoryManager.js';
+import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
 
 /**
  * Consent Handler
- * Handles recording consent and memory consent detection from transcriptions
+ * Handles recording consent and memory consent detection from transcriptions.
+ * Only runs when we're past language selection (so e.g. "Let's go with English" is not treated as consent).
  */
 export class ConsentHandler {
   constructor(stateManager, memoryManager) {
@@ -75,11 +77,13 @@ export class ConsentHandler {
    */
   async handleRecordingConsent(transcript) {
     const { conversations } = await import('../../../shared/state.js');
-    
-    if (!this.state.recordingConsentState.requested || this.state.recordingConsentState.given !== null) {
-      return; // Consent not requested or already responded
+    const flowState = getConversationFlowState(this.state.callSid, this.state);
+    if (flowState.waitingForLanguage && !flowState.languageSelected) {
+      return;
     }
-    
+    if (!this.state.recordingConsentState.requested || this.state.recordingConsentState.given !== null) {
+      return;
+    }
     const { consentDetected, declineDetected } = this.detectConsent(transcript);
     
     // Reset timeout when user speaks (if not obvious consent/decline)
@@ -201,11 +205,13 @@ export class ConsentHandler {
    */
   async handleMemoryConsent(transcript) {
     const { conversations } = await import('../../../shared/state.js');
-    
-    if (!conversations[this.state.callSid]?.memoryConsent?.requested || conversations[this.state.callSid]?.memoryConsent?.given !== null) {
-      return; // Consent not requested or already responded
+    const flowState = getConversationFlowState(this.state.callSid, this.state);
+    if (flowState.waitingForLanguage && !flowState.languageSelected) {
+      return;
     }
-    
+    if (!conversations[this.state.callSid]?.memoryConsent?.requested || conversations[this.state.callSid]?.memoryConsent?.given !== null) {
+      return;
+    }
     const { consentDetected, declineDetected } = this.detectConsent(transcript);
     
     // Check if this is an unclear response

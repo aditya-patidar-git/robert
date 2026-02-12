@@ -90,12 +90,14 @@ export class WebSocketConnectionManager {
         this.lastPingTime = Date.now();
         try {
           this.ws.ping();
-          
-          // Set timeout for pong response
+          if (this.pongTimeout) {
+            clearTimeout(this.pongTimeout);
+            this.pongTimeout = null;
+          }
           this.pongTimeout = setTimeout(() => {
+            if (this.pingInterval === null) return;
             this.connectionQuality.consecutivePongMisses++;
             console.warn(`⚠️ [${this.callSid}] Pong timeout - missed ${this.connectionQuality.consecutivePongMisses} consecutive pongs`);
-            
             if (this.connectionQuality.consecutivePongMisses >= this.config.unhealthyThreshold) {
               this.connectionQuality.isHealthy = false;
               console.error(`❌ [${this.callSid}] Connection marked as unhealthy (${this.connectionQuality.consecutivePongMisses} missed pongs)`);

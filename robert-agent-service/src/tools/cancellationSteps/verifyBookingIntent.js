@@ -6,7 +6,7 @@
 import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES, getStepNumber } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
-import { PROCEED_DECLINED_MESSAGE, TERMS_DISCLAIMER } from '../../config/cancellationPhrases.js';
+import { PROCEED_DECLINED_MESSAGE, TERMS_DISCLAIMER, AFTER_LOGIN_MESSAGE } from '../../config/cancellationPhrases.js';
 
 export class VerifyBookingIntentStep extends CancellationBaseStepTool {
   getStepName() {
@@ -32,45 +32,40 @@ export class VerifyBookingIntentStep extends CancellationBaseStepTool {
     try {
       console.log(`🔧 [${this.getStepName()}] Executing voice step for ${callSid}`);
 
-      // Validate required parameters
-      if (!courseType) {
-        return {
-          success: false,
-          error: 'courseType is required'
-        };
-      }
-
-      // Initialize session
-      const session = sessionStateManager.initializeSession(callSid, courseType);
+      // courseType is optional initially - will be determined from booking in Step 6 (locateBooking)
+      // Initialize session with courseType if provided, otherwise use a placeholder
+      // The actual courseType will be set when booking is located
+      const sessionCourseType = courseType || 'TBD'; // TBD = To Be Determined
+      const session = sessionStateManager.initializeSession(callSid, sessionCourseType);
       
       // Get step number from configuration
+      // For cancellation, step numbers are the same for all course types, so use a default
       const stepName = this.getStepName();
-      const stepNumber = getStepNumber(courseType, 'existing', stepName);
+      // Use 'CBT' as default for step number lookup (all cancellation steps have same numbers)
+      const lookupCourseType = courseType || 'CBT';
+      const stepNumber = getStepNumber(lookupCourseType, 'existing', stepName);
       
       if (stepNumber === null) {
         return {
           success: false,
-          error: `Step "${stepName}" is not valid for course type "${courseType}"`
+          error: `Step "${stepName}" is not valid`
         };
       }
 
-      // If verified is provided, caller has confirmed they have a booking
       if (verified === true && proceedToStep2 === true) {
-        // Update session state
-        sessionStateManager.setCurrentStep(callSid, stepNumber, { verified: true });
-        
+        sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { verified: true });
         return {
           success: true,
           verified: true,
           proceedToStep2: true,
           nextStep: 'cancellation_step_authenticate',
           nextStepNumber: 2,
-          message: 'I\'ll now login to the system to find your profile. Please bear with me a moment.'
+          message: AFTER_LOGIN_MESSAGE
         };
       }
 
-      // Caller has a booking but declined to proceed
       if (verified === true && proceedToStep2 === false) {
+        sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { verified: true });
         return {
           success: false,
           verified: true,

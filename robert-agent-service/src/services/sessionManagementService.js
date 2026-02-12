@@ -14,10 +14,12 @@ import {
   setConversation, 
   getConversation, 
   deleteConversation,
-  initializeDistributedState 
+  initializeDistributedState,
+  realtimeClients 
 } from '../shared/state.js';
 import distributedStateService from './distributedStateService.js';
 import { validateSessionConfig, logValidationResult } from '../utils/configValidator.js';
+import { closeSipCallWebSocket } from './sipWebSocketRegistry.js';
 
 class SessionManagementService {
   constructor() {
@@ -359,8 +361,22 @@ class SessionManagementService {
       }
     }
 
-    // Delete stale sessions
+    // Clean up SIP WebSockets, realtimeClients, and then delete stale sessions
     staleSessions.forEach(callSid => {
+      closeSipCallWebSocket(callSid);
+      const client = realtimeClients[callSid];
+      if (client) {
+        if (typeof client.connectionManager?.cleanup === 'function') {
+          client.connectionManager.cleanup();
+        }
+        if (client.openaiWs && client.openaiWs.readyState === 1) {
+          client.openaiWs.close(1000, 'Session expired');
+        }
+        if (client.twilioWs && client.twilioWs.readyState === 1) {
+          client.twilioWs.close(1000, 'Session expired');
+        }
+        delete realtimeClients[callSid];
+      }
       this.deleteSession(callSid);
       this.cleanupCount++;
     });

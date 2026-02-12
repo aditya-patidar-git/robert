@@ -82,9 +82,19 @@ class TranscriptService extends BaseService {
    * @returns {string} Recording URL
    */
   async getRecordingUrl(callSid) {
-    // Use the outbound recording proxy endpoint
     const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
     return `${API_BASE}/api/outbound/recording/${callSid}`;
+  }
+
+  /**
+   * Ensure recording URLs are backfilled for the given call SIDs (for current page prefetch).
+   * @param {string[]} callSids - Call SIDs for the current page
+   * @returns {Promise<{ensured: number}>}
+   */
+  async ensureRecordings(callSids) {
+    if (!Array.isArray(callSids) || callSids.length === 0) return { ensured: 0 };
+    const response = await this.post('/ensure-recordings', { callSids });
+    return response?.data ?? response ?? { ensured: 0 };
   }
 }
 

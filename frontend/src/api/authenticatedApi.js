@@ -20,6 +20,18 @@ const authenticatedApiClient = axios.create({
 // Track retry attempts for each request
 const retryCounts = new Map();
 
+// CSRF token cache (for double-submit cookie protection on admin/auth)
+let csrfTokenCache = null;
+async function getCsrfToken() {
+  if (csrfTokenCache) return csrfTokenCache;
+  const res = await axios.get(`${API_BASE}/api/csrf-token`, { withCredentials: true });
+  csrfTokenCache = res.data?.csrfToken || null;
+  return csrfTokenCache;
+}
+function clearCsrfToken() {
+  csrfTokenCache = null;
+}
+
 // Performance metrics tracking
 const performanceMetrics = {
   requests: [],
@@ -100,7 +112,7 @@ const isRetryableError = (error) => {
 
 // Request interceptor with enhanced features
 authenticatedApiClient.interceptors.request.use(
-  (config) => {
+  async (config) => {
     // Generate unique request ID for tracing
     const requestId = generateRequestId();
     config.metadata = {
@@ -126,6 +138,20 @@ authenticatedApiClient.interceptors.request.use(
     // Add auth token if available (works for both public and protected routes)
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    // Add CSRF token for state-changing requests to auth or admin
+    const isStateChange = ['post', 'put', 'patch', 'delete'].includes((config.method || '').toLowerCase());
+    const isAuthOrAdmin = config.url && (config.url.includes('/api/auth') || config.url.includes('/api/admin'));
+    if (isStateChange && isAuthOrAdmin) {
+      try {
+        const csrfToken = await getCsrfToken();
+        if (csrfToken) {
+          config.headers['X-CSRF-Token'] = csrfToken;
+        }
+      } catch (e) {
+        // Proceed without token; server will return 403 if required
+      }
     }
     
     return config;
@@ -258,10 +284,11 @@ authenticatedApiClient.interceptors.response.use(
         }
       }
       
-      // Handle 403 Forbidden - no retry, just log
+      // Handle 403 Forbidden - no retry; clear CSRF cache so next request refetches token
       if (status === 403) {
         console.error(`🚫 [${requestId}] Access forbidden - insufficient permissions`);
         retryCounts.delete(requestId);
+        clearCsrfToken();
         return Promise.reject(error);
       }
       

@@ -30,8 +30,8 @@ export function isRetryableError(error, retryableErrors = []) {
   const errorMessage = (error.message || String(error)).toLowerCase();
   const errorCode = error.code || error.status || error.statusCode;
 
-  // Check error message
-  if (allRetryableErrors.some(keyword => errorMessage.includes(keyword))) {
+  // Check error message (case-insensitive so e.g. ENOTFOUND matches "enotfound" in lowercased message)
+  if (allRetryableErrors.some(keyword => errorMessage.includes(keyword.toLowerCase()))) {
     return true;
   }
 

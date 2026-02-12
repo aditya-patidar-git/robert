@@ -14,13 +14,13 @@ describe('ToolExecutionService', () => {
     });
 
     it('returns object as-is when given object', () => {
-      const args = { task: 'update_customer', customerEmail: 'test@example.com' };
+      const args = { query: 'test query' };
       expect(toolExecutionService.parseArguments(args)).toEqual(args);
     });
 
     it('parses valid JSON string', () => {
-      const args = toolExecutionService.parseArguments('{"task":"update_customer","customerEmail":"test@example.com"}');
-      expect(args).toEqual({ task: 'update_customer', customerEmail: 'test@example.com' });
+      const args = toolExecutionService.parseArguments('{"query":"test query"}');
+      expect(args).toEqual({ query: 'test query' });
     });
 
     it('throws on invalid JSON string', () => {

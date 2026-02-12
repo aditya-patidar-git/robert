@@ -467,9 +467,12 @@ class TwilioMetricsService {
         return false;
       }
 
-      await this.client.insights.v1.calls(callSid)
-        .annotations
-        .create(annotationPayload);
+      const annotations = this.client?.insights?.v1?.calls(callSid)?.annotations;
+      if (!annotations) {
+        console.warn(`⚠️ [${callSid}] Call Annotations API unavailable`);
+        return false;
+      }
+      await annotations.create(annotationPayload);
 
       console.log(`✅ [${callSid}] Call annotated:`, annotationPayload);
       return true;

@@ -21,13 +21,17 @@ yarn-error.log*
 pnpm-debug.log*
 1_Introduction_to_Motorcycling_ITM.txt
 2_Gear_Conversion.txt
+# Gmail OAuth tokens (do not commit)
+data/gmail-tokens.json
+**/gmail-tokens.json
+
 # Environment variables
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-
+client_secret_542870434804-1b3keb76sr73l54im4rqmfb7e222qoik.apps.googleusercontent.com.json
 # Build outputs
 dist/
 build/

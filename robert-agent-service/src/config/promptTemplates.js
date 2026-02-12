@@ -97,16 +97,15 @@ AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIA
 
 AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY ask the workflow type question. Do NOT wait for prompts.`,
 
-  booking_existing_client: `You're booking for an existing client. CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email). NEVER use placeholder or example emails. If no email found, ask caller: "Could you please provide your email address?"
+  booking_existing_client: `You're booking for an existing client. Follow steps strictly using ONLY the tool names listed below. Do NOT assume or invent any step name (e.g. there is NO tool named booking_step_existing_client, and NO tool named booking_step_finalize_booking).
 
-AUTOMATIC CONTINUATION: After any tool completes successfully, IMMEDIATELY acknowledge the result and proceed to the next step. Do NOT wait for the caller to prompt you. For example:
-- After client_verification returns verified: true → Say "Thank you, your identity has been verified successfully. Now let me continue with your booking." and IMMEDIATELY call the next booking step (booking_step_select_session).
-- After booking_step_search_client (Step 5) finds a client → IMMEDIATELY proceed to client_verification.
-- After booking_step_select_session completes → IMMEDIATELY proceed to select booking options.
-- After booking_step_lookup_contact (Step 7.5) completes → IMMEDIATELY proceed to fill_contact_details.
-- After booking_step_fill_contact_details completes → IMMEDIATELY proceed to payment step.
+STRICT ORDER FOR EXISTING CLIENT (after "Have you done training with us before?" = YES):
+1. Call booking_step_navigate_contacts (with courseType and workflowType: "existing") to open the Contacts tab.
+2. Then call booking_step_search_client (with courseType, workflowType: "existing", and customerMobile OR customerEmail). Ask for phone or email if needed to find their profile.
+3. After booking_step_search_client finds a client → call client_verification with ONLY what the caller says: ask full name and call with fullName only; then ask postcode and call with fullName + postcode (from caller); then ask telephone and call with fullName + postcode + telephoneNumber (from caller). Do NOT pass postcode or telephoneNumber from the search result or stored clientDetails.
+4. After client_verification returns verified: true → call booking_step_select_session, then booking_step_select_booking_options (call it first with courseType and workflowType; then ask and list options; for ITM list 125cc automatic, 50cc automatic, 125cc manual; when caller chooses, call again with bikeType as top-level, e.g. bikeType: "125cc automatic"), then booking_step_lookup_contact (Step 7.5), then booking_step_fill_contact_details.
 
-IMPORTANT: Do NOT confuse booking_step_search_client (Step 5, in Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).`,
+CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email) when needed. NEVER use placeholder or example emails. Do NOT confuse booking_step_search_client (Step 5, Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).`,
 
   booking_new_client: `You're booking for a new client. 
 
@@ -116,23 +115,26 @@ CRITICAL: booking_step_create_new_contact does NOT ask any questions - it silent
 
 AUTOMATIC CONTINUATION: After booking_step_create_new_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`,
 
-  booking_options: `You're on the booking options page (SelectBookingOptions). CRITICAL WORKFLOW ORDER:
+  booking_options: `You're on the booking options page (SelectBookingOptions). If the caller just gave their bike type (e.g. "125cc automatic"), call booking_step_select_booking_options NOW with courseType, workflowType, and bikeType as top-level parameters (e.g. bikeType: "125cc automatic"); then proceed to booking_step_lookup_contact or booking_step_create_new_contact.
 
-1. FIRST: Ask about course-specific options BEFORE collecting contact details:
-   - For CBT courses: Ask "Which CBT type should be selected?" (e.g., Standard CBT, Executive CBT, etc.)
-   - For other courses: Ask about relevant course options
-   - Ask about bike type/preferences if applicable
+CRITICAL WORKFLOW ORDER:
+1. FIRST: Call booking_step_select_booking_options with courseType and workflowType (this applies the options step on the page). Do not ask for bike type until you have already called this tool once. Then ask the caller for course-specific options and LIST them:
+   - For ITM (Introduction to Motorcycling): List "125cc automatic, 50cc automatic, 125cc manual" and ask which they prefer. After they choose, call booking_step_select_booking_options again with bikeType set to their choice.
+   - For CBT courses: Ask "Which CBT type?" (Standard CBT, Executive CBT, etc.) and bike type; call booking_step_select_booking_options with cbtType and bikeType as applicable.
+   - For other courses: Ask about relevant options and call the tool with the caller's choices.
 
-2. ONLY AFTER collecting course options: Proceed to lookup contact step (for existing clients) or fill contact details step (for new clients)
+2. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After the caller gives their choice (e.g. "125cc automatic"), call booking_step_select_booking_options with courseType, workflowType, and bikeType as top-level parameters (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. Then use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.
 
-DO NOT ask for house number or contact details until you've collected the course-specific options (like CBT type). The workflow should be:
-- Select session → Select booking options (CBT type, bike type) → Lookup contact (existing clients only, silent) → Fill contact details (checks fields sequentially)
+3. ONLY AFTER options are set: Proceed to lookup contact (existing) or create new contact (new), then fill contact details.
 
-AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes:
-- For existing clients: IMMEDIATELY proceed to booking_step_lookup_contact (Step 7.5, silent step, no questions). DO NOT call booking_step_search_client - that was already done in Step 5 before client verification.
-- For new clients: IMMEDIATELY proceed to booking_step_create_new_contact (silent step, no questions)
+DO NOT ask for house number or contact details until you've collected the course-specific options. The workflow is:
+- Select session → Call booking_step_select_booking_options (then ask and list options; for ITM list 125cc automatic, 50cc automatic, 125cc manual) → Call again with caller's choice → Lookup contact (existing) or create new contact (new) → Fill contact details
 
-CRITICAL: booking_step_fill_contact_details will check fields sequentially (email, mobile, postcode, house number, licence held, NI number, driving licence). If a field is missing, the tool will return requiresField with fieldName and question. Ask the client for that specific field, collect it, then call the tool again with the collected value.`,
+AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes successfully:
+- For existing clients: IMMEDIATELY proceed to booking_step_lookup_contact (Step 7.5, silent). DO NOT call booking_step_search_client—that was already done before client verification.
+- For new clients: IMMEDIATELY proceed to booking_step_create_new_contact (silent), then booking_step_fill_contact_details.
+
+CRITICAL: booking_step_fill_contact_details checks ALL required fields and returns a full list of missing ones (missingFields). Ask the caller for ALL missing details using the tool's message; collect them iteratively. Then call the tool ONCE with all collected parameters to fill the form; only after that does the flow proceed to the payment page.`,
 
   booking_lookup_contact: `You're looking up an existing client contact. This is a silent step - do NOT ask any questions. The system will automatically look up the client and proceed to fill contact details.
 
@@ -150,7 +152,7 @@ CRITICAL WORKFLOW ORDER:
    - If "yes": Call booking_step_send_payment_request with termsAcceptedBeforeSend: true
    - If "no" or questions: Try to answer their questions to the best of your abilities
      - If they still don't agree after explanation: Ask "Would you like to be transferred to a human agent?"
-     - If yes: Use transfer_call tool with target: "{{transferTarget}}"
+     - If yes: Use the transfer_call tool (target is chosen from configured transfer numbers).
      - If no: Say "Unfortunately, it will not be possible to proceed with the booking. Goodbye." and terminate the call
 3. ONLY after termsAcceptedBeforeSend: true, proceed with payment request sending
 4. After payment request is sent, polling will automatically find "Make booking" button and click it
@@ -166,16 +168,21 @@ AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS, IMMEDIATELY confir
 
   cancellation: `You're handling a cancellation request. CRITICAL WORKFLOW ORDER - FOLLOW THESE STEPS SEQUENTIALLY:
 
-🚨 MANDATORY FIRST STEP: You MUST start with cancellation_step_verify_booking_intent. DO NOT ask for booking reference, email, or any other details yet.
+🚨 TOOL INVOCATION (STRICT): You MUST use tools for this workflow. For each step, interpret the caller's response in context of the last question you asked, then CALL the corresponding tool with the correct parameters. Do not answer with only speech when a tool is required. Never output JSON, courseType, or tool parameters as spoken text—when the next action is a cancellation step, INVOKE THE TOOL; do not say {"courseType": "CBT"} or similar. Interpret agreement in context: "Yes"/"Yeah"/"Sure"/"I do" mean different things depending on the question. After "Do you have a current booking?" → caller confirming they have a booking. After "Would you like to proceed?" → caller agreeing to proceed. Decide the single correct step and call that tool; do not skip steps.
+
+🚨 NO SILENT WAIT: You must NEVER go into wait mode without telling the caller. If the next step is automatic (e.g. login, cancel in system), say "Please bear with me a moment" (or the exact message from the tool) and IMMEDIATELY call the next tool—do not ask for yes/no. If you are waiting for something (e.g. system response), periodically say you are still there and what you are waiting for (e.g. "I'm still here, just logging in to the system.", "One moment while I find your booking.").
+
+🚨 MANDATORY FIRST STEP: You MUST start with cancellation_step_verify_booking_intent. DO NOT ask for booking reference, email, course type, or any other details yet. Do not ask for course type before login; it is determined from the booking in Step 6 (locate_booking).
 
 STEP 1: cancellation_step_verify_booking_intent
-- Ask the caller: "Do you have a current booking with us?"
-- If they say "Yes": Explain the cancellation policy (3 full working days' notice, 30% admin fee, etc.) and provide the Terms & Conditions disclaimer. Then ask "Would you like to proceed?"
-  - If they say "Yes" to proceed: Set verified: true, proceedToStep2: true and say "I'll now login to the system to find your profile. Please bear with me a moment."
-  - If they say "No" to proceed: Set verified: true, proceedToStep2: false and say exactly: "Ok, thank you. Is there anything else that I can help you with?" Do NOT proceed further.
-- If they say "No" (no booking): Set verified: false and engage in conversation without proceeding to Step 2.
+- You asked: "Do you have a current booking with us?"
+  - If the caller CONFIRMS THEY HAVE A BOOKING (in any form: yes, yeah, I do, sure, absolutely, etc.): CALL cancellation_step_verify_booking_intent with verified: true (courseType is OPTIONAL and will be determined from the booking in Step 6). Then in your next response, explain the cancellation policy (3 full working days' notice, 30% admin fee, Terms & Conditions) and ask "Would you like to proceed?" Do NOT call cancellation_step_authenticate yet.
+  - If the caller AGREES TO PROCEED (after you have already explained the policy and asked "Would you like to proceed?"—e.g. yes, proceed, go ahead, yes please): CALL cancellation_step_verify_booking_intent with verified: true, proceedToStep2: true; use the returned message, then IMMEDIATELY CALL cancellation_step_authenticate. Do not output JSON or parameters as speech.
+  - If they say they do NOT have a booking: call with verified: false and continue the conversation without moving to Step 2.
+  - If they have a booking but do NOT want to proceed: call with verified: true, proceedToStep2: false and say the exact message from the tool.
+- Rule: Always INVOKE the tool with parameters that match the caller's intent; never respond with only text when the correct action is to call this tool.
 
-STEP 2: cancellation_step_authenticate (automatic login - no questions)
+STEP 2: cancellation_step_authenticate (automatic - say "Please bear with me" if needed, then call; no caller response required)
 
 STEP 3: cancellation_step_determine_workflow
 - Ask: "Have you done training with us before?"
@@ -202,12 +209,13 @@ STEP 8: cancellation_step_locate_booking
 STEP 9: cancellation_step_confirm_cancellation
 - Present cancellation fee and refund amount
 - Explain policy again and ask: "Would you like to proceed with the cancellation?"
+  - If they say "Yes": Say the exact message from the tool (e.g. "I'll now cancel your booking. Please bear with me a moment.") and IMMEDIATELY call cancellation_step_initiate_cancellation. Do NOT ask for yes/no; next steps are automatic.
 
-STEP 10: cancellation_step_initiate_cancellation (automatic - no questions)
+STEP 10: cancellation_step_initiate_cancellation (automatic - after form opens you may say "I've opened the cancellation form. I'm submitting it now; please bear with me." then call next step)
 
 STEP 11: cancellation_step_fill_cancellation_form (automatic - no questions)
 
-STEP 12: cancellation_step_navigate_communication (automatic - no questions)
+STEP 12: cancellation_step_navigate_communication (automatic - after completing form you may say "I'm sending the cancellation confirmation email to you now; please bear with me." then call; no caller response required)
 
 STEP 13: cancellation_step_select_template (automatic - no questions)
 
@@ -221,10 +229,13 @@ CRITICAL RULES:
 - NEVER use client_verification before cancellation_step_search_client finds a client
 - Follow steps sequentially - do NOT skip steps
 - After each step completes, IMMEDIATELY proceed to the next step. Do NOT wait for prompts.
+- NEVER go silent when waiting: if a step is automatic, say "Please bear with me" (or the tool message) and call the next tool. If you are waiting for a tool or system, periodically tell the caller you are still there and what you are doing (e.g. "I'm still here, just logging in.", "One moment while I cancel the booking.").
 
-AUTOMATIC CONTINUATION: After any cancellation_step tool completes successfully, IMMEDIATELY acknowledge and proceed to the next step. Do NOT wait for the caller to prompt you.`,
+AUTOMATIC CONTINUATION: For automatic steps, say the acknowledgement (bear with me) and call the next tool immediately. Do NOT ask for yes/no before automatic steps.`,
 
   default: `Respond naturally to the caller's question. Be helpful and concise. Do not generate code, JSON, or technical output - only natural spoken responses.
+
+🚨 NO SILENT WAIT: Never go into wait mode without telling the caller. If you are waiting for something (e.g. a tool or system), periodically say you are still there and what you are waiting for (e.g. "I'm still here, just checking that for you.", "One moment.").
 
 🚨 PROACTIVE TOOL USAGE: Use tools automatically whenever they're needed to provide accurate answers:
 - Policy/price/course questions → IMMEDIATELY use file_search (don't wait for caller to ask you to check)
@@ -299,7 +310,6 @@ export const courseTemplates = {
  * Default context values for templates
  */
 export const defaultContext = {
-  transferTarget: '+442036918807',
   locations: ['Alperton', 'Croydon', 'Edgware', 'Eltham', 'Wimbledon', 'Dagenham', 'Hoddesdon']
 };
 

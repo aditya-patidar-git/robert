@@ -6,6 +6,8 @@
 
 import promptService from './promptService.js';
 import { conversations } from '../shared/state.js';
+import { AFTER_LOGIN_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
+import sessionStateManager from './browser/sessionStateManager.js';
 
 /**
  * Base class for tool result submission
@@ -31,6 +33,26 @@ class ToolResultSubmitter {
    */
   async triggerResponse(callId, options = {}) {
     // Default: no-op, can be overridden
+  }
+
+  /**
+   * Estimate acknowledgment duration for bike type questions completion.
+   * Used by WebSocketResultSubmitter when select_booking_options completes.
+   * @param {string} text - Response text
+   * @returns {number} Estimated duration in milliseconds
+   */
+  estimateAcknowledgmentDuration(text) {
+    if (!text || typeof text !== 'string') {
+      return 3000; // Default 3 seconds
+    }
+    // Extract actual message text (remove CRITICAL instructions)
+    const messageMatch = text.match(/"([^"]+)"/);
+    const messageText = messageMatch ? messageMatch[1] : text.split('\n')[0];
+    const wordCount = messageText.trim().split(/\s+/).filter(word => word.length > 0).length;
+    // Average speech rate: ~2.5 words/second (150 words/minute)
+    // Add 1 second buffer for natural pauses
+    const durationMs = (wordCount / 2.5) * 1000 + 1000;
+    return Math.ceil(durationMs);
   }
 }
 
@@ -177,9 +199,14 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
     
     // Lock acquired successfully - proceed with response creation
     try {
-      // PHASE 1: Get contextual instructions for automatic continuation after tool execution
       const callSid = callId;
-      const workflowPhase = await promptService.determineWorkflowPhase(this.stateManager, callSid);
+      let workflowPhase = await promptService.determineWorkflowPhase(this.stateManager, callSid);
+      if ((options?.toolName && options.toolName.startsWith('cancellation_step_')) || conversations[callSid]?.workflowContext === 'cancellation') {
+        workflowPhase = 'cancellation';
+      }
+      if ((options?.toolName && options.toolName.startsWith('booking_step_')) || conversations[callSid]?.workflowContext === 'booking') {
+        workflowPhase = workflowPhase || 'booking_start';
+      }
       
       // Get booking session info if available
       let courseType = null;
@@ -191,8 +218,23 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         courseType = bookingSession.courseType;
         workflowType = bookingSession.workflowType;
         currentStep = bookingSession.currentStep;
+
+        // Phase 0: Override workflowPhase from session step so we get the right template (fixes workflowContext===booking always returning booking_start and general_inquiry when session was missing)
+        if (workflowPhase !== 'cancellation' && currentStep != null && currentStep !== undefined) {
+          const step = currentStep;
+          const wt = bookingSession.workflowType || workflowType;
+          if (step === 1) workflowPhase = 'booking_availability';
+          else if (step === 2) workflowPhase = 'booking_authentication';
+          else if (step === 4 || step === 5) workflowPhase = 'booking_existing_client';
+          else if (step === 6 && wt === 'new') workflowPhase = 'booking_new_client';
+          else if (step === 6 && wt === 'existing') workflowPhase = 'booking_existing_client';
+          else if (step === 7) workflowPhase = 'booking_options';
+          else if (step === 7.5 && wt === 'existing') workflowPhase = 'booking_lookup_contact';
+          else if (step >= 8 && step <= 9) workflowPhase = 'booking_payment';
+          else if (step >= 10) workflowPhase = 'booking_completion';
+        }
       }
-      
+
       // Get contextual instructions for automatic continuation
       let responseInstructions = promptService.getContextualInstructions({
         isInitialGreeting: false,
@@ -207,6 +249,32 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       const toolName = options?.toolName;
       const toolResult = options?.toolResult;
       const isClientVerification = toolName === 'client_verification';
+
+      // Step tool parameter/validation failure: instruct to resolve (ask user or use context) and retry, do NOT offer transfer
+      const isStepToolParamError = toolName && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_')) &&
+        toolResult && toolResult.success === false && toolResult.error &&
+        /Validation failed|Required|Invalid parameters|missing|courseType/i.test(toolResult.error);
+      if (isStepToolParamError) {
+        const paramErrorInstruction = `CRITICAL: This is a missing or invalid parameter error for a booking/cancellation step—NOT a technical failure. Do NOT offer to transfer the caller to a human agent for this. First try to resolve it: (1) If you have the missing detail from context (e.g. agreedSlot, course type from the conversation or session), call the same step again with the correct parameters. (2) If you need the detail from the caller, ask one short question (e.g. "Which course is this for—Introduction to Motorcycling or CBT?"), then call the same step again with the correct parameters. Only offer transfer if you cannot resolve after trying.`;
+        responseInstructions = responseInstructions
+          ? `${paramErrorInstruction}\n\n${responseInstructions}`
+          : paramErrorInstruction;
+        console.log(`🎯 [${callId}] Step tool parameter/validation error - instructing to resolve and retry, not transfer`);
+      }
+
+      // Unknown tool recovery: model called a non-existent booking step (e.g. finalize_booking, finalize_course_options, select_options) — redirect to correct tool and param shape
+      const unknownToolNames = ['booking_step_finalize_booking', 'booking_step_finalize_course_options', 'booking_step_select_options'];
+      const isUnknownBookingStepTool = toolName && unknownToolNames.includes(toolName) &&
+        toolResult && toolResult.success === false &&
+        (/(Unknown tool|Tool not found)/i.test(toolResult.details || '') || /(Unknown tool|Tool not found)/i.test(toolResult.error || ''));
+      if (isUnknownBookingStepTool) {
+        const unknownToolInstruction = `CRITICAL: That tool does not exist. To apply the caller's bike type (or other options), use the tool **booking_step_select_booking_options** with **courseType**, **workflowType**, and **bikeType** as top-level parameters (e.g. bikeType: "125cc automatic"). Do NOT use selectedOptions—pass bikeType at the top level. After it succeeds, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
+        responseInstructions = responseInstructions
+          ? `${unknownToolInstruction}\n\n${responseInstructions}`
+          : unknownToolInstruction;
+        console.log(`🎯 [${callId}] Unknown booking step tool - instructing to use booking_step_select_booking_options with top-level bikeType`);
+      }
+
       if (isClientVerification) {
         if (toolResult && !toolResult.verified && toolResult.missingFields) {
           // Verification incomplete - agent must continue asking for ALL missing fields immediately
@@ -218,7 +286,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
             };
             const missingFieldNames = toolResult.missingFields?.map(f => fieldNames[f] || f).join(', ') || 'missing fields';
             
-            return `CRITICAL: Client verification is INCOMPLETE. You have collected: ${toolResult.verifiedFields?.join(', ') || 'none'}. You MUST immediately ask for ALL missing fields: ${missingFieldNames}. Use the exact prompt: "${toolResult.message}". Then IMMEDIATELY call client_verification tool again with ALL missing fields filled in. The caller may provide all missing fields in one response, or may provide them partially - extract whatever they provide and call the tool again. Do NOT wait for the user to ask "are you still there" or any other prompt. Continue the verification flow immediately without pausing.`;
+            return `CRITICAL: Client verification is INCOMPLETE. You have collected: ${toolResult.verifiedFields?.join(', ') || 'none'}. You MUST immediately ask for the next missing field: ${missingFieldNames}. Use the exact prompt: "${toolResult.message}". Then call client_verification again with only the field(s) the caller has just said—use fullName and postcode from the previous tool result if already verified, and add ONLY the new value the caller spoke. Do NOT pass postcode or telephoneNumber from stored clientDetails—only use what the caller actually said. If the caller provides multiple fields in one response, extract them and call the tool with those caller-spoken values only. Do NOT wait for the user to ask "are you still there". Continue the verification flow immediately.`;
           })();
           
           responseInstructions = responseInstructions 
@@ -229,9 +297,19 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           // Verification successful - agent must confirm and ask for explicit yes/no before proceeding
           const nextStepTool = toolResult.nextStepTool || 'booking_step_select_session';
           
+          // Check if we're in a cancellation workflow
+          const isCancellationWorkflow = (options?.toolName && options.toolName.startsWith('cancellation_step_')) || 
+                                         conversations[callSid]?.workflowContext === 'cancellation' ||
+                                         workflowPhase === 'cancellation';
+          
+          // Use appropriate fallback message based on workflow type
+          const fallbackMessage = isCancellationWorkflow
+            ? 'You are successfully verified. Would you like to proceed with cancelling your booking? Please say yes or no.'
+            : 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.';
+          
           if (toolResult.requiresExplicitConfirmation) {
             // New behavior: Ask for explicit confirmation before proceeding
-            const confirmationInstruction = `CRITICAL: You MUST say EXACTLY: "${toolResult.message || 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.'}" Then WAIT for the caller to respond with "yes" or "no". DO NOT proceed to the next step until the caller explicitly confirms with "yes". If the caller says "no", ask how you can help them instead. Only after the caller says "yes", proceed to call the next step tool: ${nextStepTool}.`;
+            const confirmationInstruction = `CRITICAL: You MUST say EXACTLY: "${toolResult.message || fallbackMessage}" Then WAIT for the caller to respond with "yes" or "no". DO NOT proceed to the next step until the caller explicitly confirms with "yes". If the caller says "no", ask how you can help them instead. Only after the caller says "yes", proceed to call the next step tool: ${nextStepTool}.`;
             
             responseInstructions = responseInstructions 
               ? `${confirmationInstruction}\n\n${responseInstructions}`
@@ -239,7 +317,10 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
             console.log(`🎯 [${callId}] Client verification successful - instructing explicit confirmation before proceeding: ${nextStepTool}`);
           } else {
             // Legacy behavior: Immediate continuation (for backward compatibility)
-            const immediateResponseInstruction = `CRITICAL: You MUST speak immediately without waiting. Start with EXACTLY: "You are successfully verified." Then IMMEDIATELY in the SAME response, continue with: "Now let me continue with your booking." Then IMMEDIATELY call the next step tool: ${nextStepTool} WITHOUT waiting for any user response or prompt. Do NOT pause after saying "You are successfully verified" - immediately continue and call the tool in the same response. Do NOT wait for prompts or user input. The verification is complete - proceed automatically to the next booking step.`;
+            const continuationMessage = isCancellationWorkflow
+              ? 'Now let me continue with your cancellation.'
+              : 'Now let me continue with your booking.';
+            const immediateResponseInstruction = `CRITICAL: You MUST speak immediately without waiting. Start with EXACTLY: "You are successfully verified." Then IMMEDIATELY in the SAME response, continue with: "${continuationMessage}" Then IMMEDIATELY call the next step tool: ${nextStepTool} WITHOUT waiting for any user response or prompt. Do NOT pause after saying "You are successfully verified" - immediately continue and call the tool in the same response. Do NOT wait for prompts or user input. The verification is complete - proceed automatically to the next step.`;
             
             responseInstructions = responseInstructions 
               ? `${immediateResponseInstruction}\n\n${responseInstructions}`
@@ -248,23 +329,225 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           }
         }
       }
+
+      // Phase 1: After search_client finds a client with requiresVerification, agent MUST call client_verification (not search_client again), then after verified call booking_step_select_session
+      const isSearchClientRequiresVerification = toolName === 'booking_step_search_client' &&
+        toolResult?.success === true &&
+        toolResult?.requiresVerification === true;
+      if (isSearchClientRequiresVerification) {
+        const verificationPrompt = toolResult?.verificationPrompt || 'I found your profile. For data protection, please confirm your full name, then your postcode, then your telephone number.';
+        const instruction = `CRITICAL: booking_step_search_client found a client; verification is required. Do NOT call booking_step_search_client again. Say: "${verificationPrompt}" Then ask for full name first. Call client_verification with ONLY fullName when the caller provides it. After the tool returns, ask for postcode and call client_verification with fullName (from the previous tool result) and postcode ONLY when the caller says their postcode. Then ask for telephone number and call with fullName, postcode, and telephoneNumber ONLY when the caller says their number. Do NOT pass postcode or telephoneNumber from the search result or stored clientDetails—only use what the caller actually says. Only after client_verification returns verified: true, call booking_step_select_session to open the diaries tab.`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        if (workflowPhase === 'general_inquiry' || workflowPhase === 'booking_start') {
+          workflowPhase = 'booking_existing_client';
+          const refreshed = promptService.getContextualInstructions({
+            isInitialGreeting: false,
+            workflowPhase: 'booking_existing_client',
+            courseType,
+            workflowType: workflowType || 'existing',
+            currentStep: currentStep ?? 5,
+            activeTool: null
+          });
+          responseInstructions = refreshed ? `${instruction}\n\n${refreshed}` : responseInstructions;
+        }
+        console.log(`🎯 [${callId}] Search client requires verification - instructing to call client_verification next (do not call search_client again), then booking_step_select_session after verified`);
+      }
+
+      // Phase 2: After select_session, MUST call select_booking_options in this turn, then ask and list options; for ITM call again with top-level bikeType
+      if (toolName === 'booking_step_select_session' && toolResult?.success === true) {
+        const instruction = `CRITICAL: booking_step_select_session completed. Do not call it again. You MUST call **booking_step_select_booking_options** with courseType and workflowType from the current session IN THIS TURN (do not only speak—call the tool first). Only after that tool returns success may you ask the caller for bike type and list "125cc automatic, 50cc automatic, 125cc manual". After the caller chooses, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** as a top-level parameter (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Select session completed - instructing to call booking_step_select_booking_options next`);
+      }
+
+      // Phase 3: After select_booking_options (or alias e.g. booking_step_finalize), call lookup_contact (existing) or create_new_contact (new) next
+      const bookingOptionsAliases = ['booking_step_finalize', 'booking_step_finalize_booking', 'booking_step_finalize_course_options', 'booking_step_select_options', 'booking_step_booking_options'];
+      const isSelectBookingOptionsCompleted = (toolName === 'booking_step_select_booking_options' || bookingOptionsAliases.includes(toolName)) && toolResult?.success === true;
+      if (isSelectBookingOptionsCompleted) {
+        const wt = workflowType || conversations[callSid]?.bookingSession?.workflowType;
+        const instruction = wt === 'new'
+          ? `CRITICAL: Do not call booking_step_select_booking_options again. Call booking_step_create_new_contact next with courseType and workflowType: "new". Then immediately call booking_step_fill_contact_details.`
+          : `CRITICAL: Do not call booking_step_select_booking_options again. Call booking_step_lookup_contact next with courseType and workflowType: "existing". This step is silent (no questions).`;
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Select booking options completed - instructing to call ${wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact'} next`);
+      }
+
+      // Phase 4: After lookup_contact, call fill_contact_details next
+      if (toolName === 'booking_step_lookup_contact' && toolResult?.success === true) {
+        const instruction = `CRITICAL: booking_step_lookup_contact completed. Call booking_step_fill_contact_details next. Collect any missing contact details from the caller (using the tool's missingFields/message), then call the tool once with all parameters.`;
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Lookup contact completed - instructing to call booking_step_fill_contact_details next`);
+      }
+
+      // Phase 5: After create_new_contact, call fill_contact_details next
+      if (toolName === 'booking_step_create_new_contact' && toolResult?.success === true) {
+        const instruction = `CRITICAL: booking_step_create_new_contact completed. Do not call it again. Call booking_step_fill_contact_details next. Collect all required contact details from the caller, then call the tool once with all parameters.`;
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Create new contact completed - instructing to call booking_step_fill_contact_details next`);
+      }
+
+      const isFillContactDetailsMissing = toolName === 'booking_step_fill_contact_details' &&
+        toolResult?.success === true &&
+        Array.isArray(toolResult?.missingFields) &&
+        toolResult.missingFields.length > 0;
+      if (isFillContactDetailsMissing) {
+        const msg = toolResult.message || `I need your ${(toolResult.missingFields || []).join(', ')}; could you please provide them?`;
+        const instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". Collect them iteratively (one or more conversational turns). Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] Fill contact details incomplete - instructing to collect all missing then call once: ${toolResult.missingFields?.join(', ')}`);
+      }
+
+      if (toolName === 'transfer_call' && toolResult?.allTransferNumbersFailed === true && toolResult?.messageForCaller) {
+        const msg = toolResult.messageForCaller;
+        const transferInstruction = `CRITICAL: The transfer could not be completed because all agents are busy. You MUST say exactly this to the caller: "${msg}" Then offer to help with anything else or end the call.`;
+        responseInstructions = responseInstructions
+          ? `${transferInstruction}\n\n${responseInstructions}`
+          : transferInstruction;
+        console.log(`🎯 [${callId}] Transfer all-occupied - instructing agent to say message to caller`);
+      }
+
+      let forceNextToolChoice = null;
+      const isRequiresToolRedirect = !!toolResult?.requiresTool;
+      if (isRequiresToolRedirect) {
+        forceNextToolChoice = toolResult.requiresTool;
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (!reqCourseType) {
+          console.warn(`⚠️ [${callId}] courseType not available for ${toolResult.requiresTool} - will be determined from booking`);
+        }
+        responseInstructions = `CRITICAL: You called a step out of order. SPEAK a short phrase like "Let me do that now." then IN THIS SAME RESPONSE invoke the tool ${toolResult.requiresTool} with courseType "${reqCourseType}". Do NOT output JSON or parameters as text—say words, then call the tool.`;
+        console.log(`🎯 [${callId}] Wrong step - forcing required tool: ${toolResult.requiresTool}`);
+      }
+
+      const isVerifyBookingIntentProceed = !forceNextToolChoice && toolName === 'cancellation_step_verify_booking_intent' &&
+        toolResult?.success === true &&
+        toolResult?.proceedToStep2 === true &&
+        toolResult?.nextStep === 'cancellation_step_authenticate';
+      if (isVerifyBookingIntentProceed) {
+        // courseType is optional - will be determined from booking in Step 6
+        // Use placeholder 'TBD' if not available yet
+        const authCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'TBD';
+        responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${AFTER_LOGIN_MESSAGE}"`;
+        if (this.stateManager) {
+          this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_authenticate', args: { courseType: authCourseType } };
+        }
+        console.log(`🎯 [${callId}] Cancellation proceed to Step 2 - say-only then inject cancellation_step_authenticate (courseType: ${authCourseType})`);
+      }
+
+      const isConfirmCancellationProceed = !forceNextToolChoice && toolName === 'cancellation_step_confirm_cancellation' &&
+        toolResult?.success === true &&
+        toolResult?.confirmed === true &&
+        toolResult?.nextStep === 'cancellation_step_initiate_cancellation';
+      if (isConfirmCancellationProceed) {
+        const session = sessionStateManager.getSession(callSid);
+        const bookingDetails = sessionStateManager.getBookingDetails(callSid) || session?.bookingDetails;
+        const initCourseType = courseType || session?.courseType;
+        const validCourseType = initCourseType && initCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for initiate_cancellation - skipping chained call (set in locateBooking/confirm_cancellation)`);
+        }
+        const initCourseDate = bookingDetails?.courseDate || bookingDetails?.bookingDate;
+        if (initCourseDate && validCourseType) {
+          responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${AFTER_CONFIRM_CANCEL_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_initiate_cancellation', args: { courseType: initCourseType, workflowType: 'existing', courseDate: initCourseDate } };
+          }
+          console.log(`🎯 [${callId}] Cancellation confirmed - say-only then inject initiate_cancellation (courseType: ${initCourseType}, courseDate: ${initCourseDate})`);
+        }
+      }
+
+      const isInitiateCancellationProceed = !forceNextToolChoice && toolName === 'cancellation_step_initiate_cancellation' &&
+        toolResult?.success === true &&
+        toolResult?.cancellationFormOpened === true;
+      if (isInitiateCancellationProceed) {
+        const fillCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const cancellationFee = sessionStateManager.getCancellationFee(callSid);
+        const validCourseType = fillCourseType && fillCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for fill_cancellation_form - skipping chained call`);
+        } else if (cancellationFee == null || cancellationFee === undefined) {
+          console.error(`❌ [${callId}] cancellationFee not available for chained fill_cancellation_form - skipping`);
+        } else {
+          responseInstructions = `CRITICAL: You must output ONLY this single sentence, no other words or tools: "${AFTER_FORM_OPENED_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_fill_cancellation_form', args: { courseType: fillCourseType, workflowType: 'existing', cancellationFee: Number(cancellationFee) } };
+          }
+          console.log(`🎯 [${callId}] Cancellation form opened - say-only then inject fill_cancellation_form`);
+        }
+      }
+
+      const isFillCancellationFormProceed = !forceNextToolChoice && toolName === 'cancellation_step_fill_cancellation_form' &&
+        toolResult?.success === true &&
+        toolResult?.cancellationSubmitted === true;
+      if (isFillCancellationFormProceed) {
+        const navCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const validCourseType = navCourseType && navCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for navigate_communication - skipping chained call`);
+        } else {
+          responseInstructions = `CRITICAL: You must output ONLY this single sentence, no other words or tools: "${AFTER_FORM_SUBMITTED_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_navigate_communication', args: { courseType: navCourseType, workflowType: 'existing' } };
+          }
+          console.log(`🎯 [${callId}] Cancellation form submitted - say-only then inject navigate_communication`);
+        }
+      }
+
+      const isNavigateCommunicationProceed = !forceNextToolChoice && toolName === 'cancellation_step_navigate_communication' &&
+        toolResult?.success === true &&
+        toolResult?.templatePageOpened === true;
+      if (isNavigateCommunicationProceed) {
+        const selCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const validCourseType = selCourseType && selCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for select_template - skipping chained call`);
+        } else {
+          responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${BEAR_WITH_ME}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_select_template', args: { courseType: selCourseType, workflowType: 'existing' } };
+          }
+          console.log(`🎯 [${callId}] Template page opened - say-only then inject select_template`);
+        }
+      }
       
-      // Log retry success if we retried
       if (retryCount > 0) {
         console.log(`✅ [${callId}] Successfully acquired response lock after ${retryCount} retry attempt(s)`);
       }
-      
-      // Step 1: Disable tools before creating response (prevents tool calls during response)
-      // Lock already acquired by tryAcquireResponseLock()
+      console.log(`[RESPONSE-SOURCE] [${callId}] tool_completion`);
+      // Step 1: Set tool_choice before creating response (force next tool when chaining, else disable)
+      const toolChoiceForResponse = forceNextToolChoice
+        ? { type: 'function', name: forceNextToolChoice }
+        : 'none';
       openaiWs.send(JSON.stringify({
         type: 'session.update',
         session: {
-          tool_choice: 'none'
+          tool_choice: toolChoiceForResponse
         }
       }));
       
       // Small delay to ensure session update is processed
       await new Promise(resolve => setTimeout(resolve, 150));
+      
+      // Track when selectBookingOptions completes successfully to delay periodic updates
+      if (toolName === 'booking_step_select_booking_options' && toolResult?.success === true) {
+        // Estimate acknowledgment end time based on response instructions
+        const acknowledgmentText = responseInstructions || 'Booking options selected successfully';
+        const estimatedDuration = this.estimateAcknowledgmentDuration(acknowledgmentText);
+        const acknowledgmentEndTime = Date.now() + estimatedDuration;
+        
+        // Store in conversation state for delayed periodic update start
+        if (!conversations[callSid]) {
+          conversations[callSid] = {};
+        }
+        conversations[callSid].bikeTypeQuestionsCompleted = {
+          acknowledgmentEndTime: acknowledgmentEndTime,
+          estimatedDuration: estimatedDuration
+        };
+        console.log(`📊 [${callId}] Bike type questions completed - acknowledgment will end at ${new Date(acknowledgmentEndTime).toISOString()} (estimated ${estimatedDuration}ms)`);
+      }
       
       // Step 2: Create response with contextual instructions
       const responseCreatePayload = {
@@ -277,7 +560,8 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       // PHASE 1: Include contextual instructions to ensure automatic continuation
       if (responseInstructions) {
         responseCreatePayload.response.instructions = responseInstructions;
-        console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''})`);
+        const chained = isVerifyBookingIntentProceed || isConfirmCancellationProceed || isInitiateCancellationProceed || isFillCancellationFormProceed || isNavigateCommunicationProceed;
+        console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''}${isRequiresToolRedirect ? ', force requiresTool redirect' : ''}${chained ? ', say-only then chained tool' : ''})`);
       }
       
       openaiWs.send(JSON.stringify(responseCreatePayload));

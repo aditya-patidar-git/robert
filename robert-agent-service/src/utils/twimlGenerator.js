@@ -102,7 +102,7 @@ export function generateMediaStreamsTwiML(wsUrl, options = {}) {
 export function generateBlockedCallTwiML(message) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>${message}</Say>
+  <Say>${escapeTwiMLText(message)}</Say>
   <Hangup/>
 </Response>`;
 }
@@ -128,7 +128,75 @@ export function generateMinimalTwiML(pauseLength = 3600) {
 export function generateErrorTwiML(message = 'An error occurred. Please try again later.') {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+  <Say>${escapeTwiMLText(message)}</Say>
+  <Hangup/>
+</Response>`;
+}
+
+function escapeTwiMLText(text) {
+  if (!text || typeof text !== 'string') return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Generate TwiML for voicemail: Say message, Say greeting, Record with maxLength and callback.
+ * @param {Object} options
+ * @param {string} options.message - After-hours or context message
+ * @param {string} options.greeting - Instruction to leave a message
+ * @param {number} options.maxDuration - Max recording seconds (capped for Twilio)
+ * @param {string} options.recordingStatusCallback - URL for recording completion
+ * @returns {string} - TwiML XML string
+ */
+export function generateVoicemailTwiML(options = {}) {
+  const message = escapeTwiMLText(options.message || '');
+  const greeting = escapeTwiMLText(options.greeting || 'Please leave your name, number, and a brief message after the tone.');
+  const maxDuration = Math.min(Math.max(1, parseInt(options.maxDuration, 10) || 300), 14400);
+  const callback = options.recordingStatusCallback || '';
+  const callbackAttr = callback ? ` recordingStatusCallback="${callback}" recordingStatusCallbackMethod="POST"` : '';
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
   <Say>${message}</Say>
+  <Say>${greeting}</Say>
+  <Record maxLength="${maxDuration}"${callbackAttr}/>
+  <Hangup/>
+</Response>`;
+}
+
+/**
+ * Generate TwiML to dial a number with action URL (e.g. for after-hours transfer chain).
+ * @param {string} number - Phone number to dial
+ * @param {string} actionUrl - URL Twilio will request when dial ends (no-answer, busy, etc.)
+ * @param {number} [timeout=25] - Ring timeout in seconds
+ * @returns {string} - TwiML XML string
+ */
+export function generateDialWithActionTwiML(number, actionUrl, timeout = 25) {
+  const num = escapeTwiMLText(String(number || ''));
+  const url = escapeTwiMLText(String(actionUrl || ''));
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="${Math.max(5, Math.min(120, timeout))}" action="${url}" method="POST">
+    <Number>${num}</Number>
+  </Dial>
+  <Hangup/>
+</Response>`;
+}
+
+const ALL_OCCUPIED_MESSAGE = 'All our agents are occupied at the moment. Can we try again after a while, or would you prefer we contact you?';
+
+/**
+ * Generate TwiML for "all transfer numbers failed" (Say + Hangup).
+ * @param {string} [message] - Optional custom message
+ * @returns {string} - TwiML XML string
+ */
+export function generateAllOccupiedTwiML(message = ALL_OCCUPIED_MESSAGE) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>${escapeTwiMLText(message)}</Say>
   <Hangup/>
 </Response>`;
 }

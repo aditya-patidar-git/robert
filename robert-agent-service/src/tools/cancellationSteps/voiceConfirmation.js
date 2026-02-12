@@ -55,7 +55,7 @@ export class VoiceConfirmationStep extends CancellationBaseStepTool {
       }
 
       // Update session state - cancellation complete
-      sessionStateManager.setCurrentStep(callSid, stepNumber, { cancellationComplete: true });
+      sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { cancellationComplete: true });
       
       return {
         success: true,

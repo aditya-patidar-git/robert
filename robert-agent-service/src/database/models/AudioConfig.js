@@ -96,6 +96,10 @@ const AudioConfigSchema = new mongoose.Schema({
     enum: ['whisper-1', 'gpt-4o-transcribe'],
     default: 'whisper-1'
   },
+  afterCallTranscription: {
+    enabled: { type: Boolean, default: false },
+    preferOverRealtime: { type: Boolean, default: false }
+  },
   temperature: { 
     type: Number, 
     default: 0.4,
