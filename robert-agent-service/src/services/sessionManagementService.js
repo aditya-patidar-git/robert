@@ -19,6 +19,7 @@ import {
 } from '../shared/state.js';
 import distributedStateService from './distributedStateService.js';
 import { validateSessionConfig, logValidationResult } from '../utils/configValidator.js';
+import { closeSipCallWebSocket } from './sipWebSocketRegistry.js';
 
 class SessionManagementService {
   constructor() {
@@ -360,8 +361,9 @@ class SessionManagementService {
       }
     }
 
-    // Clean up realtimeClients and then delete stale sessions
+    // Clean up SIP WebSockets, realtimeClients, and then delete stale sessions
     staleSessions.forEach(callSid => {
+      closeSipCallWebSocket(callSid);
       const client = realtimeClients[callSid];
       if (client) {
         if (typeof client.connectionManager?.cleanup === 'function') {

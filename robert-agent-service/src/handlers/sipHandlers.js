@@ -30,6 +30,7 @@ import { setDefaultRecordingConsent } from "../services/callRecordPersistenceSer
 import consentInstructionBuilder from "../services/consentInstructionBuilder.js";
 import { ConsentHandler } from "./mediaStream/events/index.js";
 import silenceDetectionService from "../services/silenceDetectionService.js";
+import sessionManagementService from "../services/sessionManagementService.js";
 
 function escapeTwiMLText(text) {
   if (!text || typeof text !== 'string') return '';
@@ -41,9 +42,7 @@ function escapeTwiMLText(text) {
     .replace(/'/g, '&apos;');
 }
 import WebSocket from "ws";
-
-// Store active SIP call WebSocket connections
-const sipCallWebSockets = new Map();
+import { getSipCallWebSocket, setSipCallWebSocket, deleteSipCallWebSocket, closeSipCallWebSocket } from "../services/sipWebSocketRegistry.js";
 
 /**
  * Parse SIP headers array to extract From/To phone numbers
@@ -166,7 +165,7 @@ function openCallWebSocket(callId, context = {}) {
   
   ws.on('open', () => {
     console.log(`✅ [SIP] WebSocket connected for call ${callId}`);
-    sipCallWebSockets.set(callId, ws);
+    setSipCallWebSocket(callId, ws);
     
     // Send initial response.create to make AI speak
     ws.send(JSON.stringify({
@@ -206,7 +205,7 @@ function openCallWebSocket(callId, context = {}) {
   
   ws.on('close', (code, reason) => {
     console.log(`🔌 [SIP] WebSocket closed for call ${callId}: ${code} - ${reason}`);
-    sipCallWebSockets.delete(callId);
+    deleteSipCallWebSocket(callId);
     
     // Cleanup
     if (context.onClose) {
@@ -268,8 +267,6 @@ export const handleCallAccept = async (req, res) => {
     }
 
     console.log(`📞 [SIP] Processing incoming call - call_id: ${call_id}, from: ${from}, to: ${to}`);
-
-    const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
 
     const rateLimitCheck = await abusePreventionService.checkRateLimit(from);
     if (!rateLimitCheck.allowed) {
@@ -492,7 +489,7 @@ export const handleCallAccept = async (req, res) => {
                 conversations[call_id].workflowContext = result.newWorkflowContext ?? conversations[call_id].workflowContext;
                 const toolContext = { workflowPhase: result.phase, clientVerified: conversations[call_id]?.kba?.verified ?? false };
                 const toolsForPhase = toolExecutor.getFilteredToolDefinitions(toolContext);
-                const ws = sipCallWebSockets.get(call_id);
+                const ws = getSipCallWebSocket(call_id);
                 if (ws && ws.readyState === 1) {
                   ws.send(JSON.stringify({ type: 'session.update', session: { tools: toolsForPhase.map(t => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters })), tool_choice: 'auto' } }));
                   console.log(`🔄 [SIP] Workflow phase transition for ${call_id}: ${currentPhase} -> ${result.phase}, ${toolsForPhase.length} tools`);
@@ -504,7 +501,7 @@ export const handleCallAccept = async (req, res) => {
             silenceDetectionService.reset(call_id);
             console.log(`📞 [SIP] Call ended: ${call_id}`);
             decrementActiveCalls({ entry_path: 'SIP' });
-            if (conversations[call_id]) delete conversations[call_id];
+            sessionManagementService.deleteSession(call_id);
             sipService.trackStatus(call_id, 'completed', { code, reason });
             sipService.deleteSession(call_id);
             await CallRecord.findOneAndUpdate(
@@ -516,7 +513,7 @@ export const handleCallAccept = async (req, res) => {
       } catch (error) {
         console.error(`❌ [SIP] Error accepting call ${call_id}:`, error);
         decrementActiveCalls({ entry_path: 'SIP' });
-        if (conversations[call_id]) delete conversations[call_id];
+        sessionManagementService.deleteSession(call_id);
         sipService.trackStatus(call_id, 'failed', { error: error.message });
         await CallRecord.findOneAndUpdate(
           { callSid: call_id },
@@ -531,27 +528,7 @@ export const handleCallAccept = async (req, res) => {
   }
 };
 
-/**
- * Close WebSocket connection for a call
- * @param {string} callId - The call ID
- */
-export function closeSipCallWebSocket(callId) {
-  const ws = sipCallWebSockets.get(callId);
-  if (ws) {
-    console.log(`🔌 [SIP] Closing WebSocket for call ${callId}`);
-    ws.close(1000, 'Call ended');
-    sipCallWebSockets.delete(callId);
-  }
-}
-
-/**
- * Get WebSocket connection for a call (for external control)
- * @param {string} callId - The call ID
- * @returns {WebSocket|null} - The WebSocket connection or null
- */
-export function getSipCallWebSocket(callId) {
-  return sipCallWebSockets.get(callId) || null;
-}
+export { closeSipCallWebSocket, getSipCallWebSocket };
 
 /**
  * Handle OpenAI Realtime SIP call status updates
