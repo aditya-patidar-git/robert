@@ -169,7 +169,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_select_booking_options',
-      description: `Step 7 (Existing) / Step 5 (New): Select booking options (bike type, CBT type, duration, etc.). This step REQUIRES preferences to be collected BEFORE calling. For ITM/CBT: requires bikeType. For CBT: also requires cbtType. For Gear Conversion: requires duration and bikeType.`,
+      description: `Step 7 (Existing) / Step 5 (New): Select booking options. The tool name is exactly booking_step_select_booking_options (NOT booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options). This step APPLIES the chosen options on the page (e.g. selects bike type). Call it first with courseType and workflowType; then ask the caller for options and LIST them (for ITM: "125cc automatic, 50cc automatic, 125cc manual"). After the caller chooses, call this tool again with courseType, workflowType, and bikeType (and cbtType/duration as needed)—pass these as TOP-LEVEL parameters, not inside a selectedOptions object. For CBT also pass cbtType; for Gear Conversion pass duration and bikeType. After options are set, use booking_step_lookup_contact or booking_step_create_new_contact, then booking_step_fill_contact_details.`,
       parameters: {
         type: 'object',
         properties: {
@@ -186,7 +186,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
           bikeType: {
             type: 'string',
             enum: ['125cc automatic', '50cc automatic', '125cc manual'],
-            description: 'Bike type preference (REQUIRED for most courses)'
+            description: 'Bike type preference (REQUIRED for most courses). Pass as top-level parameter; do not nest under selectedOptions.'
           },
           cbtType: {
             type: 'string',

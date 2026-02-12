@@ -149,6 +149,17 @@ class ClientVerificationTool {
           verificationState.verifiedValues.fullName = normalizedFullName;
           verificationState.currentField = 'postcode';
           console.log(`✅ [${callSid}] Full name verified: "${normalizedFullName}"`);
+          // CRITICAL: Return immediately so we only process one field per call. Agent must ask caller for postcode and call again.
+          return {
+            success: true,
+            verified: false,
+            missingFields: ['postcode'],
+            verifiedFields: ['fullName'],
+            currentField: 'postcode',
+            message: getPostcodePrompt(),
+            instruction: `Full name verified. Now ask for postcode. Use the exact prompt: "${getPostcodePrompt()}". Then call client_verification with fullName="${normalizedFullName}" and postcode parameter when the caller provides it. Do NOT pass postcode or telephone from stored clientDetails - only use what the caller says.`,
+            requiresImmediateContinuation: true
+          };
         } else {
           // FullName mismatch - increment attempts and ask again
           incrementVerificationAttempt(conversation, 'fullName');
@@ -205,6 +216,17 @@ class ClientVerificationTool {
           verificationState.verifiedValues.postcode = normalizedPostcode;
           verificationState.currentField = 'telephoneNumber';
           console.log(`✅ [${callSid}] Postcode verified: "${normalizedPostcode}"`);
+          // CRITICAL: Return immediately so we only process one field per call. Agent must ask caller for telephone and call again.
+          return {
+            success: true,
+            verified: false,
+            missingFields: ['telephoneNumber'],
+            verifiedFields: ['fullName', 'postcode'],
+            currentField: 'telephoneNumber',
+            message: getTelephonePrompt(),
+            instruction: `Full name and postcode verified. Now ask for telephone number. Use the exact prompt: "${getTelephonePrompt()}". Then call client_verification with fullName="${verificationState.verifiedValues.fullName}", postcode="${normalizedPostcode}", and telephoneNumber parameter when the caller provides it. Do NOT pass telephone from stored clientDetails - only use what the caller says.`,
+            requiresImmediateContinuation: true
+          };
         } else {
           // Postcode mismatch - increment attempts and ask again
           incrementVerificationAttempt(conversation, 'postcode');

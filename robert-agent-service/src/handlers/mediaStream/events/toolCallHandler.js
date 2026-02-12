@@ -79,8 +79,9 @@ export class ToolCallHandler {
         if (typeof this.onBeforeTriggerResponse === 'function') {
           this.onBeforeTriggerResponse(this.state.callSid);
         }
+        const effectiveToolName = executionResult.resolvedToolName || name;
         await this.resultSubmitter.triggerResponse(this.state.callSid, { 
-          toolName: name,
+          toolName: effectiveToolName,
           toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
         });
         
@@ -107,8 +108,9 @@ export class ToolCallHandler {
       if (typeof this.onBeforeTriggerResponse === 'function') {
         this.onBeforeTriggerResponse(this.state.callSid);
       }
+      const effectiveToolName = executionResult.resolvedToolName || name;
       await this.resultSubmitter.triggerResponse(this.state.callSid, { 
-        toolName: name,
+        toolName: effectiveToolName,
         toolResult: executionResult.result || executionResult // Pass the tool result so triggerResponse can check for incomplete verification
       });
       

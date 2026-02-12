@@ -791,10 +791,34 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
     console.error('❌ [STEP 8] Error message:', error.message);
     console.error('❌ [STEP 8] Error stack:', error.stack);
     await commonSteps.takeScreenshot(page, 'booking-options-error.png', screenshotsDir).catch(() => {});
-    
+
+    const errorMessage = error.message.toLowerCase();
+    const isElementNotVisibleOrTimeout = errorMessage.includes('element is not visible') || errorMessage.includes('timeout');
+
+    // If we have bikeType and the failure is "element not visible" or timeout, we may already be on the next page (Lookup Contact).
+    // Detect next page and return success so the agent proceeds to booking_step_lookup_contact / create_new_contact instead of looping.
+    if (isElementNotVisibleOrTimeout && bookingArgs.bikeType) {
+      try {
+        const iframe = page.locator('#eventNewBooking2_iframe');
+        if (await iframe.count() > 0) {
+          const frame = page.frameLocator('#eventNewBooking2_iframe');
+          const nextPageIndicator = frame.getByText(/Lookup|Contact|add new contact|Look up/i).first();
+          if (await nextPageIndicator.count() > 0 && await nextPageIndicator.isVisible().catch(() => false)) {
+            console.log('✅ [STEP 8] Already on contact lookup / next page - returning success so agent proceeds to lookup_contact or create_new_contact');
+            return {
+              success: true,
+              alreadyOnNextPage: true,
+              message: 'Booking options step already completed; you are on the contact lookup page. Proceed to booking_step_lookup_contact (existing) or booking_step_create_new_contact (new).'
+            };
+          }
+        }
+      } catch (e) {
+        // Ignore detection errors; fall through to requiresPreferences or throw
+      }
+    }
+
     // If the error is related to form/page not found or timeout, return requiresPreferences instead of throwing
     // This allows the voice agent to ask for preferences and retry
-    const errorMessage = error.message.toLowerCase();
     const isFormNotFound = errorMessage.includes('no booking option groups') ||
                           errorMessage.includes('booking form') ||
                           errorMessage.includes('price page') ||
@@ -805,7 +829,7 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
                           errorMessage.includes('waiting for') ||
                           errorMessage.includes('target page') ||
                           errorMessage.includes('context or browser has been closed');
-    
+
     if (isFormNotFound) {
       console.warn('⚠️ [STEP 8] Booking form/page not found or timeout - returning requiresPreferences');
       console.warn('⚠️ [STEP 8] This allows the voice agent to ask for bikeType preference and retry');

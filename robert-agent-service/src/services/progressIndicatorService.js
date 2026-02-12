@@ -164,7 +164,9 @@ class ProgressIndicatorService {
     this.startToolExecution(callId, toolName, stateManager);
     const baseThreshold = config.progressIndicators.acknowledgmentThresholdMs || 2000;
     const isStepBasedTool = toolName && toolName.startsWith('booking_step_');
-    const threshold = isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold;
+    // Use base (shorter) threshold for long-running steps that benefit from early ack: check_availability, authenticate
+    const useShortThreshold = toolName === 'booking_step_check_availability' || toolName === 'booking_step_authenticate';
+    const threshold = useShortThreshold ? baseThreshold : (isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold);
     setTimeout(() => {
       const ws = getWsRef ? getWsRef() : openaiWs;
       if (!ws || ws.readyState !== 1) return;
@@ -202,10 +204,10 @@ class ProgressIndicatorService {
     }
 
     const elapsed = Date.now() - execution.startTime;
-    // Use longer threshold for step-based tools (5-8 seconds) to avoid redundant messages for quick steps
-    // Regular tools use 2 seconds, step-based tools use 5 seconds
+    // Use longer threshold for step-based tools (5s) to avoid redundant messages for quick steps; exception: check_availability and authenticate use base (2s) for earlier ack
     const baseThreshold = config.progressIndicators.acknowledgmentThresholdMs || 2000;
-    const threshold = execution.isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold;
+    const useShortThreshold = execution.toolName === 'booking_step_check_availability' || execution.toolName === 'booking_step_authenticate';
+    const threshold = useShortThreshold ? baseThreshold : (execution.isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold);
 
     if (!execution.acknowledgmentSent && elapsed >= threshold) {
       // Double-check completion flag and interruption state before sending

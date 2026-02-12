@@ -8,6 +8,7 @@ import { validateToolParameters } from '../utils/toolSchemaValidator.js';
 import { recordToolMetrics } from '../services/metricsService.js';
 import ToolConfig from '../database/models/ToolConfig.js';
 import { setCancellationContext } from '../config/cancellationPhrases.js';
+import { conversations } from '../shared/state.js';
 
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 
@@ -104,6 +105,53 @@ class ToolExecutor {
   }
 
   /**
+   * Check if a (non-registered) tool name is an alias for booking_step_select_booking_options.
+   * Used only when the tool is not in the registry, to avoid "Unknown tool" for common model mistakes.
+   */
+  _isBookingOptionsAlias(toolName) {
+    if (!toolName || typeof toolName !== 'string') return false;
+    const n = toolName.trim().toLowerCase();
+    if (n === 'booking_step_select_booking_options') return true; // already canonical
+    const aliases = [
+      'booking_step_finalize_booking',
+      'booking_step_finalize_course_options',
+      'booking_step_select_options',
+      'booking_step_booking_options',
+      'select_booking_options',
+      'finalize_booking_options',
+      'select_options'
+    ];
+    if (aliases.includes(n)) return true;
+    if (n.startsWith('booking_step_') && (n.includes('option') || n.includes('finalize'))) return true;
+    return false;
+  }
+
+  /**
+   * Normalize parameters for booking_step_select_booking_options when the model sent an alias
+   * (e.g. selectedOptions.bikeType -> bikeType, and inject courseType/workflowType from session if missing).
+   */
+  _normalizeBookingOptionsParams(parameters, callSid) {
+    if (!parameters || typeof parameters !== 'object') return parameters;
+    const out = { ...parameters };
+    const so = out.selectedOptions;
+    if (so && typeof so === 'object') {
+      if (so.bikeType != null && out.bikeType == null) out.bikeType = so.bikeType;
+      if (so.courseType != null && out.courseType == null) out.courseType = so.courseType;
+      if (so.cbtType != null && out.cbtType == null) out.cbtType = so.cbtType;
+      if (so.duration != null && out.duration == null) out.duration = so.duration;
+      delete out.selectedOptions;
+    }
+    if ((out.courseType == null || out.courseType === '') && callSid && conversations[callSid]?.bookingSession?.courseType) {
+      out.courseType = conversations[callSid].bookingSession.courseType;
+    }
+    if ((out.workflowType == null || out.workflowType === '') && callSid && conversations[callSid]?.bookingSession?.workflowType) {
+      const w = conversations[callSid].bookingSession.workflowType;
+      if (w === 'existing' || w === 'new') out.workflowType = w;
+    }
+    return out;
+  }
+
+  /**
    * Normalize parameters for booking/cancellation step tools so model-sent aliases match schema.
    * Maps course_name -> courseType, start_date/date/preferred_date -> preferredDate.
    * Derives courseType from selectedSlot.course when missing; normalizes courseType to schema enum.
@@ -123,6 +171,10 @@ class ToolExecutor {
     }
     if (normalized.selectedSlot?.course != null && normalized.courseType == null) {
       normalized.courseType = this._normalizeCourseTypeValue(normalized.selectedSlot.course);
+    }
+    // booking_step_authenticate schema uses agreedSlot; derive courseType from it when missing
+    if (normalized.agreedSlot?.course != null && normalized.courseType == null) {
+      normalized.courseType = this._normalizeCourseTypeValue(normalized.agreedSlot.course);
     }
     if (normalized.courseType != null) {
       normalized.courseType = this._normalizeCourseTypeValue(normalized.courseType);
@@ -195,6 +247,16 @@ class ToolExecutor {
       }
       // ================================================
 
+      // Alias resolution: if model called a non-existent "booking options" style name, resolve to canonical tool
+      if (!this.toolRegistry.has(resolvedToolName) && this._isBookingOptionsAlias(resolvedToolName)) {
+        const canonical = 'booking_step_select_booking_options';
+        if (this.toolRegistry.has(canonical)) {
+          resolvedToolName = canonical;
+          parameters = this._normalizeBookingOptionsParams(parameters, callSid);
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias to ${canonical}`);
+        }
+      }
+
       if (!this.toolRegistry.has(resolvedToolName)) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: `Tool not found: ${resolvedToolName}` });
         span.end();
@@ -206,6 +268,14 @@ class ToolExecutor {
       if (resolvedToolName === 'client_verification' && normalizedParams.phone_number != null && normalizedParams.telephoneNumber == null) {
         normalizedParams = { ...normalizedParams, telephoneNumber: normalizedParams.phone_number };
         delete normalizedParams.phone_number;
+      }
+
+      // For booking step tools that require workflowType: inject from session when model omits it
+      if (resolvedToolName.startsWith('booking_step_') && (normalizedParams.workflowType == null || normalizedParams.workflowType === '')) {
+        const sessionWorkflowType = conversations[callSid]?.bookingSession?.workflowType;
+        if (sessionWorkflowType === 'existing' || sessionWorkflowType === 'new') {
+          normalizedParams = { ...normalizedParams, workflowType: sessionWorkflowType };
+        }
       }
 
       // Validate tool parameters using Zod schema
@@ -353,11 +423,15 @@ class ToolExecutor {
         });
 
         span.end();
-        return {
+        const successReturn = {
           success: true,
           result: result,
           executionTime: executionTime
         };
+        if (resolvedToolName !== toolName) {
+          successReturn.resolvedToolName = resolvedToolName;
+        }
+        return successReturn;
       } catch (error) {
         const executionTime = Date.now() - startTime;
         const executionTimeSeconds = executionTime / 1000;
@@ -379,11 +453,15 @@ class ToolExecutor {
         console.error(`❌ [${callSid}] [TOOL EXECUTOR] Error:`, error.message || error);
 
         span.end();
-        return {
+        const failureReturn = {
           success: false,
           error: error.message || 'Tool execution failed',
           executionTime: executionTime
         };
+        if (resolvedToolName !== toolName) {
+          failureReturn.resolvedToolName = resolvedToolName;
+        }
+        return failureReturn;
       }
     } catch (error) {
       span.recordException(error);

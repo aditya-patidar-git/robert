@@ -236,7 +236,7 @@ export class ConversationService {
       }
     }
 
-    const instructions = this.promptService.getContextualInstructions({
+    let instructions = this.promptService.getContextualInstructions({
       isInitialGreeting: false,
       workflowPhase,
       courseType,
@@ -246,6 +246,14 @@ export class ConversationService {
       waitingForLanguage: waitingForLanguage && !languageSelected,
       languageSelected
     });
+
+    // Verification pending: transcript-driven responses must also get "call client_verification only" so the model doesn't call booking_step_search_client again
+    const verificationPending = conversation?.clientDetails && !conversation?.clientVerified &&
+      (workflowPhase === 'booking_existing_client' || currentStep === 5);
+    if (verificationPending) {
+      const verificationInstruction = `CRITICAL: You are in client verification. Do NOT call booking_step_search_client again. Call client_verification with ONLY what the caller has just said—one field at a time. Ask for full name first and call with fullName only when they provide it. Then ask for postcode and call with fullName (from previous result) and postcode only when the caller says their postcode. Then ask for telephone number and call with fullName, postcode, and telephoneNumber only when the caller says their number. Do NOT pass postcode or telephoneNumber from the conversation or stored clientDetails—only use what the caller actually says. After client_verification returns verified: true, call booking_step_select_session.`;
+      instructions = instructions ? `${verificationInstruction}\n\n${instructions}` : verificationInstruction;
+    }
 
     return { instructions, isInitialGreeting: false };
   }
