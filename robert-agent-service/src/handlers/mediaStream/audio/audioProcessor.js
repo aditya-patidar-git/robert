@@ -190,7 +190,8 @@ export class AudioProcessor {
             threshold: calibrated,
             prefix_padding_ms: finalStartPadding,
             silence_duration_ms: finalEndPadding,
-            create_response: false
+            create_response: false,
+            interrupt_response: (audioConfig?.bargeInPolicy === 'stop')
           }
         }
       }, { priority: 'high' });

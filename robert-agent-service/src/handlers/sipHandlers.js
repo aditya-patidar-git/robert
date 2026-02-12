@@ -358,11 +358,23 @@ export const handleCallAccept = async (req, res) => {
     const filteredTools = toolExecutor.getFilteredToolDefinitions({ workflowPhase: 'greeting', clientVerified: false });
 
     const voiceId = config.voice?.id || 'alloy';
+    const audioConfig = configManager.getAudioConfig();
     const sessionConfig = {
       type: 'realtime',
       model: config.model?.id ?? config.model ?? 'gpt-realtime',
       instructions: config.instructions || 'You are a helpful assistant.',
-      audio: { output: { voice: voiceId } },
+      audio: {
+        input: {
+          turn_detection: {
+            type: 'server_vad',
+            interrupt_response: (audioConfig?.bargeInPolicy === 'stop'),
+            threshold: (config.vadThreshold || 500) / 1000,
+            prefix_padding_ms: config.startPadding ?? 300,
+            silence_duration_ms: config.endPadding ?? 500
+          }
+        },
+        output: { voice: voiceId }
+      },
       tools: filteredTools.map(tool => ({
         type: 'function',
         name: tool.name,

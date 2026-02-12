@@ -583,7 +583,8 @@ export class OpenAIIntegration {
                 threshold: initialThreshold,
                 prefix_padding_ms: config.startPadding,
                 silence_duration_ms: config.endPadding,
-                create_response: false
+                create_response: false,
+                interrupt_response: (audioConfig?.bargeInPolicy === 'stop')
               },
               tools: tools,
               tool_choice: 'auto',
@@ -602,6 +603,7 @@ export class OpenAIIntegration {
           console.log(`   - temperature: ${Math.max(0.6, effectiveTemperature)} (flow: ${flowType})`);
           console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
           console.log(`   - turn_detection: server_vad`);
+          console.log(`   - barge_in_policy: ${audioConfig?.bargeInPolicy ?? 'pause'}, interrupt_response: ${audioConfig?.bargeInPolicy === 'stop'}`);
           console.log(`   - input_transcription: gpt-4o-transcribe (flat input_audio_transcription)`);
           if (audioConfig?.energyThresholdAutoCalibrate !== false) {
             console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
@@ -741,7 +743,8 @@ export class OpenAIIntegration {
               threshold: initialThreshold,
               prefix_padding_ms: config.startPadding,
               silence_duration_ms: config.endPadding,
-              create_response: false
+              create_response: false,
+              interrupt_response: (audioConfig?.bargeInPolicy === 'stop')
             },
             tools: tools,
             tool_choice: 'auto',
@@ -759,6 +762,7 @@ export class OpenAIIntegration {
         console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
         console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
         console.log(`   - turn_detection: server_vad`);
+        console.log(`   - barge_in_policy: ${audioConfig?.bargeInPolicy ?? 'pause'}, interrupt_response: ${audioConfig?.bargeInPolicy === 'stop'}`);
         console.log(`   - input_transcription: gpt-4o-transcribe (flat input_audio_transcription)`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
           console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
