@@ -8,6 +8,41 @@ class AbusePreventionService {
     this.MAX_CALLS_PER_WINDOW = parseInt(process.env.ABUSE_MAX_CALLS_PER_WINDOW, 10) || 100;
     this.BLOCK_DURATION_MS = parseInt(process.env.ABUSE_BLOCK_DURATION_MS, 10) || 86400000;
     this.SUSPICIOUS_PATTERN_THRESHOLD = parseInt(process.env.ABUSE_SUSPICIOUS_PATTERN_THRESHOLD, 10) || 5;
+    this.pruneInterval = null;
+  }
+
+  /**
+   * Remove expired entries from callFrequency to prevent unbounded growth.
+   * Deletes entries where the rate-limit window or block has expired.
+   */
+  pruneExpiredCallers() {
+    const now = Date.now();
+    let removed = 0;
+    for (const [callerId, data] of this.callFrequency.entries()) {
+      if (data.blocked) {
+        if (now - data.blockedAt >= this.BLOCK_DURATION_MS) {
+          this.callFrequency.delete(callerId);
+          removed++;
+        }
+      } else if (data.windowStart != null && (now - data.windowStart) > this.RATE_LIMIT_WINDOW_MS) {
+        this.callFrequency.delete(callerId);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      console.log(`🧹 [ABUSE] Pruned ${removed} expired abuse entries`);
+    }
+  }
+
+  /**
+   * Start periodic pruning of expired callFrequency entries (every 15 minutes).
+   * Call from agent index after server is listening so timers only run when agent is up.
+   */
+  startPruneInterval() {
+    if (this.pruneInterval) return;
+    const intervalMs = 15 * 60 * 1000;
+    this.pruneInterval = setInterval(() => this.pruneExpiredCallers(), intervalMs);
+    console.log('✅ [ABUSE] Prune interval started (every 15 minutes)');
   }
   
   /**

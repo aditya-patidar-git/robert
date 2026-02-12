@@ -42,12 +42,31 @@ class ConfigManager {
     };
     this.cacheTTL = 30000; // 30 seconds
     this.pollInterval = null;
+    this.pollingEnabled = true; // false when config sync client is connected
+  }
+
+  /**
+   * Enable or disable the periodic config poll (used when backend config sync is connected).
+   * @param {boolean} enabled - true to run 30s poll, false to stop it
+   */
+  setPollingEnabled(enabled) {
+    this.pollingEnabled = !!enabled;
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+    if (this.pollingEnabled) {
+      this.pollInterval = setInterval(() => this.refreshAll(), this.cacheTTL);
+      console.log('✅ [CONFIG] Polling (re)started every 30 seconds');
+    } else {
+      console.log('✅ [CONFIG] Polling disabled (config sync active)');
+    }
   }
 
   async initialize() {
     await connectDB();
     await this.refreshAll();
-    // Poll for config updates every 30 seconds
+    // Poll for config updates every 30 seconds (can be disabled when sync client connects)
     this.pollInterval = setInterval(() => this.refreshAll(), this.cacheTTL);
     console.log('✅ ConfigManager initialized and polling every 30 seconds');
   }
@@ -65,6 +84,44 @@ class ConfigManager {
       ]);
     } catch (error) {
       console.error('Error refreshing configs:', error);
+    }
+  }
+
+  /**
+   * Refresh config by backend config type (used when config_change is pushed via Socket.io).
+   * Bypasses TTL for the affected config(s). Unknown types trigger refreshAll().
+   * @param {string} configType - Backend config type: ai, audio, telephony, sip, etc.
+   */
+  async refreshByType(configType) {
+    const type = (configType || '').toLowerCase();
+    try {
+      if (type === 'ai') {
+        this.lastFetch.ai = 0;
+        await this.refreshAIConfig();
+      } else if (type === 'audio') {
+        this.lastFetch.audio = 0;
+        await this.refreshAudioConfig();
+      } else if (type === 'telephony' || type === 'sip') {
+        this.lastFetch.telephony = 0;
+        await this.refreshTelephonyConfig();
+      } else if (type === 'tools' || type === 'tool-config') {
+        this.lastFetch.tools = 0;
+        await this.refreshToolConfig();
+      } else if (type === 'conversationbehavior' || type === 'conversation-behavior') {
+        this.lastFetch.conversationBehavior = 0;
+        await this.refreshConversationBehaviorConfig();
+      } else if (type === 'flowparameter' || type === 'flow-parameter') {
+        this.lastFetch.flowParameterOverrides = 0;
+        await this.refreshFlowParameterOverrides();
+      } else if (type === 'crmtasks' || type === 'crm-tasks') {
+        this.lastFetch.crmTasks = 0;
+        await this.refreshCRMTasksConfig();
+      } else {
+        // privacy, payment-gateway, email-template, sms-template, model-discovery, etc.
+        await this.refreshAll();
+      }
+    } catch (error) {
+      console.error(`Error refreshing config by type "${configType}":`, error);
     }
   }
 

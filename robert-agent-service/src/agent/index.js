@@ -30,6 +30,7 @@ import kbMigrationJob from '../jobs/kbMigrationJob.js';
 import kbDriftDetectionJob from '../jobs/kbDriftDetectionJob.js';
 import { initializeTelemetry, shutdownTelemetry } from '../utils/telemetry.js';
 import { initializeMetrics } from '../services/metricsService.js';
+import configSyncClient from '../services/configSyncClient.js';
 
 // Initialize OpenTelemetry before other imports
 initializeTelemetry();
@@ -100,6 +101,9 @@ const wss = new WebSocketServer({ noServer: true });
 // In-memory lock to prevent duplicate calls (simple debouncing)
 const pendingCalls = new Map(); // phoneNumber -> timestamp
 
+// Cached sipService for root health route (avoids repeated dynamic import)
+let _sipService = null;
+
 // Add error handler to WebSocket server
 wss.on('error', (error) => {
   console.error('❌ WebSocket server error:', error.message);
@@ -115,12 +119,17 @@ app.use(express.urlencoded({ extended: true })); // Required for Twilio form-enc
 
 // Initialize config manager
 await configManager.initialize();
+if (process.env.BACKEND_URL) {
+  configSyncClient.start(configManager);
+}
 
 // Basic health check (backward compatible)
 app.get('/', async (_, res) => {
-  const sipService = (await import('../services/sipService.js')).default;
-  const sipStats = sipService.getStats();
-  const sipValidation = sipService.validateOnStartup();
+  if (_sipService === null) {
+    _sipService = (await import('../services/sipService.js')).default;
+  }
+  const sipStats = _sipService.getStats();
+  const sipValidation = _sipService.validateOnStartup();
   
   res.json({ 
     status: 'ok', 
@@ -389,15 +398,18 @@ app.get('/api/test/email-connection', async (req, res) => {
 
 app.use('/api/gmail', gmailOAuthRoutes);
 
-// API Routes - SIP (OpenAI Realtime SIP webhooks)
-// Add diagnostic logging middleware for ALL SIP webhook requests
+// API Routes - SIP (OpenAI Realtime SIP webhooks) - verbose logging only when SIP_DEBUG=true
 app.use('/api/sip', (req, res, next) => {
   const timestamp = new Date().toISOString();
-  console.log(`🔍 [SIP WEBHOOK] ${timestamp} - ${req.method} ${req.path}`);
-  console.log(`🔍 [SIP WEBHOOK] Headers:`, JSON.stringify(req.headers, null, 2));
-  console.log(`🔍 [SIP WEBHOOK] Body:`, JSON.stringify(req.body, null, 2));
-  console.log(`🔍 [SIP WEBHOOK] Query:`, JSON.stringify(req.query, null, 2));
-  console.log(`🔍 [SIP WEBHOOK] IP: ${req.ip}, User-Agent: ${req.get('user-agent')}`);
+  if (process.env.SIP_DEBUG === 'true') {
+    console.log(`🔍 [SIP WEBHOOK] ${timestamp} - ${req.method} ${req.path}`);
+    console.log(`🔍 [SIP WEBHOOK] Headers:`, JSON.stringify(req.headers, null, 2));
+    console.log(`🔍 [SIP WEBHOOK] Body:`, JSON.stringify(req.body, null, 2));
+    console.log(`🔍 [SIP WEBHOOK] Query:`, JSON.stringify(req.query, null, 2));
+    console.log(`🔍 [SIP WEBHOOK] IP: ${req.ip}, User-Agent: ${req.get('user-agent')}`);
+  } else {
+    console.log(`🔍 [SIP WEBHOOK] ${timestamp} ${req.method} ${req.path}`);
+  }
   next();
 });
 
@@ -579,6 +591,8 @@ server.listen(PORT, async () => {
     scheduler.registerJob(kbDriftDetectionJob.name, kbDriftDetectionJob.schedule, kbDriftDetectionJob.run);
     scheduler.start();
     console.log(`⏰ Scheduled jobs initialized: ${scheduler.getJobs().length} jobs registered`);
+    const abusePreventionService = (await import('../services/abusePreventionService.js')).default;
+    abusePreventionService.startPruneInterval?.();
   } catch (error) {
     console.error('❌ Error initializing scheduled jobs:', error);
     // Don't fail startup if jobs fail to initialize
@@ -625,6 +639,7 @@ async function cleanupAllActiveConnections() {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
+  configSyncClient.stop();
   await cleanupAllActiveConnections();
   scheduler.stop();
   await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
@@ -637,6 +652,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully...');
+  configSyncClient.stop();
   await cleanupAllActiveConnections();
   scheduler.stop();
   await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
