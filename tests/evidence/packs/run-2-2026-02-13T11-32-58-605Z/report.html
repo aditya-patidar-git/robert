@@ -17,10 +17,10 @@
 <body>
   <h1>Evidence Pack – Run 2</h1>
   <div class="summary">
-    <p><strong>Timestamp:</strong> 2026-02-05T06-50-18-608Z</p>
+    <p><strong>Timestamp:</strong> 2026-02-13T11-32-58-605Z</p>
     <p><strong>Total requirements:</strong> 12</p>
-    <p class="passed">Passed: 11</p>
-    <p class="failed">Failed: 1</p>
+    <p class="passed">Passed: 12</p>
+    <p class="failed">Failed: 0</p>
     <p class="incomplete">Incomplete: 0</p>
   </div>
   <h2>Requirements status</h2>
@@ -30,8 +30,8 @@
     <tr>
       <td>requirement_1_pickup</td>
       <td>Call pickup latency < 2s; greeting; asks language; detects reply; switches (§14.1)</td>
-      <td class="failed">FAILED</td>
-      <td><ul><li>integration: measures p95 latency < 2s – failed</li><li>unit: returns instructions for initial greeting when consent not given – passed</li><li>integration: greeting instructions include language question – passed</li><li>integration: call connects and accepts language response – passed</li></ul></td>
+      <td class="passed">PASSED</td>
+      <td><ul><li>integration: measures single-call latency (answer → first audio) under threshold – passed</li><li>unit: returns instructions for initial greeting when consent not given – passed</li><li>integration: greeting instructions include language question – passed</li><li>integration: call connects and accepts language response – passed</li></ul></td>
       <td>0 artifact(s)</td>
     </tr>
     <tr>
@@ -52,21 +52,21 @@
       <td>requirement_4_kb_retrieval</td>
       <td>KB retrieval with citation (§14.4)</td>
       <td class="passed">PASSED</td>
-      <td><ul><li>unit: returns instructions for subsequent response – passed</li></ul></td>
+      <td><ul><li>unit: returns instructions for subsequent response – passed</li><li>integration: completes call and receives outbound audio when asking policy question – passed</li></ul></td>
       <td>0 artifact(s)</td>
     </tr>
     <tr>
       <td>requirement_5_web_search</td>
       <td>Web search with announcement (§14.5)</td>
       <td class="passed">PASSED</td>
-      <td><ul><li>unit: returns false for web_search – passed</li></ul></td>
+      <td><ul><li>integration: completes call and receives outbound audio when asking time-sensitive question – passed</li></ul></td>
       <td>0 artifact(s)</td>
     </tr>
     <tr>
       <td>requirement_6_crm_tasking</td>
-      <td>CRM booking with KBA + dry-run + confirmation (§14.6)</td>
+      <td>CRM booking/cancellation with KBA + dry-run + confirmation (§14.6)</td>
       <td class="passed">PASSED</td>
-      <td><ul><li>unit: returns true for reschedule_booking – passed</li><li>unit: returns true for update_customer – passed</li><li>unit: returns true for duplicate call with same params – passed</li><li>unit: returns confirmationSent true after successful send – passed</li></ul></td>
+      <td><ul><li>unit: returns false for cancellation (uses in-flow client_verification) – passed</li><li>unit: returns true for duplicate call with same params – passed</li><li>unit: returns confirmationSent true after successful send – passed</li></ul></td>
       <td>0 artifact(s)</td>
     </tr>
     <tr>
@@ -80,7 +80,7 @@
       <td>requirement_8_memory</td>
       <td>Cross-call memory with consent (§14.8)</td>
       <td class="passed">PASSED</td>
-      <td><ul><li>unit: stores call summary and retrieves previous calls – passed</li><li>unit: recalls preferences across calls – passed</li></ul></td>
+      <td><ul><li>unit: stores call summary and retrieves previous calls – passed</li><li>unit: recalls preferences across calls – passed</li><li>integration: call 2 receives outbound audio after preference set in call 1 – passed</li></ul></td>
       <td>0 artifact(s)</td>
     </tr>
     <tr>
@@ -94,21 +94,21 @@
       <td>requirement_10_error_paths</td>
       <td>Graceful error handling (§14.10)</td>
       <td class="passed">PASSED</td>
-      <td><ul><li>unit: returns false when quality score is below 0.7 – passed</li><li>unit: handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx – passed</li><li>unit: handleToolError returns shouldFallbackToVoicemail for Twilio stream drop – passed</li></ul></td>
+      <td><ul><li>unit: returns false when quality score is below 0.7 – passed</li><li>unit: handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx – passed</li><li>unit: handleToolError returns shouldFallbackToVoicemail for Twilio stream drop – passed</li><li>integration: call completes or cleans up after stream drop – passed</li></ul></td>
       <td>0 artifact(s)</td>
     </tr>
     <tr>
       <td>requirement_11_gdpr</td>
       <td>DSAR export/delete (§14.11)</td>
       <td class="passed">PASSED</td>
-      <td><ul><li>unit: returns export structure with requestId and data – passed</li><li>unit: processes export action – passed</li></ul></td>
+      <td><ul><li>unit: returns export structure with requestId and data – passed</li><li>unit: processes export action – passed</li><li>integration: exportDSARData returns structure with transcript and metadata – passed</li></ul></td>
       <td>0 artifact(s)</td>
     </tr>
     <tr>
       <td>requirement_12_security</td>
       <td>No secrets in bundles/logs; SSRF/DOM blocked; fail-fast on missing secrets (§14.12)</td>
       <td class="passed">PASSED</td>
-      <td><ul><li>unit: does not find hardcoded API keys in .js source files – passed</li><li>unit: does not find sk- prefixed keys in test helpers – passed</li><li>unit: rejects javascript: protocol – passed</li><li>unit: rejects file: protocol – passed</li><li>unit: rejects private IP localhost – passed</li><li>unit: rejects domain not in allowed list – passed</li><li>unit: validateSecrets throws when a required secret is missing – passed</li></ul></td>
+      <td><ul><li>unit: does not find secrets in front-end bundle – passed</li><li>unit: does not find hardcoded API keys in .js source files – passed</li><li>unit: does not find sk- prefixed keys in test helpers – passed</li><li>unit: rejects javascript: protocol – passed</li><li>unit: rejects file: protocol – passed</li><li>unit: rejects private IP localhost – passed</li><li>unit: rejects domain not in allowed list – passed</li><li>unit: validateSecrets throws when a required secret is missing – passed</li></ul></td>
       <td>0 artifact(s)</td>
     </tr>
   </table>

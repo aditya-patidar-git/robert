@@ -12,8 +12,8 @@ describe('KBAService', () => {
   });
 
   describe('requiresKBA', () => {
-    it('returns true for cancellation', () => {
-      expect(kbaService.requiresKBA('cancellation_step_verify_booking_intent', {})).toBe(true);
+    it('returns false for cancellation (uses in-flow client_verification)', () => {
+      expect(kbaService.requiresKBA('cancellation_step_verify_booking_intent', {})).toBe(false);
     });
 
     it('returns true for transfer_call', () => {

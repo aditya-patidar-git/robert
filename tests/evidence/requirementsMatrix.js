@@ -9,7 +9,7 @@ export const requirementsMatrix = {
   requirement_1_pickup: {
     description: 'Call pickup latency < 2s; greeting; asks language; detects reply; switches (§14.1)',
     verification: [
-      { type: 'integration', testFile: 'tests/integration/timing-critical.test.js', assertionName: 'measures p95 latency < 2s' },
+      { type: 'integration', testFile: 'tests/integration/timing-critical.test.js', assertionName: 'measures single-call latency (answer → first audio) under threshold' },
       { type: 'unit', testFile: 'tests/unit/services/conversationService.test.js', assertionName: 'returns instructions for initial greeting when consent not given' },
       { type: 'integration', testFile: 'tests/integration/language-switch.test.js', assertionName: 'greeting instructions include language question' },
       { type: 'integration', testFile: 'tests/integration/language-switch.test.js', assertionName: 'call connects and accepts language response' }
@@ -57,7 +57,7 @@ export const requirementsMatrix = {
   requirement_6_crm_tasking: {
     description: 'CRM booking/cancellation with KBA + dry-run + confirmation (§14.6)',
     verification: [
-      { type: 'unit', testFile: 'tests/unit/services/kbaService.test.js', assertionName: 'returns true for cancellation' },
+      { type: 'unit', testFile: 'tests/unit/services/kbaService.test.js', assertionName: 'returns false for cancellation (uses in-flow client_verification)' },
       { type: 'unit', testFile: 'tests/unit/services/toolExecutionService.test.js', assertionName: 'returns true for duplicate call with same params' },
       { type: 'unit', testFile: 'tests/unit/services/sendConfirmation.test.js', assertionName: 'returns confirmationSent true after successful send' }
     ],

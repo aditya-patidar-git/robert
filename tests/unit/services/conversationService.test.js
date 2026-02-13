@@ -131,7 +131,7 @@ describe('ConversationService', () => {
       const context = {
         callSid: 'test-123',
         state: { activeToolName: null, activeResponseId: null },
-        conversation: {},
+        conversation: { _cachedPrivacySettings: { recording: { requireExplicitConsent: false } } },
         hasInitialGreetingBeenSent: true
       };
       const result = await service.getResponseInstructions(context);
