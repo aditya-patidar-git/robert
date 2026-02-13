@@ -24,10 +24,20 @@ export function twilioWebhookAuth(req, res, next) {
     return res.status(403).json({ error: 'Missing X-Twilio-Signature' });
   }
 
-  // Build the full URL Twilio used (must match what Twilio has on file)
-  const protocol = req.protocol || 'https';
-  const host = req.get('host') || '';
-  const fullUrl = `${protocol}://${host}${req.originalUrl || req.url}`;
+  // Build the full URL Twilio used (must match what Twilio has on file).
+  // When behind a tunnel, req.protocol/host may be the proxy's; use configured public URL so validation succeeds.
+  const path = req.originalUrl || req.url || '';
+  let fullUrl;
+  if (process.env.TUNNEL_DOMAIN) {
+    fullUrl = `https://${process.env.TUNNEL_DOMAIN.replace(/^https?:\/\//, '')}${path}`;
+  } else if (process.env.BASE_URL) {
+    const base = process.env.BASE_URL.replace(/\/$/, '');
+    fullUrl = `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  } else {
+    const protocol = req.protocol || 'https';
+    const host = req.get('host') || '';
+    fullUrl = `${protocol}://${host}${path}`;
+  }
 
   // POST body (form params) or GET query
   const params = req.method === 'GET' ? req.query : (req.body || {});

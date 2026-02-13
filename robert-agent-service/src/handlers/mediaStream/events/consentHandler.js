@@ -77,6 +77,8 @@ export class ConsentHandler {
    */
   async handleRecordingConsent(transcript) {
     const { conversations } = await import('../../../shared/state.js');
+    const conv = conversations[this.state.callSid];
+    if (!conv?.recordingConsent) return;
     const flowState = getConversationFlowState(this.state.callSid, this.state);
     if (flowState.waitingForLanguage && !flowState.languageSelected) {
       return;
@@ -95,12 +97,14 @@ export class ConsentHandler {
       this.state.consentTimeout = null;
       // Restart timeout
       this.state.consentTimeout = setTimeout(() => {
-        if (this.state.recordingConsentState.given === null && conversations[this.state.callSid].recordingConsent.given === null) {
+        if (this.state.recordingConsentState.given === null && conv?.recordingConsent?.given === null) {
           this.state.recordingConsentState.given = true;
           this.state.recordingConsentState.respondedAt = new Date();
-          conversations[this.state.callSid].recordingConsent.given = true;
-          conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
-          conversations[this.state.callSid].recordingConsent.optOutReason = null;
+          if (conv?.recordingConsent) {
+            conv.recordingConsent.given = true;
+            conv.recordingConsent.respondedAt = new Date();
+            conv.recordingConsent.optOutReason = null;
+          }
           console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-in`);
         }
       }, this.state.CONSENT_TIMEOUT_MS);
@@ -118,22 +122,19 @@ export class ConsentHandler {
       }
       
       const consentData = {
-        requested: conversations[this.state.callSid].recordingConsent?.requested || false,
+        requested: conv.recordingConsent?.requested || false,
         given: true,
-        requestedAt: conversations[this.state.callSid].recordingConsent?.requestedAt || null,
+        requestedAt: conv.recordingConsent?.requestedAt || null,
         respondedAt: new Date(),
         optOutReason: null
       };
       
       this.state.recordingConsentState.given = true;
       this.state.recordingConsentState.respondedAt = consentData.respondedAt;
-      conversations[this.state.callSid].recordingConsent.given = true;
-      conversations[this.state.callSid].recordingConsent.respondedAt = consentData.respondedAt;
-      // Clear any unclear count when consent is given
-      if (conversations[this.state.callSid].recordingConsent.unclearCount) {
-        conversations[this.state.callSid].recordingConsent.unclearCount = 0;
-      }
-      conversations[this.state.callSid].recordingConsent.needsRepeat = false;
+      conv.recordingConsent.given = true;
+      conv.recordingConsent.respondedAt = consentData.respondedAt;
+      if (conv.recordingConsent.unclearCount) conv.recordingConsent.unclearCount = 0;
+      conv.recordingConsent.needsRepeat = false;
       
       // CRITICAL: Save consent to CallRecord immediately so it's available when recording webhook arrives
       try {
@@ -156,12 +157,8 @@ export class ConsentHandler {
       console.log(`✅ [${this.state.callSid}] Recording consent GIVEN by user: "${transcript}"`);
       
       // CRITICAL: After consent is given, proceed to main follow-up
-      // NEW ORDER: Language preference (greeting) → Consent question → Main follow-up
-      // Both language and consent are now complete, so proceed to main conversation
-      this.state.waitingForLanguage = false; // Language should already be selected at this point
-      if (conversations[this.state.callSid]) {
-        conversations[this.state.callSid].waitingForLanguage = false;
-      }
+      this.state.waitingForLanguage = false;
+      if (conv) conv.waitingForLanguage = false;
       console.log(`✅ [${this.state.callSid}] Consent given - proceeding to main follow-up ("What would you like to do today?")`);
     } else if (declineDetected) {
       // Clear timeout immediately
@@ -172,29 +169,18 @@ export class ConsentHandler {
       
       this.state.recordingConsentState.given = false;
       this.state.recordingConsentState.respondedAt = new Date();
-      conversations[this.state.callSid].recordingConsent.given = false;
-      conversations[this.state.callSid].recordingConsent.respondedAt = new Date();
-      conversations[this.state.callSid].recordingConsent.optOutReason = transcript;
-      // Clear any unclear count when consent is declined
-      if (conversations[this.state.callSid].recordingConsent.unclearCount) {
-        conversations[this.state.callSid].recordingConsent.unclearCount = 0;
-      }
-      conversations[this.state.callSid].recordingConsent.needsRepeat = false;
+      conv.recordingConsent.given = false;
+      conv.recordingConsent.respondedAt = new Date();
+      conv.recordingConsent.optOutReason = transcript;
+      if (conv.recordingConsent.unclearCount) conv.recordingConsent.unclearCount = 0;
+      conv.recordingConsent.needsRepeat = false;
       console.log(`❌ [${this.state.callSid}] Recording consent DECLINED by user: "${transcript}"`);
     } else if (isUnclearResponse) {
-      // Track unclear responses
-      if (!conversations[this.state.callSid].recordingConsent.unclearCount) {
-        conversations[this.state.callSid].recordingConsent.unclearCount = 0;
-      }
-      conversations[this.state.callSid].recordingConsent.unclearCount++;
-      
-      console.log(`⚠️ [${this.state.callSid}] Unclear consent response (attempt ${conversations[this.state.callSid].recordingConsent.unclearCount}), waiting for clarification: "${transcript}"`);
-      
-      // If unclear response detected, mark that we need to repeat the question
-      // This will be handled by the OpenAI integration checking the state
-      if (conversations[this.state.callSid].recordingConsent.unclearCount >= 1) {
-        // Mark that we need to repeat the question
-        conversations[this.state.callSid].recordingConsent.needsRepeat = true;
+      if (!conv.recordingConsent.unclearCount) conv.recordingConsent.unclearCount = 0;
+      conv.recordingConsent.unclearCount++;
+      console.log(`⚠️ [${this.state.callSid}] Unclear consent response (attempt ${conv.recordingConsent.unclearCount}), waiting for clarification: "${transcript}"`);
+      if (conv.recordingConsent.unclearCount >= 1) {
+        conv.recordingConsent.needsRepeat = true;
         console.log(`🔄 [${this.state.callSid}] Marking consent question for repeat due to unclear response`);
       }
     }

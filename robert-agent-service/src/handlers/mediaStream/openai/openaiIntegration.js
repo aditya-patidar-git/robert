@@ -343,6 +343,23 @@ export class OpenAIIntegration {
         // Ensure required properties exist
         await this.ensureConversationState();
       }
+      // Defensive: ensure conversation exists so no code path reads recordingConsent on undefined
+      if (!conversations[this.state.callSid]) {
+        sessionManagementService.initializeSession(this.state.callSid, {
+          language: 'en-GB',
+          realtimeWs: this.ws,
+          from: this.state.phoneNumber,
+          to: this.state.phoneNumber,
+          callType: 'Twilio',
+          recordingConsent: { requested: false, given: null, requestedAt: null, respondedAt: null },
+          memoryConsent: { requested: false, given: null, requestedAt: null, respondedAt: null },
+          kba: { verified: false, method: null, verifiedAt: null, otpVerified: false, otpVerifiedAt: null, email: null, postcode: null, bookingReference: null }
+        });
+      }
+      const conv = conversations[this.state.callSid];
+      if (!conv.recordingConsent) {
+        conv.recordingConsent = { requested: false, given: null, requestedAt: null, respondedAt: null };
+      }
       const { ensureCallRecordCallerIdentity } = await import('../../../services/callRecordPersistenceService.js');
       await ensureCallRecordCallerIdentity(this.state.callSid, { from: this.state.phoneNumber, to: this.state.phoneNumber });
 
@@ -352,17 +369,15 @@ export class OpenAIIntegration {
       if (privacyConfig) {
         privacySettings = await privacyConfig.findOne({ isActive: true }).lean().catch(() => null);
         // OPTIMIZATION: Cache privacy settings in conversation for reuse
-        if (privacySettings && conversations[this.state.callSid]) {
-          conversations[this.state.callSid]._cachedPrivacySettings = privacySettings;
-        }
+        if (privacySettings && conv) conv._cachedPrivacySettings = privacySettings;
       }
       
       const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
       const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
       const consentQuestion = "Do you consent to this call being recorded?";
       
-      // CRITICAL FIX: Check if consent was already set by handleIncomingCall
-      const existingConsent = conversations[this.state.callSid]?.recordingConsent;
+      // CRITICAL FIX: Check if consent was already set by handleIncomingCall (conv already ensured above)
+      const existingConsent = conv.recordingConsent;
       const consentAlreadySet = existingConsent?.given === true;
       
       // Modify instructions to include recording consent flow at the start
@@ -374,24 +389,19 @@ export class OpenAIIntegration {
           consentQuestion,
           baseInstructions: config.instructions
         });
-        if (!conversations[this.state.callSid].recordingConsent) {
-          conversations[this.state.callSid].recordingConsent = {};
-        }
-        conversations[this.state.callSid].recordingConsent.requested = false;
-        conversations[this.state.callSid].recordingConsent.given = null;
+        conv.recordingConsent.requested = false;
+        conv.recordingConsent.given = null;
         this.state.waitingForLanguage = true;
         this.state.languagePreferenceState.asked = false;
-        if (conversations[this.state.callSid]) {
-          conversations[this.state.callSid].waitingForLanguage = true;
-          if (!conversations[this.state.callSid].languagePreferenceState) {
-            conversations[this.state.callSid].languagePreferenceState = {
-              asked: false,
-              selected: false,
-              language: null,
-              askedAt: null,
-              selectedAt: null
-            };
-          }
+        conv.waitingForLanguage = true;
+        if (!conv.languagePreferenceState) {
+          conv.languagePreferenceState = {
+            asked: false,
+            selected: false,
+            language: null,
+            askedAt: null,
+            selectedAt: null
+          };
         }
         console.log(`📋 [${this.state.callSid}] Recording consent will be requested after language selection - instructions include flow (greeting → consent → follow-up)`);
       } else if (consentAlreadySet) {
@@ -399,14 +409,10 @@ export class OpenAIIntegration {
         this.state.recordingConsentState.requested = existingConsent.requested || false;
         this.state.recordingConsentState.given = true;
         this.state.recordingConsentState.respondedAt = existingConsent.respondedAt || new Date();
-        // Ensure conversation state is updated
-        if (!conversations[this.state.callSid].recordingConsent) {
-          conversations[this.state.callSid].recordingConsent = {};
-        }
-        conversations[this.state.callSid].recordingConsent.requested = existingConsent.requested || false;
-        conversations[this.state.callSid].recordingConsent.given = true;
-        conversations[this.state.callSid].recordingConsent.respondedAt = existingConsent.respondedAt || new Date();
-        conversations[this.state.callSid].recordingConsent.optOutReason = null;
+        conv.recordingConsent.requested = existingConsent.requested || false;
+        conv.recordingConsent.given = true;
+        conv.recordingConsent.respondedAt = existingConsent.respondedAt || new Date();
+        conv.recordingConsent.optOutReason = null;
         console.log(`✅ [${this.state.callSid}] Recording consent already set (given: true) - skipping consent question`);
       } else {
         // Opt-in by default: automatically set consent to given
@@ -419,10 +425,10 @@ export class OpenAIIntegration {
         this.state.recordingConsentState.requested = consentData.requested;
         this.state.recordingConsentState.given = consentData.given;
         this.state.recordingConsentState.respondedAt = consentData.respondedAt;
-        conversations[this.state.callSid].recordingConsent.requested = consentData.requested;
-        conversations[this.state.callSid].recordingConsent.given = consentData.given;
-        conversations[this.state.callSid].recordingConsent.respondedAt = consentData.respondedAt;
-        conversations[this.state.callSid].recordingConsent.optOutReason = consentData.optOutReason;
+        conv.recordingConsent.requested = consentData.requested;
+        conv.recordingConsent.given = consentData.given;
+        conv.recordingConsent.respondedAt = consentData.respondedAt;
+        conv.recordingConsent.optOutReason = consentData.optOutReason;
         
         // CRITICAL: Save consent to CallRecord immediately so it's available when recording webhook arrives
         try {
@@ -447,17 +453,15 @@ export class OpenAIIntegration {
         // CRITICAL: Even when consent is opt-in, we MUST still ask language preference
         this.state.waitingForLanguage = true;
         this.state.languagePreferenceState.asked = false;
-        if (conversations[this.state.callSid]) {
-          conversations[this.state.callSid].waitingForLanguage = true;
-          if (!conversations[this.state.callSid].languagePreferenceState) {
-            conversations[this.state.callSid].languagePreferenceState = {
-              asked: false,
-              selected: false,
-              language: null,
-              askedAt: null,
-              selectedAt: null
-            };
-          }
+        conv.waitingForLanguage = true;
+        if (!conv.languagePreferenceState) {
+          conv.languagePreferenceState = {
+            asked: false,
+            selected: false,
+            language: null,
+            askedAt: null,
+            selectedAt: null
+          };
         }
         console.log(`🌐 [${this.state.callSid}] Consent opt-in - language preference MUST be asked`);
       }
@@ -637,6 +641,7 @@ export class OpenAIIntegration {
   async ensureConversationState() {
     const { conversations } = await import('../../../shared/state.js');
     const conv = conversations[this.state.callSid];
+    if (!conv) return;
     
     if (!conv.recordingConsent) {
       conv.recordingConsent = {

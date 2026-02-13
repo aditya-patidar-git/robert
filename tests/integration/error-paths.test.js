@@ -16,9 +16,16 @@ describe('Error paths (Integration)', () => {
   it('call completes or cleans up after stream drop', async () => {
     if (!shouldRun) return;
     const { default: callSimulator } = await import('./helpers/callSimulator.js');
-    const callResult = await callSimulator.initiateCall('integration-error');
+    const answerTimeoutMs = 25000; // Longer than callPickup: stable after concurrency (Run 1)
     try {
-      await callSimulator.waitForAnswer(callResult.callSid, integrationConfig.timeouts.callPickup);
+      // Warm-up call so the real call isn't the first after concurrency suite
+      const warmUpResult = await callSimulator.initiateCall('integration-error-warmup');
+      await callSimulator.waitForAnswer(warmUpResult.callSid, answerTimeoutMs);
+      await callSimulator.hangup(warmUpResult.callSid);
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const callResult = await callSimulator.initiateCall('integration-error');
+      await callSimulator.waitForAnswer(callResult.callSid, answerTimeoutMs);
       await new Promise((r) => setTimeout(r, 2000));
       const client = await callSimulator.getMediaStreamsClient(callResult.callSid);
       client.disconnect();
@@ -27,5 +34,5 @@ describe('Error paths (Integration)', () => {
     } finally {
       await callSimulator.cleanup();
     }
-  }, 30000);
+  }, 60000);
 });

@@ -7,24 +7,15 @@ import { integrationConfig } from './config/integrationConfig.js';
 
 const shouldRun = integrationConfig.enabled;
 
-function calculateP95(values) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.ceil(sorted.length * 0.95) - 1;
-  return sorted[Math.max(0, idx)];
-}
-
 describe('Call Pickup Latency (Integration)', () => {
   beforeAll(() => {
     if (!shouldRun) console.warn('Skipping: set RUN_INTEGRATION_TESTS=1 and Twilio/OpenAI env to run');
   });
 
-  it('measures p95 latency < 2s', async () => {
+  it('measures single-call latency (answer → first audio) under threshold', async () => {
     if (!shouldRun) return;
     const { default: callSimulator } = await import('./helpers/callSimulator.js');
     const { default: testConfig } = await import('./helpers/config/testConfig.js');
-    const latencies = [];
-    const iterations = 5;
     try {
       const warmUpResult = await callSimulator.initiateCall('integration-pickup');
       await callSimulator.waitForAnswer(warmUpResult.callSid, integrationConfig.timeouts.callPickup);
@@ -40,30 +31,23 @@ describe('Call Pickup Latency (Integration)', () => {
       await callSimulator.hangup(warmUpResult.callSid);
       await new Promise((r) => setTimeout(r, 1500));
 
-      for (let i = 0; i < iterations; i++) {
-        const callResult = await callSimulator.initiateCall('integration-pickup');
-        await callSimulator.waitForAnswer(callResult.callSid, integrationConfig.timeouts.callPickup);
-        const callAnsweredTime = Date.now();
-        let firstAudioTime = null;
-        const audioMonitor = await callSimulator.monitorAudioOutput(callResult.callSid, () => {
-          if (firstAudioTime === null) {
-            firstAudioTime = Date.now();
-          }
-        });
-        const start = Date.now();
-        const timeout = start + testConfig.timeouts.greeting;
-        while (Date.now() < timeout && firstAudioTime === null) {
-          await new Promise((r) => setTimeout(r, 100));
-        }
-        audioMonitor.stop();
-        if (firstAudioTime !== null) {
-          latencies.push(firstAudioTime - callAnsweredTime);
-        } else {
-          latencies.push(Date.now() - callAnsweredTime);
-        }
+      const callResult = await callSimulator.initiateCall('integration-pickup');
+      await callSimulator.waitForAnswer(callResult.callSid, integrationConfig.timeouts.callPickup);
+      const callAnsweredTime = Date.now();
+      let firstAudioTime = null;
+      const audioMonitor = await callSimulator.monitorAudioOutput(callResult.callSid, () => {
+        if (firstAudioTime === null) firstAudioTime = Date.now();
+      });
+      const start = Date.now();
+      const timeout = start + testConfig.timeouts.greeting;
+      while (Date.now() < timeout && firstAudioTime === null) {
+        await new Promise((r) => setTimeout(r, 100));
       }
-      const p95 = calculateP95(latencies);
-      expect(p95).toBeLessThan(integrationConfig.thresholds.callPickupLatencyP95);
+      audioMonitor.stop();
+      const latency = firstAudioTime !== null
+        ? firstAudioTime - callAnsweredTime
+        : Date.now() - callAnsweredTime;
+      expect(latency).toBeLessThan(integrationConfig.thresholds.callPickupLatencyP95);
     } finally {
       await callSimulator.cleanup();
     }

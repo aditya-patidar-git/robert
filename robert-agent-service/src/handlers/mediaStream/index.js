@@ -194,30 +194,32 @@ export const handleMediaStreamConnection = (ws, req) => {
             // (moved to responseHandler.handleResponseDone to avoid blocking conversation start)
             
             // Start recording for inbound calls (once per call; consent checked by recording service)
-            try {
-                const conversation = conversations[callSid] || {};
-                if (!conversation.recordingStarted && recordingService.shouldRecordCall(conversation)) {
-                    const callbackUrl = recordingService.getRecordingCallbackUrl('inbound');
-                    const recordingResult = await recordingService.startCallRecording(callSid, {
-                        statusCallbackUrl: callbackUrl
+            // Fire-and-forget so start handler returns immediately; T3 and conversation updates run in .then
+            const conversation = conversations[callSid] || {};
+            if (!conversation.recordingStarted && recordingService.shouldRecordCall(conversation)) {
+                const callbackUrl = recordingService.getRecordingCallbackUrl('inbound');
+                recordingService.startCallRecording(callSid, {
+                    statusCallbackUrl: callbackUrl
+                })
+                    .then((recordingResult) => {
+                        if (recordingResult.success || recordingResult.error === 'already_recording') {
+                            if (!conversations[callSid]) conversations[callSid] = {};
+                            conversations[callSid].recordingStarted = true;
+                            console.log(`[PICKUP_LATENCY] [${callSid}] T3 recording_started ${stateManager.pickupLatencyMs()}ms`);
+                        }
+                        if (recordingResult.success) {
+                            console.log(`🎙️ [${callSid}] Recording started for inbound call`);
+                        } else if (recordingResult.error !== 'already_recording') {
+                            console.warn(`⚠️ [${callSid}] Could not start recording: ${recordingResult.message}`);
+                        }
+                    })
+                    .catch((recordingError) => {
+                        console.warn(`⚠️ [${callSid}] Recording setup error (non-blocking):`, recordingError.message);
                     });
-                    if (recordingResult.success || recordingResult.error === 'already_recording') {
-                        if (!conversations[callSid]) conversations[callSid] = {};
-                        conversations[callSid].recordingStarted = true;
-                        console.log(`[PICKUP_LATENCY] [${callSid}] T3 recording_started ${latency()}ms`);
-                    }
-                    if (recordingResult.success) {
-                        console.log(`🎙️ [${callSid}] Recording started for inbound call`);
-                    } else if (recordingResult.error !== 'already_recording') {
-                        console.warn(`⚠️ [${callSid}] Could not start recording: ${recordingResult.message}`);
-                    }
-                } else if (!conversation.recordingStarted) {
-                    console.log(`🔇 [${callSid}] Recording skipped - consent not given`);
-                }
-            } catch (recordingError) {
-                console.warn(`⚠️ [${callSid}] Recording setup error (non-blocking):`, recordingError.message);
+            } else if (!conversation.recordingStarted) {
+                console.log(`🔇 [${callSid}] Recording skipped - consent not given`);
             }
-            
+
             return { success: true };
         });
         
