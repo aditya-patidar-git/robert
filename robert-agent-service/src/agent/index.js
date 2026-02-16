@@ -636,30 +636,23 @@ async function cleanupAllActiveConnections() {
   }
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully...');
+// Graceful shutdown (single path to avoid double cleanup when both SIGTERM and SIGINT fire)
+let shuttingDown = false;
+async function doShutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log('Shutting down gracefully...');
   configSyncClient.stop();
   await cleanupAllActiveConnections();
   scheduler.stop();
-  await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
+  await browserAgentService.shutdown();
   configManager.destroy();
   await shutdownTelemetry();
   server.close(() => {
     process.exit(0);
   });
-});
+}
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully...');
-  configSyncClient.stop();
-  await cleanupAllActiveConnections();
-  scheduler.stop();
-  await browserAgentService.shutdown(); // Use shutdown() for proper pool cleanup
-  configManager.destroy();
-  await shutdownTelemetry();
-  server.close(() => {
-    process.exit(0);
-  });
-});
+process.on('SIGTERM', () => { doShutdown(); });
+process.on('SIGINT', () => { doShutdown(); });
 

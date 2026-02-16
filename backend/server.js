@@ -67,6 +67,8 @@ import { setIO as setWebSocketIO } from "./services/websocketService.js";
 import { proxyRecording } from "./controllers/outboundController.js";
 import { protect as authenticateToken } from "./middleware/authMiddleware.js";
 import { ipAllowlistMiddleware, logBypassIfActive } from "./middleware/ipAllowlistMiddleware.js";
+import { agentApiKeyMiddleware } from "./middleware/agentApiKeyMiddleware.js";
+import { socketAuthMiddleware } from "./middleware/socketAuthMiddleware.js";
 import forceHttpsMiddleware from "./middleware/forceHttpsMiddleware.js";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
@@ -83,6 +85,8 @@ export const io = new Server(httpServer, {
     credentials: true
   }
 });
+
+io.use(socketAuthMiddleware);
 
 // Set io instance in services (must be done after io is created)
 setConfigSyncIO(io);
@@ -105,7 +109,7 @@ logBypassIfActive();
 
 // MongoDB connection (MONGO_URI already asserted in assertEnv)
 const mongoUri = process.env.MONGO_URI;
-mongoose.connect(mongoUri)
+mongoose.connect(mongoUri, { maxPoolSize: 50, serverSelectionTimeoutMS: 5000 })
   .then(async () => {
     console.log(`✅ [backend] Connected to MongoDB: ${mongoose.connection.db.databaseName}`);
 
@@ -165,11 +169,11 @@ app.use("/api/auth", requireCsrf, authRoutes);
 // Admin Routes (CSRF required for state-changing requests)
 app.use("/api/admin", requireCsrf, adminRoutes);
 
-// Booking Routes
-app.use("/api/booking", bookingRoutes);
+// Booking Routes (optional API key when AGENT_SERVICE_API_KEY is set)
+app.use("/api/booking", agentApiKeyMiddleware, bookingRoutes);
 
-// ITM Booking Routes
-app.use("/api/itm-booking", itmBookingRoutes);
+// ITM Booking Routes (optional API key when AGENT_SERVICE_API_KEY is set)
+app.use("/api/itm-booking", agentApiKeyMiddleware, itmBookingRoutes);
 
 // Knowledge Base Routes (OpenAI-based)
 app.use("/api/kb", openaiKbRoutes);
@@ -255,3 +259,31 @@ const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
+
+// Graceful shutdown
+let isShuttingDown = false;
+async function shutdown() {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log('Shutting down gracefully...');
+  try {
+    await shutdownTelemetry();
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.close();
+      console.log('MongoDB connection closed');
+    }
+    const forceExitTimer = setTimeout(() => {
+      console.error('Shutdown timeout, forcing exit');
+      process.exit(1);
+    }, 15000);
+    httpServer.close(() => {
+      clearTimeout(forceExitTimer);
+      process.exit(0);
+    });
+  } catch (err) {
+    console.error('Shutdown error:', err);
+    process.exit(1);
+  }
+}
+process.on('SIGTERM', () => { shutdown(); });
+process.on('SIGINT', () => { shutdown(); });

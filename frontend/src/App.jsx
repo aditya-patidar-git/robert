@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { ToastProvider } from './components/common/ToastProvider';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import AppRoutes from './routes/AppRoutes';
 
 const queryClient = new QueryClient({
@@ -22,14 +23,16 @@ const queryClient = new QueryClient({
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <LocalizationProvider dateAdapter={AdapterDateFns}>
-        <CssBaseline />
-        <ToastProvider>
-          <RouterProvider router={AppRoutes} />
-        </ToastProvider>
-      </LocalizationProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <LocalizationProvider dateAdapter={AdapterDateFns}>
+          <CssBaseline />
+          <ToastProvider>
+            <RouterProvider router={AppRoutes} />
+          </ToastProvider>
+        </LocalizationProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

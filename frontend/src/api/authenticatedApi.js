@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3002';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 
 // Configuration constants
 const REQUEST_TIMEOUT = 30000; // 30 seconds
@@ -249,39 +249,16 @@ authenticatedApiClient.interceptors.response.use(
     if (error.response) {
       const status = error.response.status;
       
-      // Handle 401 Unauthorized - attempt token refresh
-      if (status === 401 && currentRetryCount === 0) {
-        try {
-          // Attempt to refresh token
-          const refreshToken = localStorage.getItem('refreshToken');
-          if (refreshToken) {
-            console.log(`🔄 [${requestId}] Attempting token refresh...`);
-            
-            const refreshResponse = await axios.post(`${API_BASE}/api/auth/refresh`, {
-              refreshToken
-            });
-            
-            if (refreshResponse.data.token) {
-              localStorage.setItem('authToken', refreshResponse.data.token);
-              console.log(`✅ [${requestId}] Token refreshed successfully`);
-              
-              // Retry original request with new token
-              config.headers.Authorization = `Bearer ${refreshResponse.data.token}`;
-              retryCounts.set(requestId, currentRetryCount + 1);
-              return authenticatedApiClient(config);
-            }
-          }
-        } catch (refreshError) {
-          console.error(`❌ [${requestId}] Token refresh failed:`, refreshError);
-          // Clear invalid tokens
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('refreshToken');
-          
-          // Redirect to login page
-          if (typeof window !== 'undefined') {
-            window.location.href = '/login';
-          }
+      // Handle 401 Unauthorized - clear session and redirect to login
+      if (status === 401) {
+        retryCounts.delete(requestId);
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('refreshToken');
+        clearCsrfToken();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/auth/login';
         }
+        return Promise.reject(error);
       }
       
       // Handle 403 Forbidden - no retry; clear CSRF cache so next request refetches token

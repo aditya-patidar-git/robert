@@ -27,7 +27,9 @@ function start(manager) {
     socket.close();
     socket = null;
   }
+  const apiKey = process.env.AGENT_SERVICE_API_KEY || '';
   socket = io(backendUrl, {
+    auth: { apiKey },
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,

@@ -36,7 +36,14 @@ cp backend/env.example backend/.env
 
 # Start services
 cd backend && npm start  # Terminal 1
-cd frontend && npm run dev  # Terminal 2Access admin console at `http://localhost:3000`
+cd frontend && npm run dev  # Terminal 2
+cd robert-agent-service && npm run start:agent  # Terminal 3 (agent)
+# Access admin console at http://localhost:3000
+
+## Environment (key variables)
+- **Frontend**: `VITE_API_BASE` – backend URL for REST and Socket.IO (default in code: `http://localhost:5000`).
+- **Backend**: `AGENT_SERVICE_API_KEY` (optional) – when set, `/api/booking` and `/api/itm-booking` require `X-API-Key` or `Authorization: Bearer <key>`.
+- **Agent**: `BACKEND_URL` – backend URL for track-crm etc. (default: `http://localhost:5000`). `AGENT_SERVICE_API_KEY` – same as backend when API key is enabled.
 
 📚 Key API Endpoints
 

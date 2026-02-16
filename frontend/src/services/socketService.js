@@ -28,6 +28,7 @@ class SocketService {
     
     console.log(`Connecting to socket server: ${SOCKET_URL}`);
 
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('authToken') : null;
     this.socket = io(SOCKET_URL, {
       // Connection options
       autoConnect: true,
@@ -36,11 +37,10 @@ class SocketService {
       reconnectionDelay: this.reconnectInterval,
       reconnectionDelayMax: this.maxReconnectInterval,
       timeout: 20000,
-      
+      auth: { token },
       // Transport options
       transports: ['websocket', 'polling'],
       upgrade: true,
-      
       // Additional options
       forceNew: true,
       multiplex: true,
@@ -144,7 +144,8 @@ class SocketService {
     }
 
     const SOCKET_URL = import.meta.env.VITE_API_BASE || "http://localhost:5000";
-    
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('authToken') : null;
+
     // Try with polling transport as fallback
     this.socket = io(SOCKET_URL, {
       autoConnect: true,
@@ -153,6 +154,7 @@ class SocketService {
       reconnectionDelay: this.reconnectInterval,
       reconnectionDelayMax: this.maxReconnectInterval,
       timeout: 20000,
+      auth: { token },
       transports: ['polling'], // Force polling transport
       upgrade: false,
       forceNew: true,

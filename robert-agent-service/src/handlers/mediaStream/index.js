@@ -54,7 +54,7 @@ export const handleMediaStreamConnection = (ws, req) => {
             
             if (callSidFromUrl && realtimeClients[callSidFromUrl]) {
                 const existing = realtimeClients[callSidFromUrl];
-                if (existing.twilioWs && existing.twilioWs.readyState === WebSocket.OPEN) {
+                if (existing.pending || (existing.twilioWs && existing.twilioWs.readyState === WebSocket.OPEN)) {
                     ws.close(1000, 'Connection already exists for this call');
                     return;
                 }
@@ -96,15 +96,17 @@ export const handleMediaStreamConnection = (ws, req) => {
             // Double-check for duplicate connections (backup check)
             if (realtimeClients[callSidFromStartEvent]) {
                 const existing = realtimeClients[callSidFromStartEvent];
-                // Only reject if existing connection is still open
-                if (existing.twilioWs && existing.twilioWs.readyState === WebSocket.OPEN) {
+                // Reject if connection in progress (pending) or existing Twilio ws still open
+                if (existing.pending || (existing.twilioWs && existing.twilioWs.readyState === WebSocket.OPEN)) {
                     ws.close(1000, 'Connection already exists for this call');
                     return { error: 'duplicate_connection' };
-                } else {
-                    // Existing connection is closed, clean it up and allow new one
-                    delete realtimeClients[callSidFromStartEvent];
                 }
+                // Existing connection is closed, clean it up and allow new one
+                delete realtimeClients[callSidFromStartEvent];
             }
+
+            // Reserve slot immediately to prevent race with second connection before setupOpenAI completes
+            realtimeClients[callSidFromStartEvent] = { twilioWs: ws, pending: true };
             
             // Initialize state with call information
             // Use start event callSid for state management (Twilio's canonical ID)

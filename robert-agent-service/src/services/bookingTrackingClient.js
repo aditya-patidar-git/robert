@@ -4,7 +4,8 @@
  * This allows the dashboard to display accurate booking counts
  */
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3002';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+const AGENT_SERVICE_API_KEY = process.env.AGENT_SERVICE_API_KEY;
 
 /**
  * Track a successful CRM booking by calling the backend API
@@ -32,11 +33,16 @@ export async function trackCRMBooking(bookingData) {
 
     console.log(`📝 [BookingTracking] Tracking CRM booking for ${serviceType}...`);
 
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (AGENT_SERVICE_API_KEY && AGENT_SERVICE_API_KEY.trim()) {
+      headers['X-API-Key'] = AGENT_SERVICE_API_KEY.trim();
+    }
+
     const response = await fetch(`${BACKEND_URL}/api/booking/track-crm`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         callerName,
         callerEmail,
