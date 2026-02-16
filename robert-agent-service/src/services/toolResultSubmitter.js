@@ -427,14 +427,17 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         toolResult?.proceedToStep2 === true &&
         toolResult?.nextStep === 'cancellation_step_authenticate';
       if (isVerifyBookingIntentProceed) {
-        // courseType is optional - will be determined from booking in Step 6
-        // Use placeholder 'TBD' if not available yet
-        const authCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType || 'TBD';
-        responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${AFTER_LOGIN_MESSAGE}"`;
-        if (this.stateManager) {
-          this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_authenticate', args: { courseType: authCourseType } };
+        // courseType is required before Step 2 (collected in Step 1 before policy); never use TBD
+        const authCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (!authCourseType || authCourseType === 'TBD') {
+          console.error(`❌ [${callId}] courseType not available for chained cancellation_step_authenticate - ask for course type in Step 1 first`);
+        } else {
+          responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${AFTER_LOGIN_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_authenticate', args: { courseType: authCourseType } };
+          }
+          console.log(`🎯 [${callId}] Cancellation proceed to Step 2 - say-only then inject cancellation_step_authenticate (courseType: ${authCourseType})`);
         }
-        console.log(`🎯 [${callId}] Cancellation proceed to Step 2 - say-only then inject cancellation_step_authenticate (courseType: ${authCourseType})`);
       }
 
       const isConfirmCancellationProceed = !forceNextToolChoice && toolName === 'cancellation_step_confirm_cancellation' &&

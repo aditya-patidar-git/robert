@@ -278,9 +278,8 @@ const cancellationStepVerifyBookingIntentSchema = z.object({
   proceedToStep2: z.boolean().optional()
 });
 
-const courseTypeForAuthenticate = z.union([courseTypeEnum, z.literal('TBD')]);
 const cancellationStepAuthenticateSchema = z.object({
-  courseType: courseTypeForAuthenticate
+  courseType: courseTypeEnum
 });
 
 const cancellationStepDetermineWorkflowSchema = z.object({

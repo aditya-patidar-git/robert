@@ -50,6 +50,7 @@ class ConfigManager {
    * @param {boolean} enabled - true to run 30s poll, false to stop it
    */
   setPollingEnabled(enabled) {
+    const wasPolling = this.pollingEnabled;
     this.pollingEnabled = !!enabled;
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
@@ -57,7 +58,9 @@ class ConfigManager {
     }
     if (this.pollingEnabled) {
       this.pollInterval = setInterval(() => this.refreshAll(), this.cacheTTL);
-      console.log('✅ [CONFIG] Polling (re)started every 30 seconds');
+      if (!wasPolling) {
+        console.log('✅ [CONFIG] Polling (re)started every 30 seconds');
+      }
     } else {
       console.log('✅ [CONFIG] Polling disabled (config sync active)');
     }

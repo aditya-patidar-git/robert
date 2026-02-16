@@ -771,15 +771,15 @@ function getCancellationStepToolDefinitions() {
     {
       type: 'function',
       name: 'cancellation_step_verify_booking_intent',
-      description: `Step 1: Verify caller has a current booking and explain cancellation policy. You MUST invoke this tool—do not output courseType or parameters as speech or JSON.
+      description: `Step 1: Verify caller has a current booking, collect course type, then explain cancellation policy. You MUST invoke this tool—do not output courseType or parameters as speech or JSON.
 
-🚨 CRITICAL: courseType is OPTIONAL at this step. It will be determined from the booking found in Step 6 (locateBooking). You do NOT need to ask for course type here.
+🚨 STRICT ORDER: (1) Ask "Do you have a current booking with us?" (2) If yes, ask "What type of course is your booking for?" (e.g. CBT, Introduction to Motorcycling, Private Lesson, Gear Conversion)—courseType is REQUIRED before the policy. (3) Only after you have courseType, explain the policy and ask "Would you like to proceed?" (4) If they say yes to proceed, call with verified: true, proceedToStep2: true, courseType: <the one they gave>; then immediately call cancellation_step_authenticate.
 
-When to call (interpret caller response in context of the last question you asked):
-- After "Do you have a current booking with us?" and caller confirms they have a booking (yes, yeah, I do, sure, etc.): call with verified: true (courseType is optional). Then in your next turn explain the policy and ask "Would you like to proceed?" Do not call cancellation_step_authenticate yet.
-- After you have explained the policy and asked "Would you like to proceed?" and caller agrees to proceed (yes, proceed, go ahead, etc.): call with verified: true, proceedToStep2: true; then immediately call cancellation_step_authenticate.
+When to call (interpret caller response in context of the last question):
+- After "Do you have a current booking with us?" and caller confirms (yes, I do, etc.): call with verified: true only. The tool will tell you to ask for course type—ask that question, then when they answer call with verified: true, courseType: <their answer>. Do NOT explain the policy until you have courseType.
+- After you have courseType and have explained the policy and asked "Would you like to proceed?" and caller agrees (yes, proceed, etc.): call with verified: true, proceedToStep2: true, courseType: <same courseType>; then immediately call cancellation_step_authenticate with that courseType.
 - If caller says they do not have a booking: call with verified: false.
-- If caller has a booking but declines to proceed: call with verified: true, proceedToStep2: false.
+- If caller has a booking but declines to proceed: call with verified: true, proceedToStep2: false, courseType: <same as before>.
 
 Cancellation policy: minimum 3 full working days' notice, 30% admin fee; less than 3 days = entire fee. Full Terms on website.`,
       parameters: {
@@ -787,7 +787,7 @@ Cancellation policy: minimum 3 full working days' notice, 30% admin fee; less th
         properties: {
           courseType: {
             type: 'string',
-            description: 'Course type being cancelled (OPTIONAL - will be determined from booking in Step 6)',
+            description: 'Course type being cancelled. REQUIRED after caller confirms they have a booking (ask before stating policy) and REQUIRED when proceedToStep2: true.',
             enum: ['ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training', 'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion']
           },
           verified: {
@@ -796,7 +796,7 @@ Cancellation policy: minimum 3 full working days' notice, 30% admin fee; less th
           },
           proceedToStep2: {
             type: 'boolean',
-            description: 'Whether to proceed to Step 2 (set to true if verified: true)'
+            description: 'Whether to proceed to Step 2 (true only when caller agreed to proceed after policy; requires courseType)'
           }
         },
         required: []
@@ -805,7 +805,7 @@ Cancellation policy: minimum 3 full working days' notice, 30% admin fee; less th
     {
       type: 'function',
       name: 'cancellation_step_authenticate',
-      description: 'Step 2: Login to CRM system. You MUST invoke this tool when proceeding to Step 2—do not output courseType or JSON as speech. Call ONLY after the caller has agreed to proceed (after you explained the policy and asked "Would you like to proceed?") and after cancellation_step_verify_booking_intent was called with verified: true, proceedToStep2: true. Say the exact message from the previous tool (e.g. "I\'ll now login to the system...") then call this tool immediately.',
+      description: 'Step 2: Login to CRM system. You MUST invoke this tool when proceeding to Step 2—do not output courseType or JSON as speech. Call ONLY after the caller has agreed to proceed (after you explained the policy and asked "Would you like to proceed?") and after cancellation_step_verify_booking_intent was called with verified: true, proceedToStep2: true, and the same courseType. Say the exact message from the previous tool (e.g. "I\'ll now login to the system...") then call this tool immediately with that courseType.',
       parameters: {
         type: 'object',
         properties: {

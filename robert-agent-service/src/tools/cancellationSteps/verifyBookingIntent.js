@@ -6,7 +6,17 @@
 import { CancellationBaseStepTool } from './cancellationBaseStepTool.js';
 import { STEP_NAMES, getStepNumber } from '../../services/browser/stepConfiguration.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
-import { PROCEED_DECLINED_MESSAGE, TERMS_DISCLAIMER, AFTER_LOGIN_MESSAGE } from '../../config/cancellationPhrases.js';
+import { PROCEED_DECLINED_MESSAGE, TERMS_DISCLAIMER, AFTER_LOGIN_MESSAGE, ASK_COURSE_TYPE_MESSAGE } from '../../config/cancellationPhrases.js';
+
+/** Valid courseType values for cancellation (must be collected before policy and before Step 2). */
+const VALID_CANCELLATION_COURSE_TYPES = new Set([
+  'ITM', 'Introduction to Motorcycling', 'CBT', 'Compulsory Basic Training',
+  'CBT Executive', 'CBT Executive 1-2-1', 'Private Lesson', 'Gear Conversion'
+]);
+
+function isValidCourseType(value) {
+  return value && VALID_CANCELLATION_COURSE_TYPES.has(value);
+}
 
 export class VerifyBookingIntentStep extends CancellationBaseStepTool {
   getStepName() {
@@ -32,19 +42,10 @@ export class VerifyBookingIntentStep extends CancellationBaseStepTool {
     try {
       console.log(`🔧 [${this.getStepName()}] Executing voice step for ${callSid}`);
 
-      // courseType is optional initially - will be determined from booking in Step 6 (locateBooking)
-      // Initialize session with courseType if provided, otherwise use a placeholder
-      // The actual courseType will be set when booking is located
-      const sessionCourseType = courseType || 'TBD'; // TBD = To Be Determined
-      const session = sessionStateManager.initializeSession(callSid, sessionCourseType);
-      
-      // Get step number from configuration
-      // For cancellation, step numbers are the same for all course types, so use a default
       const stepName = this.getStepName();
-      // Use 'CBT' as default for step number lookup (all cancellation steps have same numbers)
-      const lookupCourseType = courseType || 'CBT';
+      const lookupCourseType = courseType && isValidCourseType(courseType) ? courseType : 'CBT';
       const stepNumber = getStepNumber(lookupCourseType, 'existing', stepName);
-      
+
       if (stepNumber === null) {
         return {
           success: false,
@@ -52,7 +53,17 @@ export class VerifyBookingIntentStep extends CancellationBaseStepTool {
         };
       }
 
+      // Proceed to Step 2 (authenticate): require valid courseType; never use TBD
       if (verified === true && proceedToStep2 === true) {
+        if (!isValidCourseType(courseType)) {
+          return {
+            success: false,
+            requiresUserInput: true,
+            message: ASK_COURSE_TYPE_MESSAGE,
+            prompt: 'Course type is required before proceeding to Step 2. Ask the caller: "What type of course is your booking for? For example, CBT, Introduction to Motorcycling, Private Lesson, or Gear Conversion." Then call this tool with verified: true, proceedToStep2: true, and courseType set to their answer.'
+          };
+        }
+        const session = sessionStateManager.initializeSession(callSid, courseType);
         sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { verified: true });
         return {
           success: true,
@@ -64,7 +75,10 @@ export class VerifyBookingIntentStep extends CancellationBaseStepTool {
         };
       }
 
+      // Caller has booking but declines to proceed
       if (verified === true && proceedToStep2 === false) {
+        const sessionCourseType = courseType && isValidCourseType(courseType) ? courseType : 'CBT';
+        sessionStateManager.initializeSession(callSid, sessionCourseType);
         sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { verified: true });
         return {
           success: false,
@@ -74,7 +88,29 @@ export class VerifyBookingIntentStep extends CancellationBaseStepTool {
         };
       }
 
-      // If verified is false, caller doesn't have a booking
+      // Caller confirmed they have a booking but we don't have courseType yet: ask for course type ONLY (before policy)
+      if (verified === true && (proceedToStep2 === false || proceedToStep2 === undefined)) {
+        if (!isValidCourseType(courseType)) {
+          return {
+            success: false,
+            requiresUserInput: true,
+            message: ASK_COURSE_TYPE_MESSAGE,
+            prompt: `STRICT: Ask the caller ONLY: "${ASK_COURSE_TYPE_MESSAGE}" Do NOT explain the cancellation policy yet. Once they give the course type (e.g. CBT, Introduction to Motorcycling, Private Lesson, Gear Conversion), call this tool with verified: true and courseType set to that value. Then in your next response you will explain the policy and ask "Would you like to proceed?"`
+          };
+        }
+        // We have courseType; now ask for proceed (explain policy and "Would you like to proceed?")
+        const session = sessionStateManager.initializeSession(callSid, courseType);
+        sessionStateManager.setCancellationCurrentStep(callSid, stepNumber, { verified: true });
+        return {
+          success: false,
+          requiresUserInput: true,
+          verified: true,
+          message: `If you wish to cancel your booking you MUST provide a minimum of 3 full working days' notice before the start of your course. There is a 30% administration fee. Cancellations within 3 full working days will result in the entire fee being non-refundable. ${TERMS_DISCLAIMER} Would you like to proceed?`,
+          prompt: `Explain the cancellation policy (3 full working days' notice, 30% admin fee, full fee if less than 3 days) and say: "${TERMS_DISCLAIMER}" Then ask: "Would you like to proceed?" If they say yes, call with verified: true, proceedToStep2: true, courseType: "${courseType}". If they say no, call with verified: true, proceedToStep2: false, courseType: "${courseType}".`
+        };
+      }
+
+      // Caller does not have a booking
       if (verified === false) {
         return {
           success: false,
@@ -84,14 +120,13 @@ export class VerifyBookingIntentStep extends CancellationBaseStepTool {
         };
       }
 
-      // No response yet - need to ask the caller
+      // First question: do you have a current booking?
       return {
         success: false,
         requiresUserInput: true,
         message: 'Do you have a current booking with us?',
-        prompt: `Please ask the caller: "Do you have a current booking with us?" If they say yes, explain the cancellation policy and say: "${TERMS_DISCLAIMER}" Then ask: "Would you like to proceed?" If they say yes, set verified: true, proceedToStep2: true. If they say no to proceed, set verified: true, proceedToStep2: false. If they say no to having a booking, set verified: false.`
+        prompt: `Ask the caller: "Do you have a current booking with us?" If they say yes, do NOT explain the policy yet. Instead ask for course type: "${ASK_COURSE_TYPE_MESSAGE}" Once they give the course type, call this tool with verified: true and courseType set to their answer (e.g. "Introduction to Motorcycling", "CBT", "Private Lesson", "Gear Conversion"). If they say no, call with verified: false.`
       };
-
     } catch (error) {
       console.error(`❌ [${this.getStepName()}] Error:`, error);
       return {

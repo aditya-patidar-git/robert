@@ -6,6 +6,7 @@ import { io } from 'socket.io-client';
 
 let socket = null;
 let configManager = null;
+let connectErrorLogged = false;
 
 function isConnected() {
   return socket != null && socket.connected;
@@ -39,6 +40,7 @@ function start(manager) {
   });
 
   socket.on('connect', () => {
+    connectErrorLogged = false;
     console.log('✅ [CONFIG_SYNC_CLIENT] Connected to backend at', backendUrl);
     configManager.setPollingEnabled(false);
   });
@@ -49,7 +51,10 @@ function start(manager) {
   });
 
   socket.on('connect_error', (err) => {
-    console.warn('⚠️ [CONFIG_SYNC_CLIENT] Connect error:', err.message);
+    if (!connectErrorLogged) {
+      connectErrorLogged = true;
+      console.warn('⚠️ [CONFIG_SYNC_CLIENT] Connect error:', err.message, '- using polling for config updates');
+    }
     configManager.setPollingEnabled(true);
   });
 
