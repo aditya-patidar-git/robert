@@ -49,6 +49,10 @@ const ObservabilityPage = () => {
     liveCallsLoading,
     alertsData,
     alertsLoading,
+    alertsPage,
+    setAlertsPage,
+    alertsTotal,
+    alertsTotalPages,
     callTimeline,
     timelineLoading,
     toolTraces,
@@ -282,6 +286,10 @@ const ObservabilityPage = () => {
         <AlertsTab
           alertsData={alertsData}
           alertsLoading={alertsLoading}
+          alertsPage={alertsPage}
+          setAlertsPage={setAlertsPage}
+          alertsTotal={alertsTotal}
+          alertsTotalPages={alertsTotalPages}
           acknowledgeAlertMutation={acknowledgeAlertMutation}
           resolveAlertMutation={resolveAlertMutation}
         />

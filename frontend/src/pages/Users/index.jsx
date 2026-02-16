@@ -23,9 +23,7 @@ import {
   Alert,
   InputAdornment,
   Tabs,
-  Tab,
-  Checkbox,
-  Toolbar
+  Tab
 } from '@mui/material';
 import {
   Delete as DeleteIcon,
@@ -55,8 +53,6 @@ const UsersPage = () => {
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [confirmDialog, setConfirmDialog] = useState({ open: false, user: null, action: '' });
-  const [bulkConfirmDialog, setBulkConfirmDialog] = useState({ open: false, action: '', hard: false });
-  const [selectedIds, setSelectedIds] = useState([]);
   const [addUserDialog, setAddUserDialog] = useState({ open: false });
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -115,39 +111,6 @@ const UsersPage = () => {
     }
   });
 
-  const bulkBlockMutation = useMutation({
-    mutationFn: (userIds) => userService.bulkBlockUsers(userIds),
-    onSuccess: (data) => {
-      showSuccess(data?.message || 'Users blocked');
-      queryClient.invalidateQueries(['users']);
-      setSelectedIds([]);
-      setBulkConfirmDialog({ open: false, action: '', hard: false });
-    },
-    onError: (error) => showError(error.message || 'Bulk block failed')
-  });
-
-  const bulkApproveMutation = useMutation({
-    mutationFn: (userIds) => userService.bulkApproveUsers(userIds),
-    onSuccess: (data) => {
-      showSuccess(data?.message || 'Users approved');
-      queryClient.invalidateQueries(['users']);
-      setSelectedIds([]);
-      setBulkConfirmDialog({ open: false, action: '', hard: false });
-    },
-    onError: (error) => showError(error.message || 'Bulk approve failed')
-  });
-
-  const bulkDeleteMutation = useMutation({
-    mutationFn: ({ userIds, hard }) => userService.bulkDeleteUsers(userIds, hard),
-    onSuccess: (data) => {
-      showSuccess(data?.message || 'Users deleted');
-      queryClient.invalidateQueries(['users']);
-      setSelectedIds([]);
-      setBulkConfirmDialog({ open: false, action: '', hard: false });
-    },
-    onError: (error) => showError(error.message || 'Bulk delete failed')
-  });
-
   const createUserMutation = useMutation({
     mutationFn: async (userData) => {
       const response = await userService.createUser(userData);
@@ -180,28 +143,6 @@ const UsersPage = () => {
     const userId = user.id || user._id;
     const currentUserId = currentUser?.id || currentUser?._id;
     return userId && currentUserId && userId.toString() === currentUserId.toString();
-  };
-
-  const toggleSelectAll = () => {
-    const currentUserId = currentUser?.id || currentUser?._id;
-    const selectable = filteredUsers.filter(u => (u.id || u._id).toString() !== currentUserId?.toString());
-    if (selectedIds.length >= selectable.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(selectable.map(u => (u.id || u._id).toString()));
-    }
-  };
-
-  const toggleSelectOne = (userId) => {
-    const id = userId.toString();
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const handleBulkConfirm = () => {
-    const { action, hard } = bulkConfirmDialog;
-    if (action === 'block') bulkBlockMutation.mutate(selectedIds);
-    else if (action === 'approve') bulkApproveMutation.mutate(selectedIds);
-    else if (action === 'delete') bulkDeleteMutation.mutate({ userIds: selectedIds, hard });
   };
 
   const handleAction = (user, action) => {
@@ -429,58 +370,6 @@ const UsersPage = () => {
         </Box>
       </Paper>
 
-      {/* Bulk actions toolbar */}
-      {selectedIds.length > 0 && (
-        <Toolbar
-          variant="dense"
-          sx={{
-            pl: 0,
-            pr: 1,
-            mb: 2,
-            borderRadius: 2,
-            bgcolor: 'action.selected',
-            gap: 1
-          }}
-        >
-          <Typography variant="body2" sx={{ mr: 2 }}>
-            {selectedIds.length} selected
-          </Typography>
-          <Button
-            size="small"
-            startIcon={<CheckCircleIcon />}
-            onClick={() => setBulkConfirmDialog({ open: true, action: 'approve', hard: false })}
-          >
-            Approve
-          </Button>
-          <Button
-            size="small"
-            color="warning"
-            startIcon={<BlockIcon />}
-            onClick={() => setBulkConfirmDialog({ open: true, action: 'block', hard: false })}
-          >
-            Block
-          </Button>
-          <Button
-            size="small"
-            color="error"
-            startIcon={<DeleteIcon />}
-            onClick={() => setBulkConfirmDialog({ open: true, action: 'delete', hard: false })}
-          >
-            Delete
-          </Button>
-          {currentUser?.role === 'owner' && (
-            <Button
-              size="small"
-              color="error"
-              variant="outlined"
-              onClick={() => setBulkConfirmDialog({ open: true, action: 'delete', hard: true })}
-            >
-              Permanently delete
-            </Button>
-          )}
-        </Toolbar>
-      )}
-
       {/* Users Table */}
       <TableContainer 
         component={Paper} 
@@ -490,14 +379,6 @@ const UsersPage = () => {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell padding="checkbox">
-                <Checkbox
-                  indeterminate={selectedIds.length > 0 && selectedIds.length < filteredUsers.filter(u => !isCurrentUser(u)).length}
-                  checked={filteredUsers.filter(u => !isCurrentUser(u)).length > 0 && selectedIds.length === filteredUsers.filter(u => !isCurrentUser(u)).length}
-                  onChange={toggleSelectAll}
-                  disabled={filteredUsers.filter(u => !isCurrentUser(u)).length === 0}
-                />
-              </TableCell>
               <TableCell>Name</TableCell>
               <TableCell>Email</TableCell>
               <TableCell>Role</TableCell>
@@ -509,7 +390,7 @@ const UsersPage = () => {
           <TableBody>
             {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
                   <Alert 
                     severity="info"
                     sx={{ 
@@ -525,7 +406,6 @@ const UsersPage = () => {
             ) : (
               filteredUsers.map((user) => {
                 const uid = (user.id || user._id).toString();
-                const canSelect = !isCurrentUser(user);
                 return (
                 <TableRow 
                   key={uid}
@@ -533,13 +413,6 @@ const UsersPage = () => {
                     '&:last-child td': { border: 0 }
                   }}
                 >
-                  <TableCell padding="checkbox">
-                    <Checkbox
-                      checked={selectedIds.includes(uid)}
-                      onChange={() => toggleSelectOne(uid)}
-                      disabled={!canSelect}
-                    />
-                  </TableCell>
                   <TableCell>
                     <Typography 
                       variant="body2" 
@@ -648,40 +521,6 @@ const UsersPage = () => {
           </TableBody>
         </Table>
       </TableContainer>
-
-      {/* Bulk action confirmation dialog */}
-      <Dialog
-        open={bulkConfirmDialog.open}
-        onClose={() => setBulkConfirmDialog({ open: false, action: '', hard: false })}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: 2 } }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Confirm bulk action
-          </Typography>
-        </DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <Typography sx={{ fontSize: '0.9375rem', color: 'text.secondary' }}>
-            Are you sure you want to <strong>{bulkConfirmDialog.action}</strong> {selectedIds.length} user(s)
-            {bulkConfirmDialog.hard ? ' permanently (this cannot be undone)' : ''}?
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3 }}>
-          <Button onClick={() => setBulkConfirmDialog({ open: false, action: '', hard: false })} variant="outlined">
-            Cancel
-          </Button>
-          <Button
-            onClick={handleBulkConfirm}
-            color={bulkConfirmDialog.action === 'delete' ? 'error' : 'primary'}
-            variant="contained"
-            disabled={bulkBlockMutation.isLoading || bulkApproveMutation.isLoading || bulkDeleteMutation.isLoading}
-          >
-            Confirm
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Confirmation Dialog */}
       <Dialog

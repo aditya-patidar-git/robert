@@ -42,26 +42,27 @@ export const getSystemLogs = async (req, res) => {
   }
 };
 
-// Get performance traces (database-backed via traceAggregationService)
+// Get performance traces (database-backed via traceAggregationService, paginated)
 export const getTraces = async (req, res) => {
   try {
-    const { search, dateRange, status, entryPath, limit } = req.query;
+    const { search, dateRange, status, entryPath, limit, page } = req.query;
     const filters = {};
-    
+    const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 20), 100);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+
     // Parse date range
     if (dateRange) {
       const [start, end] = dateRange.split(',');
       filters.dateRange = { start, end };
     }
-    
+
     // Add search and other filters
     if (search) filters.search = search;
     if (status) filters.status = status;
     if (entryPath) filters.entryPath = entryPath;
-    
-    // Get traces from traceAggregationService for database-backed call timelines
-    const traces = await traceAggregationService.getTraces(filters, parseInt(limit) || 100);
-    res.json({ success: true, data: traces });
+
+    const { traces, total } = await traceAggregationService.getTraces(filters, limitNum, pageNum);
+    res.json({ success: true, data: traces, total, page: pageNum, limit: limitNum });
   } catch (error) {
     observabilityService.error('Get traces error', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
@@ -152,18 +153,21 @@ export const getErrorBudgets = async (req, res) => {
   }
 };
 
-// Get alerts (from database)
+// Get alerts (from database, paginated)
 export const getAlerts = async (req, res) => {
   try {
+    const limitNum = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 20), 100);
+    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const skip = (pageNum - 1) * limitNum;
+
     const filters = {
       status: req.query.status,
       severity: req.query.severity,
       component: req.query.component,
       source: req.query.source,
-      since: req.query.since,
-      limit: req.query.limit ? parseInt(req.query.limit) : 100
+      since: req.query.since
     };
-    
+
     // Build MongoDB query
     const query = {};
     if (filters.status) query.status = filters.status;
@@ -173,42 +177,40 @@ export const getAlerts = async (req, res) => {
     if (filters.since) {
       query.createdAt = { $gte: new Date(filters.since) };
     }
-    
-    // Fetch from database
-    let alerts = await Alert.find(query)
-      .sort({ createdAt: -1 })
-      .limit(filters.limit || 100)
-      .lean();
-    
-    // Also get in-memory alerts for immediate UI access (merge with database alerts)
-    const inMemoryAlerts = observabilityService.getAlerts({ limit: 50 });
-    
-    // Combine and deduplicate (prefer database alerts)
-    const alertMap = new Map();
-    
-    // Add database alerts first
-    alerts.forEach(alert => {
-      alertMap.set(alert._id.toString(), {
-        ...alert,
-        id: alert._id.toString(),
-        source: 'database'
+
+    const [total, dbAlerts] = await Promise.all([
+      Alert.countDocuments(query),
+      Alert.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean()
+    ]);
+
+    let alerts = dbAlerts.map(alert => ({
+      ...alert,
+      id: alert._id.toString(),
+      source: 'database'
+    }));
+
+    // On page 1 only: merge in-memory alerts for immediate UI access
+    let totalToReturn = total;
+    if (pageNum === 1) {
+      const inMemoryAlerts = observabilityService.getAlerts({ limit: 50 });
+      const alertMap = new Map(alerts.map(a => [a.id, a]));
+      inMemoryAlerts.forEach(alert => {
+        if (!alertMap.has(alert.id)) {
+          alertMap.set(alert.id, { ...alert, source: 'in-memory' });
+        }
       });
-    });
-    
-    // Add in-memory alerts that aren't in database
-    inMemoryAlerts.forEach(alert => {
-      if (!alertMap.has(alert.id)) {
-        alertMap.set(alert.id, {
-          ...alert,
-          source: 'in-memory'
-        });
-      }
-    });
-    
-    const combinedAlerts = Array.from(alertMap.values())
-      .sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp));
-    
-    res.json({ success: true, data: combinedAlerts });
+      alerts = Array.from(alertMap.values())
+        .sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp))
+        .slice(0, limitNum);
+      // Ensure total is at least the merged count so the UI never shows 0 when alerts are displayed
+      totalToReturn = Math.max(total, alerts.length);
+    }
+
+    res.json({ success: true, data: alerts, total: totalToReturn, page: pageNum, limit: limitNum });
   } catch (error) {
     observabilityService.error('Get alerts error', { error: error.message });
     res.status(500).json({ success: false, error: error.message });

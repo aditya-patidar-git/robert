@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Box,
@@ -12,7 +12,7 @@ import {
   AccordionSummary,
   AccordionDetails,
   Chip,
-  IconButton
+  Pagination
 } from '@mui/material';
 import { ExpandMore, Search, Refresh, Timeline } from '@mui/icons-material';
 import { formatDateTime } from '../../../../utils/formatters';
@@ -23,15 +23,27 @@ import { getDateRange } from '../../utils/dateRange';
  * Trace Viewer Component
  * Displays OpenTelemetry trace timelines for calls
  */
+const PAGE_SIZE = 20;
+
 const TraceViewer = ({ timeRange = '24h', onCallSelect = null }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedCall, setExpandedCall] = useState(null);
+  const [page, setPage] = useState(1);
 
-  const { data: traces, isLoading, error, refetch } = useQuery({
-    queryKey: ['traces', timeRange, searchTerm],
+  // Reset to first page when time range or search changes
+  useEffect(() => {
+    setPage(1);
+  }, [timeRange, searchTerm]);
+
+  const { data: result, isLoading, error, refetch } = useQuery({
+    queryKey: ['traces', timeRange, searchTerm, page],
     queryFn: () => {
       const dateRange = getDateRange(timeRange);
-      const filters = { dateRange: `${dateRange.start},${dateRange.end}` };
+      const filters = {
+        dateRange: `${dateRange.start},${dateRange.end}`,
+        page,
+        limit: PAGE_SIZE
+      };
       if (searchTerm) {
         return observabilityService.getTraces({ search: searchTerm, ...filters });
       }
@@ -39,6 +51,10 @@ const TraceViewer = ({ timeRange = '24h', onCallSelect = null }) => {
     },
     refetchInterval: 30000
   });
+
+  const traceList = result?.data ?? [];
+  const total = result?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleCallClick = (callSid) => {
     if (onCallSelect) {
@@ -80,8 +96,6 @@ const TraceViewer = ({ timeRange = '24h', onCallSelect = null }) => {
       </Alert>
     );
   }
-
-  const traceList = traces || [];
 
   return (
     <Box>
@@ -152,6 +166,18 @@ const TraceViewer = ({ timeRange = '24h', onCallSelect = null }) => {
               </AccordionDetails>
             </Accordion>
           ))}
+          {totalPages > 1 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3, mb: 2 }}>
+              <Pagination
+                count={totalPages}
+                page={page}
+                onChange={(_, value) => setPage(value)}
+                color="primary"
+                showFirstButton
+                showLastButton
+              />
+            </Box>
+          )}
         </Box>
       )}
     </Box>

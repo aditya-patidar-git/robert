@@ -76,33 +76,6 @@ class UserService extends BaseService {
     return this.patch(`/${userId}/exclude`);
   }
 
-  /**
-   * Bulk block users (admin only)
-   * @param {string[]} userIds - User IDs
-   * @returns {Promise<Object>} Result with count and users
-   */
-  async bulkBlockUsers(userIds) {
-    return this.post('/bulk-block', { userIds });
-  }
-
-  /**
-   * Bulk approve users (admin only)
-   * @param {string[]} userIds - User IDs
-   * @returns {Promise<Object>} Result with count and users
-   */
-  async bulkApproveUsers(userIds) {
-    return this.post('/bulk-approve', { userIds });
-  }
-
-  /**
-   * Bulk delete users (admin only)
-   * @param {string[]} userIds - User IDs
-   * @param {boolean} [hard=false] - If true, permanent delete (owner only)
-   * @returns {Promise<Object>} Result with count
-   */
-  async bulkDeleteUsers(userIds, hard = false) {
-    return this.post('/bulk-delete', { userIds, hard });
-  }
 }
 
 // Export singleton instance

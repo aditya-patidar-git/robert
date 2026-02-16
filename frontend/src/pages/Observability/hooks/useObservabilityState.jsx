@@ -18,6 +18,7 @@ export const useObservabilityState = () => {
   const [selectedCallSid, setSelectedCallSid] = useState(null);
   const [timelineDialogOpen, setTimelineDialogOpen] = useState(false);
   const [toolTracesDialogOpen, setToolTracesDialogOpen] = useState(false);
+  const [alertsPage, setAlertsPage] = useState(1);
 
   // Fetch system metrics
   const { data: metricsData, isLoading: metricsLoading } = useQuery({
@@ -67,14 +68,17 @@ export const useObservabilityState = () => {
     }
   });
 
-  // Fetch alerts
-  const { data: alertsData = [], isLoading: alertsLoading } = useQuery({
-    queryKey: ['alerts'],
-    queryFn: async () => {
-      const response = await observabilityService.getAlerts({ status: 'active' });
-      return response.data || response;
-    }
+  const ALERTS_PAGE_SIZE = 20;
+
+  // Fetch alerts (paginated)
+  const { data: alertsResult, isLoading: alertsLoading } = useQuery({
+    queryKey: ['alerts', alertsPage],
+    queryFn: () => observabilityService.getAlerts({ status: 'active', page: alertsPage, limit: ALERTS_PAGE_SIZE })
   });
+
+  const alertsData = alertsResult?.data ?? [];
+  const alertsTotal = alertsResult?.total ?? 0;
+  const alertsTotalPages = Math.max(1, Math.ceil(alertsTotal / ALERTS_PAGE_SIZE));
 
   // Fetch call timeline
   const { data: callTimeline, isLoading: timelineLoading } = useQuery({
@@ -317,6 +321,10 @@ export const useObservabilityState = () => {
     liveCalls,
     errorBudgets,
     alertsData,
+    alertsPage,
+    setAlertsPage,
+    alertsTotal,
+    alertsTotalPages,
     callTimeline,
     toolTraces,
     getLogLevelColor,

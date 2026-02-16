@@ -12,7 +12,8 @@ import {
   Chip,
   CircularProgress,
   IconButton,
-  Tooltip
+  Tooltip,
+  Pagination
 } from '@mui/material';
 import {
   CheckCircle,
@@ -23,6 +24,10 @@ import { formatDateTime, truncateText } from '../../../utils/formatters';
 const AlertsTab = ({
   alertsData,
   alertsLoading,
+  alertsPage = 1,
+  setAlertsPage,
+  alertsTotal = 0,
+  alertsTotalPages = 1,
   acknowledgeAlertMutation,
   resolveAlertMutation
 }) => {
@@ -73,7 +78,7 @@ const AlertsTab = ({
     <Paper>
       <Box sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom>
-          Active Alerts ({alertsData?.length || 0})
+          Active Alerts ({alertsTotal})
         </Typography>
       </Box>
       {alertsLoading ? (
@@ -91,6 +96,7 @@ const AlertsTab = ({
           <Typography color="text.secondary">No active alerts</Typography>
         </Box>
       ) : (
+        <>
         <TableContainer>
           <Table>
             <TableHead>
@@ -205,6 +211,19 @@ const AlertsTab = ({
             </TableBody>
           </Table>
         </TableContainer>
+        {alertsTotalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+            <Pagination
+              count={alertsTotalPages}
+              page={alertsPage}
+              onChange={(_, value) => setAlertsPage(value)}
+              color="primary"
+              showFirstButton
+              showLastButton
+            />
+          </Box>
+        )}
+        </>
       )}
     </Paper>
   );

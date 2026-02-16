@@ -227,14 +227,16 @@ class TraceAggregationService {
   }
 
   /**
-   * Get aggregated traces for multiple calls
+   * Get aggregated traces for multiple calls (paginated)
    * @param {Object} filters - Filter criteria (dateRange, status, entryPath)
-   * @param {number} limit - Maximum number of calls to return
-   * @returns {Promise<Array>} Array of trace timelines
+   * @param {number} limit - Maximum number of calls to return per page
+   * @param {number} page - Page number (1-based)
+   * @returns {Promise<{ traces: Array, total: number }>} Traces for the page and total count
    */
-  async getAggregatedTraces(filters = {}, limit = 100) {
+  async getAggregatedTraces(filters = {}, limit = 100, page = 1) {
     const span = tracer.startSpan('get_aggregated_traces');
-    
+    const skip = Math.max(0, (page - 1) * limit);
+
     try {
       const query = {};
 
@@ -254,20 +256,24 @@ class TraceAggregationService {
         query.entryPath = filters.entryPath;
       }
 
-      // Get call records
-      const callRecords = await CallRecord.find(query)
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .select('callSid createdAt updatedAt duration entryPath callStatus');
+      const [total, callRecords] = await Promise.all([
+        CallRecord.countDocuments(query),
+        CallRecord.find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select('callSid createdAt updatedAt duration entryPath callStatus')
+      ]);
 
       // Get timelines for each call
       const timelines = await Promise.all(
         callRecords.map(record => this.getCallTimeline(record.callSid))
       );
 
+      const traces = timelines.filter(t => t !== null);
       span.setStatus({ code: 1 });
       span.end();
-      return timelines.filter(t => t !== null);
+      return { traces, total };
     } catch (error) {
       span.recordException(error);
       span.setStatus({ code: 2, message: error.message });
@@ -373,23 +379,23 @@ class TraceAggregationService {
   }
 
   /**
-   * Get traces with combined search and filter support
-   * Unified method for the traces endpoint
+   * Get traces with combined search and filter support (paginated)
    * @param {Object} filters - Filter criteria (dateRange, search, status, entryPath)
-   * @param {number} limit - Maximum number of traces to return
-   * @returns {Promise<Array>} Array of trace objects
+   * @param {number} limit - Maximum number of traces to return per page
+   * @param {number} page - Page number (1-based)
+   * @returns {Promise<{ traces: Array, total: number }>} Traces for the page and total count
    */
-  async getTraces(filters = {}, limit = 100) {
+  async getTraces(filters = {}, limit = 100, page = 1) {
     const span = tracer.startSpan('get_traces');
 
     try {
       // If there's a search term, use searchTraces
       if (filters.search) {
-        return await this.searchTraces(filters.search, filters);
+        return await this.searchTraces(filters.search, filters, limit, page);
       }
 
       // Otherwise use getAggregatedTraces
-      return await this.getAggregatedTraces(filters, limit);
+      return await this.getAggregatedTraces(filters, limit, page);
     } catch (error) {
       span.recordException(error);
       span.setStatus({ code: 2, message: error.message });
@@ -399,14 +405,17 @@ class TraceAggregationService {
   }
 
   /**
-   * Search traces by criteria
+   * Search traces by criteria (paginated)
    * @param {string} searchTerm - Search term
    * @param {Object} filters - Additional filters
-   * @returns {Promise<Array>} Matching trace timelines
+   * @param {number} limit - Maximum number of traces per page
+   * @param {number} page - Page number (1-based)
+   * @returns {Promise<{ traces: Array, total: number }>} Matching trace timelines and total count
    */
-  async searchTraces(searchTerm, filters = {}) {
+  async searchTraces(searchTerm, filters = {}, limit = 50, page = 1) {
     const span = tracer.startSpan('search_traces');
     span.setAttribute('search.term', searchTerm);
+    const skip = Math.max(0, (page - 1) * limit);
 
     try {
       const query = {
@@ -430,18 +439,23 @@ class TraceAggregationService {
         query.callStatus = filters.status;
       }
 
-      const callRecords = await CallRecord.find(query)
-        .sort({ createdAt: -1 })
-        .limit(50)
-        .select('callSid');
+      const [total, callRecords] = await Promise.all([
+        CallRecord.countDocuments(query),
+        CallRecord.find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select('callSid')
+      ]);
 
       const timelines = await Promise.all(
         callRecords.map(record => this.getCallTimeline(record.callSid))
       );
 
+      const traces = timelines.filter(t => t !== null);
       span.setStatus({ code: 1 });
       span.end();
-      return timelines.filter(t => t !== null);
+      return { traces, total };
     } catch (error) {
       span.recordException(error);
       span.setStatus({ code: 2, message: error.message });

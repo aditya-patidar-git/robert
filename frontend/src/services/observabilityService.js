@@ -47,13 +47,19 @@ class ObservabilityService extends BaseService {
   }
 
   /**
-   * Get traces
-   * @param {Object} filters - Trace filters
-   * @returns {Promise<Array<Object>>} Array of traces
+   * Get traces (paginated)
+   * @param {Object} filters - Trace filters (dateRange, search, status, entryPath, page, limit)
+   * @returns {Promise<{ data: Array<Object>, total: number, page: number, limit: number }>} Paginated traces
    */
   async getTraces(filters = {}) {
-    const response = await this.get('/traces', filters);
-    return response.data || [];
+    const response = await this.get('/traces', filters, { normalizeResponse: false });
+    // When normalizeResponse: false, response is already the API body { success, data, total, page, limit }
+    return {
+      data: response?.data ?? [],
+      total: response?.total ?? 0,
+      page: response?.page ?? 1,
+      limit: response?.limit ?? 20
+    };
   }
 
   /**
@@ -96,13 +102,18 @@ class ObservabilityService extends BaseService {
   }
 
   /**
-   * Get alerts
-   * @param {Object} filters - Alert filters
-   * @returns {Promise<Array<Object>>} Array of alerts
+   * Get alerts (paginated)
+   * @param {Object} filters - Alert filters (status, severity, component, source, since, page, limit)
+   * @returns {Promise<{ data: Array<Object>, total: number, page: number, limit: number }>} Paginated alerts
    */
   async getAlerts(filters = {}) {
-    const response = await this.get('/alerts', filters);
-    return response.data || [];
+    const response = await this.get('/alerts', filters, { normalizeResponse: false });
+    return {
+      data: response?.data ?? [],
+      total: response?.total ?? 0,
+      page: response?.page ?? 1,
+      limit: response?.limit ?? 20
+    };
   }
 
   /**
