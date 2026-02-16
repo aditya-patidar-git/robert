@@ -12,9 +12,9 @@
           "testFile": "tests/integration/timing-critical.test.js",
           "testName": "Call Pickup Latency (Integration) measures single-call latency (answer → first audio) under threshold",
           "status": "passed",
-          "duration": 14208,
+          "duration": 14781,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       },
       {
@@ -26,9 +26,9 @@
           "testFile": "tests/unit/services/conversationService.test.js",
           "testName": "ConversationService getResponseInstructions returns instructions for initial greeting when consent not given",
           "status": "passed",
-          "duration": 8,
+          "duration": 2,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -40,9 +40,9 @@
           "testFile": "tests/integration/language-switch.test.js",
           "testName": "Language switch (Integration) greeting instructions include language question",
           "status": "passed",
-          "duration": 12,
+          "duration": 5,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       },
       {
@@ -54,9 +54,9 @@
           "testFile": "tests/integration/language-switch.test.js",
           "testName": "Language switch (Integration) call connects and accepts language response",
           "status": "passed",
-          "duration": 6598,
+          "duration": 5848,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -76,9 +76,9 @@
           "testFile": "tests/unit/handlers/bargeInHandler.test.js",
           "testName": "Barge-in Logic sets interrupted flag when triggerImmediateBargeIn is called",
           "status": "passed",
-          "duration": 256,
+          "duration": 153,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -90,9 +90,9 @@
           "testFile": "tests/unit/handlers/bargeInHandler.test.js",
           "testName": "Barge-in Logic cancels OpenAI response on interruption when activeResponseId is set",
           "status": "passed",
-          "duration": 241,
+          "duration": 151,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -104,9 +104,9 @@
           "testFile": "tests/integration/timing-critical.test.js",
           "testName": "Barge-in Timing (Integration) halts TTS within 200ms",
           "status": "passed",
-          "duration": 4250,
+          "duration": 3907,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -126,9 +126,9 @@
           "testFile": "tests/unit/config/vadConfig.test.js",
           "testName": "VAD Configuration uses correct threshold range (500-700ms)",
           "status": "passed",
-          "duration": 5,
+          "duration": 3,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -140,9 +140,9 @@
           "testFile": "tests/unit/config/vadConfig.test.js",
           "testName": "VAD Configuration has correct padding values",
           "status": "passed",
-          "duration": 22,
+          "duration": 1,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -154,9 +154,9 @@
           "testFile": "tests/integration/timing-critical.test.js",
           "testName": "VAD Behavior (Integration) detects silence correctly",
           "status": "passed",
-          "duration": 1,
+          "duration": 2,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -176,9 +176,9 @@
           "testFile": "tests/unit/services/conversationService.test.js",
           "testName": "ConversationService getResponseInstructions returns instructions for subsequent response",
           "status": "passed",
-          "duration": 3,
+          "duration": 4,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -190,9 +190,9 @@
           "testFile": "tests/integration/kb-retrieval.test.js",
           "testName": "KB retrieval (Integration) completes call and receives outbound audio when asking policy question",
           "status": "passed",
-          "duration": 10787,
+          "duration": 11599,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -212,9 +212,9 @@
           "testFile": "tests/integration/web-search.test.js",
           "testName": "Web search (Integration) completes call and receives outbound audio when asking time-sensitive question",
           "status": "passed",
-          "duration": 6350,
+          "duration": 6440,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -234,9 +234,9 @@
           "testFile": "tests/unit/services/kbaService.test.js",
           "testName": "KBAService requiresKBA returns false for cancellation (uses in-flow client_verification)",
           "status": "passed",
-          "duration": 6,
+          "duration": 7,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -248,9 +248,9 @@
           "testFile": "tests/unit/services/toolExecutionService.test.js",
           "testName": "ToolExecutionService checkDuplicateCall returns true for duplicate call with same params",
           "status": "passed",
-          "duration": 2,
+          "duration": 3,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -262,9 +262,9 @@
           "testFile": "tests/unit/services/sendConfirmation.test.js",
           "testName": "sendConfirmation step returns confirmationSent true after successful send",
           "status": "passed",
-          "duration": 8,
+          "duration": 5,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       }
     ],
@@ -286,7 +286,7 @@
           "status": "passed",
           "duration": 1,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -298,9 +298,9 @@
           "testFile": "tests/integration/human-transfer.test.js",
           "testName": "Human Transfer (Integration) bridges call successfully",
           "status": "passed",
-          "duration": 5521,
+          "duration": 5372,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -320,9 +320,9 @@
           "testFile": "tests/unit/services/memoryService.test.js",
           "testName": "Cross-Call Memory stores call summary and retrieves previous calls",
           "status": "passed",
-          "duration": 159,
+          "duration": 142,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -334,9 +334,9 @@
           "testFile": "tests/unit/services/memoryService.test.js",
           "testName": "Cross-Call Memory recalls preferences across calls",
           "status": "passed",
-          "duration": 60,
+          "duration": 70,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -348,9 +348,9 @@
           "testFile": "tests/integration/memory.test.js",
           "testName": "Memory (Integration) call 2 receives outbound audio after preference set in call 1",
           "status": "passed",
-          "duration": 18019,
+          "duration": 18897,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -370,9 +370,9 @@
           "testFile": "tests/integration/concurrency.test.js",
           "testName": "Concurrency (Load Test) handles 20 simultaneous calls",
           "status": "passed",
-          "duration": 13597,
+          "duration": 12839,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -394,7 +394,7 @@
           "status": "passed",
           "duration": 1,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -406,9 +406,9 @@
           "testFile": "tests/unit/services/errorRecoveryService.test.js",
           "testName": "ErrorRecoveryService handleToolError returns shouldFallbackToVoicemail for OpenAI 5xx",
           "status": "passed",
-          "duration": 56,
+          "duration": 27,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -420,9 +420,9 @@
           "testFile": "tests/unit/services/errorRecoveryService.test.js",
           "testName": "ErrorRecoveryService handleToolError returns shouldFallbackToVoicemail for Twilio stream drop",
           "status": "passed",
-          "duration": 32,
+          "duration": 27,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -434,9 +434,9 @@
           "testFile": "tests/integration/error-paths.test.js",
           "testName": "Error paths (Integration) call completes or cleans up after stream drop",
           "status": "passed",
-          "duration": 9367,
+          "duration": 12282,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -456,9 +456,9 @@
           "testFile": "tests/unit/services/gdprService.test.js",
           "testName": "GDRPService exportDSARData returns export structure with requestId and data",
           "status": "passed",
-          "duration": 81,
+          "duration": 60,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -470,9 +470,9 @@
           "testFile": "tests/unit/services/gdprService.test.js",
           "testName": "GDRPService processDSARRequest processes export action",
           "status": "passed",
-          "duration": 66,
+          "duration": 67,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.601Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -484,9 +484,9 @@
           "testFile": "tests/integration/gdpr.test.js",
           "testName": "GDPR (Integration) exportDSARData returns structure with transcript and metadata",
           "status": "passed",
-          "duration": 303,
+          "duration": 236,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.603Z"
+          "timestamp": "2026-02-16T06:30:42.990Z"
         }
       }
     ],
@@ -506,9 +506,9 @@
           "testFile": "tests/unit/security/secrets.test.js",
           "testName": "Security does not find secrets in front-end bundle",
           "status": "passed",
-          "duration": 41,
+          "duration": 114,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -520,9 +520,9 @@
           "testFile": "tests/unit/security/secrets.test.js",
           "testName": "Security does not find hardcoded API keys in .js source files",
           "status": "passed",
-          "duration": 75,
+          "duration": 57,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -534,9 +534,9 @@
           "testFile": "tests/unit/security/secrets.test.js",
           "testName": "Security does not find sk- prefixed keys in test helpers",
           "status": "passed",
-          "duration": 4,
+          "duration": 3,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -548,9 +548,9 @@
           "testFile": "tests/unit/services/urlValidation.test.js",
           "testName": "UrlValidation rejects javascript: protocol",
           "status": "passed",
-          "duration": 7,
+          "duration": 4,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -562,9 +562,9 @@
           "testFile": "tests/unit/services/urlValidation.test.js",
           "testName": "UrlValidation rejects file: protocol",
           "status": "passed",
-          "duration": 1,
+          "duration": 0,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -576,9 +576,9 @@
           "testFile": "tests/unit/services/urlValidation.test.js",
           "testName": "UrlValidation rejects private IP localhost",
           "status": "passed",
-          "duration": 7,
+          "duration": 2,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -590,9 +590,9 @@
           "testFile": "tests/unit/services/urlValidation.test.js",
           "testName": "UrlValidation rejects domain not in allowed list",
           "status": "passed",
-          "duration": 2,
+          "duration": 1,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       },
       {
@@ -604,9 +604,9 @@
           "testFile": "tests/unit/services/secretsManager.test.js",
           "testName": "SecretsManager validateSecrets throws when a required secret is missing",
           "status": "passed",
-          "duration": 103,
+          "duration": 55,
           "error": "",
-          "timestamp": "2026-02-13T11:32:58.602Z"
+          "timestamp": "2026-02-16T06:30:42.988Z"
         }
       }
     ],
