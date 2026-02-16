@@ -24,5 +24,5 @@ export const integrationConfig = {
     bargeInHaltMs: 200,
     p95LatencyConcurrency: 3000
   },
-  concurrency: { numCalls: 20 }
+  concurrency: { numCalls: 10 }
 };

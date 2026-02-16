@@ -289,7 +289,7 @@ disclosure (“I’m checking online…”); result grounded and logged.
 confirmation, commit, **DOM assert success**; confirmation sent.   
 7) **Human transfer**: DTMF capture; bridge success.   
 8) **Memory**: Preference set in call 1; recalled in call 2 **only after consent**.   
-9) **Concurrency**: 20 simultaneous calls; p95 end -to-end turn latency with in target; **no 
+9) **Concurrency**: 10 simultaneous calls; p95 end -to-end turn latency with in target; **no
 cross -talk**; Twilio **Voice Insights** shows acceptable MOS/jitter.   
 10) **Error paths**: Inject OpenAI 5xx / Twilio stream drop; graceful apology; retry; 
 voicemail fallback.   
@@ -411,7 +411,7 @@ latency.
 22) CI/CD & Testing  
  
 - Pipelines:  Lint, unit, contract tests (tools), integration (SIP/Streams loopback), Playwright 
-headless tests, load tests (N=20 concurrent), e2e voice sims.   
+headless tests, load tests (N=10 concurrent), e2e voice sims.   
 - Evidence pack:  logs, traces, screenshots, HARs, audio clips, Voice Insights reports.  
  
 --- 

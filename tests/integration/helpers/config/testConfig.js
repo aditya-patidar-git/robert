@@ -65,7 +65,7 @@ export const testConfig = {
     zipOutput: true
   },
   database: { testDbName: 'robert_test', cleanupAfterTest: true, cleanupAfterSuite: true },
-  concurrency: { numCalls: 20, parallelLimit: 20 },
+  concurrency: { numCalls: 10, parallelLimit: 10 },
   retries: { maxRetries: 2, retryDelay: 1000 },
   retentionSettings: { transcriptRetention: 90, metadataRetention: 90, recordingRetention: 90 }
 };

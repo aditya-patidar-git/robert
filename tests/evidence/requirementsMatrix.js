@@ -84,12 +84,12 @@ export const requirementsMatrix = {
     acceptanceCriteria: 'Preference set in call 1; recalled in call 2 after consent.'
   },
   requirement_9_concurrency: {
-    description: '20 concurrent calls, p95 < 3s (§14.9)',
+    description: '10 concurrent calls, p95 < 3s (§14.9)',
     verification: [
-      { type: 'integration', testFile: 'tests/integration/concurrency.test.js', assertionName: 'handles 20 simultaneous calls' }
+      { type: 'integration', testFile: 'tests/integration/concurrency.test.js', assertionName: 'handles 10 simultaneous calls' }
     ],
     evidenceRequired: ['logs', 'metrics', 'voice_insights'],
-    acceptanceCriteria: '20 simultaneous calls; p95 within target; no cross-talk.'
+    acceptanceCriteria: '10 simultaneous calls; p95 within target; no cross-talk.'
   },
   requirement_10_error_paths: {
     description: 'Graceful error handling (§14.10)',

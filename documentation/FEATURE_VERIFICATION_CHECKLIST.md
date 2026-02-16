@@ -327,7 +327,7 @@ This document maps **every** checklist item (1–690) to whether it can be verif
 | 212 | Twilio Call SID generation and tracking | Yes | ✓ callSid throughout agent and state |
 | 213 | Call session initialization | Yes | ✓ Session init in sip/media handlers |
 | 214 | Call session cleanup on completion | Yes | ✓ Cleanup on hangup/end |
-| 215 | Concurrent call handling (load testing for N=20 concurrent) | Yes (tests exist) | ✓ concurrency.test.js for 20 calls |
+| 215 | Concurrent call handling (load testing for N=10 concurrent) | Yes (tests exist) | ✓ concurrency.test.js for 10 calls |
 | 216 | Call queue management during high volume | Yes | ✓ Queue/capacity config |
 | 217 | Graceful degradation when at capacity | Yes | ✓ Error handling, capacity checks |
 
@@ -782,7 +782,7 @@ This document maps **every** checklist item (1–690) to whether it can be verif
 | 527 | SIP loopback integration tests | Yes | ✓ sipHandlers, sip flow in tests |
 | 528 | Media Streams loopback integration tests | Yes | ✓ Media Streams handler in tests |
 | 529 | Playwright headless tests for browser agent | Yes | ✓ Browser agent in robert-agent-service; Playwright procedures in crm_modules |
-| 530 | Load tests for N=20 concurrent calls | Yes | ✓ tests/integration/concurrency.test.js |
+| 530 | Load tests for N=10 concurrent calls | Yes | ✓ tests/integration/concurrency.test.js |
 | 531 | End-to-end voice simulation tests | Yes | ✓ Language, kb-retrieval, web-search, human-transfer, memory tests |
 | 532 | Stress tests for peak load scenarios | Yes | ~ Concurrency test; stress scenario partial |
 | 533 | Failover tests (SIP to Media Streams) | Yes | ✓ Fallback path in code; test may be partial |

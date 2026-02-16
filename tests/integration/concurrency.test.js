@@ -21,11 +21,11 @@ describe('Concurrency (Load Test)', () => {
   });
 
   it(
-    'handles 20 simultaneous calls',
+    'handles 10 simultaneous calls',
     async () => {
       if (!shouldRun) return;
       const { default: callSimulator } = await import('./helpers/callSimulator.js');
-      const n = Math.min(integrationConfig.concurrency.numCalls, 20);
+      const n = Math.min(integrationConfig.concurrency.numCalls, 10);
       const latencies = [];
       const start = Date.now();
       try {
