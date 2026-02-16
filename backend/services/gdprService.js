@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import DSARRequest from '../models/DSARRequest.js';
 import CallRecord from '../models/callRecord.js';
 import AuditLog from '../models/AuditLog.js';
-import nodemailer from 'nodemailer';
+import emailService from './emailService.js';
 
 class GDPRService {
   constructor() {
@@ -305,15 +305,44 @@ class GDPRService {
   }
 
   async sendVerificationEmail(email, code, requestId) {
-    // In production, use proper email service
-    console.log(`📧 Verification email would be sent to ${email} with code ${code} for request ${requestId}`);
-    // TODO: Implement actual email sending
+    const subject = 'DSAR Request Verification Code';
+    const text = `Your verification code is: ${code}\n\nRequest ID: ${requestId}\n\nThis code will expire in 24 hours.`;
+    const html = `
+      <h2>DSAR Request Verification</h2>
+      <p>Your verification code is: <strong>${code}</strong></p>
+      <p>Request ID: ${requestId}</p>
+      <p>This code will expire in 24 hours.</p>
+    `;
+    try {
+      const result = await emailService.sendEmail({ to: email, subject, text, html });
+      if (result.logged) {
+        console.log(`📧 [DSAR] Verification email logged (SMTP not configured): ${email}, request ${requestId}`);
+      }
+    } catch (err) {
+      console.error(`📧 [DSAR] Failed to send verification email to ${email}:`, err.message);
+    }
   }
 
   async sendExportReadyEmail(email, requestId, exportUrl, expiresAt) {
-    // In production, use proper email service
-    console.log(`📧 Export ready email would be sent to ${email} for request ${requestId}`);
-    // TODO: Implement actual email sending
+    const fullUrl = process.env.BASE_URL ? `${process.env.BASE_URL}${exportUrl}` : exportUrl;
+    const expiresAtStr = expiresAt ? new Date(expiresAt).toLocaleString() : '7 days from generation';
+    const subject = 'Your Data Export is Ready';
+    const text = `Your data export is ready for download.\n\nRequest ID: ${requestId}\nDownload URL: ${fullUrl}\nExpires: ${expiresAtStr}`;
+    const html = `
+      <h2>Data Export Ready</h2>
+      <p>Your data export is ready for download.</p>
+      <p><strong>Request ID:</strong> ${requestId}</p>
+      <p><a href="${fullUrl}">Download Export</a></p>
+      <p><small>This link expires on ${expiresAtStr}</small></p>
+    `;
+    try {
+      const result = await emailService.sendEmail({ to: email, subject, text, html });
+      if (result.logged) {
+        console.log(`📧 [DSAR] Export ready email logged (SMTP not configured): ${email}, request ${requestId}`);
+      }
+    } catch (err) {
+      console.error(`📧 [DSAR] Failed to send export-ready email to ${email}:`, err.message);
+    }
   }
 
   async processDSARRequest(dsarId, action, adminUser) {
