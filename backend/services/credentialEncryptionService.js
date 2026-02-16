@@ -8,16 +8,24 @@ import crypto from 'crypto';
  */
 class CredentialEncryptionService {
   constructor() {
-    // Get encryption key from environment
+    this.algorithm = null;
+    this.key = null;
+    this._keyReady = false;
+  }
+
+  /**
+   * Ensure encryption key is set (lazy init after env is loaded).
+   */
+  _ensureKey() {
+    if (this._keyReady) return;
+    this._keyReady = true;
     const encryptionKey = process.env.ENCRYPTION_KEY;
-    
-    if (!encryptionKey) {
+    if (!encryptionKey || String(encryptionKey).trim() === '') {
       console.warn('⚠️ ENCRYPTION_KEY not set. Using default key (NOT SECURE FOR PRODUCTION)');
       this.algorithm = 'aes-256-gcm';
       this.key = crypto.scryptSync('default-key-change-in-production', 'salt', 32);
     } else {
       this.algorithm = 'aes-256-gcm';
-      // Derive key from ENCRYPTION_KEY
       this.key = crypto.scryptSync(encryptionKey, 'salt', 32);
     }
   }
@@ -31,6 +39,7 @@ class CredentialEncryptionService {
     if (!plaintext) {
       return null;
     }
+    this._ensureKey();
 
     try {
       const iv = crypto.randomBytes(16);
@@ -64,6 +73,7 @@ class CredentialEncryptionService {
     if (!encryptedValue) {
       return null;
     }
+    this._ensureKey();
 
     try {
       const combined = JSON.parse(Buffer.from(encryptedValue, 'base64').toString('utf8'));

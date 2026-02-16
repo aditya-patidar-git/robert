@@ -8,13 +8,22 @@ import nodemailer from 'nodemailer';
 class EmailService {
   constructor() {
     this.transporter = null;
-    this.initializeTransporter();
+    this._transporterInitAttempted = false;
   }
 
   /**
-   * Initialize email transporter (SMTP)
+   * Ensure transporter is initialized (lazy init after env is loaded).
    */
-  initializeTransporter() {
+  _ensureTransporter() {
+    if (this._transporterInitAttempted) return;
+    this._transporterInitAttempted = true;
+    this._initializeTransporter();
+  }
+
+  /**
+   * Initialize email transporter (SMTP) - called on first use
+   */
+  _initializeTransporter() {
     // Check if SMTP is configured
     if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
       try {
@@ -78,6 +87,7 @@ class EmailService {
    * @returns {Promise<{success: boolean, messageId?: string, error?: string, logged?: boolean}>}
    */
   async sendEmail(options) {
+    this._ensureTransporter();
     const { to, subject, text, html, cc, bcc } = options;
 
     // Validate required fields

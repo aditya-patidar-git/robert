@@ -23,7 +23,7 @@ const BookingSchema = new mongoose.Schema({
         default: 'crm_automation',
         enum: ['manual', 'crm_automation', 'api']
     },
-    callSid: { type: String, index: true }, // Link to the call that triggered the booking
+    callSid: { type: String }, // Link to the call that triggered the booking (indexed below)
     crmBookingId: { type: String }, // ID from external CRM if available
     
     // Location and details

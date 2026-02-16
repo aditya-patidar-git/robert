@@ -7,16 +7,26 @@ import twilio from 'twilio';
 class TwilioPayService {
   constructor() {
     this.twilioClient = null;
-    this.initializeTwilio();
+    this._initAttempted = false;
   }
 
   /**
-   * Initialize Twilio client
+   * Ensure Twilio client is initialized (lazy init after env is loaded).
    */
-  initializeTwilio() {
+  _ensureInitialized() {
+    if (this.twilioClient !== null) return;
+    if (this._initAttempted) return;
+    this._initAttempted = true;
+    this._initializeTwilio();
+  }
+
+  /**
+   * Initialize Twilio client (called on first use)
+   */
+  _initializeTwilio() {
     try {
-      const accountSid = process.env.TWILIO_SID;
-      const authToken = process.env.TWILIO_AUTH_TOKEN;
+      const accountSid = (process.env.TWILIO_SID || process.env.TWILIO_ACCOUNT_SID || '').trim();
+      const authToken = (process.env.TWILIO_AUTH_TOKEN || '').trim();
 
       if (!accountSid || !authToken) {
         console.warn('⚠️ Twilio credentials not configured');
@@ -166,6 +176,7 @@ class TwilioPayService {
    */
   async verifyPaymentStatus(callSid) {
     try {
+      this._ensureInitialized();
       if (!this.twilioClient) {
         throw new Error('Twilio client not initialized');
       }
