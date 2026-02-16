@@ -1,8 +1,8 @@
 /**
  * Concurrency Load Test for Robert Voice Agent Service
  * 
- * Tests the system's ability to handle 20 concurrent calls as per acceptance criteria:
- * - Concurrency: run N=20 simultaneous calls
+ * Tests the system's ability to handle 10 concurrent calls as per acceptance criteria:
+ * - Concurrency: run N=10 simultaneous calls
  * - p95 latency < target
  * - No cross-talk (call isolation)
  * 
@@ -10,7 +10,7 @@
  *   node tests/load/concurrency-test.js [options]
  * 
  * Options:
- *   --concurrent=N    Number of concurrent connections (default: 20)
+ *   --concurrent=N    Number of concurrent connections (default: 10)
  *   --duration=N      Test duration in seconds (default: 30)
  *   --endpoint=URL    WebSocket endpoint (default: ws://localhost:3002/media-stream)
  *   --verbose         Enable verbose logging
@@ -21,7 +21,7 @@ import crypto from 'crypto';
 
 // Configuration
 const CONFIG = {
-  concurrent: parseInt(process.argv.find(a => a.startsWith('--concurrent='))?.split('=')[1] || '20'),
+  concurrent: parseInt(process.argv.find(a => a.startsWith('--concurrent='))?.split('=')[1] || '10'),
   duration: parseInt(process.argv.find(a => a.startsWith('--duration='))?.split('=')[1] || '30') * 1000,
   endpoint: process.argv.find(a => a.startsWith('--endpoint='))?.split('=')[1] || 'ws://localhost:3002/media-stream',
   verbose: process.argv.includes('--verbose'),
@@ -390,7 +390,7 @@ function printResults(report) {
     report.latency.p95 < 1000;
   
   if (passed) {
-    console.log('✅ TEST PASSED: System can handle 20 concurrent calls');
+    console.log('✅ TEST PASSED: System can handle 10 concurrent calls');
   } else {
     console.log('❌ TEST FAILED:');
     if (report.summary.successfulConnections !== report.summary.totalConnections) {

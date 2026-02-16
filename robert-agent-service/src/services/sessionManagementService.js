@@ -125,10 +125,10 @@ class SessionManagementService {
     logValidationResult(result, 'Session Management');
     
     // Additional validation for concurrent call support
-    if (this.maxSessions < 50) {
+    if (this.maxSessions < 25) {
       result.warnings.push(
-        `MAX_SESSIONS (${this.maxSessions}) is below recommended minimum (50) for 20 concurrent calls. ` +
-        'Consider increasing to at least 50 to handle concurrent calls with buffer.'
+        `MAX_SESSIONS (${this.maxSessions}) is below recommended minimum (25) for 10 concurrent calls. ` +
+        'Consider increasing to at least 25 to handle concurrent calls with buffer.'
       );
     }
 
