@@ -290,8 +290,8 @@ export class ResponseHandler {
         console.log(`📤 [${this.state.callSid}] FIRST audio frame sent to Twilio (${frameSize} bytes, streamSid: ${this.state.streamSid})`);
       }
       
-      // DIAGNOSTIC: Log summary every 50 frames (~1 second of audio)
-      if (this.state.audioFramesSentCount % 50 === 0) {
+      // DIAGNOSTIC: Log summary every 250 frames (~5 seconds of audio) to reduce log volume
+      if (this.state.audioFramesSentCount % 250 === 0) {
         const elapsed = Date.now() - this.state.firstAudioFrameTime;
         console.log(`📊 [${this.state.callSid}] Audio pipeline: ${this.state.audioFramesSentCount} frames sent to Twilio (~${Math.round(elapsed/1000)}s)`);
       }

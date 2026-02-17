@@ -341,6 +341,11 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
         if (conversations[callSid]?.workflowContext === 'cancellation') {
           return 'cancellation';
         }
+        // Fallback: we're in cancellation flow if session has cancellation step set (e.g. after locate_booking), so phase stays cancellation even if workflowContext was lost from sync
+        const ccStep = conversations[callSid]?.bookingSession?.cancellationCurrentStep;
+        if (ccStep != null && ccStep >= 1) {
+          return 'cancellation';
+        }
         if (conversations[callSid]?.workflowContext === 'booking') {
           return 'booking_start';
         }

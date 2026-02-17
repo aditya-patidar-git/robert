@@ -99,6 +99,7 @@ class ProgressIndicatorService {
       'booking_step_send_confirmation',
       'booking_step_send_terms',
       'booking_step_send_sms',
+      'cancellation_step_search_client',
       'cancellation_step_locate_booking',
       'cancellation_step_fill_cancellation_form',
       'cancellation_step_send_confirmation'

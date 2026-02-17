@@ -103,7 +103,7 @@ class AudioDiagnosticService {
       diagnostic.errors.emptyAudioPayloads++;
     }
 
-    if (isActiveResponse && diagnostic.audioEvents.audioDeltaCount % 10 === 0) {
+    if (isActiveResponse && diagnostic.audioEvents.audioDeltaCount % 50 === 0) {
       const payloadSize = event.delta ? event.delta.length : 0;
       const decodedSize = event.delta ? Buffer.from(event.delta, 'base64').length : 0;
       console.log(`🔍 [DIAGNOSTIC] [${callSid}] Audio delta #${diagnostic.audioEvents.audioDeltaCount}: payload=${payloadSize} bytes, decoded=${decodedSize} bytes`);
