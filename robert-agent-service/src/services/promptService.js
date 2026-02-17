@@ -347,6 +347,22 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
           return 'cancellation';
         }
         if (conversations[callSid]?.workflowContext === 'booking') {
+          const bookingSession = conversations[callSid]?.bookingSession;
+          const currentStep = bookingSession?.currentStep;
+          const workflowType = bookingSession?.workflowType;
+          if (currentStep !== null && currentStep !== undefined) {
+            if (currentStep === 1) return 'booking_availability';
+            if (currentStep === 2) return 'booking_authentication';
+            if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
+            if (currentStep === 6 && workflowType === 'new') return 'booking_new_client';
+            if (currentStep === 6 && workflowType === 'existing') return 'booking_existing_client';
+            if (currentStep === 7) return 'booking_options';
+            if (currentStep === 7.5 && workflowType === 'existing') return 'booking_lookup_contact';
+            if (currentStep >= 8 && currentStep <= 9) return 'booking_payment';
+            if (currentStep >= 10) return 'booking_completion';
+          }
+          if (workflowType === 'existing') return 'booking_existing_client';
+          if (workflowType === 'new') return 'booking_new_client';
           return 'booking_start';
         }
       } catch (e) {

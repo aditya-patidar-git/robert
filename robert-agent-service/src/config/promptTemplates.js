@@ -105,7 +105,9 @@ STRICT ORDER FOR EXISTING CLIENT (after "Have you done training with us before?"
 3. After booking_step_search_client finds a client → call client_verification with ONLY what the caller says: ask full name and call with fullName only; then ask postcode and call with fullName + postcode (from caller); then ask telephone and call with fullName + postcode + telephoneNumber (from caller). Do NOT pass postcode or telephoneNumber from the search result or stored clientDetails.
 4. After client_verification returns verified: true → call booking_step_select_session, then booking_step_select_booking_options (call it first with courseType and workflowType; then ask and list options; for ITM list 125cc automatic, 50cc automatic, 125cc manual; when caller chooses, call again with bikeType as top-level, e.g. bikeType: "125cc automatic"), then booking_step_lookup_contact (Step 7.5), then booking_step_fill_contact_details.
 
-CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email) when needed. NEVER use placeholder or example emails. Do NOT confuse booking_step_search_client (Step 5, Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).`,
+CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email) when needed. NEVER use placeholder or example emails. Do NOT confuse booking_step_search_client (Step 5, Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).
+
+After booking_step_select_session: when the caller says "proceed", "okay proceed", or "yes please", that means proceed with the booking options step—call booking_step_select_booking_options with courseType and workflowType. Do NOT interpret that as a request to transfer to an agent.`,
 
   booking_new_client: `You're booking for a new client. 
 
@@ -115,7 +117,11 @@ CRITICAL: booking_step_create_new_contact does NOT ask any questions - it silent
 
 AUTOMATIC CONTINUATION: After booking_step_create_new_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`,
 
-  booking_options: `You're on the booking options page (SelectBookingOptions). If the caller just gave their bike type (e.g. "125cc automatic"), call booking_step_select_booking_options NOW with courseType, workflowType, and bikeType as top-level parameters (e.g. bikeType: "125cc automatic"); then proceed to booking_step_lookup_contact or booking_step_create_new_contact.
+  booking_options: `You're on the booking options page (SelectBookingOptions).
+
+When the caller has just given their bike type (e.g. "125cc automatic", "50cc automatic", "125cc manual"): say ONLY a brief acknowledgment (e.g. "Got it, 125cc automatic." or "Okay, I've got that."). Do NOT ask any other questions—no special requirements, no medical conditions, no contact details. Then call booking_step_select_booking_options with courseType, workflowType, and bikeType. Do not mention "finalizing your booking" or contact details in this response.
+
+If the caller just gave their bike type (e.g. "125cc automatic"), call booking_step_select_booking_options NOW with courseType, workflowType, and bikeType as top-level parameters (e.g. bikeType: "125cc automatic"); then proceed to booking_step_lookup_contact or booking_step_create_new_contact.
 
 CRITICAL WORKFLOW ORDER:
 1. FIRST: Call booking_step_select_booking_options with courseType and workflowType (this applies the options step on the page). Do not ask for bike type until you have already called this tool once. Then ask the caller for course-specific options and LIST them:
@@ -137,6 +143,8 @@ AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes succ
 CRITICAL: booking_step_fill_contact_details checks ALL required fields and returns a full list of missing ones (missingFields). Ask the caller for ALL missing details using the tool's message; collect them iteratively. Then call the tool ONCE with all collected parameters to fill the form; only after that does the flow proceed to the payment page.`,
 
   booking_lookup_contact: `You're looking up an existing client contact. This is a silent step - do NOT ask any questions. The system will automatically look up the client and proceed to fill contact details.
+
+Do NOT ask for or acknowledge contact details until the flow has reached booking_step_fill_contact_details (after lookup is done and the form is ready). Until then, only use periodic updates as configured; no contact-related questions.
 
 AUTOMATIC CONTINUATION: After booking_step_lookup_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`,
 

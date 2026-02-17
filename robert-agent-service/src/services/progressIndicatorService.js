@@ -84,6 +84,7 @@ class ProgressIndicatorService {
     // - booking_step_lookup_contact (existing workflow only - 3 updates)
     // - booking_step_fill_contact_details (existing workflow only - 3 updates)
     // Tools that get 2 periodic updates:
+    // - booking_step_search_client (find and verify client - create booking)
     // - booking_step_create_new_contact (new workflow only - 2 updates)
     // - booking_step_fill_contact_details (new workflow only - 2 updates)
     // Booking: booking_step_select_session, booking_step_send_confirmation, booking_step_send_terms, booking_step_send_sms
@@ -94,6 +95,7 @@ class ProgressIndicatorService {
       'booking_step_lookup_contact'
     ];
     const toolsWithTwoUpdates = [
+      'booking_step_search_client',
       'booking_step_create_new_contact',
       'booking_step_select_session',
       'booking_step_send_confirmation',

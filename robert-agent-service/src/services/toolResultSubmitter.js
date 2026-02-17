@@ -408,6 +408,15 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         const instruction = `CRITICAL: booking_step_select_session completed. Do not call it again. You MUST call **booking_step_select_booking_options** with courseType and workflowType from the current session IN THIS TURN (do not only speak—call the tool first). Only after that tool returns success may you ask the caller for bike type and list "125cc automatic, 50cc automatic, 125cc manual". After the caller chooses, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** as a top-level parameter (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select session completed - instructing to call booking_step_select_booking_options next`);
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (this.stateManager && reqCourseType) {
+          const session = sessionStateManager.getSession(callSid);
+          this.stateManager.pendingChainedToolCall = {
+            toolName: 'booking_step_select_booking_options',
+            args: { courseType: reqCourseType, workflowType: workflowType || session?.workflowType || 'existing' }
+          };
+          console.log(`🎯 [${callId}] Pending recovery tool set (after select_session) - will auto-run booking_step_select_booking_options if model does not call it`);
+        }
       }
 
       // Phase 3: After select_booking_options (or alias e.g. booking_step_finalize), call lookup_contact (existing) or create_new_contact (new) next
@@ -416,8 +425,8 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       if (isSelectBookingOptionsCompleted) {
         const wt = workflowType || conversations[callSid]?.bookingSession?.workflowType;
         const instruction = wt === 'new'
-          ? `CRITICAL: Do not call booking_step_select_booking_options again. Call booking_step_create_new_contact next with courseType and workflowType: "new". Then immediately call booking_step_fill_contact_details.`
-          : `CRITICAL: Do not call booking_step_select_booking_options again. Call booking_step_lookup_contact next with courseType and workflowType: "existing". This step is silent (no questions).`;
+          ? `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Booking options are set."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_create_new_contact next with courseType and workflowType: "new". Then immediately call booking_step_fill_contact_details.`
+          : `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Booking options are set."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_lookup_contact next with courseType and workflowType: "existing". This step is silent (no questions)—do not ask about contact until booking_step_fill_contact_details has run and returned missingFields.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select booking options completed - instructing to call ${wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact'} next`);
       }
@@ -456,6 +465,28 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           ? `${transferInstruction}\n\n${responseInstructions}`
           : transferInstruction;
         console.log(`🎯 [${callId}] Transfer all-occupied - instructing agent to say message to caller`);
+      }
+
+      // Transfer blocked by KBA while in booking after select_session (step 6): redirect to booking_step_select_booking_options
+      const isTransferBlockedKBAInBookingStep6 = toolName === 'transfer_call' &&
+        toolResult?.success === false &&
+        (toolResult?.error === 'KBA_REQUIRED' || toolResult?.requiresKBA === true) &&
+        conversations[callSid]?.workflowContext === 'booking' &&
+        currentStep === 6;
+      if (isTransferBlockedKBAInBookingStep6) {
+        const kbaInstruction = `CRITICAL: The transfer could not be completed because identity verification is required. Do NOT offer to transfer again for this. Continue the booking flow: call **booking_step_select_booking_options** with courseType and workflowType from the current session, then ask the caller for bike type and list "125cc automatic, 50cc automatic, 125cc manual" as usual.`;
+        responseInstructions = responseInstructions
+          ? `${kbaInstruction}\n\n${responseInstructions}`
+          : kbaInstruction;
+        console.log(`🎯 [${callId}] Transfer blocked (KBA) - instructing to continue with booking_step_select_booking_options`);
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (this.stateManager && reqCourseType) {
+          const session = sessionStateManager.getSession(callSid);
+          this.stateManager.pendingChainedToolCall = {
+            toolName: 'booking_step_select_booking_options',
+            args: { courseType: reqCourseType, workflowType: workflowType || session?.workflowType || 'existing' }
+          };
+        }
       }
 
       let forceNextToolChoice = null;

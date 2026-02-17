@@ -141,6 +141,11 @@ export async function getConversation(callSid) {
 
       merged.workflowContext = localConversation?.workflowContext ?? distributed?.workflowContext;
 
+      // Sync stores a compact lastAvailabilityCheck (no allSlots). Preserve local full data when present.
+      if (localConversation?.lastAvailabilityCheck?.allSlots != null && !Array.isArray(distributed?.lastAvailabilityCheck?.allSlots)) {
+        merged.lastAvailabilityCheck = localConversation.lastAvailabilityCheck;
+      }
+
       conversations[callSid] = merged;
       return merged;
     }

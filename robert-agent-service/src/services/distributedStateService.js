@@ -20,6 +20,107 @@ import crypto from 'crypto';
 import { sanitizeForJSON } from '../utils/objectUtils.js';
 import { isNetworkError, isRetryableError } from '../utils/isRetryableError.js';
 
+/** Twilio Sync Map item size limit (16 KiB). Payloads must stay under this. */
+const SYNC_PAYLOAD_LIMIT_BYTES = 16 * 1024;
+/** Target size to avoid stricter 2 writes/s rate limit for items >= 10 KiB. */
+const SYNC_PAYLOAD_TARGET_BYTES = 10 * 1024;
+/** Max step history entries to sync (non-aggressive). */
+const SYNC_STEP_HISTORY_CAP = 5;
+
+/**
+ * Build a Sync-safe payload from a sanitized conversation.
+ * Omits large or non-essential data so the payload stays under SYNC_PAYLOAD_LIMIT_BYTES.
+ * Used for failover/recovery; full state remains in local memory.
+ *
+ * @param {Object} sanitizedConversation - Already sanitized (no circular refs, no WebSocket).
+ * @param {{ aggressive?: boolean }} [options] - If aggressive, omit step histories and keep minimal booking/session details.
+ * @returns {Object} Plain object safe to send to Twilio Sync.
+ */
+function buildSyncPayload(sanitizedConversation, options = {}) {
+  const aggressive = !!options.aggressive;
+  const out = { _lastUpdated: sanitizedConversation._lastUpdated || new Date().toISOString() };
+
+  // Top-level fields needed for routing and identity (small)
+  const smallKeys = ['from', 'to', 'workflowContext', 'phase', 'language', 'clientVerified', 'clientVerifiedAt', 'verificationMethod'];
+  for (const k of smallKeys) {
+    if (sanitizedConversation[k] !== undefined) out[k] = sanitizedConversation[k];
+  }
+  if (sanitizedConversation.clientDetails && typeof sanitizedConversation.clientDetails === 'object') {
+    out.clientDetails = sanitizedConversation.clientDetails;
+  }
+
+  // bookingSession (trimmed)
+  const bs = sanitizedConversation.bookingSession;
+  if (bs && typeof bs === 'object') {
+    const trimmed = {
+      browserSessionId: bs.browserSessionId,
+      currentStep: bs.currentStep,
+      cancellationCurrentStep: bs.cancellationCurrentStep,
+      workflowType: bs.workflowType,
+      workflowTypeAsked: bs.workflowTypeAsked,
+      courseType: bs.courseType,
+      lastActivity: bs.lastActivity,
+      cancellationFee: bs.cancellationFee
+    };
+    if (!aggressive) {
+      const capHistory = (arr) => {
+        if (!Array.isArray(arr)) return [];
+        return arr.slice(-SYNC_STEP_HISTORY_CAP).map((e) => ({
+          step: e.step,
+          previousStep: e.previousStep,
+          timestamp: e.timestamp
+        }));
+      };
+      trimmed.stepHistory = capHistory(bs.stepHistory);
+      trimmed.cancellationStepHistory = capHistory(bs.cancellationStepHistory);
+      if (bs.knownPreferences && typeof bs.knownPreferences === 'object') {
+        trimmed.knownPreferences = bs.knownPreferences;
+      }
+    }
+    // Minimal bookingDetails/sessionDetails (ids and key fields only)
+    if (bs.bookingDetails && typeof bs.bookingDetails === 'object') {
+      trimmed.bookingDetails = {
+        bookingId: bs.bookingDetails.bookingId,
+        courseDate: bs.bookingDetails.courseDate,
+        courseType: bs.bookingDetails.courseType
+      };
+    }
+    if (bs.sessionDetails && typeof bs.sessionDetails === 'object') {
+      trimmed.sessionDetails = {
+        id: bs.sessionDetails.id,
+        startDate: bs.sessionDetails.startDate,
+        rowIndex: bs.sessionDetails.rowIndex
+      };
+    }
+    out.bookingSession = trimmed;
+  }
+
+  // lastAvailabilityCheck: do not sync allSlots; compact representation only
+  const lac = sanitizedConversation.lastAvailabilityCheck;
+  if (lac && typeof lac === 'object') {
+    const compact = {
+      slotCount: Array.isArray(lac.allSlots) ? lac.allSlots.length : 0
+    };
+    if (lac.selectedSlot && typeof lac.selectedSlot === 'object') {
+      compact.selectedSlot = {
+        rowIndex: lac.selectedSlot.rowIndex,
+        startDate: lac.selectedSlot.startDate,
+        time: lac.selectedSlot.time
+      };
+    }
+    if (lac.sessionDetails && typeof lac.sessionDetails === 'object') {
+      compact.sessionDetails = {
+        id: lac.sessionDetails.id,
+        startDate: lac.sessionDetails.startDate,
+        rowIndex: lac.sessionDetails.rowIndex
+      };
+    }
+    out.lastAvailabilityCheck = compact;
+  }
+
+  return out;
+}
+
 class DistributedStateService {
   constructor() {
     // Local cache for fast access
@@ -233,12 +334,25 @@ class DistributedStateService {
     const SYNC_SET_RETRY_DELAY_MS = 600;
 
     if (this.useSync) {
+      let payloadForSync = buildSyncPayload(sanitizedData);
+      let sizeInBytes = Buffer.byteLength(JSON.stringify(payloadForSync), 'utf8');
+      if (sizeInBytes > SYNC_PAYLOAD_LIMIT_BYTES) {
+        payloadForSync = buildSyncPayload(sanitizedData, { aggressive: true });
+        sizeInBytes = Buffer.byteLength(JSON.stringify(payloadForSync), 'utf8');
+      }
+      if (sizeInBytes > SYNC_PAYLOAD_LIMIT_BYTES) {
+        console.warn(`[DistributedState] Skipping Sync write for ${callSid}: payload size ${sizeInBytes} bytes exceeds ${SYNC_PAYLOAD_LIMIT_BYTES} limit`);
+        const duration = Date.now() - startTime;
+        console.log(`[DIST-VERBOSE] [${callSid}] ✅ setSession() completed in ${duration}ms (Sync skipped due to size)`);
+        return true;
+      }
+
       let lastError = null;
       for (let attempt = 1; attempt <= SYNC_SET_RETRIES; attempt++) {
         try {
           console.log(`[DIST-VERBOSE] [${callSid}] Writing to Twilio Sync (useSync=true)${attempt > 1 ? ` (retry ${attempt}/${SYNC_SET_RETRIES})` : ''}...`);
           const syncStart = Date.now();
-          await twilioSyncService.setSession(callSid, sanitizedData, ttl);
+          await twilioSyncService.setSession(callSid, payloadForSync, ttl);
           const syncDuration = Date.now() - syncStart;
           const totalDuration = Date.now() - startTime;
           console.log(`[DIST-VERBOSE] [${callSid}] ✅ setSession() completed in ${totalDuration}ms (sanitize: ${Date.now() - sanitizeStart}ms, sync: ${syncDuration}ms)`);
@@ -497,5 +611,5 @@ class DistributedStateService {
 // Export singleton instance
 export default new DistributedStateService();
 
-// Also export class for testing
-export { DistributedStateService };
+// Also export class and buildSyncPayload for testing
+export { DistributedStateService, buildSyncPayload };
