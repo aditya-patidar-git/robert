@@ -1,35 +1,38 @@
 /**
  * Maps raw transcript text to intent string for workflow phase selection.
  * Single responsibility: transcript text -> intent string (matches getPhaseForIntent keys).
+ * Returns { intent, isStrongStartIntent } so mid-workflow we only switch on strong intents.
  */
 
+/** Strong = explicit start-of-workflow; weak = substring that can be part of an answer (e.g. "book" in "booked"). */
 const BOOKING_PHRASES = [
-  { phrase: 'want to book', intent: 'book' },
-  { phrase: 'would like to book', intent: 'book' },
-  { phrase: 'make a booking', intent: 'book' },
-  { phrase: 'make booking', intent: 'book' },
-  { phrase: 'book a', intent: 'book' },
-  { phrase: 'book an', intent: 'book' },
-  { phrase: 'book my', intent: 'book' },
-  { phrase: 'check availability', intent: 'check_availability' },
-  { phrase: 'check available', intent: 'check_availability' },
-  { phrase: 'availability', intent: 'availability' },
-  { phrase: 'book', intent: 'book' }
+  { phrase: 'want to book', intent: 'book', strong: true },
+  { phrase: 'would like to book', intent: 'book', strong: true },
+  { phrase: 'make a booking', intent: 'book', strong: true },
+  { phrase: 'make booking', intent: 'book', strong: true },
+  { phrase: 'book a', intent: 'book', strong: true },
+  { phrase: 'book an', intent: 'book', strong: true },
+  { phrase: 'book my', intent: 'book', strong: true },
+  { phrase: 'check availability', intent: 'check_availability', strong: true },
+  { phrase: 'check available', intent: 'check_availability', strong: true },
+  { phrase: 'availability', intent: 'availability', strong: true },
+  { phrase: 'book', intent: 'book', strong: false }
 ];
 
+/** Long phrases first; single word "cancel" is weak (could be part of answer). */
 const CANCELLATION_PHRASES = [
-  'cancel my booking',
-  'cancel booking',
-  'cancel the booking',
-  'want to cancel',
-  'would like to cancel',
-  'need to cancel',
-  'cancel my course',
-  'cancel course',
-  'cancel my cbt',
-  'cancel cbt',
-  'cancellation',
-  'cancel'
+  { phrase: 'cancel my booking', strong: true },
+  { phrase: 'cancel booking', strong: true },
+  { phrase: 'cancel the booking', strong: true },
+  { phrase: 'want to cancel', strong: true },
+  { phrase: 'would like to cancel', strong: true },
+  { phrase: 'need to cancel', strong: true },
+  { phrase: 'cancel my course', strong: true },
+  { phrase: 'cancel course', strong: true },
+  { phrase: 'cancel my cbt', strong: true },
+  { phrase: 'cancel cbt', strong: true },
+  { phrase: 'cancellation', strong: true },
+  { phrase: 'cancel', strong: false }
 ];
 
 const TRANSFER_TO_HUMAN_PHRASES = [
@@ -56,22 +59,30 @@ export function isTransferToHumanRequest(transcriptText) {
   return TRANSFER_TO_HUMAN_PHRASES.some(phrase => normalized.includes(phrase));
 }
 
+/**
+ * @returns {{ intent: string|null, isStrongStartIntent: boolean }}
+ */
 export function getIntentFromTranscript(transcriptText) {
-  if (!transcriptText || typeof transcriptText !== 'string') return null;
+  const empty = { intent: null, isStrongStartIntent: false };
+  if (!transcriptText || typeof transcriptText !== 'string') return empty;
   const normalized = transcriptText.trim().toLowerCase();
-  if (!normalized) return null;
+  if (!normalized) return empty;
 
-  if (isTransferToHumanRequest(transcriptText)) return 'transfer_to_human';
+  if (isTransferToHumanRequest(transcriptText)) return { intent: 'transfer_to_human', isStrongStartIntent: true };
 
-  for (const phrase of CANCELLATION_PHRASES) {
+  for (const { phrase, strong } of CANCELLATION_PHRASES) {
     if (normalized.includes(phrase)) {
-      if (phrase === 'cancel my booking' || phrase === 'cancel booking' || phrase === 'cancel the booking') return 'cancel_booking';
-      if (phrase === 'cancellation') return 'cancellation';
-      return 'cancel';
+      const intent = phrase === 'cancel my booking' || phrase === 'cancel booking' || phrase === 'cancel the booking' ? 'cancel_booking'
+        : phrase === 'cancellation' ? 'cancellation'
+        : 'cancel';
+      return { intent, isStrongStartIntent: strong };
     }
   }
-  for (const { phrase, intent } of BOOKING_PHRASES) {
-    if (normalized.includes(phrase)) return intent;
+  for (const { phrase, intent, strong } of BOOKING_PHRASES) {
+    const matches = phrase === 'book'
+      ? /\bbook\b/.test(normalized)
+      : normalized.includes(phrase);
+    if (matches) return { intent, isStrongStartIntent: strong };
   }
-  return null;
+  return empty;
 }

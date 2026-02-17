@@ -191,7 +191,12 @@ export async function updateConversation(callSid, updates, ttl = undefined) {
   const localVerificationMethod = local?.verificationMethod;
   const localVerificationState = local?.verificationState;
 
-  const existing = await getConversation(callSid) || {};
+  // When we're writing bookingSession (e.g. cancellation step update), use local as base so
+  // we don't overwrite with stale Sync data. getConversation() fetches from Sync and can
+  // overwrite in-memory state before setConversation runs, causing chained tools to see wrong step.
+  const existing = updates.bookingSession != null
+    ? (local || {})
+    : (await getConversation(callSid) || {});
   const merged = {
     ...existing,
     ...updates,

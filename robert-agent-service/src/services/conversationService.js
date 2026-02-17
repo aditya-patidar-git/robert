@@ -19,21 +19,30 @@ export class ConversationService {
 
   /**
    * Detect intent from transcript and determine if workflow phase should update.
+   * Mid-workflow: only switch to a different workflow if the caller used a strong start intent (e.g. "I want to book"), not a weak keyword (e.g. "booked" in "it is booked for 26 February").
    * @param {string} transcript - User transcript text
-   * @param {Object} context - { callSid, currentPhase, workflowContext, conversations }
+   * @param {Object} context - { callSid, currentPhase, workflowContext, bookingSession }
    * @returns {{ intent: string|null, phase: string|null, shouldUpdateTools: boolean, newWorkflowContext: string|null }}
    */
   detectIntent(transcript, context = {}) {
-    const { currentPhase = null, workflowContext = null } = context;
+    const { currentPhase = null, workflowContext = null, bookingSession = null } = context;
     if (!transcript || typeof transcript !== 'string' || !transcript.trim()) {
       return { intent: null, phase: null, shouldUpdateTools: false, newWorkflowContext: null };
     }
 
-    const intent = getIntentFromTranscript(transcript);
+    const { intent, isStrongStartIntent } = getIntentFromTranscript(transcript);
     const phase = intent ? getPhaseForIntent(intent) : null;
 
     if (!phase) {
       return { intent, phase: null, shouldUpdateTools: false, newWorkflowContext: null };
+    }
+
+    const inMidWorkflow = (workflowContext === 'cancellation' && (bookingSession?.cancellationCurrentStep ?? 0) >= 1) ||
+      (workflowContext === 'booking' && (bookingSession?.currentStep ?? 0) >= 1);
+    const wouldSwitchWorkflow = (workflowContext === 'cancellation' && phase === 'booking_start') ||
+      (workflowContext === 'booking' && phase === 'cancellation');
+    if (inMidWorkflow && wouldSwitchWorkflow && !isStrongStartIntent) {
+      return { intent, phase, shouldUpdateTools: false, newWorkflowContext: null };
     }
 
     if (phase === 'cancellation' && currentPhase !== 'cancellation' && workflowContext !== 'cancellation') {

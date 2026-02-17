@@ -78,10 +78,12 @@ export class ToolCoordinator {
     }
     const currentPhase = this.openaiIntegration.getCurrentWorkflowPhase?.();
     const workflowContext = conversations[callSid]?.workflowContext;
+    const bookingSession = conversations[callSid]?.bookingSession;
     const intentResult = conversationService.detectIntent(transcriptText, {
       callSid,
       currentPhase,
-      workflowContext
+      workflowContext,
+      bookingSession
     });
     console.log(`🔍 [INTENT] [${callSid}] detectIntent result: shouldUpdateTools=${intentResult?.shouldUpdateTools}, newWorkflowContext=${intentResult?.newWorkflowContext}, phase=${intentResult?.phase}`);
     if (!intentResult.shouldUpdateTools || !intentResult.newWorkflowContext) return false;
