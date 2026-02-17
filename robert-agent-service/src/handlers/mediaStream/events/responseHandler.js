@@ -631,9 +631,13 @@ export class ResponseHandler {
       this.state.responseStartTime = null;
       this.state.isResponding = false;
       const activeToolExecution = progressIndicatorService.getExecutionInfo(this.state.callSid);
-      this.state.waitingForUser = !activeToolExecution;
+      const hasPendingRecoveryTool = !!this.state.pendingChainedToolCall;
+      this.state.waitingForUser = !activeToolExecution && !hasPendingRecoveryTool;
       if (activeToolExecution) {
         console.log(`📢 [${this.state.callSid}] Response done during tool execution (periodic update) - NOT setting waitingForUser`);
+      }
+      if (hasPendingRecoveryTool) {
+        console.log(`📢 [${this.state.callSid}] Response done with pending recovery/chained tool - NOT setting waitingForUser (will run correct tool)`);
       }
 
       // Mark initial greeting as completed if this was the first response

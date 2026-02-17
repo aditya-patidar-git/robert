@@ -9,6 +9,24 @@ import { conversations } from '../shared/state.js';
 import { AFTER_LOGIN_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
 import sessionStateManager from './browser/sessionStateManager.js';
 
+/** Cancellation step tools in order (step 1..14). Used to recover from wrong/non-existent tool by running the correct next step. */
+const CANCELLATION_TOOL_ORDER = [
+  'cancellation_step_verify_booking_intent',
+  'cancellation_step_authenticate',
+  'cancellation_step_determine_workflow',
+  'cancellation_step_navigate_contacts',
+  'cancellation_step_search_client',
+  'cancellation_step_select_client',
+  'cancellation_step_locate_booking',
+  'cancellation_step_confirm_cancellation',
+  'cancellation_step_initiate_cancellation',
+  'cancellation_step_fill_cancellation_form',
+  'cancellation_step_navigate_communication',
+  'cancellation_step_select_template',
+  'cancellation_step_send_confirmation',
+  'cancellation_step_voice_confirmation'
+];
+
 /**
  * Base class for tool result submission
  */
@@ -273,6 +291,36 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           ? `${unknownToolInstruction}\n\n${responseInstructions}`
           : unknownToolInstruction;
         console.log(`🎯 [${callId}] Unknown booking step tool - instructing to use booking_step_select_booking_options with top-level bikeType`);
+        const correctTool = 'booking_step_select_booking_options';
+        const session = sessionStateManager.getSession(callSid);
+        const reqCourseType = courseType || session?.courseType;
+        if (this.stateManager && reqCourseType) {
+          this.stateManager.pendingChainedToolCall = {
+            toolName: correctTool,
+            args: { courseType: reqCourseType, workflowType: session?.workflowType || 'existing' }
+          };
+          console.log(`🎯 [${callId}] Pending recovery tool set (unknown tool) - will auto-run ${correctTool} if model does not call it`);
+        }
+      }
+
+      // Unknown cancellation tool (e.g. cancellation_step_find_booking) — tally next step from ordered list and auto-run
+      const isUnknownCancellationTool = toolName && toolName.startsWith('cancellation_step_') &&
+        toolResult && toolResult.success === false &&
+        (/(Unknown tool|Tool not found)/i.test(toolResult.details || '') || /(Unknown tool|Tool not found)/i.test(toolResult.error || ''));
+      if (isUnknownCancellationTool && this.stateManager) {
+        const session = sessionStateManager.getSession(callSid);
+        const currentStep = sessionStateManager.getCancellationCurrentStep(callSid) ?? 1; // 1-based
+        const nextIndex = Math.max(0, Math.min((currentStep - 1), CANCELLATION_TOOL_ORDER.length - 1));
+        const correctTool = CANCELLATION_TOOL_ORDER[nextIndex] || CANCELLATION_TOOL_ORDER[0];
+        const reqCourseType = courseType || session?.courseType;
+        if (reqCourseType) {
+          const args = { courseType: reqCourseType, workflowType: 'existing' };
+          const bd = sessionStateManager.getBookingDetails(callSid) || session?.bookingDetails;
+          if (bd?.courseDate) args.courseDate = bd.courseDate;
+          this.stateManager.pendingChainedToolCall = { toolName: correctTool, args };
+          responseInstructions = (responseInstructions || '') + `\n\nCRITICAL: That tool does not exist. The correct next step is ${correctTool}. Call it with courseType "${reqCourseType}".`;
+          console.log(`🎯 [${callId}] Unknown cancellation tool - pending recovery set to ${correctTool} (step ${nextIndex + 1})`);
+        }
       }
 
       if (isClientVerification) {
@@ -414,12 +462,23 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       const isRequiresToolRedirect = !!toolResult?.requiresTool;
       if (isRequiresToolRedirect) {
         forceNextToolChoice = toolResult.requiresTool;
-        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const session = sessionStateManager.getSession(callSid);
+        const reqCourseType = courseType || session?.courseType;
         if (!reqCourseType) {
           console.warn(`⚠️ [${callId}] courseType not available for ${toolResult.requiresTool} - will be determined from booking`);
         }
         responseInstructions = `CRITICAL: You called a step out of order. SPEAK a short phrase like "Let me do that now." then IN THIS SAME RESPONSE invoke the tool ${toolResult.requiresTool} with courseType "${reqCourseType}". Do NOT output JSON or parameters as text—say words, then call the tool.`;
         console.log(`🎯 [${callId}] Wrong step - forcing required tool: ${toolResult.requiresTool}`);
+        // Schedule automatic execution of correct tool if model does not call it (avoid waiting state)
+        if (this.stateManager && reqCourseType) {
+          const args = { courseType: reqCourseType, workflowType: session?.workflowType || 'existing' };
+          if (forceNextToolChoice.startsWith('cancellation_step_')) {
+            const bd = sessionStateManager.getBookingDetails(callSid) || session?.bookingDetails;
+            if (bd?.courseDate) args.courseDate = bd.courseDate;
+          }
+          this.stateManager.pendingChainedToolCall = { toolName: forceNextToolChoice, args };
+          console.log(`🎯 [${callId}] Pending recovery tool set - will auto-run ${forceNextToolChoice} if model does not call it`);
+        }
       }
 
       const isVerifyBookingIntentProceed = !forceNextToolChoice && toolName === 'cancellation_step_verify_booking_intent' &&

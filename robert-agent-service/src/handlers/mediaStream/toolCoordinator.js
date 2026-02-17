@@ -35,7 +35,7 @@ export class ToolCoordinator {
       await this.createAudioResponse();
     });
     this.responseHandler.setOnResponseDone((event) => {
-      this.runPendingChainedToolIfAny().catch(err => {
+      this.runPendingChainedToolIfAny(event).catch(err => {
         console.error(`❌ [${this.state.callSid}] runPendingChainedToolIfAny error:`, err);
       });
     });
@@ -125,14 +125,24 @@ export class ToolCoordinator {
   }
 
   /**
-   * After a "say-only" response completes, run any pending chained tool (inject function_call, execute, submit, trigger).
+   * After a "say-only" or forced-tool response completes, run any pending chained/recovery tool (inject function_call, execute, submit, trigger).
+   * If the response output already contained a function_call for the pending tool, skip (model already called it).
+   * @param {Object} [event] - response.done event (optional) to check if model already invoked the pending tool
    */
-  async runPendingChainedToolIfAny() {
+  async runPendingChainedToolIfAny(event) {
     const pending = this.state.pendingChainedToolCall;
     if (!pending || !this.openaiWs || this.openaiWs.readyState !== 1 || this.state.isClosed) {
       if (pending && (!this.openaiWs || this.openaiWs.readyState !== 1)) {
         console.warn(`⚠️ [${this.state.callSid}] Pending chained tool ${pending.toolName} skipped - ws not ready`);
       }
+      return;
+    }
+    // If the model already called this tool in the response, do not run again (avoid duplicate execution)
+    const outputItems = event?.response?.output || [];
+    const modelAlreadyCalledTool = outputItems.some(item => item.type === 'function_call' && item.name === pending.toolName);
+    if (modelAlreadyCalledTool) {
+      this.state.pendingChainedToolCall = null;
+      console.log(`📢 [${this.state.callSid}] Pending tool ${pending.toolName} already called in response - skipping auto-run`);
       return;
     }
     this.state.pendingChainedToolCall = null;
