@@ -516,6 +516,9 @@ export class BaseStepTool {
       const isStep7Point5After7 = !this.isCancellationWorkflow && currentStep === 7 && stepNumber === 7.5 && effectiveWorkflowType === 'existing';
       if (isStep7Point5After7) isNextStep = true;
 
+      // Required next step from config (e.g. after 7.5 the next step is 8, not 8.5)
+      const effectiveNextStepNum = nextStepNum !== null ? nextStepNum : currentStep + 1;
+
       if (stepNumber < currentStep) {
         // STRICT: Block going backwards unless retrying a failed critical step
         const criticalPrerequisiteSteps = [2]; // Only Step 2 can be retried
@@ -542,30 +545,30 @@ export class BaseStepTool {
             // Allow retry
           } else {
             // Block retry - step likely completed or no failure recorded
-            const requiredToolName = getToolNameForStep(courseType, effectiveWorkflowType ?? workflowType, currentStep + 1, this.isCancellationWorkflow);
+            const requiredToolName = getToolNameForStep(courseType, effectiveWorkflowType ?? workflowType, effectiveNextStepNum, this.isCancellationWorkflow);
             return {
               valid: false,
-              error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,
+              error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${effectiveNextStepNum}.`,
               currentStep,
-              requiresStep: currentStep + 1,
+              requiresStep: effectiveNextStepNum,
               requiresTool: requiredToolName,
               autoRetryInstruction: requiredToolName 
                 ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
-                : `CRITICAL: You MUST continue with step ${currentStep + 1} without waiting for user input.`
+                : `CRITICAL: You MUST continue with step ${effectiveNextStepNum} without waiting for user input.`
             };
           }
         } else {
           // STRICT: Block retrying non-critical steps
-          const requiredToolName = getToolNameForStep(courseType, effectiveWorkflowType ?? workflowType, currentStep + 1, this.isCancellationWorkflow);
+          const requiredToolName = getToolNameForStep(courseType, effectiveWorkflowType ?? workflowType, effectiveNextStepNum, this.isCancellationWorkflow);
           return {
             valid: false,
-            error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${currentStep + 1}.`,
+            error: `Cannot execute step ${stepNumber}. Current step is ${currentStep}. Please continue from step ${effectiveNextStepNum}.`,
             currentStep,
-            requiresStep: currentStep + 1,
+            requiresStep: effectiveNextStepNum,
             requiresTool: requiredToolName,
             autoRetryInstruction: requiredToolName 
               ? `CRITICAL: You MUST immediately call ${requiredToolName} without waiting for user input. Do NOT ask the user - just call the tool now.`
-              : `CRITICAL: You MUST continue with step ${currentStep + 1} without waiting for user input.`
+              : `CRITICAL: You MUST continue with step ${effectiveNextStepNum} without waiting for user input.`
           };
         }
       }
@@ -577,7 +580,7 @@ export class BaseStepTool {
         // Check if trying to skip Step 3 (conversational) - this is allowed if workflowType provided
         const isTryingToSkipStep3 = currentStep === 2 && stepNumber === 4 && effectiveWorkflowType;
         if (!isTryingToSkipStep3) {
-          const requiredStepNum = nextStepNum !== null ? nextStepNum : currentStep + 1;
+          const requiredStepNum = effectiveNextStepNum;
           const requiredToolName = getToolNameForStep(courseType, effectiveWorkflowType, requiredStepNum, this.isCancellationWorkflow);
           return {
             valid: false,

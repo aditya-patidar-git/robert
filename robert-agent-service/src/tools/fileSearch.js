@@ -74,15 +74,21 @@ class FileSearchTool {
       const searchExecuteTime = Date.now() - searchExecuteStart;
       console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] Search executed in ${searchExecuteTime}ms`);
 
-      // Process results
-      const results = (searchResults.data || []).map(result => ({
-        fileId: result.id,
-        fileName: result.filename || 'Unknown',
-        similarityScore: result.similarity_score || 0,
-        content: result.content || '',
-        metadata: result.metadata || {},
-        source: 'OpenAI Vector Store'
-      }));
+      // Process results (API returns score, file_id, and content as array of { text, type })
+      const results = (searchResults.data || []).map(result => {
+        const rawContent = result.content;
+        const contentStr = Array.isArray(rawContent)
+          ? rawContent.map(c => (c && typeof c.text === 'string' ? c.text : '')).join('\n').trim()
+          : (typeof rawContent === 'string' ? rawContent : '');
+        return {
+          fileId: result.file_id || result.id,
+          fileName: result.filename || 'Unknown',
+          similarityScore: result.score ?? result.similarity_score ?? 0,
+          content: contentStr,
+          metadata: result.metadata || result.attributes || {},
+          source: 'OpenAI Vector Store'
+        };
+      });
 
       console.log(`✅ [${callContext.callSid || 'unknown'}] Found ${results.length} results for query: "${query}"`);
       console.log(`🔍 [TEST-4] [${callContext.callSid || 'unknown'}] SEARCH RESULTS:`);
@@ -236,13 +242,17 @@ class FileSearchTool {
         fileIds: results.map(r => r.fileId).filter(Boolean),
         titles: results.map(r => r.fileName).filter(Boolean),
         similarityScores: results.map(r => r.similarityScore || 0),
-        results: results.map(r => ({
-          fileId: r.fileId,
-          fileName: r.fileName,
-          similarityScore: r.similarityScore,
-          content: r.content?.substring(0, 500) || '', // Limit content size
-          metadata: r.metadata || {}
-        })),
+        results: results.map(r => {
+          const content = r.content;
+          const contentPreview = typeof content === 'string' ? content.substring(0, 500) : '';
+          return {
+            fileId: r.fileId,
+            fileName: r.fileName,
+            similarityScore: r.similarityScore,
+            content: contentPreview,
+            metadata: r.metadata || {}
+          };
+        }),
         model: 'gpt-realtime',
         confidence: results.length > 0 ? results[0].similarityScore : 0,
         metadata: {

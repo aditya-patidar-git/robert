@@ -226,7 +226,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_lookup_contact',
-      description: `Step 7.5 (Existing workflow only): Lookup existing client contact in booking form iframe. This happens AFTER booking_step_select_booking_options and BEFORE booking_step_fill_contact_details. This is a silent step with periodic updates - do NOT ask questions. Use this ONLY for existing client workflow after booking_step_select_booking_options. DO NOT confuse this with booking_step_search_client (Step 5) which happens earlier in the Contacts tab before client verification.`,
+      description: `Step 7.5 (Existing workflow only): Lookup existing client contact in booking form iframe. This happens AFTER booking_step_select_booking_options and BEFORE booking_step_fill_contact_details. After this step, the next step is always step 8 (booking_step_fill_contact_details), then step 9 (process_payment)—there is no step 8.5. This is a silent step with periodic updates - do NOT ask questions. Use this ONLY for existing client workflow after booking_step_select_booking_options. DO NOT confuse this with booking_step_search_client (Step 5) which happens earlier in the Contacts tab before client verification.`,
       parameters: {
         type: 'object',
         properties: {
@@ -255,7 +255,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_fill_contact_details',
-      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. For existing clients: runs AFTER booking_step_lookup_contact (Step 7.5); checks all required fields and returns a full list of missing ones (missingFields). Collect all missing details from the caller iteratively (one or more turns), then call this tool ONCE with all parameters to fill and proceed. For new clients: runs AFTER booking_step_create_new_contact (Step 6) and fills all fields from scratch.`,
+      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. For existing clients: runs AFTER booking_step_lookup_contact (Step 7.5); step order is 7.5 → 8 → 9 (payment)—after 7.5 always use step 8, then step 9. Checks all required fields and returns a full list of missing ones (missingFields). Collect all missing details from the caller iteratively (one or more turns), then call this tool ONCE with all parameters to fill and proceed. For new clients: runs AFTER booking_step_create_new_contact (Step 6) and fills all fields from scratch.`,
       parameters: {
         type: 'object',
         properties: {
@@ -464,7 +464,7 @@ export function getToolDefinitions() {
     {
       type: 'function',
       name: 'web_search',
-      description: 'Search the web for time-sensitive information not in knowledge base',
+      description: 'Search the web for current information (weather, news, external facts) not in the company knowledge base. Use when the caller asks about live/external data; use file_search first for policy/course/internal questions.',
       parameters: {
         type: 'object',
         properties: {
@@ -599,7 +599,7 @@ This tool returns guidance messages directing to the appropriate tools.`,
     {
       type: 'function',
       name: 'file_search',
-      description: 'Search the knowledge base for relevant information',
+      description: 'Search the company knowledge base for policies, GDPR, courses, pricing, and other internal information. Call this FIRST when the caller asks about company policies, procedures, "your database", or internal information—do not answer from memory without calling this tool.',
       parameters: {
         type: 'object',
         properties: {
