@@ -9,7 +9,7 @@ class ProgressIndicatorService {
   constructor() {
     this.activeExecutions = new Map(); // callSid -> { toolName, startTime, acknowledgmentSent, lastUpdateTime, updateInterval }
     this.holdingResponseIds = new Map(); // callSid -> Set of responseId (acknowledgments/periodic updates; do not set waitingForUser when these complete)
-    this.expectNonWaitingResponseCallSids = new Set(); // callSids for which the next response.created should be registered as non-waiting (e.g. "Booking options are set")
+    this.expectNonWaitingResponseCallSids = new Set(); // callSids for which the next response.created should be registered as non-waiting (e.g. "Your booking options are successfully selected")
   }
 
   /**
@@ -755,7 +755,7 @@ class ProgressIndicatorService {
 
   /**
    * Mark that the next response.created for this call should be treated as non-waiting (do not set waitingForUser when it completes).
-   * Call before sending response.create for e.g. "Booking options are set" so that response.done does not set waitingForUser.
+   * Call before sending response.create for e.g. "Your booking options are successfully selected" so that response.done does not set waitingForUser.
    * @param {string} callSid - Call SID
    */
   setExpectNonWaitingResponse(callSid) {

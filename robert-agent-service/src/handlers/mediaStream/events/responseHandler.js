@@ -708,7 +708,9 @@ export class ResponseHandler {
       // Stop pacer when response is done
       this.stopAudioPacer();
 
-      if (status === 'completed' && this.onResponseDone) {
+      // Run pending chained tool when response completes, or when a holding/ack response ends with status incomplete (so flow proceeds without waiting)
+      const shouldRunChainedTool = status === 'completed' || (status === 'incomplete' && (isHoldingResponse || hasPendingRecoveryTool));
+      if (shouldRunChainedTool && this.onResponseDone) {
         this.onResponseDone(event);
       }
     } else {

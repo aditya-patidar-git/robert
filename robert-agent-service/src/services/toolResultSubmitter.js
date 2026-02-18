@@ -425,9 +425,9 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         console.log(`🎯 [${callId}] Search client requires verification - instructing to call client_verification next (do not call search_client again), then booking_step_select_session after verified`);
       }
 
-      // Phase 2: After select_session, MUST call select_booking_options in this turn, then ask and list options; for ITM call again with top-level bikeType
+      // Phase 2: After select_session, call select_booking_options in this turn first; do NOT ask for bike type until after the tool returns
       if (toolName === 'booking_step_select_session' && toolResult?.success === true) {
-        const instruction = `CRITICAL: booking_step_select_session completed. Do not call it again. You MUST call **booking_step_select_booking_options** with courseType and workflowType from the current session IN THIS TURN (do not only speak—call the tool first). Only after that tool returns success may you ask the caller for bike type and list "125cc automatic, 50cc automatic, 125cc manual". After the caller chooses, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** as a top-level parameter (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
+        const instruction = `CRITICAL: booking_step_select_session completed. Do not call it again. You MUST call **booking_step_select_booking_options** with courseType and workflowType from the current session IN THIS TURN. Do NOT ask for bike type or list bike options in this turn—only confirm the session and call the tool. After the tool returns, if it asks for bike type (requiresPreferences), then in your next response ask the caller once and list "125cc automatic, 50cc automatic, 125cc manual". After the caller chooses, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** as a top-level parameter (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select session completed - instructing to call booking_step_select_booking_options next`);
         const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
@@ -441,14 +441,22 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         }
       }
 
+      // When select_booking_options returns requiresPreferences (e.g. missing bikeType), ask once only—do not repeat if already asked
+      const isSelectBookingOptionsRequiresPrefs = toolName === 'booking_step_select_booking_options' && toolResult?.requiresPreferences === true;
+      if (isSelectBookingOptionsRequiresPrefs) {
+        const noRepeatInstruction = `CRITICAL: The tool needs the caller's bike type preference. If you already asked for bike type in your previous message, do NOT ask again—wait for the caller's answer. If you have not asked yet, ask once using the message below and list the three options (125cc automatic, 50cc automatic, 125cc manual).`;
+        responseInstructions = responseInstructions ? `${noRepeatInstruction}\n\n${responseInstructions}` : noRepeatInstruction;
+        console.log(`🎯 [${callId}] Select booking options requires preferences (e.g. bikeType) - instructing to ask once only, do not repeat`);
+      }
+
       // Phase 3: After select_booking_options (or alias e.g. booking_step_finalize), call lookup_contact (existing) or create_new_contact (new) next
       const bookingOptionsAliases = ['booking_step_finalize', 'booking_step_finalize_booking', 'booking_step_finalize_course_options', 'booking_step_select_options', 'booking_step_booking_options'];
       const isSelectBookingOptionsCompleted = (toolName === 'booking_step_select_booking_options' || bookingOptionsAliases.includes(toolName)) && toolResult?.success === true;
       if (isSelectBookingOptionsCompleted) {
         const wt = workflowType || conversations[callSid]?.bookingSession?.workflowType;
         const instruction = wt === 'new'
-          ? `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Booking options are set."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_create_new_contact next with courseType and workflowType: "new". Then immediately call booking_step_fill_contact_details.`
-          : `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Booking options are set."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_lookup_contact next with courseType and workflowType: "existing". This step is silent (no questions)—do not ask about contact until booking_step_fill_contact_details has run and returned missingFields.`;
+          ? `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Your booking options are successfully selected."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_create_new_contact next with courseType and workflowType: "new". Then immediately call booking_step_fill_contact_details.`
+          : `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Your booking options are successfully selected."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_lookup_contact next with courseType and workflowType: "existing". This step is silent (no questions)—do not ask about contact until booking_step_fill_contact_details has run and returned missingFields.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select booking options completed - instructing to call ${wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact'} next`);
         const nextTool = wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact';
@@ -689,7 +697,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''}${isRequiresToolRedirect ? ', force requiresTool redirect' : ''}${chained ? ', say-only then chained tool' : ''})`);
       }
 
-      // "Booking options are set" is a non-waiting acknowledgment; register next response so response.done does not set waitingForUser
+      // "Your booking options are successfully selected" is a non-waiting acknowledgment; register next response so response.done does not set waitingForUser
       if (toolName === 'booking_step_select_booking_options' && toolResult?.success === true) {
         progressIndicatorService.setExpectNonWaitingResponse(callSid);
       }

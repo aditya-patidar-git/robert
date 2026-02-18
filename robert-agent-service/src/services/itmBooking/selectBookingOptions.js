@@ -558,48 +558,11 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
         console.log(`✅ [STEP 8] Selecting bike type: ${bikeType}`);
         console.log(`🔍 [STEP 8] Using flexible regex pattern: ${bikePattern}`);
         
-        let matchingOption = null;
-        let matchingRowIndex = -1;
+        // Single locator: find row matching bike type text (avoids slow loop over nth(i) + textContent)
+        const matchingRow = groupOptions.filter({ hasText: bikePattern }).first();
+        const hasMatch = await matchingRow.count() > 0;
         
-        // Find matching bike type option in this group
-        console.log(`🔍 [STEP 8] Searching through ${optionCount} options for bike type: "${bikeType}"`);
-        
-        for (let i = 0; i < optionCount; i++) {
-          const optionRow = groupOptions.nth(i);
-          const optionNameSpan = optionRow.locator('.optionName span');
-          
-          if (await optionNameSpan.count() > 0) {
-            const optionText = await optionNameSpan.textContent();
-            const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
-            
-            // Log first few options for debugging
-            if (i < 5) {
-              console.log(`   Option ${i + 1}: "${optionText}"`);
-            }
-            
-            if (normalizedText && bikePattern.test(normalizedText)) {
-              console.log(`✅ [STEP 8] Found matching bike type option at index ${i}: "${optionText}"`);
-              matchingOption = optionRow;
-              matchingRowIndex = i;
-              break;
-            }
-          } else {
-            // Try alternative selector if .optionName span doesn't exist
-            const alternativeText = await optionRow.textContent().catch(() => '');
-            if (alternativeText) {
-              const normalizedAlt = alternativeText.trim().toLowerCase();
-              if (bikePattern.test(normalizedAlt)) {
-                console.log(`✅ [STEP 8] Found matching bike type using alternative selector at index ${i}: "${alternativeText}"`);
-                matchingOption = optionRow;
-                matchingRowIndex = i;
-                break;
-              }
-            }
-          }
-        }
-        
-        // If no match found, log all options for debugging
-        if (!matchingOption) {
+        if (!hasMatch) {
           console.log(`⚠️ [STEP 8] No matching bike type found. Listing all ${optionCount} options:`);
           for (let i = 0; i < Math.min(optionCount, 11); i++) {
             const optionRow = groupOptions.nth(i);
@@ -609,18 +572,21 @@ export async function selectBookingOptions(page, bookingArgs = {}, screenshotsDi
             });
             console.log(`   Option ${i + 1}: "${optionText}"`);
           }
+        } else {
+          const selectedText = await matchingRow.locator('.optionName span').textContent().catch(() => null);
+          console.log(`✅ [STEP 8] Found matching bike type: "${selectedText || bikeType}"`);
         }
         
-        if (matchingOption && matchingRowIndex >= 0) {
-          const checkDiv = matchingOption.locator('.jqx_inputBookingOptionsSelect_check').first();
+        if (hasMatch) {
+          const checkDiv = matchingRow.locator('.jqx_inputBookingOptionsSelect_check').first();
           if (await checkDiv.count() > 0) {
             await checkDiv.click();
-            const selectedText = await matchingOption.locator('.optionName span').textContent();
+            const selectedText = await matchingRow.locator('.optionName span').textContent();
             console.log(`✅ [STEP 8] Selected bike type: "${selectedText}"`);
             await page.waitForTimeout(500);
           } else {
-            await matchingOption.click();
-            const selectedText = await matchingOption.locator('.optionName span').textContent();
+            await matchingRow.click();
+            const selectedText = await matchingRow.locator('.optionName span').textContent();
             console.log(`✅ [STEP 8] Clicked bike type row: "${selectedText}"`);
             await page.waitForTimeout(500);
           }
