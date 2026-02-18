@@ -8,6 +8,8 @@ import promptService from './promptService.js';
 import { conversations } from '../shared/state.js';
 import { AFTER_LOGIN_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
 import sessionStateManager from './browser/sessionStateManager.js';
+import progressIndicatorService from './progressIndicatorService.js';
+import { getNextStepName } from './browser/stepConfiguration.js';
 
 /** Cancellation step tools in order (step 1..14). Used to recover from wrong/non-existent tool by running the correct next step. */
 const CANCELLATION_TOOL_ORDER = [
@@ -26,6 +28,24 @@ const CANCELLATION_TOOL_ORDER = [
   'cancellation_step_send_confirmation',
   'cancellation_step_voice_confirmation'
 ];
+
+/** Booking step name (from stepConfiguration) → tool name. Used to recover from wrong/non-existent booking step by tallying correct next step. */
+const BOOKING_STEP_NAME_TO_TOOL = {
+  checkAvailability: 'booking_step_check_availability',
+  authenticate: 'booking_step_authenticate',
+  navigateContacts: 'booking_step_navigate_contacts',
+  searchClient: 'booking_step_search_client',
+  selectSession: 'booking_step_select_session',
+  selectBookingOptions: 'booking_step_select_booking_options',
+  createNewContact: 'booking_step_create_new_contact',
+  lookupContact: 'booking_step_lookup_contact',
+  fillContactDetails: 'booking_step_fill_contact_details',
+  processPayment: 'booking_step_process_payment',
+  sendPaymentRequest: 'booking_step_send_payment_request',
+  sendConfirmation: 'booking_step_send_confirmation',
+  sendTerms: 'booking_step_send_terms',
+  sendSMS: 'booking_step_send_sms'
+};
 
 /**
  * Base class for tool result submission
@@ -280,26 +300,28 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         console.log(`🎯 [${callId}] Step tool parameter/validation error - instructing to resolve and retry, not transfer`);
       }
 
-      // Unknown tool recovery: model called a non-existent booking step (e.g. finalize_booking, finalize_course_options, select_options) — redirect to correct tool and param shape
-      const unknownToolNames = ['booking_step_finalize_booking', 'booking_step_finalize_course_options', 'booking_step_select_options'];
-      const isUnknownBookingStepTool = toolName && unknownToolNames.includes(toolName) &&
+      // Unknown tool recovery (booking): any non-existent or wrong booking_step_* — tally correct next step from session and auto-run (like cancellation)
+      const isUnknownBookingStepTool = toolName && toolName.startsWith('booking_step_') &&
         toolResult && toolResult.success === false &&
         (/(Unknown tool|Tool not found)/i.test(toolResult.details || '') || /(Unknown tool|Tool not found)/i.test(toolResult.error || ''));
-      if (isUnknownBookingStepTool) {
-        const unknownToolInstruction = `CRITICAL: That tool does not exist. To apply the caller's bike type (or other options), use the tool **booking_step_select_booking_options** with **courseType**, **workflowType**, and **bikeType** as top-level parameters (e.g. bikeType: "125cc automatic"). Do NOT use selectedOptions—pass bikeType at the top level. After it succeeds, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
-        responseInstructions = responseInstructions
-          ? `${unknownToolInstruction}\n\n${responseInstructions}`
-          : unknownToolInstruction;
-        console.log(`🎯 [${callId}] Unknown booking step tool - instructing to use booking_step_select_booking_options with top-level bikeType`);
-        const correctTool = 'booking_step_select_booking_options';
+      if (isUnknownBookingStepTool && this.stateManager) {
         const session = sessionStateManager.getSession(callSid);
         const reqCourseType = courseType || session?.courseType;
-        if (this.stateManager && reqCourseType) {
-          this.stateManager.pendingChainedToolCall = {
-            toolName: correctTool,
-            args: { courseType: reqCourseType, workflowType: session?.workflowType || 'existing' }
-          };
-          console.log(`🎯 [${callId}] Pending recovery tool set (unknown tool) - will auto-run ${correctTool} if model does not call it`);
+        const wfType = workflowType || session?.workflowType || 'existing';
+        let currentStep = sessionStateManager.getCurrentStep(callSid);
+        if (currentStep == null) {
+          currentStep = wfType === 'new' ? 5 : 7;
+        }
+        const nextStepName = getNextStepName(reqCourseType, wfType, currentStep);
+        const correctTool = nextStepName ? BOOKING_STEP_NAME_TO_TOOL[nextStepName] : null;
+        if (correctTool && reqCourseType) {
+          const args = { courseType: reqCourseType, workflowType: wfType };
+          this.stateManager.pendingChainedToolCall = { toolName: correctTool, args };
+          const tallyInstruction = `CRITICAL: That tool does not exist. The correct next step is **${correctTool}**. Call it with courseType "${reqCourseType}" and workflowType "${wfType}". Do not ask the caller to repeat—proceed automatically.`;
+          responseInstructions = responseInstructions
+            ? `${tallyInstruction}\n\n${responseInstructions}`
+            : tallyInstruction;
+          console.log(`🎯 [${callId}] Unknown booking step tool - tally recovery set to ${correctTool} (next step: ${nextStepName}); will auto-run if model does not call it`);
         }
       }
 
@@ -429,6 +451,16 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           : `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Booking options are set."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_lookup_contact next with courseType and workflowType: "existing". This step is silent (no questions)—do not ask about contact until booking_step_fill_contact_details has run and returned missingFields.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select booking options completed - instructing to call ${wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact'} next`);
+        const nextTool = wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact';
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (this.stateManager && reqCourseType) {
+          const session = sessionStateManager.getSession(callSid);
+          this.stateManager.pendingChainedToolCall = {
+            toolName: nextTool,
+            args: { courseType: reqCourseType, workflowType: wt === 'new' ? 'new' : 'existing' }
+          };
+          console.log(`🎯 [${callId}] Pending recovery tool set (after select_booking_options) - will auto-run ${nextTool} if model does not call it`);
+        }
       }
 
       // Phase 4: After lookup_contact, call fill_contact_details next
@@ -656,7 +688,12 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         const chained = isVerifyBookingIntentProceed || isConfirmCancellationProceed || isInitiateCancellationProceed || isFillCancellationFormProceed || isNavigateCommunicationProceed;
         console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''}${isRequiresToolRedirect ? ', force requiresTool redirect' : ''}${chained ? ', say-only then chained tool' : ''})`);
       }
-      
+
+      // "Booking options are set" is a non-waiting acknowledgment; register next response so response.done does not set waitingForUser
+      if (toolName === 'booking_step_select_booking_options' && toolResult?.success === true) {
+        progressIndicatorService.setExpectNonWaitingResponse(callSid);
+      }
+
       openaiWs.send(JSON.stringify(responseCreatePayload));
       console.log(`✅ [${callId}] Response triggered after tool completion with contextual instructions`);
       

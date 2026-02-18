@@ -84,7 +84,8 @@ export class ToolCallHandler {
           toolName: effectiveToolName,
           toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
         });
-        
+
+        progressIndicatorService.endToolExecution(this.state.callSid);
         // Clean up
         this.state.pendingToolCalls.delete(call_id);
         return;
@@ -119,6 +120,7 @@ export class ToolCallHandler {
     } catch (error) {
       // CRITICAL RACE CONDITION FIX: Ensure flag is cleared even if submitResult or triggerResponse throw
       console.error(`❌ [${this.state.callSid}] Error submitting tool result for ${name}:`, error);
+      progressIndicatorService.endToolExecution(this.state.callSid);
       this.state.clearToolExecutionCompleting();
       this.state.pendingToolCalls.delete(call_id);
       throw error; // Re-throw to maintain error propagation

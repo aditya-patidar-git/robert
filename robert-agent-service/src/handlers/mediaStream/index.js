@@ -379,6 +379,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                 toolExecutionService.cleanup(stateManager.callSid);
                 
                 progressIndicatorService.endToolExecution(stateManager.callSid);
+                progressIndicatorService.clearHoldingResponsesForCall(stateManager.callSid);
                 silenceDetectionService.reset(stateManager.callSid);
                 errorRecoveryService.clearRetryCount(stateManager.callSid);
                 adaptiveTimingService.resetCallerProfile(stateManager.callSid);

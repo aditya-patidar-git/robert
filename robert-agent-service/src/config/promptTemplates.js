@@ -76,7 +76,10 @@ NOTE: For booking/availability questions, follow the booking_start workflow phas
 DO NOT hesitate or ask "Would you like me to check?" - just use the appropriate tool immediately to provide accurate information.`,
 
   booking_start: `You're starting a booking flow. CRITICAL WORKFLOW ORDER - DO NOT SKIP STEPS:
-1. FIRST: Ask what type of course they need
+
+If the caller has NOT yet said which course they want, your FIRST question MUST be: which course type? (e.g. Introduction to Motorcycling, CBT, Private Lesson, Gear Conversion). Do NOT ask about date, time, or location until you have courseType. Do NOT call booking_step_check_availability without courseType—the availability URL depends on it.
+
+1. FIRST: Ask what type of course they need (unless they already said it).
 2. SECOND: Once they choose the course type, you MUST ask about their preferences BEFORE calling booking_step_check_availability:
    - "Do you have any preference for date or time?"
    - "Do you have any location preference?" ({{#if locations}}{{#each locations}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{else}}Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon{{/if}})

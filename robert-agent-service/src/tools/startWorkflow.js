@@ -35,7 +35,7 @@ class StartWorkflowTool {
 
     const messages = {
       cancellation: "I'll help you cancel your booking. Do you have a current booking with us?",
-      booking: "I'll help you with a booking. Do you have any preference for date, time or location?",
+      booking: "I'll help you with a booking. What type of course would you like to book? For example, Introduction to Motorcycling, CBT, Private Lesson, or Gear Conversion.",
       complaint: "I'll help you file a complaint. Can you tell me what happened?"
     };
 

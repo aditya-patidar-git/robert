@@ -49,6 +49,9 @@ export class ResponseHandler {
     }
     
     console.log(`📝 [${this.state.callSid}] Response created - ID: ${this.state.activeResponseId}, modalities: ${JSON.stringify(event.response?.modalities || [])}, isResponding: ${this.state.isResponding}`);
+
+    // Register holding response (ack/periodic update) so response.done does not set waitingForUser
+    progressIndicatorService.notifyResponseCreated(this.state.callSid, event.response?.id);
     
     const responseModalities = event.response?.modalities || [];
     const hasAudioModality = responseModalities.includes('audio');
@@ -632,12 +635,19 @@ export class ResponseHandler {
       this.state.isResponding = false;
       const activeToolExecution = progressIndicatorService.getExecutionInfo(this.state.callSid);
       const hasPendingRecoveryTool = !!this.state.pendingChainedToolCall;
-      this.state.waitingForUser = !activeToolExecution && !hasPendingRecoveryTool;
-      if (activeToolExecution) {
-        console.log(`📢 [${this.state.callSid}] Response done during tool execution (periodic update) - NOT setting waitingForUser`);
-      }
-      if (hasPendingRecoveryTool) {
-        console.log(`📢 [${this.state.callSid}] Response done with pending recovery/chained tool - NOT setting waitingForUser (will run correct tool)`);
+      const isHoldingResponse = progressIndicatorService.isHoldingResponse(this.state.callSid, responseId);
+      if (isHoldingResponse) {
+        this.state.waitingForUser = false;
+        progressIndicatorService.removeHoldingResponse(this.state.callSid, responseId);
+        console.log(`📢 [${this.state.callSid}] Response done (holding message - ack/periodic update) - NOT setting waitingForUser`);
+      } else {
+        this.state.waitingForUser = !activeToolExecution && !hasPendingRecoveryTool;
+        if (activeToolExecution) {
+          console.log(`📢 [${this.state.callSid}] Response done during tool execution (periodic update) - NOT setting waitingForUser`);
+        }
+        if (hasPendingRecoveryTool) {
+          console.log(`📢 [${this.state.callSid}] Response done with pending recovery/chained tool - NOT setting waitingForUser (will run correct tool)`);
+        }
       }
 
       // Mark initial greeting as completed if this was the first response

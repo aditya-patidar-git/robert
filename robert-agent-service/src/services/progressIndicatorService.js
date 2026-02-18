@@ -8,6 +8,8 @@ import { conversations } from '../shared/state.js';
 class ProgressIndicatorService {
   constructor() {
     this.activeExecutions = new Map(); // callSid -> { toolName, startTime, acknowledgmentSent, lastUpdateTime, updateInterval }
+    this.holdingResponseIds = new Map(); // callSid -> Set of responseId (acknowledgments/periodic updates; do not set waitingForUser when these complete)
+    this.expectNonWaitingResponseCallSids = new Set(); // callSids for which the next response.created should be registered as non-waiting (e.g. "Booking options are set")
   }
 
   /**
@@ -146,7 +148,8 @@ class ProgressIndicatorService {
       stateManager: stateManager, // Store reference for thread-safe checks
       isStepBasedTool: this.isStepBasedTool(toolName), // Track if this is a step-based tool for threshold adjustment
       allowsPeriodicUpdates: allowsPeriodicUpdates, // Track if this tool should have periodic updates enabled
-      delayedStartTime: delayedStartTime // When to start periodic updates (if delayed)
+      delayedStartTime: delayedStartTime, // When to start periodic updates (if delayed)
+      expectHoldingResponse: false // Set true before sending ack/periodic response.create; cleared when response.created is notified
     });
     console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${this.isStepBasedTool(toolName) ? ' (step-based, using longer threshold)' : ''}${allowsPeriodicUpdates ? ' (periodic updates enabled)' : ''}`);
   }
@@ -241,6 +244,7 @@ class ProgressIndicatorService {
       
       try {
         if (openaiWs && openaiWs.readyState === 1) { // WebSocket.OPEN
+          execution.expectHoldingResponse = true; // Next response.created is this acknowledgment; do not set waitingForUser when it completes
           openaiWs.send(JSON.stringify({
             type: 'response.create',
             response: {
@@ -434,6 +438,7 @@ class ProgressIndicatorService {
         // This prevents the AI from generating additional questions or content based on workflow phase
         const periodicUpdateInstructions = `CRITICAL: You MUST say EXACTLY and ONLY: "${message}". Do NOT add or rephrase. Do NOT mention next steps, verification, or asking for name. This is a holding message only; say ONLY this and nothing else.`;
 
+        execution.expectHoldingResponse = true; // Next response.created is this periodic update; do not set waitingForUser when it completes
         openaiWs.send(JSON.stringify({
           type: 'response.create',
           response: {
@@ -588,6 +593,7 @@ class ProgressIndicatorService {
         // This prevents the AI from generating additional questions or content based on workflow phase
         const periodicUpdateInstructions = `CRITICAL: You MUST say EXACTLY and ONLY: "${message}". Do NOT add or rephrase. Do NOT mention next steps, verification, or asking for name. This is a holding message only; say ONLY this and nothing else.`;
 
+        exec.expectHoldingResponse = true; // Next response.created is this periodic update; do not set waitingForUser when it completes
         openaiWs.send(JSON.stringify({
           type: 'response.create',
           response: {
@@ -717,6 +723,75 @@ class ProgressIndicatorService {
    */
   getExecutionInfo(callSid) {
     return this.activeExecutions.get(callSid) || null;
+  }
+
+  /**
+   * Notify that a response was created (called from response.created handler).
+   * If we just sent an acknowledgment or periodic update, register this response ID so response.done does not set waitingForUser.
+   * @param {string} callSid - Call SID
+   * @param {string|null} responseId - Response ID from event.response.id
+   */
+  notifyResponseCreated(callSid, responseId) {
+    if (!callSid || !responseId) return;
+    const execution = this.activeExecutions.get(callSid);
+    if (execution && execution.expectHoldingResponse) {
+      if (!this.holdingResponseIds.has(callSid)) {
+        this.holdingResponseIds.set(callSid, new Set());
+      }
+      this.holdingResponseIds.get(callSid).add(responseId);
+      execution.expectHoldingResponse = false;
+      console.log(`📌 [${callSid}] Registered holding response ${responseId} (ack/periodic update)`);
+      return;
+    }
+    if (this.expectNonWaitingResponseCallSids.has(callSid)) {
+      this.expectNonWaitingResponseCallSids.delete(callSid);
+      if (!this.holdingResponseIds.has(callSid)) {
+        this.holdingResponseIds.set(callSid, new Set());
+      }
+      this.holdingResponseIds.get(callSid).add(responseId);
+      console.log(`📌 [${callSid}] Registered non-waiting response ${responseId} (e.g. booking options acknowledgment)`);
+    }
+  }
+
+  /**
+   * Mark that the next response.created for this call should be treated as non-waiting (do not set waitingForUser when it completes).
+   * Call before sending response.create for e.g. "Booking options are set" so that response.done does not set waitingForUser.
+   * @param {string} callSid - Call SID
+   */
+  setExpectNonWaitingResponse(callSid) {
+    if (callSid) this.expectNonWaitingResponseCallSids.add(callSid);
+  }
+
+  /**
+   * Check if the completed response was an acknowledgment or periodic update (holding message).
+   * @param {string} callSid - Call SID
+   * @param {string} responseId - Response ID from response.done event
+   * @returns {boolean}
+   */
+  isHoldingResponse(callSid, responseId) {
+    return this.holdingResponseIds.get(callSid)?.has(responseId) ?? false;
+  }
+
+  /**
+   * Remove a response ID from the holding set after response.done has been handled.
+   * @param {string} callSid - Call SID
+   * @param {string} responseId - Response ID
+   */
+  removeHoldingResponse(callSid, responseId) {
+    const set = this.holdingResponseIds.get(callSid);
+    if (set) {
+      set.delete(responseId);
+      if (set.size === 0) this.holdingResponseIds.delete(callSid);
+    }
+  }
+
+  /**
+   * Clear holding response IDs for a call (call from full call cleanup only, not when a single tool ends).
+   * @param {string} callSid - Call SID
+   */
+  clearHoldingResponsesForCall(callSid) {
+    this.holdingResponseIds.delete(callSid);
+    this.expectNonWaitingResponseCallSids.delete(callSid);
   }
 
   /**
