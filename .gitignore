@@ -42,10 +42,13 @@ pids
 *.seed
 *.pid.lock
 *.md
-!documentation/
-!documentation/*.md
+documentation/
+documentation/*.md
+docs
+official_docs
 # Coverage
 coverage/
+audit-logs
 *.lcov
 backups/
 
