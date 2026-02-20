@@ -47,9 +47,11 @@ async function getClientEmail(args, sessionState) {
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeExistingClientFlow(page, args, sessionState, screenshotsDir) {
+export async function executeExistingClientFlow(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Filling in your details.' });
   // Existing client: use lookupContactAndWait to fill missing fields
   let clientEmail = await getClientEmail(args, sessionState);
 
@@ -410,7 +412,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
     }
 
     // After handling missing fields (if any were provided), click Next
-    await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false);
+    progressCallback?.({ message: 'Saving your details.' });
+    await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false, progressCallback);
 
     // CRITICAL FIX 5: Detect page transition after Next click
     await page.waitForTimeout(2000); // Wait for navigation

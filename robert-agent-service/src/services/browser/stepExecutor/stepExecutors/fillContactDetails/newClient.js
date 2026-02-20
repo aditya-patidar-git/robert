@@ -13,9 +13,11 @@ import * as commonSteps from '../../../../commonBookingSteps/index.js';
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeNewClientFlow(page, args, sessionState, screenshotsDir) {
+export async function executeNewClientFlow(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Filling in your details.' });
   // New client: fill all fields from scratch
   const addressConfirmed = args.addressConfirmed || false;
   const correctedAddress = args.correctedAddress || null;
@@ -38,7 +40,7 @@ export async function executeNewClientFlow(page, args, sessionState, screenshots
     marketingConsent: args.marketingConsent,
     dataSharing: args.dataSharing,
     correctedAddress: correctedAddress
-  }, screenshotsDir, addressConfirmed);
+  }, screenshotsDir, addressConfirmed, progressCallback);
 
   // Check if address confirmation is required
   if (fillResult && fillResult.requiresAddressConfirmation) {

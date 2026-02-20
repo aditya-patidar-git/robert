@@ -12,9 +12,11 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeSendSMS(page, args, sessionState, screenshotsDir) {
+export async function executeSendSMS(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Sending the SMS.' });
   const courseType = args.courseType || sessionState?.courseType;
   
   // Map course type to SMS template type
@@ -26,7 +28,7 @@ export async function executeSendSMS(page, args, sessionState, screenshotsDir) {
   }
   
   // Use existing sendSMSConfirmation logic
-  await commonSteps.sendSMSConfirmation(page, screenshotsDir, smsCourseType);
+  await commonSteps.sendSMSConfirmation(page, screenshotsDir, smsCourseType, progressCallback);
 
   return {
     success: true,

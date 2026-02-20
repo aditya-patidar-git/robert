@@ -43,9 +43,10 @@ export class StepExecutor {
    * @param {Object} page - Playwright page object
    * @param {Object} args - Step arguments
    * @param {Object} sessionState - Current session state
+   * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates (holding; never sets waitingForUser)
    * @returns {Promise<Object>} Step execution result
    */
-  async executeStep(stepName, page, args, sessionState) {
+  async executeStep(stepName, page, args, sessionState, progressCallback = null) {
     try {
       // Verify browser state before execution
       await verifyBrowserStateBefore(page, stepName, sessionState);
@@ -54,46 +55,46 @@ export class StepExecutor {
       let result;
       switch (stepName) {
         case 'checkAvailability':
-          result = await executeCheckAvailability(page, args, sessionState, this.screenshotsDir);
+          result = await executeCheckAvailability(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'authenticate':
-          result = await executeAuthenticate(page, args, sessionState, this.screenshotsDir);
+          result = await executeAuthenticate(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'navigateContacts':
-          result = await executeNavigateContacts(page, args, sessionState, this.screenshotsDir);
+          result = await executeNavigateContacts(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'searchClient':
-          result = await executeSearchClient(page, args, sessionState, this.screenshotsDir);
+          result = await executeSearchClient(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'selectSession':
-          result = await executeSelectSession(page, args, sessionState, this.screenshotsDir);
+          result = await executeSelectSession(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'selectBookingOptions':
-          result = await executeSelectBookingOptions(page, args, sessionState, this.screenshotsDir);
+          result = await executeSelectBookingOptions(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'createNewContact':
-          result = await executeCreateNewContact(page, args, sessionState, this.screenshotsDir);
+          result = await executeCreateNewContact(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'lookupContact':
-          result = await executeLookupContact(page, args, sessionState, this.screenshotsDir);
+          result = await executeLookupContact(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'fillContactDetails':
-          result = await executeFillContactDetails(page, args, sessionState, this.screenshotsDir);
+          result = await executeFillContactDetails(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'processPayment':
-          result = await executeProcessPayment(page, args, sessionState, this.screenshotsDir);
+          result = await executeProcessPayment(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'sendPaymentRequest':
-          result = await executeSendPaymentRequest(page, args, sessionState, this.screenshotsDir);
+          result = await executeSendPaymentRequest(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'sendConfirmation':
-          result = await executeSendConfirmation(page, args, sessionState, this.screenshotsDir);
+          result = await executeSendConfirmation(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'sendTerms':
-          result = await executeSendTerms(page, args, sessionState, this.screenshotsDir);
+          result = await executeSendTerms(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         case 'sendSMS':
-          result = await executeSendSMS(page, args, sessionState, this.screenshotsDir);
+          result = await executeSendSMS(page, args, sessionState, this.screenshotsDir, progressCallback);
           break;
         // Cancellation workflow steps
         case 'selectClient':

@@ -26,9 +26,11 @@ function normalizeMobile(value) {
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state (bookingSession)
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeLookupContact(page, args, sessionState, screenshotsDir) {
+export async function executeLookupContact(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Looking up your contact.' });
   const callSid = args.callSid || null;
   const conversation = callSid ? conversations[callSid] : null;
   const clientDetails = conversation?.clientDetails || sessionState?.clientDetails;
@@ -68,7 +70,7 @@ export async function executeLookupContact(page, args, sessionState, screenshots
 
   // Do not click Next here: stay on client details so fill_contact_details can check required fields
   // (e.g. National Insurance) and only then click Next to payment.
-  await commonSteps.lookupContactAndWait(page, searchValue, searchType, screenshotsDir, postcode, true);
+  await commonSteps.lookupContactAndWait(page, searchValue, searchType, screenshotsDir, postcode, true, progressCallback);
 
   return {
     success: true,

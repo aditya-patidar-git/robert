@@ -10,9 +10,11 @@
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeNavigateContacts(page, args, sessionState, screenshotsDir) {
+export async function executeNavigateContacts(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Opening the Contacts tab.' });
   // Ensure we're on CRM dashboard first
   const currentUrl = page.url();
   if (!currentUrl.includes('takeabyte.co.uk/InContact') || currentUrl.includes('/Account/Login')) {
@@ -29,6 +31,7 @@ export async function executeNavigateContacts(page, args, sessionState, screensh
   await contactsTab.click();
   
   // WAIT FOR PAGE TO FULLY LOAD - 8 seconds (Contacts page loads in an iframe)
+  progressCallback?.({ message: 'Loading the contacts page.' });
   console.log('⏳ [navigateContacts] Waiting for Contacts page to fully load...');
   await page.waitForTimeout(8000);
   await page.waitForLoadState('networkidle');
@@ -44,6 +47,7 @@ export async function executeNavigateContacts(page, args, sessionState, screensh
     return iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete';
   }, { timeout: 30000 });
   
+  progressCallback?.({ message: 'Contacts page is ready.' });
   console.log('✅ [navigateContacts] Contacts page iframe loaded successfully');
 
   return {

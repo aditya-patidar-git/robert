@@ -6,9 +6,11 @@ import * as stationeryHelpers from './stationeryHelpers.js';
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} courseType - Course type enum value (can be simplified format like 'tfl-one-to-one' or full enum like 'ITM', 'CBT', etc.)
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  */
-export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tfl-one-to-one') {
+export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tfl-one-to-one', progressCallback = null) {
   try {
+    progressCallback?.({ message: 'Preparing the SMS.' });
     console.log('📱 [SMS] Sending SMS confirmation...');
     
     // Wait for page to be ready
@@ -40,6 +42,7 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
     // Find and click "Send SMS" button
     const sendSMSButton = await stationeryHelpers.findSendSMSButton(page, searchContext);
     
+    progressCallback?.({ message: 'Sending the SMS now.' });
     // Click the list item - handle hidden elements
     console.log('🖱️ [SMS] Clicking "Send SMS" list item...');
     try {

@@ -12,9 +12,11 @@ import { trackCRMBooking, buildBookingData } from '../../../bookingTrackingClien
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeProcessPayment(page, args, sessionState, screenshotsDir) {
+export async function executeProcessPayment(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Opening the payment page.' });
   // Use the updated payment strategy: Select "Send a payment request" and use sendPaymentRequest
   const screenshots = [];
 
@@ -36,6 +38,7 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
 
   if (!onPaymentRequestPage) {
     // CRITICAL: Wait for page to fully transition from contact details to payment page
+    progressCallback?.({ message: 'Loading the payment page.' });
     console.log('⏳ [PAYMENT] Waiting for page transition from contact details to payment page...');
     await page.waitForTimeout(5000); // Increased wait time for page transition
 
@@ -71,6 +74,7 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     }
 
     // Step 1: Select "Send a payment request" option (updated strategy)
+    progressCallback?.({ message: 'Selecting payment option.' });
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
     await selectPaymentOption(page, screenshotsDir, 'request');
     screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', screenshotsDir));
@@ -85,6 +89,7 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
           const testLocator = paymentRequestIframe.locator('body').first();
           await testLocator.waitFor({ state: 'attached', timeout: 2000 });
           console.log('✅ [PAYMENT] Confirmed: On payment request link page (contactSend3DSecureRequest_iframe)');
+          progressCallback?.({ message: 'Opening the payment request form.' });
           onPaymentRequestPage = true;
           break;
         } catch (iframeError) {

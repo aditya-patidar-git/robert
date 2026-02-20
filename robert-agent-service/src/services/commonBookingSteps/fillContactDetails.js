@@ -189,7 +189,7 @@ async function selectDropdownOption(iframe, page, labelText, fieldId, optionValu
   }
 }
 
-export async function fillContactDetails(page, contactDetails, screenshotsDir, addressConfirmed = false) {
+export async function fillContactDetails(page, contactDetails, screenshotsDir, addressConfirmed = false, progressCallback = null) {
   try {
     console.log('📝 [STEP 7] Filling contact details for new client...');
     
@@ -413,6 +413,7 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
     
     // Take screenshot before clicking Next
     await takeScreenshot(page, 'contact-details-filled.png', screenshotsDir);
+    progressCallback?.({ message: 'Saving your details.' });
     
     // 16. Click Next button (only if address was confirmed or no address was auto-populated)
     // If address confirmation is required, it should have been returned earlier

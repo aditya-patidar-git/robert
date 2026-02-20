@@ -9,6 +9,7 @@
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} [clientPostcode] - Optional postcode for verification when multiple results appear
  * @param {boolean} [skipNextClick] - If true, skip clicking Next button (for address confirmation flow)
+ * @param {Function|null} [progressCallback] - Optional callback({ message }) for path-based voice updates
  */
 
 import { cleanEmail } from '../utils.js';
@@ -19,7 +20,7 @@ import { performSearch } from './helpers/performSearch.js';
 import { selectClient } from './helpers/selectClient.js';
 import { clickNext } from './helpers/clickNext.js';
 
-export async function lookupContactAndWait(page, searchValue, searchType, screenshotsDir, clientPostcode = null, skipNextClick = false) {
+export async function lookupContactAndWait(page, searchValue, searchType, screenshotsDir, clientPostcode = null, skipNextClick = false, progressCallback = null) {
   try {
     console.log(`🔍 [STEP 9] Looking up contact (${searchType})...`);
 
@@ -48,10 +49,13 @@ export async function lookupContactAndWait(page, searchValue, searchType, screen
     }
 
     const { iframe, iframeId } = await findIframe(page, screenshotsDir);
+    progressCallback?.({ message: 'Opening the contact lookup.' });
 
     await performSearch(page, iframe, iframeId, finalSearchValue, screenshotsDir);
+    progressCallback?.({ message: 'Searching for your contact.' });
 
     await selectClient(page, iframe, iframeId, finalSearchValue, searchType, clientPostcode, screenshotsDir);
+    progressCallback?.({ message: 'Loading contact details.' });
 
     if (skipNextClick) {
       console.log('⏸️ [STEP 9] Skipping Next button click (address confirmation required)');

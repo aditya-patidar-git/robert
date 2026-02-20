@@ -256,12 +256,13 @@ export class BaseStepTool {
         callSid // Include callSid for steps that need it (e.g., searchClient)
       };
 
-      // Execute step
+      // Execute step (pass progressCallback for path-based voice acknowledgments)
       const result = await this.stepExecutor.executeStep(
         stepName,
         page,
         mergedArgs,
-        session
+        session,
+        progressCallback
       );
 
       if (result.success) {

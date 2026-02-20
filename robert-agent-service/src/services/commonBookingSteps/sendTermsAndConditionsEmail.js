@@ -5,9 +5,11 @@ import * as stationeryHelpers from './stationeryHelpers.js';
  * Send Terms & Conditions email after booking confirmation email
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  */
-export async function sendTermsAndConditionsEmail(page, screenshotsDir) {
+export async function sendTermsAndConditionsEmail(page, screenshotsDir, progressCallback = null) {
   try {
+    progressCallback?.({ message: 'Preparing the terms.' });
     console.log('📧 [T&C] Sending Terms & Conditions email...');
     
     // Wait for page to be ready
@@ -32,6 +34,7 @@ export async function sendTermsAndConditionsEmail(page, screenshotsDir) {
     // Find and click "Send a confirmation" button
     const sendConfirmationButton = await stationeryHelpers.findSendConfirmationButton(page, searchContext);
     
+    progressCallback?.({ message: 'Sending the terms now.' });
     // Click the list item - handle hidden elements
     console.log('🖱️ [T&C] Clicking "Send a confirmation" list item...');
     try {

@@ -26,9 +26,10 @@ const AVAILABILITY_URLS = {
  * @param {string} courseType - Course type (e.g., 'ITM', 'CBT', 'Private Lesson')
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {Object} preferences - Optional preferences for slot matching {preferredDate, preferredTime, location}
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<{allSlots: Array, selectedSlot: Object, monthYear: string}>}
  */
-export async function checkAvailabilityAndNoteDetails(page, courseType, screenshotsDir, preferences = {}) {
+export async function checkAvailabilityAndNoteDetails(page, courseType, screenshotsDir, preferences = {}, progressCallback = null) {
   try {
     // Get availability URL for course type
     const availabilityUrl = AVAILABILITY_URLS[courseType];
@@ -44,6 +45,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       waitUntil: 'domcontentloaded',
       timeout: 20000
     });
+    progressCallback?.({ message: 'Loading the availability page.' });
 
     // Wait for the availability table to be visible
     await page.waitForSelector('#availabilityTable', { timeout: 20000 });
@@ -54,6 +56,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
 
     // Wait for table to be populated with data rows
     await page.waitForSelector('#availabilityTable tbody tr.availabilityDataRow', { timeout: 20000 });
+    progressCallback?.({ message: 'Fetching available slots.' });
 
     // Get the LAST month cell (latest month)
     const lastMonthCell = availabilityTable.locator('td.availabilityMonthCell').last();
@@ -245,6 +248,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
 
     // Select the best matching slot based on preferences
     // Only auto-select if preferences are provided
+    progressCallback?.({ message: 'Finding a slot for you.' });
     let selectedSlot = null;
 
     if (hasPreferences) {

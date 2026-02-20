@@ -25,9 +25,10 @@ import {
  * @param {string} [email] - Optional email address to use when Smart search is selected
  * @param {string} [clientPostcode] - Optional postcode for verification when multiple results appear
  * @param {string} [callSid] - Call SID for conversation state tracking
+ * @param {Function|null} [progressCallback] - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<{found: boolean, clientDetails?: object, requiresVerification: boolean, verificationPrompt?: string, retryPrompt?: string, nextSearchType?: string, requiresPostcodeVerification?: boolean, error?: string}>}
  */
-export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir, email = null, clientPostcode = null, callSid = null) {
+export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir, email = null, clientPostcode = null, callSid = null, progressCallback = null) {
   try {
     // Get conversation state for tracking
     const conversation = callSid ? conversations[callSid] : null;
@@ -70,6 +71,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       }
     }
     
+    progressCallback?.({ message: 'Opening the Contacts tab.' });
     console.log('👤 [CLIENT SEARCH] Navigating to Contacts tab...');
     
     // Click CONTACTS tab
@@ -77,6 +79,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     await contactsTab.click();
     
     // Wait for page to fully load
+    progressCallback?.({ message: 'Loading the contacts page.' });
     console.log('⏳ [CLIENT SEARCH] Waiting for Contacts page to fully load...');
     await page.waitForTimeout(8000);
     
@@ -111,6 +114,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     console.log('✅ [CLIENT SEARCH] Iframe loaded, switching context...');
     
     // Select Smart search
+    progressCallback?.({ message: 'Searching for your profile.' });
     await selectSmartSearch(iframe, page, screenshotsDir);
     
     // Determine final search value and type
@@ -132,6 +136,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     }
 
     // Execute search
+    progressCallback?.({ message: 'Waiting for results, please hold on.' });
     await executeSearch(iframe, page, finalSearchValue, screenshotsDir);
 
     // Find matching client row
@@ -275,6 +280,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     console.log('⏳ [CLIENT SEARCH] Waiting for client details page to load...');
     await page.waitForTimeout(2000); // Brief wait for page transition
     
+    progressCallback?.({ message: 'Loading your profile.' });
     await takeScreenshot(page, 'client-selected.png', screenshotsDir);
     
     // Extract client details from the page

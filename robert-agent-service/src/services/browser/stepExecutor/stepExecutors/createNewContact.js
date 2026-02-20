@@ -12,11 +12,13 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeCreateNewContact(page, args, sessionState, screenshotsDir) {
+export async function executeCreateNewContact(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Creating a new contact.' });
   // Use existing createNewContact logic
-  await commonSteps.createNewContact(page, screenshotsDir);
+  await commonSteps.createNewContact(page, screenshotsDir, progressCallback);
 
   return {
     success: true,
