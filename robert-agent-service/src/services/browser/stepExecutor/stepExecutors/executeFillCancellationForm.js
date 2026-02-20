@@ -144,7 +144,14 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
       // For now, leave as is and let form validation handle it
     }
     
-    // 6. Click "Back to previous screen" (#btnCancel) - in main page #mainArea / #bottomToolbar, not in iframe
+    // 6a. Click "Cancel now" (green button #btnBack) to submit the cancellation
+    console.log(`✅ [FILL_CANCELLATION_FORM] Clicking Cancel now...`);
+    const cancelNowButton = page.locator('#btnBack[aria-label="Cancel now"]');
+    await cancelNowButton.waitFor({ state: 'visible', timeout: 30000 });
+    await cancelNowButton.click();
+    await page.waitForTimeout(2000);
+
+    // 6b. Click "Back to previous screen" (#btnCancel) - in main page #mainArea / #bottomToolbar, not in iframe
     console.log(`✅ [FILL_CANCELLATION_FORM] Clicking Back to previous screen...`);
     const backButton = page.locator('#btnCancel[aria-label="Back to previous screen"]');
     await backButton.waitFor({ state: 'visible', timeout: 30000 });

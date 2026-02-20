@@ -1,4 +1,5 @@
 import { takeScreenshot } from './utils.js';
+import { extractClientDetails } from './clientSearch/extractClientDetails.js';
 
 /**
  * Steps 3-5: Find and verify existing client
@@ -17,55 +18,55 @@ import { takeScreenshot } from './utils.js';
 export async function findAndVerifyClient(page, searchType, searchValue, screenshotsDir, email = null, clientPostcode = null) {
   try {
     console.log('👤 [STEP 3-5] Navigating to Contacts tab...');
-    
+
     // Click CONTACTS tab using the specific selector
     const contactsTab = page.locator('h3.list-menu-item-heading:has-text("Contacts")');
     await contactsTab.click();
-    
+
     // WAIT FOR PAGE TO FULLY LOAD - 8 seconds
     console.log('⏳ [STEP 3-5] Waiting for Contacts page to fully load...');
     await page.waitForTimeout(8000);
     await page.waitForLoadState('networkidle');
-    
+
     // Take screenshot of contacts page
     await takeScreenshot(page, 'contacts-page-loaded.png', screenshotsDir);
-    
+
     console.log('🔍 [STEP 3-5] Looking for Contacts iframe...');
-    
+
     // CRITICAL: Wait for the iframe to be present and loaded
     const iframe = page.frameLocator('#contactLookup_iframe');
-    
+
     // Wait for the iframe to load completely
     console.log('⏳ [STEP 3-5] Waiting for iframe to load completely...');
     await page.waitForTimeout(5000);
-    
+
     // Wait for the iframe content to be ready
     await page.waitForFunction(() => {
       const iframe = document.querySelector('#contactLookup_iframe');
       return iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete';
     }, { timeout: 15000 });
-    
+
     console.log('✅ Iframe loaded, switching context...');
-    
+
     // Debug: Check what's actually in the iframe
     console.log('🔍 Debug: Checking iframe content...');
     const iframeText = await iframe.locator('body').textContent();
     console.log('🔍 Iframe content preview:', iframeText.substring(0, 200) + '...');
-    
+
     // STEP 1: Look for the search dropdown/selector in the iframe
     console.log('🔍 [STEP 3-5] Looking for search dropdown in iframe...');
-    
+
     // Look for any dropdown or select element that might contain search options
     const searchDropdown = iframe.locator('select, [role="combobox"], .dx-dropdowneditor').first();
-    
+
     // Wait for the dropdown to be visible
     await searchDropdown.waitFor({ state: 'visible', timeout: 10000 });
-    
+
     console.log('✅ Found search dropdown, clicking to open options...');
-    
+
     // Click on the dropdown to open the menu
     await searchDropdown.click();
-    
+
     // WAIT FOR DROPDOWN MENU TO APPEAR - 2 seconds
     console.log('⏳ [STEP 3-5] Waiting for dropdown menu to appear...');
     await page.waitForTimeout(2000);
@@ -74,21 +75,21 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
 
     // STEP 2: Look for "Smart search" option and scroll up to make it clickable
     console.log('🔍 [STEP 3-5] Looking for Smart search option in menu...');
-    
+
     // First, try to find the Smart search option
     const smartSearchOption = iframe.locator('text=Smart search').first();
-    
+
     // Check if it's visible, if not, scroll up
     const isSmartSearchVisible = await smartSearchOption.isVisible();
     console.log(`🔍 Smart search visible: ${isSmartSearchVisible}`);
-    
+
     if (!isSmartSearchVisible) {
       console.log('🔍 Smart search not visible, scrolling up in dropdown...');
-      
+
       // Scroll up in the dropdown menu to make Smart search visible
       await page.keyboard.press('Home'); // Go to top of dropdown
       await page.waitForTimeout(1000);
-      
+
       // Alternative: try to scroll the dropdown container
       const dropdownMenu = iframe.locator('[role="listbox"], .dx-dropdownlist, .dx-list').first();
       if (await dropdownMenu.count() > 0) {
@@ -96,30 +97,30 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         await page.waitForTimeout(1000);
       }
     }
-    
+
     // Now try to find and click Smart search
     await smartSearchOption.waitFor({ state: 'visible', timeout: 5000 });
     console.log('✅ Smart search option is now visible, clicking...');
     await smartSearchOption.click();
-    
+
     // WAIT FOR SMART SEARCH TO BE APPLIED - 2 seconds
     console.log('⏳ [STEP 3-5] Waiting for Smart search selection...');
     await page.waitForTimeout(2000);
 
     await takeScreenshot(page, 'smart-search-selected.png', screenshotsDir);
-    
+
     // STEP 3: Look for the search input field
     console.log('🔍 [STEP 3-5] Looking for search input field...');
     const searchField = iframe.locator('input[placeholder*="search"], input[placeholder*="Search"], input[type="search"]').first();
-    
+
     // Wait for the search field to be visible
     await searchField.waitFor({ state: 'visible', timeout: 10000 });
-    
+
     // STEP 4: Enter search value - Smart search always uses email
     // When Smart search is selected, always use email (not phone number)
     let finalSearchValue = searchValue;
     let finalSearchType = searchType;
-    
+
     if (email) {
       // If email is provided, use it for Smart search
       finalSearchValue = email;
@@ -129,28 +130,28 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       // If no email provided but searchType is mobile, warn and use original value
       console.warn(`⚠️ [STEP 3-5] Smart search selected but no email provided - using mobile number (this may not work correctly)`);
     }
-    
+
     console.log(`🔍 [STEP 3-5] Searching for client by email: ${finalSearchValue}`);
     await searchField.fill(finalSearchValue);
-    
+
     // NEW: Try multiple approaches to trigger the search
     console.log('🔍 [STEP 3-5] Triggering search...');
-    
+
     // Approach 1: Press Enter to trigger search
     await searchField.press('Enter');
     await page.waitForTimeout(2000);
-    
+
     // Approach 2: Look for and click search icon/button
     console.log('🔍 [STEP 3-5] Looking for search icon/button...');
     const searchButton = iframe.locator('button[type="submit"], .search-button, [aria-label*="search"], [title*="search"], .fa-search, .search-icon').first();
-    
+
     if (await searchButton.count() > 0) {
       console.log('✅ Found search button, clicking...');
       await searchButton.click();
       await page.waitForTimeout(2000);
     } else {
       console.log('❌ No search button found, trying alternative...');
-      
+
       // Approach 3: Safer approach - Use JavaScript to blur the input field directly
       console.log('🔍 [STEP 3-5] Blurring search input field to trigger search...');
       try {
@@ -181,20 +182,20 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         }
       }
       await page.waitForTimeout(2000);
-      
+
       // Approach 4: Use Tab to move focus away
       console.log('🔍 [STEP 3-5] Using Tab to move focus...');
       await searchField.press('Tab');
       await page.waitForTimeout(2000);
     }
-    
+
     // WAIT FOR SEARCH RESULTS - 5 seconds (increased)
     console.log('⏳ [STEP 3-5] Waiting for search results...');
     await page.waitForTimeout(5000);
-    
+
     // Take screenshot after search
     await takeScreenshot(page, 'search-results.png', screenshotsDir);
-    
+
     // STEP 5: Click on found client - prioritize exact matches
     console.log('👆 [STEP 3-5] Clicking on found client...');
 
@@ -204,27 +205,27 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     try {
       // First, wait for search results to appear
       await page.waitForTimeout(3000);
-      
+
       // Approach 1: Look for exact match - find rows/items that contain the exact search value
       // For email: look for exact email match
       // For mobile: look for exact phone number match
       let exactMatch = null;
-      
+
       if (finalSearchType === 'email') {
         // Normalize email for comparison (lowercase, trim)
         const normalizedSearch = finalSearchValue.toLowerCase().trim();
-        
+
         // Look for DevExtreme DataGrid table rows (based on actual HTML structure)
         const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
         const rowCount = await resultRows.count();
-        
+
         console.log(`🔍 [STEP 3-5] Found ${rowCount} search result rows, looking for email matches...`);
-        
+
         // Extract all rows that contain the email (per document: Smart search matches loosely)
         const matchingRows = [];
         for (let i = 0; i < rowCount; i++) {
           const row = resultRows.nth(i);
-          
+
           // Extract email using specific selector (based on actual HTML structure)
           // Email is in: .jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span
           let foundEmail = null;
@@ -239,7 +240,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
                 // Method 1: Split on newline and take first part (Copy button is usually on new line)
                 const emailLines = emailText.split('\n');
                 foundEmail = emailLines[0].trim();
-                
+
                 // Method 2: Use regex to extract email pattern if split didn't work
                 if (!foundEmail || !foundEmail.includes('@')) {
                   const emailMatch = emailText.match(/[\w\.-]+@[\w\.-]+\.\w+/);
@@ -247,12 +248,12 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
                     foundEmail = emailMatch[0];
                   }
                 }
-                
+
                 // Method 3: Remove "Copy" text if it's appended directly (e.g., "robert@gmail.comCopy")
                 if (foundEmail && foundEmail.toLowerCase().endsWith('copy')) {
                   foundEmail = foundEmail.slice(0, -4).trim();
                 }
-                
+
                 // Final validation: ensure it's a valid email format
                 if (foundEmail && !foundEmail.includes('@')) {
                   foundEmail = null;
@@ -262,17 +263,17 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           } catch (e) {
             console.log(`⚠️ [STEP 3-5] Could not extract email from row ${i + 1}:`, e.message);
           }
-          
+
           if (foundEmail) {
             const normalizedEmail = foundEmail.toLowerCase().trim();
             // Smart search matches loosely, so check if searched email is contained in found email or vice versa
-            const emailMatches = normalizedEmail === normalizedSearch || 
-                                 normalizedEmail.includes(normalizedSearch) || 
-                                 normalizedSearch.includes(normalizedEmail);
-            
+            const emailMatches = normalizedEmail === normalizedSearch ||
+              normalizedEmail.includes(normalizedSearch) ||
+              normalizedSearch.includes(normalizedEmail);
+
             if (emailMatches) {
               console.log(`✅ [STEP 3-5] Found email match in row ${i + 1}: ${foundEmail}`);
-              
+
               // Extract postcode using specific selector (based on actual HTML structure)
               // Postcode is in: div.jqx_margin_right + div[style*="display:inline-block"] > span
               let postcode = null;
@@ -292,7 +293,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
               } catch (e) {
                 console.log(`⚠️ [STEP 3-5] Could not extract postcode from row ${i + 1}:`, e.message);
               }
-              
+
               matchingRows.push({
                 rowIndex: i,  // Store index instead of locator to avoid stale locator issues
                 email: foundEmail,
@@ -302,9 +303,9 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
             }
           }
         }
-        
+
         console.log(`📊 [STEP 3-5] Found ${matchingRows.length} rows with matching email`);
-        
+
         // DOCUMENT REQUIREMENT (ITM.txt line 350-353):
         // When multiple results appear, verify email + postcode before selecting
         // "If that happens you need to confirm the (1) email address of the client, and (2) the postcode"
@@ -326,7 +327,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           matchingRows.forEach((match, idx) => {
             console.log(`   ${idx + 1}. Email: ${match.email}, Postcode: ${match.postcode || 'Not visible in search results'}`);
           });
-          
+
           // Try to find exact email match first
           const exactEmailMatch = matchingRows.find(m => m.email.toLowerCase().trim() === normalizedSearch);
           if (exactEmailMatch) {
@@ -347,7 +348,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
             };
           }
         }
-        
+
         // If no exact match found via row iteration, try to find element with exact text
         if (!exactMatch) {
           const exactEmailElement = iframe.locator(`text=/^${searchValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$/i`).first();
@@ -363,17 +364,17 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       } else if (finalSearchType === 'mobile') {
         // Normalize phone number for comparison (remove spaces, dashes, parentheses)
         const normalizedSearch = finalSearchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '');
-        
+
         // Look for DevExtreme DataGrid table rows (based on actual HTML structure)
         const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
         const rowCount = await resultRows.count();
-        
+
         console.log(`🔍 [STEP 3-5] Found ${rowCount} search result rows, looking for exact phone match...`);
-        
+
         // Check each row for exact phone match
         for (let i = 0; i < rowCount; i++) {
           const row = resultRows.nth(i);
-          
+
           // Extract phone using specific selector (based on actual HTML structure)
           // Phone is in: .jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone:")) .jqx_inlineSummaryText span
           try {
@@ -405,16 +406,16 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           }
         }
       }
-      
+
       // Click exact match if found
       if (exactMatch) {
         // Handle both old format (just locator) and new format (object with rowIndex and locator)
         const rowLocator = exactMatch.locator || exactMatch;
         const rowIndex = exactMatch.rowIndex !== undefined ? exactMatch.rowIndex : null;
-        
+
         if (await rowLocator.count() > 0) {
           console.log(`✅ [STEP 3-5] Clicking exact match${rowIndex !== null ? ` (row ${rowIndex + 1})` : ''}...`);
-          
+
           // CRITICAL: Get the actual frame for JavaScript evaluation
           // FrameLocator doesn't have evaluate(), we need the actual Frame object
           let actualFrame = null;
@@ -428,7 +429,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           } catch (e) {
             console.log(`⚠️ [STEP 3-5] Could not get frame for evaluation: ${e.message}`);
           }
-          
+
           // CRITICAL: Verify we're still on search results page before attempting click
           // This prevents trying to click when we've already navigated away (e.g., row 1 was clicked)
           const verifyStillOnSearchPage = async () => {
@@ -439,7 +440,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
               return false;
             }
           };
-          
+
           // PRIORITY 1: JavaScript click FIRST (before any scrolling that might click row 1)
           // This works even if element is not visible and doesn't trigger scroll that might click row 1
           // Based on HTML structure: all rows exist in DOM, we can click directly by index
@@ -510,7 +511,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
                         }
                       }
                       console.log(`[DEBUG] Clicking row ${index + 1}, email: ${email}`);
-                      
+
                       // Click the cell
                       cell.click();
                     } else {
@@ -521,18 +522,39 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
                   }
                 }, rowIndex);
                 await page.waitForTimeout(2000); // Wait 2 seconds for navigation
-                
+
                 // Return immediately with hardcoded clientDetails - no verification needed
-                console.log(`✅ [STEP 3-5] Successfully clicked row ${rowIndex + 1} using JavaScript click - returning verified client`);
+                // REAL EXTRACTION: Instead of returning hardcoded data, extract from the page
+                console.log(`✅ [STEP 3-5] Successfully clicked row ${rowIndex + 1} using JavaScript click - waiting for details to load...`);
+                await page.waitForTimeout(3000); // Give CRM time to load the contact details iframe
+
+                // Details load in #contactEdit_iframe
+                try {
+                  const contactEditIframe = page.frameLocator('#contactEdit_iframe');
+                  const extractedDetails = await extractClientDetails(contactEditIframe, page, screenshotsDir);
+
+                  if (extractedDetails) {
+                    console.log(`✅ [STEP 3-5] Extracted real client details: ${extractedDetails.fullName}`);
+                    return {
+                      found: true,
+                      clientDetails: extractedDetails,
+                      requiresVerification: true // ALWAYS verify real data
+                    };
+                  }
+                } catch (extractErr) {
+                  console.log(`⚠️ [STEP 3-5] Failed to extract details: ${extractErr.message}`);
+                }
+
+                // Fallback to minimal info if extraction failed but we definitely navigated
                 return {
                   found: true,
                   clientDetails: {
-                    fullName: "Robert Smith",
-                    postcode: "HA8 6AG",
-                    telephoneNumber: "+441234567890",
-                    email: "robert@gmail.com"
+                    fullName: "Unknown Patient",
+                    postcode: "Unknown",
+                    telephoneNumber: searchValue || "Unknown",
+                    email: email || "Unknown"
                   },
-                  requiresVerification: false  // Set to false for demo/test mode to continue to Step 6
+                  requiresVerification: true
                 };
               } catch (jsErr) {
                 console.log(`⚠️ [STEP 3-5] JavaScript click failed: ${jsErr.message}`);
@@ -540,7 +562,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
               }
             }
           }
-          
+
           // COMMENTED OUT: PRIORITY 2: If JavaScript click didn't work, try scrolling + click (but verify page state)
           // This section is commented out as we now return immediately after JavaScript click
           /*
@@ -684,12 +706,12 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           */
         }
       }
-      
+
       // Only fall back to first row if we don't have an exact match
       if (!clientClicked && !exactMatch) {
         // Fallback: Look for visible text containing search value (but be more specific)
         console.log('⚠️ [STEP 3-5] No exact match found, trying fallback approaches...');
-        
+
         // Approach 2: Look for clickable elements (links, buttons) with exact search value
         const clickableClient = iframe.locator(`a:has-text("${searchValue}"), button:has-text("${searchValue}"), [role="button"]:has-text("${searchValue}")`).first();
         if (await clickableClient.count() > 0 && await clickableClient.isVisible()) {
@@ -700,7 +722,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
           // Approach 3: Look for first result row but verify it contains the search value
           const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
           const firstResult = resultRows.first();
-          
+
           if (await firstResult.count() > 0) {
             // Check if first result contains the search value by extracting email/phone
             let containsSearchValue = false;
@@ -738,7 +760,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
               const firstResultText = await firstResult.textContent();
               containsSearchValue = firstResultText && firstResultText.includes(searchValue);
             }
-            
+
             if (containsSearchValue) {
               console.log('✅ [STEP 3-5] Clicking first search result (contains search value)');
               await firstResult.click();
@@ -753,7 +775,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       console.log('❌ Failed to click client, but continuing to check if page navigation occurred...');
       console.log('❌ Click error:', clickError.message);
     }
-    
+
     // COMMENTED OUT: Final verification section - we now return immediately after JavaScript click
     // This entire section is commented out as we return with hardcoded clientDetails after the click
     /*
@@ -966,7 +988,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       }
     }
     */
-    
+
   } catch (error) {
     console.error('❌ [STEP 3-5] Client search failed:', error);
     await takeScreenshot(page, 'client-search-error.png', screenshotsDir);
@@ -986,7 +1008,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
 async function extractClientDetails(iframe) {
   try {
     console.log('🔍 [STEP 3-5] Extracting client details from CRM page...');
-    
+
     // Extract First Names
     let firstNames = '';
     try {
@@ -998,7 +1020,7 @@ async function extractClientDetails(iframe) {
     } catch (e) {
       console.log('⚠️ Could not extract First Names');
     }
-    
+
     // Extract Surname
     let surname = '';
     try {
@@ -1010,10 +1032,10 @@ async function extractClientDetails(iframe) {
     } catch (e) {
       console.log('⚠️ Could not extract Surname');
     }
-    
+
     // Construct full name
     const fullName = `${firstNames} ${surname}`.trim();
-    
+
     // Extract Postcode
     let postcode = '';
     try {
@@ -1025,7 +1047,7 @@ async function extractClientDetails(iframe) {
     } catch (e) {
       console.log('⚠️ Could not extract Postcode');
     }
-    
+
     // Extract Contact mobile number
     let telephoneNumber = '';
     try {
@@ -1037,7 +1059,7 @@ async function extractClientDetails(iframe) {
     } catch (e) {
       console.log('⚠️ Could not extract Telephone Number');
     }
-    
+
     // Extract Contact e-mail
     let email = '';
     try {
@@ -1049,7 +1071,7 @@ async function extractClientDetails(iframe) {
     } catch (e) {
       console.log('⚠️ Could not extract Email');
     }
-    
+
     if (fullName || postcode || telephoneNumber || email) {
       return {
         fullName: fullName || 'Not found',
@@ -1058,7 +1080,7 @@ async function extractClientDetails(iframe) {
         email: email || 'Not found'
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error('❌ [STEP 3-5] Error extracting client details:', error);

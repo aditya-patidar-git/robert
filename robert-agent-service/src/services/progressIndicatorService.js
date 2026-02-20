@@ -5,11 +5,41 @@
 
 import { conversations } from '../shared/state.js';
 
+/** Per-tool messages for immediate tool-start acknowledgments (create booking workflow). Short phrases to minimize race conditions and prioritize tool results. */
+const BOOKING_STEP_TOOL_START_MESSAGES = {
+  booking_step_check_availability: 'Checking availability.',
+  booking_step_authenticate: 'Logging in.',
+  booking_step_navigate_contacts: 'Opening contacts.',
+  booking_step_search_client: 'Finding your client.',
+  booking_step_select_session: 'Selecting session.',
+  booking_step_select_booking_options: 'Loading options.',
+  booking_step_lookup_contact: 'Looking up contact.',
+  booking_step_create_new_contact: 'Adding new contact.',
+  booking_step_fill_contact_details: 'Filling details.',
+  booking_step_process_payment: 'Processing payment.',
+  booking_step_send_payment_request: 'Sending payment link.',
+  booking_step_send_confirmation: 'Sending confirmation.',
+  booking_step_send_terms: 'Sending terms.',
+  booking_step_send_sms: 'Sending SMS.'
+};
+
 class ProgressIndicatorService {
   constructor() {
     this.activeExecutions = new Map(); // callSid -> { toolName, startTime, acknowledgmentSent, lastUpdateTime, updateInterval }
     this.holdingResponseIds = new Map(); // callSid -> Set of responseId (acknowledgments/periodic updates; do not set waitingForUser when these complete)
     this.expectNonWaitingResponseCallSids = new Set(); // callSids for which the next response.created should be registered as non-waiting (e.g. "Your booking options are successfully selected")
+  }
+
+  /**
+   * Get the tool-start acknowledgment message for create-booking steps (booking_step_*).
+   * @param {string} toolName - Name of the tool
+   * @returns {string|null} - Message to speak, or null if not a booking step or no message defined
+   */
+  getToolStartMessage(toolName) {
+    if (!toolName || !toolName.startsWith('booking_step_')) {
+      return null;
+    }
+    return BOOKING_STEP_TOOL_START_MESSAGES[toolName] || null;
   }
 
   /**
@@ -283,6 +313,63 @@ class ProgressIndicatorService {
     }
 
     return false;
+  }
+
+  /**
+   * Send an immediate tool-start acknowledgment for create-booking steps (one phrase per step).
+   * Message is sent as a holding response so response.done does not set waitingForUser.
+   * Call immediately after scheduleAcknowledgmentAndPeriodicUpdates so execution already exists.
+   * @param {string} callId - Call SID
+   * @param {string} toolName - Tool name (e.g. booking_step_search_client)
+   * @param {WebSocket} openaiWs - OpenAI WebSocket connection
+   * @param {Object} config - ConversationBehaviorConfig
+   * @param {Object|null} stateManager - Optional state manager for guards
+   */
+  sendImmediateToolStartAcknowledgment(callId, toolName, openaiWs, config, stateManager) {
+    if (!config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) {
+      return;
+    }
+    const message = this.getToolStartMessage(toolName);
+    if (!message) {
+      return;
+    }
+    const execution = this.activeExecutions.get(callId);
+    if (!execution) {
+      return;
+    }
+    if (stateManager) {
+      if (stateManager.toolExecutionCompleting) {
+        return;
+      }
+      if (stateManager.isInterrupted) {
+        return;
+      }
+      if (!stateManager.tryAcquireResponseLock()) {
+        return;
+      }
+    }
+    try {
+      execution.expectHoldingResponse = true;
+      openaiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: message }]
+        }
+      }));
+      openaiWs.send(JSON.stringify({
+        type: 'response.create',
+        response: { modalities: ['audio', 'text'] }
+      }));
+      execution.acknowledgmentSent = true;
+      if (execution.allowsPeriodicUpdates) {
+        this.startPeriodicUpdates(callId, openaiWs, config);
+      }
+      console.log(`✅ [${callId}] Sent immediate tool-start acknowledgment for ${toolName}: "${message}"`);
+    } catch (err) {
+      console.error(`❌ [${callId}] Error sending immediate tool-start acknowledgment:`, err);
+    }
   }
 
   /**
@@ -806,6 +893,14 @@ class ProgressIndicatorService {
     }
 
     try {
+      // Register so response.done does not set waitingForUser (holding response)
+      const execution = this.activeExecutions.get(callSid);
+      if (execution) {
+        execution.expectHoldingResponse = true;
+      } else {
+        this.setExpectNonWaitingResponse(callSid);
+      }
+
       // Create a conversation item with the progress message
       openaiWs.send(JSON.stringify({
         type: 'conversation.item.create',

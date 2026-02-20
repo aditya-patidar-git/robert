@@ -6,9 +6,11 @@ import * as stationeryHelpers from './stationeryHelpers.js';
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} courseType - Course type enum value (can be simplified format like 'tfl-one-to-one' or full enum like 'ITM', 'CBT', etc.)
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  */
-export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tfl-one-to-one') {
+export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tfl-one-to-one', progressCallback = null) {
   try {
+    progressCallback?.({ message: 'Preparing the SMS.' });
     console.log('📱 [SMS] Sending SMS confirmation...');
     
     // Wait for page to be ready
@@ -40,6 +42,7 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
     // Find and click "Send SMS" button
     const sendSMSButton = await stationeryHelpers.findSendSMSButton(page, searchContext);
     
+    progressCallback?.({ message: 'Sending the SMS now.' });
     // Click the list item - handle hidden elements
     console.log('🖱️ [SMS] Clicking "Send SMS" list item...');
     try {
@@ -103,7 +106,7 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
     await takeScreenshot(page, 'sms-page-loaded.png', screenshotsDir);
     
     // Fill "Send To" input field with phone number
-    console.log('📱 [SMS] Filling "Send To" field with: 07833913454');
+    console.log('📱 [SMS] Filling "Send To" field with: 8120523400');
     try {
       // Locate the "Send To" input field using multiple selector strategies
       const sendToInput = smsSearchContext.locator('#smm_mobile_number input').first();
@@ -112,15 +115,15 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
       await sendToInput.waitFor({ state: 'visible', timeout: 5000 });
       
       // Clear any existing value and fill with new number
-      await sendToInput.fill('07833913454');
+      await sendToInput.fill('8120523400');
       await page.waitForTimeout(500);
       
       // Verify the value was set correctly
       const inputValue = await sendToInput.inputValue();
-      if (inputValue === '07833913454') {
+      if (inputValue === '8120523400') {
         console.log('✅ [SMS] "Send To" field filled successfully');
       } else {
-        console.log(`⚠️ [SMS] "Send To" field value mismatch. Expected: 07833913454, Got: ${inputValue}`);
+        console.log(`⚠️ [SMS] "Send To" field value mismatch. Expected: 8120523400, Got: ${inputValue}`);
       }
     } catch (error) {
       console.error('❌ [SMS] Error filling "Send To" field:', error.message);

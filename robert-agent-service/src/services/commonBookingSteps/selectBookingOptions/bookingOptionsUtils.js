@@ -12,50 +12,66 @@ import * as commonSteps from '../index.js';
  * @returns {Promise<{targetPage: Page, searchContext: Locator, bookingIframe: FrameLocator|null}>}
  */
 export async function prepareBookingFormContext(page, screenshotsDir) {
+  let targetPage = page; // Initialize to current page as default
+
   // Wait for price page to load
   console.log('⏳ Waiting for price page to load...');
   await page.waitForTimeout(5000);
-  
-  // Check for popup windows first
-  const pages = page.context().pages();
-  let targetPage = page;
-  if (pages.length > 1) {
-    console.log(`🔍 Found ${pages.length} pages, checking for booking popup...`);
-    for (let i = 0; i < pages.length; i++) {
-      const pageTitle = await pages[i].title();
-      const pageUrl = pages[i].url();
-      if (pageTitle.includes('booking') || pageTitle.includes('Booking') || 
+
+  // PERFORMANCE FIX E: Optimized page scanning
+  // 1. Check if CURRENT page already has the booking indicators to avoid scanning others
+  const currentUrl = page.url();
+  const currentTitle = await page.title().catch(() => '');
+  const isLikelyBooking = currentUrl.includes('booking') || currentUrl.includes('Booking') ||
+    currentTitle.includes('booking') || currentTitle.includes('Booking');
+
+  if (isLikelyBooking) {
+    console.log(`✅ Current page is likely the booking form (${currentUrl})`);
+  } else {
+    // 2. Only scan other pages if current page doesn't look like a booking page
+    const pages = page.context().pages();
+    if (pages.length > 1) {
+      console.log(`🔍 Checking ${pages.length} pages for booking popup (reverse order)...`);
+      // Scan in reverse order as the newest popup is usually at the end
+      for (let i = pages.length - 1; i >= 0; i--) {
+        const p = pages[i];
+        if (p === page) continue; // Already checked
+
+        const pageTitle = await p.title().catch(() => '');
+        const pageUrl = p.url();
+        if (pageTitle.includes('booking') || pageTitle.includes('Booking') ||
           pageUrl.includes('booking') || pageUrl.includes('Booking')) {
-        targetPage = pages[i];
-        console.log(`✅ Using popup window for booking form`);
-        break;
+          targetPage = p;
+          console.log(`✅ Using discovered popup window for booking form: ${pageUrl}`);
+          break;
+        }
       }
     }
   }
-  
+
   // Determine if booking form is in an iframe, popup, or on main page
   let searchContext = targetPage;
   let bookingIframe = null;
-  
+
   // Check within eventNewBooking2_iframe (the actual booking form iframe)
   const eventBookingIframeExists = await targetPage.locator('#eventNewBooking2_iframe').count() > 0;
   if (eventBookingIframeExists) {
     bookingIframe = targetPage.frameLocator('#eventNewBooking2_iframe');
     searchContext = bookingIframe;
-    
+
     // Wait for iframe to load
     await targetPage.waitForTimeout(2000);
   }
-  
+
   // Wait for "1. Price" header
   console.log('🔍 Looking for "1. Price" header...');
   const priceHeader = searchContext.locator('text=1. Price, *:has-text("1. Price")').first();
   await priceHeader.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
     console.log('⚠️ Price header visibility check timed out, continuing...');
   });
-  
+
   await commonSteps.takeScreenshot(targetPage, 'price-page-loaded.png', screenshotsDir);
-  
+
   return { targetPage, searchContext, bookingIframe };
 }
 
@@ -69,11 +85,11 @@ export async function findBookingOptionGroups(searchContext) {
   const allGroups = searchContext.locator('.jqxInputBookingOptionsSelectGroupOuter');
   const groupCount = await allGroups.count();
   console.log(`📊 Found ${groupCount} booking option group(s)`);
-  
+
   if (groupCount === 0) {
     throw new Error('No booking option groups found on price page');
   }
-  
+
   return { allGroups, groupCount };
 }
 
@@ -97,15 +113,15 @@ export async function getGroupHeading(group) {
  */
 export async function selectOptionByPattern(groupOptions, pattern, page) {
   const optionCount = await groupOptions.count();
-  
+
   for (let i = 0; i < optionCount; i++) {
     const optionRow = groupOptions.nth(i);
     const optionNameSpan = optionRow.locator('.optionName span');
-    
+
     if (await optionNameSpan.count() > 0) {
       const optionText = await optionNameSpan.textContent();
       const normalizedText = optionText ? optionText.trim().toLowerCase() : '';
-      
+
       if (normalizedText && pattern.test(normalizedText)) {
         console.log(`✅ Found matching option: "${optionText}"`);
         const checkDiv = optionRow.locator('.jqx_inputBookingOptionsSelect_check').first();
@@ -119,7 +135,7 @@ export async function selectOptionByPattern(groupOptions, pattern, page) {
       }
     }
   }
-  
+
   return false;
 }
 
@@ -132,22 +148,22 @@ export async function selectOptionByPattern(groupOptions, pattern, page) {
 export async function clickNextButton(searchContext, page, bookingIframe) {
   console.log('➡️ Clicking NEXT...');
   let nextButton = searchContext.locator('#diaryNewCourseBookingWiz_nextBtn').first();
-  
+
   if (await nextButton.count() === 0) {
     nextButton = searchContext.locator('button:has-text("Next"), button:has-text("NEXT"), [aria-label="Next"]').first();
   }
-  
+
   if (await nextButton.count() === 0) {
     throw new Error('Next button not found on booking options page');
   }
-  
+
   await nextButton.waitFor({ state: 'visible', timeout: 5000 });
   await nextButton.click();
-  
+
   // Wait for next page to load
   console.log('⏳ Waiting for next page to load...');
   await page.waitForTimeout(3000);
-  
+
   if (bookingIframe) {
     await page.waitForTimeout(2000);
     const contactLookupIndicators = bookingIframe.locator('text=lookup, text=contact, text=add new contact').first();
@@ -169,11 +185,11 @@ export async function selectFirstAvailableOption(allGroups, groupCount, searchCo
   for (let groupIndex = 0; groupIndex < groupCount; groupIndex++) {
     const group = allGroups.nth(groupIndex);
     const normalizedHeading = await getGroupHeading(group);
-    
+
     if (skipHeadings.some(heading => normalizedHeading.includes(heading))) {
       continue;
     }
-    
+
     const groupOptions = group.locator('.jqxInputBookingOptionsSelectRow.jqxInputBookingOptions_rowSelectable');
     if (await groupOptions.count() > 0) {
       const firstOption = groupOptions.first();

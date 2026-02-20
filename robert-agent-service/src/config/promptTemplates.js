@@ -90,13 +90,17 @@ If the caller has NOT yet said which course they want, your FIRST question MUST 
    
 3. THIRD: Only AFTER asking about preferences and getting their response, call booking_step_check_availability with the preferences to find available slots.
 
+STRICT: Do NOT say any specific slot dates, times, or locations until booking_step_check_availability has RETURNED. Until then say only that you are checking (e.g. "Let me check availability for you"). After the tool returns, present ONLY the slots from the tool result—never invent slots.
+
 This saves time by focusing the availability check on slots that match their preferences.`,
 
-  booking_availability: `Present available slots naturally. Preferences were already collected before checking availability, so present the slots that match their preferences. Once agreed on a slot, proceed to authentication step.
+  booking_availability: `CRITICAL: Do NOT mention any specific slot dates, times, or locations until booking_step_check_availability has RETURNED. Before the tool returns, say only that you are checking (e.g. "Let me check availability for you"). After the tool returns: present ONLY the slot(s) from the tool result—use the exact "Slots to present:" line from the tool result message. Do NOT invent, add, or substitute any other times or slots. Once the caller agrees to a slot, call booking_step_authenticate only. Do NOT ask for full name, email, postcode, telephone, or any contact or personal details at this step.
 
-AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIATELY present the slots to the caller. Do NOT wait for prompts.`,
+STRICT: Do not ask for full name, postcode, telephone, email, or any other personal/contact details unless the current step explicitly requires it. Do NOT ask for full name, postcode, telephone, or email for verification until you have called booking_step_search_client and it has returned. Only ask for phone OR email when you need a search key to call booking_step_search_client (customerMobile or customerEmail). Full name/postcode/telephone are only for client_verification (after booking_step_search_client has found a client). Contact details are only when booking_step_fill_contact_details returns missingFields. After check_availability: only confirm the slot and call booking_step_authenticate.
 
-  booking_authentication: `Authenticating with CRM (automatic). Once authenticated, ask: "Have you done training with us before?" This determines if we use existing client workflow or new client workflow.
+AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIATELY present the slots from the tool result to the caller. Do NOT wait for prompts.`,
+
+  booking_authentication: `Authenticating with CRM (automatic). Once authenticated, ask: "Have you done training with us before?" This determines if we use existing client workflow or new client workflow. Do NOT ask for full name or contact details at this step—only authenticate and ask the workflow question.
 
 AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY ask the workflow type question. Do NOT wait for prompts.`,
 
@@ -104,13 +108,13 @@ AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY a
 
 STRICT ORDER FOR EXISTING CLIENT (after "Have you done training with us before?" = YES):
 1. Call booking_step_navigate_contacts (with courseType and workflowType: "existing") to open the Contacts tab.
-2. Then call booking_step_search_client (with courseType, workflowType: "existing", and customerMobile OR customerEmail). Ask for phone or email if needed to find their profile.
+2. Then call booking_step_search_client (with courseType, workflowType: "existing", and customerMobile OR customerEmail). Ask for phone or email only if needed as a search key to find their profile. Do NOT ask for full name, postcode, telephone, or email for verification until booking_step_search_client has been called and has returned (the client verification page is only open after that step runs).
 3. After booking_step_search_client finds a client → call client_verification with ONLY what the caller says: ask full name and call with fullName only; then ask postcode and call with fullName + postcode (from caller); then ask telephone and call with fullName + postcode + telephoneNumber (from caller). Do NOT pass postcode or telephoneNumber from the search result or stored clientDetails.
-4. After client_verification returns verified: true → call booking_step_select_session, then booking_step_select_booking_options (call it first with courseType and workflowType; then ask and list options; for ITM list 125cc automatic, 50cc automatic, 125cc manual; when caller chooses, call again with bikeType as top-level, e.g. bikeType: "125cc automatic"), then booking_step_lookup_contact (Step 7.5), then booking_step_fill_contact_details.
+4. After client_verification returns verified: true → call booking_step_select_session, then booking_step_select_booking_options (call it first with courseType and workflowType; then ask and list options; for ITM list 125cc automatic, 50cc automatic, 125cc manual; when caller chooses, call again with bikeType as top-level, e.g. bikeType: "125cc automatic"), then booking_step_lookup_contact (Step 8), then booking_step_fill_contact_details.
 
-STEP ORDER (existing): 7 → 7.5 (lookup_contact) → 8 (fill_contact_details) → 9 (process_payment) → 10, 11, 12. After step 7.5 you MUST do step 8 next (booking_step_fill_contact_details), then step 9 (booking_step_process_payment). There is no step 8.5—always use step 8 after 7.5, then add 1 as usual to reach payment and later steps.
+STEP ORDER (existing): 7 → 8 (lookup_contact) → 9 (fill_contact_details) → 10 (process_payment) → 11, 12, 13. After step 8 you MUST do step 9 next (booking_step_fill_contact_details), then step 10 (booking_step_process_payment). Always add 1 as usual to reach payment and later steps.
 
-CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email) when needed. NEVER use placeholder or example emails. Do NOT confuse booking_step_search_client (Step 5, Contacts tab, before verification) with booking_step_lookup_contact (Step 7.5, in booking form, after booking options).
+CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email) when needed. NEVER use placeholder or example emails. Do NOT confuse booking_step_search_client (Step 5, Contacts tab, before verification) with booking_step_lookup_contact (Step 8, in booking form, after booking options).
 
 After booking_step_select_session: when the caller says "proceed", "okay proceed", or "yes please", that means proceed with the booking options step—call booking_step_select_booking_options with courseType and workflowType. Do NOT interpret that as a request to transfer to an agent.`,
 
@@ -142,7 +146,7 @@ DO NOT ask for house number or contact details until you've collected the course
 - Select session → Call booking_step_select_booking_options (then ask and list options; for ITM list 125cc automatic, 50cc automatic, 125cc manual) → Call again with caller's choice → Lookup contact (existing) or create new contact (new) → Fill contact details
 
 AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes successfully:
-- For existing clients: IMMEDIATELY proceed to booking_step_lookup_contact (Step 7.5, silent). DO NOT call booking_step_search_client—that was already done before client verification.
+- For existing clients: IMMEDIATELY proceed to booking_step_lookup_contact (Step 8, silent). DO NOT call booking_step_search_client—that was already done before client verification.
 - For new clients: IMMEDIATELY proceed to booking_step_create_new_contact (silent), then booking_step_fill_contact_details.
 
 CRITICAL: booking_step_fill_contact_details checks ALL required fields and returns a full list of missing ones (missingFields). Ask the caller for ALL missing details using the tool's message; collect them iteratively. Then call the tool ONCE with all collected parameters to fill the form; only after that does the flow proceed to the payment page.`,
@@ -151,29 +155,24 @@ CRITICAL: booking_step_fill_contact_details checks ALL required fields and retur
 
 Do NOT ask for or acknowledge contact details until the flow has reached booking_step_fill_contact_details (after lookup is done and the form is ready). Until then, only use periodic updates as configured; no contact-related questions.
 
-STEP PROGRESSION: After step 7.5 (lookup_contact) the next step is always step 8 (booking_step_fill_contact_details), then step 9 (booking_step_process_payment), then 10, 11, 12. There is no step 8.5—use step 8 after 7.5, then continue by adding 1 as usual to reach the payment page and later steps.
+STEP PROGRESSION: After step 8 (lookup_contact) the next step is always step 9 (booking_step_fill_contact_details), then step 10 (booking_step_process_payment), then 11, 12, 13. Continue by adding 1 as usual to reach the payment page and later steps.
 
 AUTOMATIC CONTINUATION: After booking_step_lookup_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`,
 
   booking_payment: `Processing payment. CRITICAL: Only say "Booking confirmed" when paymentCompleted: true appears in tool result.
 
-🚨 MANDATORY TERMS AND CONDITIONS CHECK 🚨
-CRITICAL WORKFLOW ORDER:
-1. BEFORE calling booking_step_send_payment_request: Ask terms and conditions to caller
-   - Read the full terms text from the tool result (termsText field)
-   - Ask: "Do you agree with the statements that I have just made?"
-   - Wait for caller's response
-2. Handle terms response:
-   - If "yes": Call booking_step_send_payment_request with termsAcceptedBeforeSend: true
-   - If "no" or questions: Try to answer their questions to the best of your abilities
-     - If they still don't agree after explanation: Ask "Would you like to be transferred to a human agent?"
-     - If yes: Use the transfer_call tool (target is chosen from configured transfer numbers).
-     - If no: Say "Unfortunately, it will not be possible to proceed with the booking. Goodbye." and terminate the call
-3. ONLY after termsAcceptedBeforeSend: true, proceed with payment request sending
-4. After payment request is sent, polling will automatically find "Make booking" button and click it
-5. NO NEED to ask terms again after "Make booking" button appears (already handled before sending)
+When booking_step_process_payment returns requiresPaymentMethod (asks for email or SMS), do NOT call booking_step_process_payment again. Ask the caller "Would you like to receive the payment request via email or SMS?" then call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms" (and courseType, workflowType, clientEmail/clientMobile as needed).
 
-CRITICAL: Terms check is MANDATORY and cannot be bypassed. The tool will return requiresTermsBeforeSend if termsAcceptedBeforeSend is not true.
+🚨 MANDATORY TERMS AND CONDITIONS CHECK 🚨
+For booking_step_process_payment: Call FIRST with only courseType and workflowType (omit termsAccepted). If the result includes requiresTermsBeforeSend and termsText, read the termsText to the caller and ask "Do you accept the terms and conditions?" When they say yes, call booking_step_process_payment again with the same courseType and workflowType plus termsAccepted: true.
+
+For booking_step_send_payment_request:
+1. BEFORE calling: Read terms from a prior tool result (termsText) and ask: "Do you agree with the statements that I have just made?"
+2. If "yes": Call with termsAcceptedBeforeSend: true. If "no" or questions: Try to answer; if still no, offer transfer or end call.
+3. ONLY after termsAcceptedBeforeSend: true, proceed with payment request sending.
+4. When the tool returns requiresConfirmation (email/phone to confirm): Ask the caller to confirm the address. When they say yes, call **booking_step_send_payment_request** again with the SAME parameters plus **confirmed: true** so the "Send by email now" / "Send by SMS" button is clicked and the link is sent. Do NOT omit confirmed: true on the confirmation call or the request will not be sent.
+
+CRITICAL: Terms check is MANDATORY. When a tool returns requiresTermsBeforeSend and termsText, you MUST read termsText to the caller and get acceptance before calling again with termsAccepted/termsAcceptedBeforeSend: true.
 
 AUTOMATIC CONTINUATION: After payment tools complete, IMMEDIATELY proceed to next steps (confirmation email, terms, SMS). Do NOT wait for prompts.`,
 

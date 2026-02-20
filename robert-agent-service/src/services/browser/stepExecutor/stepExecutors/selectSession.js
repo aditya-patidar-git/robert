@@ -14,9 +14,11 @@ import { conversations } from '../../../../shared/state.js';
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeSelectSession(page, args, sessionState, screenshotsDir) {
+export async function executeSelectSession(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Opening the diary.' });
   // CRITICAL FIX: Try multiple sources for sessionDetails
   let sessionDetails = args.sessionDetails || sessionState?.sessionDetails;
   
@@ -65,8 +67,8 @@ export async function executeSelectSession(page, args, sessionState, screenshots
     sessionDetails.instructor = '';
   }
 
-  // Use existing navigateToDiariesAndSelectSession logic
-  await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, screenshotsDir);
+  // Use existing navigateToDiariesAndSelectSession logic (progressCallback gives in-between messages)
+  await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, screenshotsDir, undefined, progressCallback);
 
   return {
     success: true,

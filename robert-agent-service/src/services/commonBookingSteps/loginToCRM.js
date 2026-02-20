@@ -11,12 +11,14 @@ const CRM_NAVIGATION_TIMEOUT_MS = 60000;
  * @param {string} credentials.username - Username
  * @param {string} credentials.password - Password
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  */
-export async function loginToCRM(page, credentials, screenshotsDir) {
+export async function loginToCRM(page, credentials, screenshotsDir, progressCallback = null) {
   try {
     // If page is at about:blank or not on CRM, navigate first
     const currentUrl = page.url();
     if (currentUrl === 'about:blank' || !currentUrl.includes('takeabyte.co.uk/InContact')) {
+      progressCallback?.({ message: 'Opening your account.' });
       console.log('🔐 [STEP 2] Page not on CRM, navigating to CRM...');
       await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
       // Use 'load' instead of 'networkidle' - networkidle can timeout on pages with continuous requests
@@ -54,6 +56,7 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     }
     
     // Step 1: Navigate to CRM_LOGIN_URL
+    progressCallback?.({ message: 'Logging into the system.' });
     console.log('🔐 [STEP 2] Navigating to CRM login URL...');
     await page.goto(credentials.loginUrl, { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
     // Use 'load' instead of 'networkidle' - networkidle can timeout on pages with continuous requests
@@ -67,6 +70,7 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     await takeScreenshot(page, 'login-page-loaded.png', screenshotsDir);
     
     // Step 2: Set authentication cookies
+    progressCallback?.({ message: 'Opening your account.' });
     console.log('🍪 [STEP 2] Setting authentication cookies...');
     const crmHomeUrl = process.env.CRM_HOME_URL || 'https://takeabyte.co.uk/InContact';
     const loginUrlObj = new URL(credentials.loginUrl);
@@ -131,6 +135,7 @@ export async function loginToCRM(page, credentials, screenshotsDir) {
     console.log('✅ [STEP 2] Cookies set successfully');
     
     // Step 3: Navigate to CRM_HOME_URL and reload
+    progressCallback?.({ message: 'Opening the dashboard.' });
     console.log('🔐 [STEP 2] Navigating to CRM home URL...');
     await page.goto(crmHomeUrl, { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
     await page.reload({ waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });

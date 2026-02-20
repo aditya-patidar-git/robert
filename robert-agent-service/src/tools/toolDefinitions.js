@@ -17,7 +17,9 @@ function getStepBookingToolDefinitions() {
       type: 'function',
       name: 'booking_step_check_availability',
       description: `Step 1: Check availability for a course type. CRITICAL WORKFLOW:
-      
+
+STRICT: Do NOT mention any specific dates, times, locations, or slot options until this tool has RETURNED. Before the tool returns, say ONLY that you are checking (e.g. "Let me check availability for you" or "Checking now."). Never invent or list slots—only present what the tool result contains.
+
 1. BEFORE calling this tool: Ask the caller about their preferences:
    - "Do you have any preference for date or time?"
    - "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon)
@@ -25,7 +27,7 @@ function getStepBookingToolDefinitions() {
    
 2. Call this tool with preferences (or omit if no preferences). The tool will use preferences to filter and prioritize slots when opening the availability table.
 
-3. AFTER this tool returns: Present available slots to the caller
+3. AFTER this tool returns: Present ONLY the slot(s) from the tool result message. Do not add or substitute any other slots.
 
 4. WHEN caller selects a slot: Extract the slot details (date, time, location) from their response and call the NEXT step (booking_step_authenticate) with agreedSlot parameter containing the selected slot object matching one of the returned slots.
 
@@ -111,7 +113,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_search_client',
-      description: `Step 5 (Existing workflow only): Search for existing client in Contacts tab by mobile number or email. This happens BEFORE client verification. After this step completes, client verification is required. Use this ONLY for existing client workflow after navigate_contacts. DO NOT confuse this with booking_step_lookup_contact (Step 7.5) which happens later in the booking form.`,
+      description: `Step 5 (Existing workflow only): Search for existing client in Contacts tab by mobile number or email. This happens BEFORE client verification. After this step completes, client verification is required. Use this ONLY for existing client workflow after navigate_contacts. DO NOT confuse this with booking_step_lookup_contact (Step 8) which happens later in the booking form. When the caller gives a phone number, pass it as customerMobile (11 digits, UK format, no spaces).`,
       parameters: {
         type: 'object',
         properties: {
@@ -169,7 +171,15 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_select_booking_options',
-      description: `Step 7 (Existing) / Step 5 (New): Select booking options. The tool name is exactly booking_step_select_booking_options (NOT booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options). This step APPLIES the chosen options on the page (e.g. selects bike type). Call it first with courseType and workflowType; then ask the caller for options and LIST them (for ITM: "125cc automatic, 50cc automatic, 125cc manual"). After the caller chooses, call this tool again with courseType, workflowType, and bikeType (and cbtType/duration as needed)—pass these as TOP-LEVEL parameters, not inside a selectedOptions object. For CBT also pass cbtType; for Gear Conversion pass duration and bikeType. After options are set, use booking_step_lookup_contact or booking_step_create_new_contact, then booking_step_fill_contact_details.`,
+      description: `Step 7 (Existing) / Step 5 (New): Select booking options. The tool name is exactly booking_step_select_booking_options. This step APPLIES the chosen options on the page (e.g. selects bike type).
+
+CRITICAL WORKFLOW:
+1. Call this tool first with ONLY courseType and workflowType to see what options are required on the page.
+2. Ask the caller for those options (e.g. for ITM: "125cc automatic, 50cc automatic, 125cc manual").
+3. Call this tool again with chosen options (bikeType, duration, etc.) as TOP-LEVEL parameters.
+4. For Gear Conversion, duration is ALWAYS 2 hours by default - do NOT ask the caller about duration. ONLY ask for bike type.
+5. DO NOT ask for contact details (Name, Email, Phone) yet. Only ask for options appearing on the "1. Price" page.`,
+
       parameters: {
         type: 'object',
         properties: {
@@ -226,7 +236,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_lookup_contact',
-      description: `Step 7.5 (Existing workflow only): Lookup existing client contact in booking form iframe. This happens AFTER booking_step_select_booking_options and BEFORE booking_step_fill_contact_details. After this step, the next step is always step 8 (booking_step_fill_contact_details), then step 9 (process_payment)—there is no step 8.5. This is a silent step with periodic updates - do NOT ask questions. Use this ONLY for existing client workflow after booking_step_select_booking_options. DO NOT confuse this with booking_step_search_client (Step 5) which happens earlier in the Contacts tab before client verification.`,
+      description: `Step 8 (Existing workflow only): Lookup existing client contact in booking form iframe. This happens AFTER booking_step_select_booking_options and BEFORE booking_step_fill_contact_details. After this step, the next step is always step 9 (booking_step_fill_contact_details), then step 10 (process_payment). This is a silent step with periodic updates - do NOT ask questions. Use this ONLY for existing client workflow after booking_step_select_booking_options. DO NOT confuse this with booking_step_search_client (Step 5) which happens earlier in the Contacts tab before client verification.`,
       parameters: {
         type: 'object',
         properties: {
@@ -240,9 +250,17 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
             enum: ['existing'],
             description: 'Must be "existing" for this step'
           },
+          customerMobile: {
+            type: 'string',
+            description: 'Customer mobile number from Step 4 (preferred for lookup; optional, can come from session)'
+          },
           customerEmail: {
             type: 'string',
-            description: 'Customer email address (optional, can come from session)'
+            description: 'Customer email address (optional fallback; can come from session)'
+          },
+          customerName: {
+            type: 'string',
+            description: 'Name fragment for lookup escalation (e.g. first 3 letters of first name + space + first 3 of surname; optional)'
           },
           postcode: {
             type: 'string',
@@ -255,7 +273,14 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_fill_contact_details',
-      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. For existing clients: runs AFTER booking_step_lookup_contact (Step 7.5); step order is 7.5 → 8 → 9 (payment)—after 7.5 always use step 8, then step 9. Checks all required fields and returns a full list of missing ones (missingFields). Collect all missing details from the caller iteratively (one or more turns), then call this tool ONCE with all parameters to fill and proceed. For new clients: runs AFTER booking_step_create_new_contact (Step 6) and fills all fields from scratch.`,
+      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. 
+
+CRITICAL WORKFLOW:
+1. ONLY call this tool AFTER you have reached the contact details page (Step 8 for existing, Step 7 for new).
+2. DO NOT ask the customer for their Name, Email, Phone, Postcode, etc. until you have called this tool at least once to identify exactly what is missing on the actual CRM page.
+3. This tool returns missingFields for required details only. Gather ONLY those specific missing details from the caller; do not ask for anything else.
+4. After gathering the missing required info, call this tool again with those parameters to fill and proceed.`,
+
       parameters: {
         type: 'object',
         properties: {
@@ -297,6 +322,10 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
             type: 'string',
             description: 'Driving licence number (optional)'
           },
+          licenceHeld: {
+            type: 'string',
+            description: 'Type of licence held (e.g., "Full UK Car", "Provisional Motorcycle", etc.)'
+          },
           addressConfirmed: {
             type: 'boolean',
             description: 'Whether the client has confirmed the auto-populated address. Set to false on first call to get confirmation, then set to true after client confirms. Default: false'
@@ -312,7 +341,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_process_payment',
-      description: `Step 9 (Existing) / Step 8 (New): Process payment and complete booking. Uses updated payment procedure: payment link (sent via SMS/email) or Twilio Pay (DTMF-based phone payment). CRITICAL: Do NOT collect card details directly - the system handles payment automatically. Only ask for terms acceptance AFTER payment is confirmed.`,
+      description: `Step 9 (Existing) / Step 8 (New): Process payment and complete booking. Call FIRST with only courseType and workflowType (omit termsAccepted) to get terms from the system. If the result includes requiresTermsBeforeSend and termsText, read the terms to the caller and ask "Do you accept the terms and conditions?" When they say yes, call this tool again with the same courseType and workflowType plus termsAccepted: true. CRITICAL: Do NOT collect card details directly - the system handles payment automatically.`,
       parameters: {
         type: 'object',
         properties: {
@@ -333,10 +362,10 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
           },
           termsAccepted: {
             type: 'boolean',
-            description: 'Whether client accepted terms and conditions (REQUIRED - ask AFTER payment is confirmed, just before clicking "Make booking" button)'
+            description: 'Whether client accepted terms and conditions. Omit on first call to receive termsText; after reading terms and caller says yes, call again with termsAccepted: true.'
           }
         },
-        required: ['courseType', 'workflowType', 'termsAccepted']
+        required: ['courseType', 'workflowType']
       }
     },
     {

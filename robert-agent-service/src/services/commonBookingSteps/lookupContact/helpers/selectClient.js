@@ -12,115 +12,128 @@ import { takeScreenshot } from '../../utils.js';
  * @param {Object} page - Playwright page object
  * @param {Object} iframe - Iframe locator
  * @param {string} iframeId - Iframe ID
- * @param {string} email - Client email address
+ * @param {string} searchValue - Email or mobile (normalized) used for search
+ * @param {string} searchType - 'email' or 'mobile'
  * @param {string} clientPostcode - Optional postcode for verification
  * @param {string} screenshotsDir - Screenshots directory
  * @returns {Promise<boolean>} True if client was clicked successfully
  */
-export async function selectClient(page, iframe, iframeId, email, clientPostcode, screenshotsDir) {
-  // STEP 5: Click on found client - use robust logic from findAndVerifyClient.js
+function normalizePhone(value) {
+  if (!value || typeof value !== 'string') return '';
+  const cleaned = value.replace(/\(M\)/g, '').trim();
+  const match = cleaned.match(/[\d\s\-\(\)\+]+/);
+  if (!match) return '';
+  const digits = match[0].replace(/[\s\-\(\)]/g, '').replace(/^\+/, '').replace(/^44/, '0');
+  return digits.startsWith('0') ? digits : '0' + digits;
+}
+
+export async function selectClient(page, iframe, iframeId, searchValue, searchType, clientPostcode, screenshotsDir) {
   console.log('👆 [STEP 9] Clicking on found client...');
-  
-  // Normalize email for comparison (lowercase, trim)
-  const normalizedSearch = email.toLowerCase().trim();
-  
-  // Look for DevExtreme DataGrid table rows (based on actual HTML structure)
+
+  const normalizedSearch = searchType === 'email'
+    ? searchValue.toLowerCase().trim()
+    : searchType === 'mobile'
+      ? normalizePhone(searchValue)
+      : searchValue.toLowerCase().replace(/\s+/g, ' ').trim(); // name fragment
+
   const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
   const rowCount = await resultRows.count();
-  
-  console.log(`🔍 [STEP 9] Found ${rowCount} search result rows, looking for email matches...`);
-  
-  // Extract all rows that contain the email (per document: Smart search matches loosely)
+
+  console.log(`🔍 [STEP 9] Found ${rowCount} search result rows, looking for ${searchType} matches...`);
+
   const matchingRows = [];
   for (let i = 0; i < rowCount; i++) {
     const row = resultRows.nth(i);
-    
-    // Extract email using specific selector (based on actual HTML structure)
-    // Email is in: .jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span
-    let foundEmail = null;
+    let postcode = null;
     try {
-      const emailSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
-      if (await emailSpan.count() > 0) {
-        let emailText = await emailSpan.textContent();
-        if (emailText) {
-          // Use cleanEmail utility to properly remove "Copy" button text
-          foundEmail = cleanEmail(emailText);
+      const postcodeSpan = row.locator('div.jqx_margin_right + div[style*="display:inline-block"] > span');
+      if (await postcodeSpan.count() > 0) {
+        const postcodeText = await postcodeSpan.textContent();
+        const postcodeMatch = postcodeText?.match(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}\b/gi);
+        if (postcodeMatch?.length > 0) postcode = postcodeMatch[postcodeMatch.length - 1].trim();
+      }
+    } catch (e) { /* ignore */ }
+
+    if (searchType === 'email') {
+      let foundEmail = null;
+      try {
+        const emailSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Email:")) .jqx_inlineSummaryText span');
+        if (await emailSpan.count() > 0) {
+          const emailText = await emailSpan.textContent();
+          if (emailText) foundEmail = cleanEmail(emailText);
+        }
+      } catch (e) {
+        console.log(`⚠️ [STEP 9] Could not extract email from row ${i + 1}:`, e.message);
+      }
+      if (foundEmail) {
+        const normalizedEmail = foundEmail.toLowerCase().trim();
+        const emailMatches = normalizedEmail === normalizedSearch ||
+          normalizedEmail.includes(normalizedSearch) ||
+          normalizedSearch.includes(normalizedEmail);
+        if (emailMatches) {
+          console.log(`✅ [STEP 9] Found email match in row ${i + 1}: ${foundEmail}`);
+          matchingRows.push({ rowIndex: i, email: foundEmail, postcode, index: i });
         }
       }
-    } catch (e) {
-      console.log(`⚠️ [STEP 9] Could not extract email from row ${i + 1}:`, e.message);
-    }
-    
-    if (foundEmail) {
-      const normalizedEmail = foundEmail.toLowerCase().trim();
-      // Smart search matches loosely, so check if searched email is contained in found email or vice versa
-      const emailMatches = normalizedEmail === normalizedSearch || 
-                           normalizedEmail.includes(normalizedSearch) || 
-                           normalizedSearch.includes(normalizedEmail);
-      
-      if (emailMatches) {
-        console.log(`✅ [STEP 9] Found email match in row ${i + 1}: ${foundEmail}`);
-        
-        // Extract postcode using specific selector (based on actual HTML structure)
-        // Postcode is in: div.jqx_margin_right + div[style*="display:inline-block"] > span
-        let postcode = null;
-        try {
-          const postcodeSpan = row.locator('div.jqx_margin_right + div[style*="display:inline-block"] > span');
-          if (await postcodeSpan.count() > 0) {
-            const postcodeText = await postcodeSpan.textContent();
-            // Postcode may be in full address (e.g., "89 Brook Road, London, Greater London, NW2 7DS")
-            // Extract the last UK postcode pattern from the text
-            const postcodeMatch = postcodeText.match(/\b[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}\b/gi);
-            if (postcodeMatch && postcodeMatch.length > 0) {
-              // Get the last match (postcode is usually at the end of address)
-              postcode = postcodeMatch[postcodeMatch.length - 1].trim();
-              console.log(`📍 [STEP 9] Extracted postcode from row ${i + 1}: ${postcode}`);
+    } else if (searchType === 'mobile') {
+      try {
+        const phoneSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone:")) .jqx_inlineSummaryText span');
+        if (await phoneSpan.count() > 0) {
+          const phoneText = await phoneSpan.textContent();
+          if (phoneText) {
+            const normalizedPhone = normalizePhone(phoneText);
+            const phoneMatches = normalizedPhone === normalizedSearch ||
+              normalizedPhone.endsWith(normalizedSearch) ||
+              normalizedSearch.endsWith(normalizedPhone);
+            if (phoneMatches) {
+              console.log(`✅ [STEP 9] Found phone match in row ${i + 1}: ${phoneText.trim()}`);
+              matchingRows.push({ rowIndex: i, postcode, index: i });
             }
           }
-        } catch (e) {
-          console.log(`⚠️ [STEP 9] Could not extract postcode from row ${i + 1}:`, e.message);
         }
-        
-        matchingRows.push({
-          rowIndex: i,  // Store index instead of locator to avoid stale locator issues
-          email: foundEmail,
-          postcode: postcode,
-          index: i
-        });
+      } catch (e) {
+        console.log(`⚠️ [STEP 9] Could not extract phone from row ${i + 1}:`, e.message);
+      }
+    } else {
+      // searchType === 'name'
+      try {
+        const rowText = await row.textContent();
+        if (rowText && rowText.toLowerCase().replace(/\s+/g, ' ').includes(normalizedSearch)) {
+          console.log(`✅ [STEP 9] Found name match in row ${i + 1}`);
+          matchingRows.push({ rowIndex: i, postcode, index: i });
+        }
+      } catch (e) {
+        console.log(`⚠️ [STEP 9] Could not get text from row ${i + 1}:`, e.message);
       }
     }
   }
-  
-  console.log(`📊 [STEP 9] Found ${matchingRows.length} rows with matching email`);
-  
+
+  console.log(`📊 [STEP 9] Found ${matchingRows.length} rows with matching ${searchType}`);
+
   if (matchingRows.length === 0) {
-    throw new Error(`No email matches found in search results for: ${email}`);
+    throw new Error(`No ${searchType} matches found in search results for: ${searchValue}`);
   }
   
   // Handle multiple matches with postcode verification (similar to findAndVerifyClient.js)
   let exactMatch = null;
   
   if (matchingRows.length === 1) {
-    // Single match - can proceed directly
-    console.log('✅ [STEP 9] Single email match found, proceeding...');
+    console.log('✅ [STEP 9] Single match found, proceeding...');
     exactMatch = {
       rowIndex: matchingRows[0].rowIndex,
       locator: resultRows.nth(matchingRows[0].rowIndex)
     };
   } else {
-    // Multiple matches - need to verify email + postcode per document requirements
-    console.log(`⚠️ [STEP 9] Multiple email matches found (${matchingRows.length}). Per document, verifying email + postcode.`);
-    console.log('📋 [STEP 9] Extracted matches:');
+    console.log(`⚠️ [STEP 9] Multiple ${searchType} matches found (${matchingRows.length}). Verifying with postcode if available.`);
     matchingRows.forEach((match, idx) => {
-      console.log(`   ${idx + 1}. Email: ${match.email}, Postcode: ${match.postcode || 'Not visible in search results'}`);
+      console.log(`   ${idx + 1}. Row ${match.rowIndex + 1}${match.email ? `, Email: ${match.email}` : ''}, Postcode: ${match.postcode || 'Not visible'}`);
     });
-    
-    // Try to find exact email match first
-    const exactEmailMatch = matchingRows.find(m => {
+
+    const exactEmailMatch = searchType === 'email' ? matchingRows.find(m => {
       const matchEmail = cleanEmail(m.email);
       return matchEmail && matchEmail.toLowerCase().trim() === normalizedSearch;
-    });
-    
+    }) : null;
+
     if (exactEmailMatch) {
       // Exact email match found
       if (clientPostcode && exactEmailMatch.postcode) {
@@ -310,7 +323,7 @@ export async function selectClient(page, iframe, iframeId, email, clientPostcode
   }
   
   if (!clientClicked) {
-    throw new Error(`Could not click client row for email: ${email}`);
+    throw new Error(`Could not click client row for ${searchType}: ${searchValue}`);
   }
   
   // CRITICAL: Check if we're already on the client details page BEFORE waiting (robust verification from findAndVerifyClient)
@@ -318,9 +331,10 @@ export async function selectClient(page, iframe, iframeId, email, clientPostcode
   
   // Look for client name "Mr Robert Smith" or "Robert Smith"
   const clientNameVisible = await iframe.locator('text=Mr Robert Smith, text=Robert Smith').count() > 0;
-  
-  // Look for the email in the contact details section
-  const clientEmailVisible = await iframe.locator(`text=${email}`).count() > 0;
+
+  // When we searched by email, we can verify by email in DOM; when by mobile, skip (form fields suffice)
+  const identifierForVerify = searchType === 'email' ? searchValue : '';
+  const clientEmailVisible = identifierForVerify ? (await iframe.locator(`text=${identifierForVerify}`).count() > 0) : false;
   
   // Look for "First Names" and "Surname" fields which indicate we're on the client details page
   const firstNameField = await iframe.locator('text=First Names').count() > 0;
@@ -332,7 +346,7 @@ export async function selectClient(page, iframe, iframeId, email, clientPostcode
   if (clientNameVisible || clientEmailVisible || firstNameField || surnameField || contactEmailField) {
     console.log('✅ [STEP 9] ============================================');
     console.log('✅ [STEP 9] SUCCESS: Client details page is already loaded!');
-    console.log(`✅ [STEP 9] Client email: ${email}`);
+    if (identifierForVerify) console.log(`✅ [STEP 9] Client identifier: ${identifierForVerify}`);
     console.log('✅ [STEP 9] Client found and selected successfully.');
     console.log('✅ [STEP 9] Client details page loaded and ready.');
     console.log('✅ [STEP 9] Proceeding to click Next button...');
@@ -358,8 +372,7 @@ export async function selectClient(page, iframe, iframeId, email, clientPostcode
       // Look for client name "Mr Robert Smith" or "Robert Smith"
       const clientNameVisibleAfterWait = await iframe.locator('text=Mr Robert Smith, text=Robert Smith').count() > 0;
       
-      // Look for the email in the contact details section
-      const clientEmailVisibleAfterWait = await iframe.locator(`text=${email}`).count() > 0;
+      const clientEmailVisibleAfterWait = identifierForVerify ? (await iframe.locator(`text=${identifierForVerify}`).count() > 0) : false;
       
       // Look for "First Names" and "Surname" fields which indicate we're on the client details page
       const firstNameFieldAfterWait = await iframe.locator('text=First Names').count() > 0;
@@ -379,7 +392,7 @@ export async function selectClient(page, iframe, iframeId, email, clientPostcode
       }
     } else {
       console.log('❌ [STEP 9] Could not click client and page navigation did not occur');
-      throw new Error(`Could not find or click client element with email: ${email}`);
+        throw new Error(`Could not find or click client element for ${searchType}: ${searchValue}`);
     }
   }
   

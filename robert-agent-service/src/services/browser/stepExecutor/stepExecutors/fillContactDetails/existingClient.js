@@ -15,7 +15,7 @@ import { validateEmail } from './validators.js';
  */
 async function getClientEmail(args, sessionState) {
   let clientEmail = args.customerEmail || args.clientDetails?.email || sessionState?.clientDetails?.email;
-  
+
   // FIX 1: Check conversation state for email (from clientVerification/search_client)
   if (!clientEmail) {
     // Extract callSid from sessionState to access conversation state
@@ -26,18 +26,18 @@ async function getClientEmail(args, sessionState) {
         callSid = match[1];
       }
     }
-    
+
     if (callSid) {
       const { conversations } = await import('../../../../../shared/state.js');
       const conversation = conversations[callSid];
-      
+
       if (conversation?.clientDetails?.email) {
         clientEmail = conversation.clientDetails.email;
         console.log(`✅ [STEP 8] Using email from conversation state (clientVerification/search_client): ${clientEmail}`);
       }
     }
   }
-  
+
   return clientEmail;
 }
 
@@ -47,31 +47,33 @@ async function getClientEmail(args, sessionState) {
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeExistingClientFlow(page, args, sessionState, screenshotsDir) {
+export async function executeExistingClientFlow(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Filling in your details.' });
   // Existing client: use lookupContactAndWait to fill missing fields
   let clientEmail = await getClientEmail(args, sessionState);
-  
+
   // CRITICAL: Validate email - reject example/test emails
   if (clientEmail) {
     validateEmail(clientEmail);
   }
-  
+
   if (!clientEmail) {
     throw new Error('Client email is required for contact lookup (existing client workflow). Email must come from booking_step_search_client result or be provided by the caller.');
   }
-  
+
   const addressConfirmed = args.addressConfirmed || false;
   const correctedAddress = args.correctedAddress || null;
   const clientPostcode = args.postcode || args.clientDetails?.postcode || sessionState?.clientDetails?.postcode;
-  
+
   // If address is already confirmed, skip lookup and just click Next
   if (addressConfirmed) {
     // Client is already selected, just handle address correction if needed and click Next
     const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
     const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
-    
+
     if (eventBookingIframeExists && correctedAddress) {
       // Update address if corrected
       console.log(`📝 [STEP 8] Updating Address 1 with corrected address: ${correctedAddress}`);
@@ -84,21 +86,21 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         await page.waitForTimeout(500);
       }
     }
-    
+
     // Click Next button (lookupContactAndWait will detect we're already on the page and just click Next)
-    await commonSteps.lookupContactAndWait(page, clientEmail, screenshotsDir, clientPostcode, false);
+    await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false);
   } else {
     // FIX 3: First call lookupContactAndWait to get to the client details page (skip Next click)
     // The Contact choice page should be traversed automatically without any questions
-    await commonSteps.lookupContactAndWait(page, clientEmail, screenshotsDir, clientPostcode, true);
-    
+    await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, true);
+
     // CRITICAL FIX: Verify we're actually on the client details page BEFORE checking for missing fields
     // The Contact choice page should be traversed automatically without any questions
     await page.waitForTimeout(2000); // Wait for page to stabilize after client selection
-    
+
     const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
     const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
-    
+
     // CRITICAL: Verify we're on client details page (not Contact choice page)
     // Check for specific indicators that we're on the client details page
     let isOnClientDetailsPage = false;
@@ -113,7 +115,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           'text=Post Code',
           'text=House number or name'
         ];
-        
+
         for (const indicator of clientDetailsIndicators) {
           const element = eventBookingIframe.locator(indicator).first();
           if (await element.count() > 0) {
@@ -125,14 +127,14 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             }
           }
         }
-        
+
         // Also check if we're still on Contact choice page (should NOT be)
         const contactChoiceIndicators = [
           'text=Contact choice',
           'text=Choose one of these options',
           '#btnBookExisting' // Lookup contact button
         ];
-        
+
         let stillOnContactChoicePage = false;
         for (const indicator of contactChoiceIndicators) {
           const element = eventBookingIframe.locator(indicator).first();
@@ -145,13 +147,13 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             }
           }
         }
-        
+
         if (stillOnContactChoicePage) {
           console.log('⚠️ [STEP 8] Still on Contact choice page - cannot check for missing fields yet');
           // Don't check for missing fields - we're not on the client details page yet
           // The Contact choice page should be traversed automatically based on workflowType
           // Just proceed to click Next or continue the flow
-          await commonSteps.lookupContactAndWait(page, clientEmail, screenshotsDir, clientPostcode, false);
+          await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false);
           // After clicking Next, we should be on client details page - check again
           await page.waitForTimeout(2000);
           // Re-check if we're on client details page now
@@ -173,23 +175,26 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         isOnClientDetailsPage = true;
       }
     }
-    
+
     // CRITICAL FIX 4: Only check for missing fields if we're confirmed to be on client details page
     if (isOnClientDetailsPage && eventBookingIframeExists) {
       await page.waitForTimeout(2000);
+
+      // Required fields to check and request when missing (no extra fields beyond this list).
+      const REQUIRED_PARAM_NAMES = ['customerEmail', 'customerMobile', 'postcode', 'houseNumber', 'licenceHeld', 'nationalInsurance', 'drivingLicenceNumber'];
 
       const fieldOrder = [
         { label: 'Contact e-mail', id: 'cnt_email', name: 'email', paramName: 'customerEmail', labelShort: 'email address' },
         { label: 'Contact mobile number', id: 'cnt_mobile_number', name: 'mobileNumber', paramName: 'customerMobile', labelShort: 'mobile number' },
         { label: 'Post Code', id: 'cmp_post_code', name: 'postcode', paramName: 'postcode', labelShort: 'postcode' },
         { label: 'House number or name', id: 'cmp_buildingnumber', name: 'houseNumber', paramName: 'houseNumber', labelShort: 'house number or name' },
-        { label: 'Licence held', id: 'cnt_licence_held', name: 'licenceHeld', paramName: 'licenceHeld', labelShort: 'licence held type' },
-        { label: 'National Insurance number', id: 'cnt_national_insurance_number', name: 'nationalInsuranceNumber', paramName: 'nationalInsurance', labelShort: 'National Insurance number' },
-        { label: 'Driving licence number', id: 'cnt_driving_licence_number', name: 'drivingLicenceNumber', paramName: 'drivingLicenceNumber', labelShort: 'driving licence number' }
+        { label: 'Licence held', id: 'xid_29019', name: 'licenceHeld', paramName: 'licenceHeld', labelShort: 'licence held type' },
+        { label: 'National Insurance number', id: 'cnt_NI_number', name: 'nationalInsuranceNumber', paramName: 'nationalInsurance', labelShort: 'National Insurance number' },
+        { label: 'Driving licence number', id: 'cnt_driving_licence_no', name: 'drivingLicenceNumber', paramName: 'drivingLicenceNumber', labelShort: 'driving licence number' }
       ];
 
       // Fill all provided args first (so one tool call with all params fills everything, then we re-scan)
-      
+
       // Fill email if provided
       if (args.customerEmail) {
         const emailField = eventBookingIframe.getByLabel('Contact e-mail');
@@ -202,7 +207,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           }
         }
       }
-      
+
       // Fill mobile number if provided
       if (args.customerMobile) {
         const mobileField = eventBookingIframe.getByLabel('Contact mobile number');
@@ -225,7 +230,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           }
         }
       }
-      
+
       // Fill postcode if provided
       if (args.postcode) {
         const postcodeField = eventBookingIframe.getByLabel('Post Code');
@@ -238,7 +243,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           }
         }
       }
-      
+
       // Fill house number and handle address confirmation
       const houseNumber = args.houseNumber || args.houseNumberOrName;
       let houseNumberField = eventBookingIframe.getByLabel('House number or name');
@@ -248,7 +253,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       if (await houseNumberField.count() === 0) {
         houseNumberField = eventBookingIframe.locator('#cmp_buildingnumber');
       }
-      
+
       if (await houseNumberField.count() > 0) {
         const houseNumberValue = await houseNumberField.inputValue().catch(() => '');
         if (!houseNumberValue || houseNumberValue.trim() === '') {
@@ -257,13 +262,13 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             await houseNumberField.fill(houseNumber);
             await houseNumberField.press('Tab');
             await page.waitForTimeout(2000);
-            
+
             // Check for auto-populated address
             let address1Field = eventBookingIframe.getByLabel('Address 1');
             if (await address1Field.count() === 0) {
               address1Field = eventBookingIframe.locator('#cmp_address_1 .dx-texteditor-input');
             }
-            
+
             if (await address1Field.count() > 0) {
               const autoPopulatedAddress = await address1Field.inputValue();
               if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
@@ -280,10 +285,12 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           }
         }
       }
-      
-      // Fill National Insurance if provided
+
+      // Fill National Insurance if provided (optional; never asked as missing)
       if (args.nationalInsurance) {
-        const niField = eventBookingIframe.getByLabel('National Insurance number');
+        let niField = eventBookingIframe.getByLabel('National Insurance number');
+        if (await niField.count() === 0) niField = eventBookingIframe.locator('#cnt_NI_number .dx-texteditor-input');
+        if (await niField.count() === 0) niField = eventBookingIframe.locator('#cnt_NI_number');
         if (await niField.count() > 0) {
           const currentNI = await niField.inputValue().catch(() => '');
           if (!currentNI || currentNI.trim() === '') {
@@ -293,10 +300,12 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           }
         }
       }
-      
-      // Fill Driving Licence Number if provided
+
+      // Fill Driving Licence Number if provided (optional; never asked as missing)
       if (args.drivingLicenceNumber) {
-        const dlField = eventBookingIframe.getByLabel('Driving licence number');
+        let dlField = eventBookingIframe.getByLabel('Driving licence number');
+        if (await dlField.count() === 0) dlField = eventBookingIframe.locator('#cnt_driving_licence_no .dx-texteditor-input');
+        if (await dlField.count() === 0) dlField = eventBookingIframe.locator('#cnt_driving_licence_no');
         if (await dlField.count() > 0) {
           const currentDL = await dlField.inputValue().catch(() => '');
           if (!currentDL || currentDL.trim() === '') {
@@ -306,31 +315,45 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           }
         }
       }
-      
+
       // Fill Licence Held if provided (dropdown)
       if (args.licenceHeld) {
-        const licenceField = eventBookingIframe.getByLabel('Licence held');
-        if (await licenceField.count() > 0) {
-          const currentLicence = await licenceField.evaluate(el => {
-            if (el.tagName === 'SELECT') {
-              return el.value || '';
-            }
-            return el.textContent?.trim() || '';
-          }).catch(() => '');
-          if (!currentLicence || currentLicence.trim() === '') {
-            console.log(`📝 [STEP 8] Selecting Licence held: ${args.licenceHeld}`);
-            await licenceField.selectOption({ label: args.licenceHeld }).catch(() => {
-              // Try by value if label doesn't work
-              licenceField.selectOption(args.licenceHeld);
-            });
-            await page.waitForTimeout(500);
-          }
-        }
+        await commonSteps.fillContactDetails(page, { licenceHeld: args.licenceHeld }, screenshotsDir, true);
+        await page.waitForTimeout(500);
       }
 
-      // Build full list of missing fields (one scan, same selectors as before)
+      // Fill Hear about us if provided
+      if (args.hearAboutUs) {
+        console.log(`📝 [STEP 8] Selecting Hear about us?: ${args.hearAboutUs}`);
+        await commonSteps.fillContactDetails(page, { hearAboutUs: args.hearAboutUs }, screenshotsDir, true);
+        await page.waitForTimeout(500);
+      }
+
+      // Fill Riding experience if provided
+      if (args.ridingExperience) {
+        console.log(`📝 [STEP 8] Selecting riding experience: ${args.ridingExperience}`);
+        await commonSteps.fillContactDetails(page, { ridingExperience: args.ridingExperience }, screenshotsDir, true);
+        await page.waitForTimeout(500);
+      }
+
+      // Fill Marketing consent if provided
+      if (args.marketingConsent !== undefined) {
+        console.log(`📝 [STEP 8] Selecting Marketing consent: ${args.marketingConsent}`);
+        await commonSteps.fillContactDetails(page, { marketingConsent: args.marketingConsent }, screenshotsDir, true);
+        await page.waitForTimeout(500);
+      }
+
+      // Fill Data sharing if provided
+      if (args.dataSharing !== undefined) {
+        console.log(`📝 [STEP 8] Selecting Data sharing: ${args.dataSharing}`);
+        await commonSteps.fillContactDetails(page, { dataSharing: args.dataSharing }, screenshotsDir, true);
+        await page.waitForTimeout(500);
+      }
+
+      // Build missing list only for must-details (REQUIRED_PARAM_NAMES); never ask for optional fields
       const missingFields = [];
       for (const field of fieldOrder) {
+        if (!REQUIRED_PARAM_NAMES.includes(field.paramName)) continue;
         try {
           let fieldLocator = eventBookingIframe.getByLabel(field.label);
           if (await fieldLocator.count() === 0) {
@@ -341,11 +364,22 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           }
           if (await fieldLocator.count() > 0) {
             let currentValue = '';
-            if (field.name === 'licenceHeld') {
-              currentValue = await fieldLocator.evaluate(el => {
-                if (el.tagName === 'SELECT') return el.value || '';
-                return el.textContent?.trim() || '';
-              }).catch(() => '');
+            if (['licenceHeld', 'hearAboutUs', 'ridingExperience', 'marketingConsent', 'dataSharing'].includes(field.name)) {
+              // DevExpress dropdowns: displayed value is in .dx-texteditor-input; read from inner input first
+              const inputLocator = eventBookingIframe.locator(`#${field.id} .dx-texteditor-input`);
+              if (await inputLocator.count() > 0) {
+                currentValue = await inputLocator.inputValue().catch(() => '');
+              }
+              if (!currentValue || currentValue.trim() === '') {
+                currentValue = await fieldLocator.evaluate(el => {
+                  if (el.tagName === 'SELECT') return el.value || '';
+                  const input = el.querySelector && el.querySelector('.dx-texteditor-input');
+                  if (input && input.value) return input.value.trim();
+                  const text = el.textContent?.trim() || '';
+                  if (text === 'Select...' || text === '') return '';
+                  return text;
+                }).catch(() => '');
+              }
             } else {
               currentValue = await fieldLocator.inputValue().catch(() => '');
             }
@@ -362,8 +396,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         const paramNames = missingFields.map(f => f.paramName);
         const labelsList = missingFields.map(f => f.labelShort).join(', ');
         const message = `I need your ${labelsList}; could you please provide them?`;
-        const instruction = `Collect ALL missing details from the caller iteratively (one or more conversational turns). Do NOT call this tool again until you have every value. Then call booking_step_fill_contact_details ONCE with all parameters: ${paramNames.join(', ')}.`;
-        console.log(`⚠️ [STEP 8] Missing fields (${missingFields.length}): ${paramNames.join(', ')}`);
+        const instruction = `Collect ONLY these missing details from the caller. Ask the caller to REPEAT each missing detail so you can confirm you have it correct before calling the tool again. Do NOT read back or repeat the caller's personal details on the call (GDPR). When you have confirmed values for all of: ${paramNames.join(', ')}, call booking_step_fill_contact_details ONCE with those parameters.`;
+        console.log(`⚠️ [STEP 8] Missing required fields (${missingFields.length}): ${paramNames.join(', ')}`);
         return {
           success: true,
           missingFields: paramNames,
@@ -376,13 +410,14 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       // Not on client details page yet - just proceed without checking missing fields
       console.log('⚠️ [STEP 8] Not on client details page yet - skipping missing fields check');
     }
-    
+
     // After handling missing fields (if any were provided), click Next
-    await commonSteps.lookupContactAndWait(page, clientEmail, screenshotsDir, clientPostcode, false);
-    
+    progressCallback?.({ message: 'Saving your details.' });
+    await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false, progressCallback);
+
     // CRITICAL FIX 5: Detect page transition after Next click
     await page.waitForTimeout(2000); // Wait for navigation
-    
+
     // Check if we're on payment page
     const paymentPageIndicators = [
       '#contactSend3DSecureRequest_iframe', // Payment request page
@@ -390,7 +425,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       'text=Send a payment request', // Payment option
       '[aria-label*="payment" i]' // Payment-related elements
     ];
-    
+
     let onPaymentPage = false;
     for (const indicator of paymentPageIndicators) {
       try {
@@ -407,11 +442,11 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         continue;
       }
     }
-    
+
     // Also check if we're still on client details page (Next button might be hidden)
     const stillOnClientDetailsPage = await page.locator('#eventNewBooking2_iframe').count() > 0;
     const nextButtonStillVisible = stillOnClientDetailsPage ? await page.frameLocator('#eventNewBooking2_iframe').locator('#diaryNewCourseBookingWiz_nextBtn').isVisible().catch(() => false) : false;
-    
+
     if (onPaymentPage) {
       return {
         success: true,
@@ -446,7 +481,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       };
     }
   }
-  
+
   return {
     success: true,
     contactDetailsFilled: true,

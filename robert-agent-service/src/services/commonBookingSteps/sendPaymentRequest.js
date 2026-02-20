@@ -11,9 +11,10 @@ import { getTermsText, validateTermsAcceptance } from './termsUtils.js';
  * @param {string} clientMobile - Optional client mobile number
  * @param {boolean} confirmed - Whether client has confirmed the email/phone number (default: false)
  * @param {boolean|undefined} termsAcceptedBeforeSend - Whether client has accepted terms and conditions BEFORE sending payment request (MANDATORY)
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates (holding; never sets waitingForUser)
  * @returns {Promise<{success: boolean, paymentCompleted: boolean, requiresConfirmation?: boolean, requiresTermsBeforeSend?: boolean, termsText?: string, termsNotAccepted?: boolean, requiresRetry?: boolean, emailAddress?: string, phoneNumber?: string, error?: string}>}
  */
-export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null, confirmed = false, termsAcceptedBeforeSend = undefined) {
+export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null, confirmed = false, termsAcceptedBeforeSend = undefined, progressCallback = null) {
   try {
     // ============================================
     // CRITICAL: MANDATORY TERMS CHECK - FIRST THING IN FUNCTION
@@ -66,7 +67,8 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     
     console.log('✅ [PAYMENT_REQUEST] Terms accepted, proceeding with payment request flow...');
     console.log(`💳 [PAYMENT_REQUEST] Sending payment request via ${deliveryMethod}...`);
-    
+    progressCallback?.({ message: 'Opening the payment form.' });
+
     // FIX 3: Wait for payment request page to load - check for contactSend3DSecureRequest_iframe first
     // After clicking "Send a payment request", the content appears in contactSend3DSecureRequest_iframe
     // NOT in eventNewBooking2_iframe (which is for the booking page)
@@ -202,6 +204,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           // Verify the form is actually visible
           await sendForm.waitFor({ state: 'visible', timeout: 5000 });
           console.log('✅ [PAYMENT_REQUEST] Payment request form is visible');
+          progressCallback?.({ message: 'Payment form is ready.' });
           break;
         }
         
@@ -238,6 +241,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     
     // Fill email or mobile if provided
     if (deliveryMethod === 'email') {
+      progressCallback?.({ message: 'Filling in your email.' });
       // HARDCODED: Always use test email for payment requests
       const testEmail = 'aditya.patidar@kadellabs.com';
       console.log(`📧 [PAYMENT_REQUEST] Filling email address (hardcoded for testing): ${testEmail}`);
@@ -276,6 +280,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     
     if (!confirmed) {
       console.log('⏸️ [PAYMENT_REQUEST] Confirmation required before sending payment request');
+      progressCallback?.({ message: 'Just need your confirmation.' });
       return {
         success: true,
         paymentCompleted: false,
@@ -291,7 +296,8 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     
     // Only proceed to click send button if confirmed is true
     console.log('✅ [PAYMENT_REQUEST] Client confirmed, proceeding to send payment request...');
-    
+    progressCallback?.({ message: 'Sending the link now.' });
+
     // Click appropriate button based on delivery method
     let sendButton;
     if (deliveryMethod === 'email') {

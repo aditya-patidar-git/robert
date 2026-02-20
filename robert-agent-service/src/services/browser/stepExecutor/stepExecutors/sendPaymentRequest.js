@@ -10,9 +10,10 @@
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeSendPaymentRequest(page, args, sessionState, screenshotsDir) {
+export async function executeSendPaymentRequest(page, args, sessionState, screenshotsDir, progressCallback = null) {
   // Use sendPaymentRequest from commonBookingSteps
   const { sendPaymentRequest } = await import('../../../commonBookingSteps/sendPaymentRequest.js');
   
@@ -20,12 +21,14 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
   // After ClientDetailsPage, we first land on PaymentPage, not paymentRequestLink page
   // We must select "Send a payment request" from dropdown before we can access paymentRequestLink page
   console.log('🔍 [SEND_PAYMENT_REQUEST] Checking current page state...');
-  
+  progressCallback?.({ message: 'Checking the payment page.' });
+
   const isOnPaymentPage = await page.locator('#eventNewBooking2_iframe').count() > 0;
   const isOnPaymentRequestPage = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
   
   if (isOnPaymentPage && !isOnPaymentRequestPage) {
     console.log('⚠️ [SEND_PAYMENT_REQUEST] Still on PaymentPage - need to select "Send a payment request" first');
+    progressCallback?.({ message: 'Opening the payment request form.' });
     console.log('📋 [SEND_PAYMENT_REQUEST] Calling selectPaymentOption to select "Send a payment request"...');
     
     // Step 1: Select "Send a payment request" option
@@ -59,6 +62,7 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     }
   } else if (isOnPaymentRequestPage) {
     console.log('✅ [SEND_PAYMENT_REQUEST] Already on payment request link page');
+    progressCallback?.({ message: 'Payment form is ready.' });
   } else {
     console.warn('⚠️ [SEND_PAYMENT_REQUEST] Could not determine current page state, proceeding...');
   }
@@ -79,15 +83,16 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
   
   // FIX: Explicitly check for true boolean value, not just truthy
   // Handle both boolean true and string "true" (in case it comes as string from JSON)
-  // Also check for undefined/null and default to false
-  const confirmed = args.confirmed === true || args.confirmed === 'true';
+  // Also accept confirmedByClient (model sometimes sends this instead of confirmed)
+  const confirmed = args.confirmed === true || args.confirmed === 'true' ||
+    args.confirmedByClient === true || args.confirmedByClient === 'true';
   
   // Extract termsAcceptedBeforeSend parameter (MANDATORY check)
   const termsAcceptedBeforeSend = args.termsAcceptedBeforeSend === true ? true : (args.termsAcceptedBeforeSend === false ? false : undefined);
   
   // Debug logging to trace parameter passing
   console.log(`🔍 [SEND_PAYMENT_REQUEST] All args keys:`, Object.keys(args));
-  console.log(`🔍 [SEND_PAYMENT_REQUEST] Confirmed parameter: ${args.confirmed} (type: ${typeof args.confirmed}), evaluated as: ${confirmed}`);
+  console.log(`🔍 [SEND_PAYMENT_REQUEST] Confirmed parameter: confirmed=${args.confirmed}, confirmedByClient=${args.confirmedByClient}, evaluated as: ${confirmed}`);
   console.log(`🔍 [SEND_PAYMENT_REQUEST] TermsAcceptedBeforeSend parameter: ${args.termsAcceptedBeforeSend} (type: ${typeof args.termsAcceptedBeforeSend}), evaluated as: ${termsAcceptedBeforeSend}`);
   
   const result = await sendPaymentRequest(
@@ -97,7 +102,8 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     clientEmail,
     clientMobile,
     confirmed,
-    termsAcceptedBeforeSend
+    termsAcceptedBeforeSend,
+    progressCallback
   );
   
   // CRITICAL: Handle terms-related results FIRST (before any other processing)

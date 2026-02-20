@@ -46,10 +46,14 @@ export class ToolCoordinator {
     this.consentHandler = consentHandler;
     this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler, (text) => this.applyIntentFromTranscript(text), () => this.openaiIntegration?.getCurrentWorkflowPhase?.());
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs, {
-      onBeforeTriggerResponse: (callSid) => {
+      onBeforeTriggerResponse: (callSid, context) => {
         const conv = conversations[callSid];
         const lastUser = conv?.transcript?.filter(t => t.role === 'user').pop();
         if (lastUser?.text?.trim()) this.applyIntentFromTranscript(lastUser.text);
+        // Keep payment phase when process_payment fails so next response (e.g. after user says "read them out") stays in payment context
+        if (context?.toolName === 'booking_step_process_payment' && context?.toolResult?.success === false && this.openaiIntegration) {
+          this.openaiIntegration.setCurrentWorkflowPhase('booking_payment');
+        }
       },
       onWorkflowSwitch: (callSid, phase) => {
         if (this.openaiIntegration) {
@@ -166,12 +170,15 @@ export class ToolCoordinator {
         progressCallback: null
       });
       await this.toolCallHandler.resultSubmitter.submitResult(callSid, callId, executionResult);
+      const result = executionResult.result || executionResult;
+      // Always trigger response so the caller hears the bike-type question once when requiresPreferences.
+      // (Avoiding double-ask is handled by toolResultSubmitter instruction: "ask once only".)
       if (typeof this.toolCallHandler.onBeforeTriggerResponse === 'function') {
         this.toolCallHandler.onBeforeTriggerResponse(callSid);
       }
       await this.toolCallHandler.resultSubmitter.triggerResponse(callSid, {
         toolName,
-        toolResult: executionResult.result || executionResult
+        toolResult: result
       });
       console.log(`✅ [${callSid}] Chained tool ${toolName} executed and response triggered`);
     } catch (err) {

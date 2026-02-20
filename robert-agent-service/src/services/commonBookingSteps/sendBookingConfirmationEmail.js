@@ -6,9 +6,11 @@ import * as stationeryHelpers from './stationeryHelpers.js';
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} courseType - Course type enum value (e.g., 'ITM', 'Introduction to Motorcycling', 'CBT', 'TfL 1-2-1', etc.)
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  */
-export async function sendBookingConfirmationEmail(page, screenshotsDir, courseType = 'tfl') {
+export async function sendBookingConfirmationEmail(page, screenshotsDir, courseType = 'tfl', progressCallback = null) {
   try {
+    progressCallback?.({ message: 'Preparing your confirmation.' });
     console.log('📧 [CONFIRMATION] Sending booking confirmation email...');
     
     // Wait for page to be ready after booking completion
@@ -33,6 +35,7 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
     // Find and click "Send a confirmation" button
     const sendConfirmationButton = await stationeryHelpers.findSendConfirmationButton(page, searchContext);
     
+    progressCallback?.({ message: 'Sending your confirmation now.' });
     // Click the list item - handle hidden elements
     console.log('🖱️ [CONFIRMATION] Clicking "Send a confirmation" list item...');
     try {

@@ -4,8 +4,9 @@ import { takeScreenshot } from './utils.js';
  * Step 6 (New client workflow): Click "New contact" button
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  */
-export async function createNewContact(page, screenshotsDir) {
+export async function createNewContact(page, screenshotsDir, progressCallback = null) {
   try {
     console.log('👤 [STEP 6] Clicking "New contact" button...');
     
@@ -73,6 +74,7 @@ export async function createNewContact(page, screenshotsDir) {
     
     // Take screenshot of contact page
     await takeScreenshot(page, 'contact-choice-page-loaded.png', screenshotsDir);
+    progressCallback?.({ message: 'Opening the new contact form.' });
     
     // Click "New contact" button
     // Priority order: ID > aria-label > text with ellipsis > text without ellipsis > class > role-based
@@ -121,6 +123,7 @@ export async function createNewContact(page, screenshotsDir) {
     }
     
     console.log(`✅ [STEP 6] Found "New contact" button using selector: ${selectorUsed}`);
+    progressCallback?.({ message: 'Creating the contact.' });
     await newContactButton.waitFor({ state: 'visible', timeout: 5000 });
     await newContactButton.click();
     

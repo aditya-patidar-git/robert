@@ -267,10 +267,20 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           else if (step === 6 && wt === 'new') workflowPhase = 'booking_new_client';
           else if (step === 6 && wt === 'existing') workflowPhase = 'booking_existing_client';
           else if (step === 7) workflowPhase = 'booking_options';
-          else if (step === 7.5 && wt === 'existing') workflowPhase = 'booking_lookup_contact';
+          else if (step === 8 && wt === 'existing') workflowPhase = 'booking_lookup_contact';
           else if (step >= 8 && step <= 9) workflowPhase = 'booking_payment';
           else if (step >= 10) workflowPhase = 'booking_completion';
         }
+      }
+
+      // Keep payment phase when process_payment failed (validation or execution) so next response stays in payment context
+      if (options?.toolName === 'booking_step_process_payment' && options?.toolResult && options.toolResult.success === false) {
+        workflowPhase = 'booking_payment';
+        console.log(`🎯 [${callId}] process_payment failed - keeping phase booking_payment for next response`);
+      }
+      // Also keep payment phase when process_payment returned requiresTermsBeforeSend (success but not completed)
+      if (options?.toolName === 'booking_step_process_payment' && options?.toolResult && options.toolResult.requiresTermsBeforeSend === true) {
+        workflowPhase = 'booking_payment';
       }
 
       // Get contextual instructions for automatic continuation
@@ -400,6 +410,14 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         }
       }
 
+      // Phase 0: After check_availability (step 1), present ONLY slots from tool result; do NOT invent slots; do NOT ask for full name or contact details
+      if (toolName === 'booking_step_check_availability' && toolResult?.success === true) {
+        const slotsFromTool = toolResult?.message ? ` Tool result message: "${toolResult.message}"` : '';
+        const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST present ONLY the slot(s) listed in the tool result message (see "Slots to present:" in the message)—do NOT invent, add, or substitute any other times or slots.${slotsFromTool} After the caller confirms a slot, call booking_step_authenticate only. Do NOT ask for full name, email, postcode, telephone, or any contact or personal details—only confirm the slot then proceed to authentication.`;
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Check availability completed - instructing to present ONLY tool result slots, then booking_step_authenticate; no contact questions`);
+      }
+
       // Phase 1: After search_client finds a client with requiresVerification, agent MUST call client_verification (not search_client again), then after verified call booking_step_select_session
       const isSearchClientRequiresVerification = toolName === 'booking_step_search_client' &&
         toolResult?.success === true &&
@@ -427,7 +445,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
       // Phase 2: After select_session, call select_booking_options in this turn first; do NOT ask for bike type until after the tool returns
       if (toolName === 'booking_step_select_session' && toolResult?.success === true) {
-        const instruction = `CRITICAL: booking_step_select_session completed. Do not call it again. You MUST call **booking_step_select_booking_options** with courseType and workflowType from the current session IN THIS TURN. Do NOT ask for bike type or list bike options in this turn—only confirm the session and call the tool. After the tool returns, if it asks for bike type (requiresPreferences), then in your next response ask the caller once and list "125cc automatic, 50cc automatic, 125cc manual". After the caller chooses, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** as a top-level parameter (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
+        const instruction = `CRITICAL: booking_step_select_session completed. Do not call it again. In this turn you MUST: (1) Say ONLY a brief confirmation (e.g. "Session selected. Proceeding to booking options.")—do NOT ask for bike type, do NOT list 125cc/50cc/manual options, do NOT say "which bike type would you prefer". (2) Call **booking_step_select_booking_options** with courseType and workflowType from the current session in this same turn. The tool will return that bike type is needed; we will then wait for the caller to say their preference—do not generate a second message asking for bike type. After the caller says their choice, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select session completed - instructing to call booking_step_select_booking_options next`);
         const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
@@ -456,7 +474,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         const wt = workflowType || conversations[callSid]?.bookingSession?.workflowType;
         const instruction = wt === 'new'
           ? `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Your booking options are successfully selected."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_create_new_contact next with courseType and workflowType: "new". Then immediately call booking_step_fill_contact_details.`
-          : `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Your booking options are successfully selected."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_lookup_contact next with courseType and workflowType: "existing". This step is silent (no questions)—do not ask about contact until booking_step_fill_contact_details has run and returned missingFields.`;
+          : `CRITICAL: Do not call booking_step_select_booking_options again. Say ONLY 2-5 words (e.g. "Options set." or "Done."). Do NOT say any other sentence or list next steps. Then call booking_step_lookup_contact with courseType and workflowType: "existing". This step is silent (no questions)—do not ask about contact until booking_step_fill_contact_details has run and returned missingFields.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select booking options completed - instructing to call ${wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact'} next`);
         const nextTool = wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact';
@@ -471,11 +489,20 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         }
       }
 
-      // Phase 4: After lookup_contact, call fill_contact_details next
+      // Phase 4: After lookup_contact, call fill_contact_details next (do NOT ask for email or any contact details here)
       if (toolName === 'booking_step_lookup_contact' && toolResult?.success === true) {
-        const instruction = `CRITICAL: booking_step_lookup_contact completed. Call booking_step_fill_contact_details next. Collect any missing contact details from the caller (using the tool's missingFields/message), then call the tool once with all parameters.`;
+        const instruction = `CRITICAL: booking_step_lookup_contact completed. Do NOT say "we're all set with your contact details", "let's move on to payment", or "are you ready to proceed with payment" until you have called booking_step_fill_contact_details and it has returned. Call booking_step_fill_contact_details in this turn with courseType and workflowType. If it returns missingFields, ask the caller for those (iteratively); then call the tool again with the collected values. Only when the tool returns success with no missingFields may you mention payment. Do NOT ask for email or any contact details before calling the tool.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Lookup contact completed - instructing to call booking_step_fill_contact_details next`);
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (this.stateManager && reqCourseType) {
+          const session = sessionStateManager.getSession(callSid);
+          this.stateManager.pendingChainedToolCall = {
+            toolName: 'booking_step_fill_contact_details',
+            args: { courseType: reqCourseType, workflowType: workflowType || session?.workflowType || 'existing' }
+          };
+          console.log(`🎯 [${callId}] Pending recovery tool set (after lookup_contact) - will auto-run booking_step_fill_contact_details if model does not call it`);
+        }
       }
 
       // Phase 5: After create_new_contact, call fill_contact_details next
@@ -491,11 +518,29 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         toolResult.missingFields.length > 0;
       if (isFillContactDetailsMissing) {
         const msg = toolResult.message || `I need your ${(toolResult.missingFields || []).join(', ')}; could you please provide them?`;
-        const instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". Collect them iteratively (one or more conversational turns). Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
+        const instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". Ask the caller to REPEAT each missing detail so you can confirm you have it correct. Do NOT read back or repeat the caller's personal details on the call (GDPR). Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
         console.log(`🎯 [${callId}] Fill contact details incomplete - instructing to collect all missing then call once: ${toolResult.missingFields?.join(', ')}`);
+      }
+
+      // process_payment returned requiresPaymentMethod: agent must use booking_step_send_payment_request next, not process_payment again
+      if (toolName === 'booking_step_process_payment' && toolResult?.requiresPaymentMethod === true) {
+        const instruction = toolResult.instruction || `CRITICAL: Do NOT call booking_step_process_payment again. Ask the caller: "Would you like to receive the payment request via email or SMS?" When they answer, call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms" (and courseType, workflowType, and clientEmail or clientMobile as needed).`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] process_payment requiresPaymentMethod - instructing to call booking_step_send_payment_request next`);
+      }
+
+      // send_payment_request returned requiresConfirmation: agent must ask user to confirm email/phone, then call again with confirmed: true to click "Send by email now" and start polling
+      if (toolName === 'booking_step_send_payment_request' && toolResult?.requiresConfirmation === true) {
+        const instruction = toolResult.instruction || `CRITICAL: The payment request form is filled but not yet sent. Ask the caller to confirm the ${toolResult.deliveryMethod === 'sms' ? 'phone number' : 'email address'} (e.g. "Just to confirm, the payment request will be sent to ${toolResult.emailAddress || toolResult.phoneNumber || 'that address'}. Could you please confirm that this is correct?"). When they say yes, call **booking_step_send_payment_request** again with the SAME courseType, workflowType, deliveryMethod, clientEmail/clientMobile, and termsAcceptedBeforeSend: true, plus **confirmed: true**. Do NOT call without confirmed: true or the send button will not be clicked.`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] send_payment_request requiresConfirmation - instructing to confirm with caller then call again with confirmed: true`);
       }
 
       if (toolName === 'transfer_call' && toolResult?.allTransferNumbersFailed === true && toolResult?.messageForCaller) {

@@ -10,9 +10,11 @@
  * @param {Object} args - Step arguments
  * @param {Object} sessionState - Current session state
  * @param {string} screenshotsDir - Screenshots directory
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-export async function executeSelectBookingOptions(page, args, sessionState, screenshotsDir) {
+export async function executeSelectBookingOptions(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  progressCallback?.({ message: 'Loading booking options.' });
   const courseType = args.courseType || sessionState?.courseType;
   
   if (!courseType) {
@@ -50,5 +52,7 @@ export async function executeSelectBookingOptions(page, args, sessionState, scre
     throw new Error(`Invalid selectBookingOptions export for course type: ${courseType}`);
   }
   
-  return await selectBookingOptionsFn(page, args, screenshotsDir);
+  const result = await selectBookingOptionsFn(page, args, screenshotsDir, progressCallback);
+  progressCallback?.({ message: 'Booking options applied.' });
+  return result;
 }

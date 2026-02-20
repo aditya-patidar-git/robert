@@ -11,8 +11,9 @@ import {
 /**
  * Select booking options for CBT course
  * Extracted from cbtBookingService.js for reusability
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  */
-export default async function selectBookingOptions(page, bookingArgs = {}, screenshotsDir) {
+export default async function selectBookingOptions(page, bookingArgs = {}, screenshotsDir, progressCallback = null) {
   try {
     console.log('⚙️ [STEP 8] Selecting CBT booking options...');
     
@@ -198,6 +199,7 @@ export default async function selectBookingOptions(page, bookingArgs = {}, scree
     
     await page.waitForTimeout(1000);
     
+    progressCallback?.({ message: 'Applying your selection.' });
     // Click NEXT button
     await clickNextButton(searchContext, page, bookingIframe);
     

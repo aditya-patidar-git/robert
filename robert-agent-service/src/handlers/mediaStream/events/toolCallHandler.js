@@ -50,9 +50,28 @@ export class ToolCallHandler {
       this.state,
       getWsRef
     );
+    progressIndicatorService.sendImmediateToolStartAcknowledgment(
+      this.state.callSid,
+      name,
+      this.openaiWs,
+      conversationBehaviorConfig,
+      this.state
+    );
 
-    const progressCallback = null;
-    
+    // Path-based progress: speak short phrases at each step (via sendProgressUpdate = holding response, never sets waitingForUser)
+    const PATH_PROGRESS_THROTTLE_MS = 4000;
+    const progressCallback = conversationBehaviorConfig?.progressIndicators?.enabled && this.openaiWs
+      ? (data) => {
+          const message = data?.message;
+          if (!message || typeof message !== 'string') return;
+          const now = Date.now();
+          const last = this.state.lastPathProgressSentAt ?? 0;
+          if (now - last < PATH_PROGRESS_THROTTLE_MS) return;
+          this.state.lastPathProgressSentAt = now;
+          progressIndicatorService.sendProgressUpdate(this.state.callSid, message, this.openaiWs);
+        }
+      : null;
+
     // Execute tool using unified service
     const executionResult = await toolExecutionService.executeTool({
       callId: call_id,
@@ -76,13 +95,14 @@ export class ToolCallHandler {
           executionResult
         );
         
-        if (typeof this.onBeforeTriggerResponse === 'function') {
-          this.onBeforeTriggerResponse(this.state.callSid);
-        }
         const effectiveToolName = executionResult.resolvedToolName || name;
+        const toolResult = executionResult.result || executionResult;
+        if (typeof this.onBeforeTriggerResponse === 'function') {
+          this.onBeforeTriggerResponse(this.state.callSid, { toolName: effectiveToolName, toolResult });
+        }
         await this.resultSubmitter.triggerResponse(this.state.callSid, { 
           toolName: effectiveToolName,
-          toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
+          toolResult // Pass the actual tool result, not the wrapper
         });
 
         progressIndicatorService.endToolExecution(this.state.callSid);
