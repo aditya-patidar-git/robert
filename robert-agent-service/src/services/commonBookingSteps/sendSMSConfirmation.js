@@ -103,7 +103,7 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
     await takeScreenshot(page, 'sms-page-loaded.png', screenshotsDir);
     
     // Fill "Send To" input field with phone number
-    console.log('📱 [SMS] Filling "Send To" field with: 07833913454');
+    console.log('📱 [SMS] Filling "Send To" field with: 8120523400');
     try {
       // Locate the "Send To" input field using multiple selector strategies
       const sendToInput = smsSearchContext.locator('#smm_mobile_number input').first();
@@ -112,15 +112,15 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
       await sendToInput.waitFor({ state: 'visible', timeout: 5000 });
       
       // Clear any existing value and fill with new number
-      await sendToInput.fill('07833913454');
+      await sendToInput.fill('8120523400');
       await page.waitForTimeout(500);
       
       // Verify the value was set correctly
       const inputValue = await sendToInput.inputValue();
-      if (inputValue === '07833913454') {
+      if (inputValue === '8120523400') {
         console.log('✅ [SMS] "Send To" field filled successfully');
       } else {
-        console.log(`⚠️ [SMS] "Send To" field value mismatch. Expected: 07833913454, Got: ${inputValue}`);
+        console.log(`⚠️ [SMS] "Send To" field value mismatch. Expected: 8120523400, Got: ${inputValue}`);
       }
     } catch (error) {
       console.error('❌ [SMS] Error filling "Send To" field:', error.message);

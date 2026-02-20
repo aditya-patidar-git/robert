@@ -9,37 +9,37 @@ import { takeScreenshot } from '../../utils.js';
 /**
  * Check if already on client details page
  * @param {Object} page - Playwright page object
- * @param {string} email - Client email address
+ * @param {string} identifier - Optional email for DOM check (empty when search was by mobile)
  * @param {string} screenshotsDir - Screenshots directory
  * @param {boolean} skipNextClick - If true, skip clicking Next button
  * @returns {Promise<boolean>} True if already on page and handled, false otherwise
  */
-export async function checkAlreadyOnPage(page, email, screenshotsDir, skipNextClick) {
-  // CRITICAL: FIRST check if we're already on the client details page
-  // This prevents re-trying the lookup flow if the client was already selected
+export async function checkAlreadyOnPage(page, identifier, screenshotsDir, skipNextClick) {
   console.log('🔍 [STEP 9] Checking if already on client details page...');
-  await page.waitForTimeout(2000); // Brief wait for page to stabilize
-  
+  await page.waitForTimeout(2000);
+
   const eventBookingIframeExistsEarly = await page.locator('#eventNewBooking2_iframe').count() > 0;
   const contactSelectIframeExistsEarly = await page.locator('#contactSelect_iframe').count() > 0;
-  
+
   if (eventBookingIframeExistsEarly || contactSelectIframeExistsEarly) {
     const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
     const contactSelectIframe = contactSelectIframeExistsEarly ? page.frameLocator('#contactSelect_iframe') : null;
-    
-    // Check multiple indicators that we're already on client details page
-    const alreadyOnClientDetails = 
+
+    const hasFormFields =
       (await eventBookingIframe.locator('text=First Names').count() > 0) ||
       (await eventBookingIframe.locator('text=Surname').count() > 0) ||
-      (await eventBookingIframe.locator('text=Contact e-mail').count() > 0) ||
-      (await eventBookingIframe.locator(`text=${email}`).count() > 0) ||
+      (await eventBookingIframe.locator('text=Contact e-mail').count() > 0);
+    const hasIdentifierInDom = identifier ? (await eventBookingIframe.locator(`text=${identifier}`).count() > 0) : false;
+    const alreadyOnClientDetails =
+      hasFormFields ||
+      hasIdentifierInDom ||
       (contactSelectIframe && await contactSelectIframe.locator('text=First Names').count() > 0) ||
       (contactSelectIframe && await contactSelectIframe.locator('text=Surname').count() > 0);
     
     if (alreadyOnClientDetails) {
       console.log('✅ [STEP 9] ============================================');
       console.log('✅ [STEP 9] ALREADY ON CLIENT DETAILS PAGE!');
-      console.log(`✅ [STEP 9] Client with email ${email} was previously selected successfully.`);
+      if (identifier) console.log(`✅ [STEP 9] Client (${identifier}) was previously selected successfully.`);
       console.log('✅ [STEP 9] Client details page is already loaded.');
       
       // CRITICAL FIX: Respect skipNextClick parameter
@@ -162,7 +162,7 @@ export async function checkAlreadyOnPage(page, email, screenshotsDir, skipNextCl
           if (clickSuccess) {
             console.log('✅ [STEP 9] ============================================');
             console.log('✅ [STEP 9] SUCCESS: Next button clicked successfully!');
-            console.log(`✅ [STEP 9] Client: ${email}`);
+            console.log(`✅ [STEP 9] Client: ${identifier || 'contact'}`);
             console.log('✅ [STEP 9] Contact details step completed.');
             console.log('✅ [STEP 9] IMMEDIATELY proceeding to payment step.');
             console.log('✅ [STEP 9] ============================================');
@@ -187,7 +187,7 @@ export async function checkAlreadyOnPage(page, email, screenshotsDir, skipNextCl
       
       console.log('✅ [STEP 9] ============================================');
       console.log('✅ [STEP 9] SUCCESS: Contact details step completed!');
-      console.log(`✅ [STEP 9] Client: ${email}`);
+      console.log(`✅ [STEP 9] Client: ${identifier || 'contact'}`);
       console.log('✅ [STEP 9] Next button clicked successfully.');
       console.log('✅ [STEP 9] Ready to proceed to payment step.');
       console.log('✅ [STEP 9] ============================================');

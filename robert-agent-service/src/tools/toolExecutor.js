@@ -69,7 +69,7 @@ class ToolExecutor {
 
     const now = Date.now();
     let tracker = this.rateLimitTrackers.get(toolName);
-    
+
     if (!tracker) {
       tracker = {
         requests: 0,
@@ -99,8 +99,25 @@ class ToolExecutor {
   _normalizeCourseTypeValue(value) {
     if (value == null || typeof value !== 'string') return value;
     const s = value.trim();
-    if (/^ITM$|^Introduction to Motorcycling$/i.test(s)) return s.match(/^ITM$/i) ? 'ITM' : 'Introduction to Motorcycling';
-    if (/ITM|Introduction to Motorcycl(e|ing)/i.test(s)) return 'ITM';
+
+    // ITM / Introduction to Motorcycling
+    if (/^ITM$|^Introduction to Motorcycling$/i.test(s)) return 'Introduction to Motorcycling';
+    if (/ITM|Introduction to Motorcycl(e|ing)/i.test(s)) return 'Introduction to Motorcycling';
+
+    // CBT / Compulsory Basic Training
+    if (/^CBT$|^Compulsory Basic Training$/i.test(s)) return 'Compulsory Basic Training';
+    if (/Compulsory Basic Training|CBT\b/i.test(s)) {
+      if (/Executive/i.test(s)) return 'CBT Executive';
+      return 'Compulsory Basic Training';
+    }
+
+    // Other courses
+    if (/Private Lesson/i.test(s)) return 'Private Lesson';
+    if (/Gear Conversion/i.test(s)) return 'Gear Conversion';
+    if (/TfL.*Motorcycle Skills/i.test(s)) return 'TfL 1-2-1 Motorcycle Skills';
+    if (/TfL.*Beyond CBT/i.test(s)) return 'TfL Beyond CBT';
+    if (/Full.*Licence.*Assessment/i.test(s)) return 'Full Licence Assessment';
+
     return value;
   }
 
@@ -123,6 +140,51 @@ class ToolExecutor {
     ];
     if (aliases.includes(n)) return true;
     if (n.startsWith('booking_step_') && (n.includes('option') || n.includes('finalize'))) return true;
+    return false;
+  }
+
+  /**
+   * Check if a (non-registered) tool name is an alias for booking_step_fill_contact_details.
+   * The LLM frequently hallucinate "save_contact_details" instead of "fill_contact_details".
+   */
+  _isFillContactDetailsAlias(toolName) {
+    if (!toolName || typeof toolName !== 'string') return false;
+    const n = toolName.trim().toLowerCase();
+    if (n === 'booking_step_fill_contact_details') return true; // already canonical
+    const aliases = [
+      'booking_step_save_contact_details',
+      'booking_step_save_contact',
+      'booking_step_fill_details',
+      'booking_step_submit_contact_details',
+      'booking_step_enter_contact_details',
+      'booking_step_input_contact_details',
+      'save_contact_details',
+      'fill_contact_details'
+    ];
+    if (aliases.includes(n)) return true;
+    if (n.startsWith('booking_step_') && n.includes('save') && n.includes('contact')) return true;
+    return false;
+  }
+
+  /**
+   * Check if a (non-registered) tool name is an alias for booking_step_lookup_contact.
+   * The LLM frequently hallucinates "select_contact" instead of "lookup_contact".
+   */
+  _isLookupContactAlias(toolName) {
+    if (!toolName || typeof toolName !== 'string') return false;
+    const n = toolName.trim().toLowerCase();
+    if (n === 'booking_step_lookup_contact') return true; // already canonical
+    const aliases = [
+      'booking_step_select_contact',
+      'booking_step_find_contact',
+      'booking_step_contact_lookup',
+      'booking_step_get_contact',
+      'select_contact',
+      'lookup_contact',
+      'find_contact'
+    ];
+    if (aliases.includes(n)) return true;
+    if (n.startsWith('booking_step_') && n.includes('select') && n.includes('contact')) return true;
     return false;
   }
 
@@ -194,6 +256,27 @@ class ToolExecutor {
     if (normalized.end_date != null) {
       delete normalized.end_date;
     }
+    // booking_step_search_client / cancellation_step_search_client: model often sends phoneOrEmail
+    if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
+        normalized.phoneOrEmail != null && normalized.customerMobile == null) {
+      normalized.customerMobile = normalized.phoneOrEmail;
+      delete normalized.phoneOrEmail;
+    }
+    // booking_step_fill_contact_details: model often sends name/email/mobile; schema expects customerName/customerEmail/customerMobile
+    if (toolName === 'booking_step_fill_contact_details') {
+      if (normalized.name != null && (normalized.customerName == null || normalized.customerName === '')) {
+        normalized.customerName = normalized.name;
+        delete normalized.name;
+      }
+      if (normalized.email != null && (normalized.customerEmail == null || normalized.customerEmail === '')) {
+        normalized.customerEmail = normalized.email;
+        delete normalized.email;
+      }
+      if (normalized.mobile != null && (normalized.customerMobile == null || normalized.customerMobile === '')) {
+        normalized.customerMobile = normalized.mobile;
+        delete normalized.mobile;
+      }
+    }
     return normalized;
   }
 
@@ -257,6 +340,24 @@ class ToolExecutor {
         }
       }
 
+      // Alias resolution: "save_contact_details" → "fill_contact_details"
+      if (!this.toolRegistry.has(resolvedToolName) && this._isFillContactDetailsAlias(resolvedToolName)) {
+        const canonical = 'booking_step_fill_contact_details';
+        if (this.toolRegistry.has(canonical)) {
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "${resolvedToolName}" → ${canonical}`);
+          resolvedToolName = canonical;
+        }
+      }
+
+      // Alias resolution: "select_contact" → "lookup_contact"
+      if (!this.toolRegistry.has(resolvedToolName) && this._isLookupContactAlias(resolvedToolName)) {
+        const canonical = 'booking_step_lookup_contact';
+        if (this.toolRegistry.has(canonical)) {
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "${resolvedToolName}" → ${canonical}`);
+          resolvedToolName = canonical;
+        }
+      }
+
       if (!this.toolRegistry.has(resolvedToolName)) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: `Tool not found: ${resolvedToolName}` });
         span.end();
@@ -270,30 +371,45 @@ class ToolExecutor {
         delete normalizedParams.phone_number;
       }
 
-      // For booking step tools that require workflowType: inject from session when model omits it
-      if (resolvedToolName.startsWith('booking_step_') && (normalizedParams.workflowType == null || normalizedParams.workflowType === '')) {
-        const sessionWorkflowType = conversations[callSid]?.bookingSession?.workflowType;
-        if (sessionWorkflowType === 'existing' || sessionWorkflowType === 'new') {
-          normalizedParams = { ...normalizedParams, workflowType: sessionWorkflowType };
+      // For booking step tools that require workflowType or courseType: inject from session when model omits it
+      if (resolvedToolName.startsWith('booking_step_')) {
+        if (normalizedParams.workflowType == null || normalizedParams.workflowType === '') {
+          const sessionWorkflowType = conversations[callSid]?.bookingSession?.workflowType;
+          if (sessionWorkflowType === 'existing' || sessionWorkflowType === 'new') {
+            normalizedParams.workflowType = sessionWorkflowType;
+          }
+        }
+
+        if (normalizedParams.courseType == null || normalizedParams.courseType === '') {
+          const sessionCourseType = conversations[callSid]?.bookingSession?.courseType;
+          if (sessionCourseType) {
+            normalizedParams.courseType = sessionCourseType;
+          }
         }
       }
 
+      // Strip null values from parameters to prevent Zod validation failures for optional fields
+      // OpenAI often sends null for optional fields it decides not to populate.
+      const cleanedParams = Object.fromEntries(
+        Object.entries(normalizedParams).filter(([_, v]) => v !== null)
+      );
+
       // Validate tool parameters using Zod schema
-      const validation = validateToolParameters(resolvedToolName, normalizedParams);
+      const validation = validateToolParameters(resolvedToolName, cleanedParams);
       if (!validation.success) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: `Parameter validation failed: ${validation.error}` });
         span.end();
         console.error(`❌ [${callSid}] Tool parameter validation failed for ${resolvedToolName}:`, validation.error);
         throw new Error(`Invalid parameters for tool ${resolvedToolName}: ${validation.error}`);
       }
-      
+
       // Use validated parameters
       const validatedParameters = validation.data;
       span.setAttribute('tool.parameters_validated', true);
 
       // Get tool configuration from ConfigManager
       const toolConfig = this.configManager.getToolConfig(resolvedToolName);
-      
+
       // Check if tool is enabled (per-tool setting)
       if (!toolConfig.enabled) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: 'Tool is disabled' });
@@ -316,7 +432,7 @@ class ToolExecutor {
         try {
           const url = new URL(validatedParameters.url);
           const domain = url.hostname;
-          const isAllowed = toolConfig.domains.some(allowedDomain => 
+          const isAllowed = toolConfig.domains.some(allowedDomain =>
             domain === allowedDomain || domain.endsWith('.' + allowedDomain)
           );
           if (!isAllowed) {
@@ -335,7 +451,7 @@ class ToolExecutor {
       // ========== TIMEOUT PRIORITY ==========
       // Priority: tool.getTimeout() > toolConfig.maxTime > globalMCPTimeout > hardcoded defaults
       let toolSpecificTimeout = null;
-      
+
       // 1. Check if tool has a custom timeout method (for step-based tools)
       if (tool && typeof tool.getTimeout === 'function') {
         toolSpecificTimeout = tool.getTimeout();
@@ -344,13 +460,13 @@ class ToolExecutor {
           console.log(`⏱️ [${callSid}] Using tool-specific timeout for ${resolvedToolName}: ${timeout}ms`);
         }
       }
-      
+
       // 2. Use per-tool configured maxTime if available and no tool-specific timeout was set
       if (toolConfig.maxTime && toolSpecificTimeout === null) {
         timeout = toolConfig.maxTime;
         console.log(`⏱️ [${callSid}] Using per-tool maxTime for ${resolvedToolName}: ${timeout}ms`);
       }
-      
+
       // 3. Use global MCP timeout as fallback if no other timeout was set
       if (toolSpecificTimeout === null && !toolConfig.maxTime) {
         const globalTimeoutMs = this.configManager.getMCPTimeoutMs();
@@ -359,7 +475,7 @@ class ToolExecutor {
           console.log(`⏱️ [${callSid}] Using global MCP timeout for ${resolvedToolName}: ${timeout}ms`);
         }
       }
-      
+
       // 4. Increase timeout for browser automation tools - they need more time
       // Only if no tool-specific timeout, no per-tool maxTime, and not using global timeout override
       const browserToolNames = [];
@@ -377,6 +493,12 @@ class ToolExecutor {
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Call Context:`, { callSid, phoneNumber });
 
       try {
+        // ========== ABORT CONTROLLER FOR TIMEOUT ==========
+        // Priority: Create an AbortController so we can signal background operations to stop on timeout
+        const controller = new AbortController();
+        const callContextWithAbort = { ...callContext, abortSignal: controller.signal };
+        // ===============================================
+
         // Execute with timeout
         // Pass progress callback if provided
         let executionPromise;
@@ -384,35 +506,41 @@ class ToolExecutor {
           // Check if tool.execute accepts progressCallback as third parameter
           if (tool.execute.length >= 3) {
             // Tool accepts progressCallback as third parameter
-            executionPromise = tool.execute(validatedParameters, callContext, progressCallback);
+            executionPromise = tool.execute(validatedParameters, callContextWithAbort, progressCallback);
           } else {
             // Tool only accepts parameters and callContext, include progressCallback in callContext
-            executionPromise = tool.execute(validatedParameters, { ...callContext, progressCallback });
+            executionPromise = tool.execute(validatedParameters, { ...callContextWithAbort, progressCallback });
           }
         } else {
           // No progress callback, execute normally
-          executionPromise = tool.execute(validatedParameters, callContext);
+          executionPromise = tool.execute(validatedParameters, callContextWithAbort);
         }
-        
+
+        let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error(`Tool execution timeout: ${resolvedToolName} (exceeded ${timeout}ms)`)), timeout);
+          timeoutId = setTimeout(() => {
+            // SIGNAL ABORTION: Background operations using the signal will stop
+            controller.abort();
+            reject(new Error(`Tool execution timeout: ${resolvedToolName} (exceeded ${timeout}ms)`));
+          }, timeout);
         });
 
         const result = await Promise.race([executionPromise, timeoutPromise]);
-        
+        clearTimeout(timeoutId);
+
         const executionTime = Date.now() - startTime;
         const executionTimeSeconds = executionTime / 1000;
         span.setAttribute('tool.execution_time_ms', executionTime);
         span.setAttribute('tool.success', true);
         span.setStatus({ code: SpanStatusCode.OK });
-        
+
         // Record tool metrics
         recordToolMetrics({
           toolName: resolvedToolName,
           duration: executionTimeSeconds,
           success: true
         });
-        
+
         console.log(`✅ [${callSid}] [TOOL EXECUTOR] Tool ${resolvedToolName} completed successfully`);
         console.log(`✅ [${callSid}] [TOOL EXECUTOR] Execution time: ${executionTime}ms`);
         console.log(`✅ [${callSid}] [TOOL EXECUTOR] Result preview:`, JSON.stringify(result, null, 2).substring(0, 300));
@@ -433,13 +561,18 @@ class ToolExecutor {
         }
         return successReturn;
       } catch (error) {
+        // CLEANUP: Ensure timeout is cleared if execution failed before timeout
+        // In the try block above, timeoutId is defined before Promise.race
+        // but we need to ensure we don't leak it here.
+        // Actually, we need to declare let timeoutId before the race.
+
         const executionTime = Date.now() - startTime;
         const executionTimeSeconds = executionTime / 1000;
         span.setAttribute('tool.execution_time_ms', executionTime);
         span.setAttribute('tool.success', false);
         span.recordException(error);
         span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
-        
+
         // Record tool metrics with error
         recordToolMetrics({
           toolName: resolvedToolName,
@@ -447,16 +580,18 @@ class ToolExecutor {
           error: { type: error.name || 'unknown', message: error.message },
           success: false
         });
-        
+
         console.error(`❌ [${callSid}] [TOOL EXECUTOR] Tool ${resolvedToolName} failed`);
         console.error(`❌ [${callSid}] [TOOL EXECUTOR] Execution time before failure: ${executionTime}ms`);
         console.error(`❌ [${callSid}] [TOOL EXECUTOR] Error:`, error.message || error);
 
         span.end();
+        const isTimeout = error.message && error.message.includes('timeout');
         const failureReturn = {
           success: false,
           error: error.message || 'Tool execution failed',
-          executionTime: executionTime
+          executionTime: executionTime,
+          canRetry: isTimeout // Explicitly tell LLM it can retry on timeout
         };
         if (resolvedToolName !== toolName) {
           failureReturn.resolvedToolName = resolvedToolName;

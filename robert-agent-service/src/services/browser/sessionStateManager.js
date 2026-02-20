@@ -62,14 +62,14 @@ class SessionStateManager {
         stepHistory: [],
         cancellationStepHistory: []
       };
-      
+
       conversations[callSid].bookingSession = newSession;
-      
+
       // Sync to Twilio Sync
       updateConversation(callSid, { bookingSession: newSession }).catch(error => {
         console.warn(`[SESSION] Failed to sync initial bookingSession to Twilio Sync for ${callSid}:`, error.message);
       });
-      
+
       console.log(`✅ [SESSION] Initialized booking session for ${callSid} (course: ${courseType})`);
     } else {
       this._syncBookingSession(callSid, (session) => {
@@ -342,7 +342,7 @@ class SessionStateManager {
     // CRITICAL: Exclude pageRef from sync (Playwright Page objects cannot be serialized)
     // Create a sanitized copy without pageRef for Twilio Sync
     const { pageRef, ...sessionForSync } = session;
-    
+
     updateConversation(callSid, { bookingSession: sessionForSync }).catch(error => {
       console.warn(`[SESSION] Failed to sync bookingSession to Twilio Sync for ${callSid}:`, error.message);
     });
@@ -367,12 +367,12 @@ class SessionStateManager {
   clearSession(callSid) {
     if (conversations[callSid] && conversations[callSid].bookingSession) {
       delete conversations[callSid].bookingSession;
-      
+
       // Sync deletion to Twilio Sync
       updateConversation(callSid, { bookingSession: null }).catch(error => {
         console.warn(`[SESSION] Failed to sync bookingSession deletion to Twilio Sync for ${callSid}:`, error.message);
       });
-      
+
       console.log(`🧹 [SESSION] Cleared booking session for ${callSid}`);
     }
   }
@@ -385,6 +385,196 @@ class SessionStateManager {
   hasSession(callSid) {
     return this.getSession(callSid) !== null;
   }
+
+  // ========== CLIENT SEARCH RETRY ESCALATION ==========
+
+  /**
+   * Initialize or get client search retry state for escalation tracking
+   * @param {string} callSid - Call SID identifier
+   * @returns {Object} Current search retry state
+   */
+  initializeSearchRetryState(callSid) {
+    if (!conversations[callSid]) {
+      conversations[callSid] = {};
+    }
+    if (!conversations[callSid].searchRetryState) {
+      conversations[callSid].searchRetryState = {
+        attempt: 0,
+        currentStrategy: 'mobile',
+        strategiesUsed: [],
+        lastSearchValue: null,
+        found: false
+      };
+    }
+    return conversations[callSid].searchRetryState;
+  }
+
+  /**
+   * Increment search attempt and return escalation guidance
+   * Escalation order per documentation:
+   *   Attempts 1-2: repeat/alternate mobile number
+   *   Attempt 3:    switch to full email address
+   *   Attempt 4:    switch to name fragment (first 3 + last 3 letters)
+   *   Attempt 5+:   max reached — offer new client or transfer
+   * @param {string} callSid - Call SID identifier
+   * @returns {Object} { attempt, currentStrategy, nextStrategy, maxReached, message }
+   */
+  incrementSearchAttempt(callSid) {
+    const state = this.initializeSearchRetryState(callSid);
+    state.attempt += 1;
+
+    const attempt = state.attempt;
+    let nextStrategy = state.currentStrategy;
+    let message = '';
+    let maxReached = false;
+
+    if (attempt <= 2) {
+      nextStrategy = 'mobile';
+      message = attempt === 1
+        ? 'Could you please repeat your mobile number for me?'
+        : 'Do you have an alternative mobile number we could try?';
+    } else if (attempt === 3) {
+      nextStrategy = 'email';
+      message = 'Could you provide your full email address so I can search using that instead?';
+    } else if (attempt === 4) {
+      nextStrategy = 'name';
+      message = 'Could you please spell out the first three letters of your first name and the first three letters of your surname?';
+    } else {
+      maxReached = true;
+      nextStrategy = null;
+      message = 'I have been unable to locate your profile. Would you like me to create a new profile for you, or would you prefer to be transferred to a team member for further assistance?';
+    }
+
+    if (!state.strategiesUsed.includes(nextStrategy) && nextStrategy) {
+      state.strategiesUsed.push(nextStrategy);
+    }
+    state.currentStrategy = nextStrategy;
+
+    // Sync to distributed state
+    updateConversation(callSid, { searchRetryState: state }).catch(error => {
+      console.warn(`[SESSION] Failed to sync searchRetryState for ${callSid}:`, error.message);
+    });
+
+    console.log(`🔄 [SESSION] ${callSid}: Search attempt ${attempt}, strategy: ${nextStrategy || 'MAX_REACHED'}`);
+
+    return {
+      attempt,
+      currentStrategy: nextStrategy,
+      nextStrategy,
+      maxReached,
+      message
+    };
+  }
+
+  /**
+   * Get current search retry state
+   * @param {string} callSid - Call SID identifier
+   * @returns {Object|null} Search retry state or null
+   */
+  getSearchRetryState(callSid) {
+    return conversations[callSid]?.searchRetryState || null;
+  }
+
+  /**
+   * Reset search retry state (called on successful client find)
+   * @param {string} callSid - Call SID identifier
+   */
+  resetSearchRetryState(callSid) {
+    if (conversations[callSid]?.searchRetryState) {
+      conversations[callSid].searchRetryState.found = true;
+
+      // Sync reset to distributed state
+      updateConversation(callSid, { searchRetryState: conversations[callSid].searchRetryState }).catch(error => {
+        console.warn(`[SESSION] Failed to sync searchRetryState reset for ${callSid}:`, error.message);
+      });
+
+      console.log(`✅ [SESSION] ${callSid}: Search retry state - client found`);
+    }
+  }
+
+  // ========== END CLIENT SEARCH RETRY ESCALATION ==========
+
+  // ========== LOOKUP CONTACT RETRY ESCALATION (Step 8 – same order: mobile → email → name) ==========
+
+  initializeLookupRetryState(callSid) {
+    if (!conversations[callSid]) {
+      conversations[callSid] = {};
+    }
+    if (!conversations[callSid].lookupRetryState) {
+      conversations[callSid].lookupRetryState = {
+        attempt: 0,
+        currentStrategy: 'mobile',
+        strategiesUsed: [],
+        lastSearchValue: null,
+        found: false
+      };
+    }
+    return conversations[callSid].lookupRetryState;
+  }
+
+  incrementLookupAttempt(callSid) {
+    const state = this.initializeLookupRetryState(callSid);
+    state.attempt += 1;
+
+    const attempt = state.attempt;
+    let nextStrategy = state.currentStrategy;
+    let message = '';
+    let maxReached = false;
+
+    if (attempt <= 2) {
+      nextStrategy = 'mobile';
+      message = attempt === 1
+        ? 'Could you please repeat your mobile number for me?'
+        : 'Do you have an alternative mobile number we could try?';
+    } else if (attempt === 3) {
+      nextStrategy = 'email';
+      message = 'Could you provide your full email address so I can search using that instead?';
+    } else if (attempt === 4) {
+      nextStrategy = 'name';
+      message = 'Could you please spell out the first three letters of your first name and the first three letters of your surname?';
+    } else {
+      maxReached = true;
+      nextStrategy = null;
+      message = 'I have been unable to locate your profile. Would you like me to create a new profile for you, or would you prefer to be transferred to a team member for further assistance?';
+    }
+
+    if (!state.strategiesUsed.includes(nextStrategy) && nextStrategy) {
+      state.strategiesUsed.push(nextStrategy);
+    }
+    state.currentStrategy = nextStrategy;
+
+    updateConversation(callSid, { lookupRetryState: state }).catch(error => {
+      console.warn(`[SESSION] Failed to sync lookupRetryState for ${callSid}:`, error.message);
+    });
+
+    console.log(`🔄 [SESSION] ${callSid}: Lookup attempt ${attempt}, strategy: ${nextStrategy || 'MAX_REACHED'}`);
+
+    return {
+      attempt,
+      currentStrategy: nextStrategy,
+      nextStrategy,
+      maxReached,
+      message
+    };
+  }
+
+  getLookupRetryState(callSid) {
+    return conversations[callSid]?.lookupRetryState || null;
+  }
+
+  resetLookupRetryState(callSid) {
+    if (conversations[callSid]?.lookupRetryState) {
+      conversations[callSid].lookupRetryState.found = true;
+
+      updateConversation(callSid, { lookupRetryState: conversations[callSid].lookupRetryState }).catch(error => {
+        console.warn(`[SESSION] Failed to sync lookupRetryState reset for ${callSid}:`, error.message);
+      });
+
+      console.log(`✅ [SESSION] ${callSid}: Lookup retry state - contact found`);
+    }
+  }
+
+  // ========== END LOOKUP CONTACT RETRY ESCALATION ==========
 
   /**
    * Get step history for debugging

@@ -76,13 +76,14 @@ export class ToolCallHandler {
           executionResult
         );
         
-        if (typeof this.onBeforeTriggerResponse === 'function') {
-          this.onBeforeTriggerResponse(this.state.callSid);
-        }
         const effectiveToolName = executionResult.resolvedToolName || name;
+        const toolResult = executionResult.result || executionResult;
+        if (typeof this.onBeforeTriggerResponse === 'function') {
+          this.onBeforeTriggerResponse(this.state.callSid, { toolName: effectiveToolName, toolResult });
+        }
         await this.resultSubmitter.triggerResponse(this.state.callSid, { 
           toolName: effectiveToolName,
-          toolResult: executionResult.result || executionResult // Pass the actual tool result, not the wrapper
+          toolResult // Pass the actual tool result, not the wrapper
         });
 
         progressIndicatorService.endToolExecution(this.state.callSid);

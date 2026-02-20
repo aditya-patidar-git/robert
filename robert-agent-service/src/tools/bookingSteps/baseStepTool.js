@@ -380,7 +380,7 @@ export class BaseStepTool {
       ? sessionStateManager.getCancellationStepHistory(callSid)
       : (session?.stepHistory || []);
 
-    // Use workflowType from session when missing so getNextStepName / 7.5 allowance work (e.g. chained lookup_contact)
+    // Use workflowType from session when missing so getNextStepName works (e.g. chained lookup_contact)
     const effectiveWorkflowType = workflowType || session?.workflowType;
 
     // STRICT: Must start with step 1
@@ -506,17 +506,14 @@ export class BaseStepTool {
       // STRICT: Only allow retrying current step (if previous attempt failed) or executing next step
       // Exception: Allow skipping Step 3 (conversational) if workflowType is provided and currentStep is 2
       const isStep3Skippable = currentStep === 2 && stepNumber === 4 && effectiveWorkflowType && (effectiveWorkflowType === 'existing' || effectiveWorkflowType === 'new');
-      // Next step from config (e.g. 7.5 after 7 for existing workflow lookup_contact) so half-steps are allowed
+      // Next step from config (e.g. 8 after 7 for existing workflow lookup_contact)
       const nextStepName = !this.isCancellationWorkflow && effectiveWorkflowType
         ? getNextStepName(courseType, effectiveWorkflowType, currentStep)
         : null;
       const nextStepNum = nextStepName ? getStepNumber(courseType, effectiveWorkflowType, nextStepName) : null;
       let isNextStep = nextStepNum !== null && stepNumber === nextStepNum;
-      // Explicitly allow step 7.5 (lookup_contact) when current step is 7 for existing workflow (avoids validator rejecting 7.5 due to config/race)
-      const isStep7Point5After7 = !this.isCancellationWorkflow && currentStep === 7 && stepNumber === 7.5 && effectiveWorkflowType === 'existing';
-      if (isStep7Point5After7) isNextStep = true;
 
-      // Required next step from config (e.g. after 7.5 the next step is 8, not 8.5)
+      // Required next step from config when available, else currentStep + 1
       const effectiveNextStepNum = nextStepNum !== null ? nextStepNum : currentStep + 1;
 
       if (stepNumber < currentStep) {
@@ -575,7 +572,7 @@ export class BaseStepTool {
       
       // STRICT: Enforce exact sequential order - only allow current step (retry) or next step
       // Exception: Allow skipping Step 3 (conversational) if workflowType is provided
-      // Exception: Allow config next step (e.g. 7.5 after 7 for existing workflow lookup_contact); isStep7Point5After7 handled above
+      // Exception: Allow config next step (e.g. 8 after 7 for existing workflow lookup_contact)
       if (stepNumber !== currentStep && stepNumber !== currentStep + 1 && !isStep3Skippable && !isNextStep) {
         // Check if trying to skip Step 3 (conversational) - this is allowed if workflowType provided
         const isTryingToSkipStep3 = currentStep === 2 && stepNumber === 4 && effectiveWorkflowType;
@@ -598,7 +595,7 @@ export class BaseStepTool {
       
       // STRICT: Validate workflow-specific step prerequisites
       if (effectiveWorkflowType === 'existing') {
-        // Existing workflow: 4→5→6→7→7.5→8 must be sequential
+        // Existing workflow: 4→5→6→7→8→9 must be sequential
         const navigateContactsStep = getStepNumber(courseType, effectiveWorkflowType, STEP_NAMES.NAVIGATE_CONTACTS);
         const searchClientStep = getStepNumber(courseType, effectiveWorkflowType, STEP_NAMES.SEARCH_CLIENT);
         const selectSessionStep = getStepNumber(courseType, effectiveWorkflowType, STEP_NAMES.SELECT_SESSION);

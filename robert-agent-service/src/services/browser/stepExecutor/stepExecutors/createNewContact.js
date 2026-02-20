@@ -20,6 +20,8 @@ export async function executeCreateNewContact(page, args, sessionState, screensh
 
   return {
     success: true,
-    newContactCreated: true
+    newContactCreated: true,
+    nextTool: 'booking_step_fill_contact_details',
+    instruction: 'Successfully navigated to the contact details page. You MUST now call booking_step_fill_contact_details with the customer name, email address, and mobile number to save these details to the new contact profile.'
   };
 }

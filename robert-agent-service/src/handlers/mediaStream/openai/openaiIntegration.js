@@ -969,6 +969,18 @@ export class OpenAIIntegration {
   }
 
   /**
+   * Set the current workflow phase without sending session.update.
+   * Use when a tool failure should keep the next response in a specific phase (e.g. process_payment failure → booking_payment).
+   * @param {string} phase - Workflow phase (e.g. 'booking_payment')
+   */
+  setCurrentWorkflowPhase(phase) {
+    if (phase && typeof phase === 'string') {
+      this.currentWorkflowPhase = phase;
+      console.log(`🔧 [${this.state.callSid}] Workflow phase set to ${phase} (no session update)`);
+    }
+  }
+
+  /**
    * Cleanup OpenAI connection
    */
   cleanup() {

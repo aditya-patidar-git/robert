@@ -49,9 +49,9 @@ export function getMissingFieldsPrompt(missingFields) {
     postcode: 'postcode',
     telephoneNumber: 'telephone number'
   };
-  
+
   const missingFieldNames = missingFields.map(f => fieldNames[f]).join(', ');
-  
+
   if (missingFields.length === 1) {
     return `Thank you. I still need your ${missingFieldNames}. Could you please provide it?`;
   } else {
@@ -74,7 +74,7 @@ export function getFieldMismatchMessage(field) {
   return messages[field] || `The ${field} you provided does not match our records.`;
 }
 
-const MAX_ATTEMPTS_BOOKING_MESSAGE = "Unfortunately, I am unable to gain access to your existing customer profile with us; however, I can create a new profile with us for you. Would you like me to proceed in creating a new customer profile with us?";
+const MAX_ATTEMPTS_BOOKING_MESSAGE = "Unfortunately, I am unable to gain access to your existing customer profile with us; however, I can create a new profile with us for you, or I can transfer you to one of our team members for further assistance. Would you like me to create a new customer profile, or would you prefer to be transferred to a team member?";
 
 /**
  * Get max attempts exceeded message per CRM module requirements
@@ -118,7 +118,7 @@ export function initializeVerificationAttempts(conversation) {
  */
 export function incrementVerificationAttempt(conversation, field) {
   initializeVerificationAttempts(conversation);
-  
+
   if (conversation.verificationAttempts[field] !== undefined) {
     conversation.verificationAttempts[field]++;
   } else {

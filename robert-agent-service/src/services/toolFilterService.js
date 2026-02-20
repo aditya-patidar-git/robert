@@ -12,6 +12,12 @@
 /** Tools available in every phase (advisory filtering; execution uses full registry). */
 const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search'];
 
+/** Phases where file_search and web_search are disabled to keep workflow order (use step tools only). */
+const SEARCH_TOOLS_DISABLED_PHASES = new Set([
+  'booking_start', 'booking_availability', 'booking_existing_client', 'booking_new_client',
+  'booking_payment', 'booking_completion', 'booking_modification', 'cancellation'
+]);
+
 /**
  * Tool sets organized by workflow phase.
  * Each phase has a curated list of tools appropriate for that context.
@@ -41,21 +47,19 @@ const TOOL_SETS = {
     'generate_reference_id'
   ],
 
-  // Booking workflow - initial availability check
+  // Booking workflow - initial availability check (no file_search/web_search; use step tools only)
   booking_start: [
     'booking_step_check_availability',
-    'file_search',
     'transfer_call'
   ],
 
   // Booking workflow - after availability, authentication
   booking_availability: [
     'booking_step_authenticate',
-    'file_search',
     'transfer_call'
   ],
 
-  // Booking workflow - existing client path
+  // Booking workflow - existing client path (use booking_step_search_client, not file_search)
   booking_existing_client: [
     'booking_step_navigate_contacts',
     'booking_step_search_client',
@@ -64,7 +68,6 @@ const TOOL_SETS = {
     'booking_step_lookup_contact',
     'booking_step_fill_contact_details',
     'client_verification',
-    'file_search',
     'transfer_call'
   ],
 
@@ -74,7 +77,6 @@ const TOOL_SETS = {
     'booking_step_select_booking_options',
     'booking_step_create_new_contact',
     'booking_step_fill_contact_details',
-    'file_search',
     'transfer_call'
   ],
 
@@ -95,11 +97,10 @@ const TOOL_SETS = {
     'transfer_call'
   ],
 
-  // Update customer workflow
+  // Update customer workflow (no file_search/web_search; use step tools only)
   booking_modification: [
     'kba_verification',
     'client_verification',
-    'file_search',
     'email',
     'send_sms',
     'transfer_call'
@@ -216,7 +217,12 @@ export function getToolsForContext(phase, additionalContext = {}) {
   }
   
   const toolSet = new Set(baseTools);
-  ALWAYS_AVAILABLE_TOOLS.forEach(tool => toolSet.add(tool));
+  const includeSearchTools = !SEARCH_TOOLS_DISABLED_PHASES.has(phase);
+  ALWAYS_AVAILABLE_TOOLS.forEach(tool => {
+    if (includeSearchTools || (tool !== 'file_search' && tool !== 'web_search')) {
+      toolSet.add(tool);
+    }
+  });
   for (const [condition, tools] of Object.entries(CONTEXTUAL_TOOLS)) {
     if (additionalContext[condition]) {
       tools.forEach(tool => toolSet.add(tool));
@@ -310,5 +316,6 @@ export function getPhaseForIntent(intent) {
 export const _internal = {
   TOOL_SETS,
   CONTEXTUAL_TOOLS,
-  ALWAYS_AVAILABLE_TOOLS
+  ALWAYS_AVAILABLE_TOOLS,
+  SEARCH_TOOLS_DISABLED_PHASES
 };

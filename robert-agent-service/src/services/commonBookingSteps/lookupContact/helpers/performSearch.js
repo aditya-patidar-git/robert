@@ -7,14 +7,14 @@
 import { takeScreenshot } from '../../utils.js';
 
 /**
- * Perform contact search
+ * Perform contact search (Smart search supports telephone, email, or name per CRM doc)
  * @param {Object} page - Playwright page object
  * @param {Object} iframe - Iframe locator
  * @param {string} iframeId - Iframe ID
- * @param {string} email - Client email address
+ * @param {string} searchValue - Mobile number (digits) or email to search
  * @param {string} screenshotsDir - Screenshots directory
  */
-export async function performSearch(page, iframe, iframeId, email, screenshotsDir) {
+export async function performSearch(page, iframe, iframeId, searchValue, screenshotsDir) {
   // STEP 1: Look for the search dropdown/selector in the iframe (robust logic from findAndVerifyClient)
   console.log('🔍 [STEP 9] Looking for search dropdown in iframe...');
   
@@ -101,9 +101,9 @@ export async function performSearch(page, iframe, iframeId, email, screenshotsDi
   // Wait for the search field to be visible
   await searchField.waitFor({ state: 'visible', timeout: 10000 });
   
-  // STEP 4: Enter email address in search field
-  console.log(`📧 [STEP 9] Searching for client: ${email}`);
-  await searchField.fill(email);
+  // STEP 4: Enter search value (mobile or email) in search field
+  console.log(`🔍 [STEP 9] Searching for client: ${searchValue}`);
+  await searchField.fill(searchValue);
   
   // NEW: Try multiple approaches to trigger the search (robust logic from findAndVerifyClient)
   console.log('🔍 [STEP 9] Triggering search...');

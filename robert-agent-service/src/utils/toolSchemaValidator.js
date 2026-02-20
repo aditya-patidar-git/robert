@@ -229,13 +229,16 @@ const bookingStepFillContactDetailsSchema = z.object({
   postcode: z.string().optional(),
   houseNumber: z.string().optional(),
   nationalInsurance: z.string().optional(),
-  drivingLicenceNumber: z.string().optional()
+  drivingLicenceNumber: z.string().optional(),
+  licenceHeld: z.string().optional(),
+  addressConfirmed: z.boolean().optional(),
+  correctedAddress: z.string().optional()
 });
 
 const bookingStepProcessPaymentSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
-  termsAccepted: z.boolean(),
+  termsAccepted: z.boolean().optional(), // Omit on first call to get termsText; pass true after caller accepts
   confirmed: z.boolean().optional(), // Optional confirmation flag (for future use if needed)
   paymentMethod: z.string().optional(),
   cardNumber: z.string().optional(),
@@ -408,7 +411,7 @@ const toolSchemas = {
  */
 export function validateToolParameters(toolName, parameters) {
   const schema = toolSchemas[toolName];
-  
+
   if (!schema) {
     return {
       success: false,
@@ -429,14 +432,14 @@ export function validateToolParameters(toolName, parameters) {
         const path = err.path.join('.');
         return `${path}: ${err.message}`;
       });
-      
+
       return {
         success: false,
         error: `Validation failed: ${errors.join('; ')}`,
         details: error.errors
       };
     }
-    
+
     return {
       success: false,
       error: `Validation error: ${error.message}`

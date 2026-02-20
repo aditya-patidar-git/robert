@@ -678,31 +678,15 @@ export class ResponseHandler {
       }
       
       // Flush remaining audio buffer before response ends
-      // Send any remaining buffered audio frames
+      // Send only full 160-byte frames (g711_ulaw 20ms). Drop any remainder to avoid
+      // sending variable-length or non-standard frames, which can cause distortion.
       if (this.state.outboundAudioBuffer && this.state.outboundAudioBuffer.length > 0) {
         const FRAME_SIZE = 160;
         while (this.state.outboundAudioBuffer.length >= FRAME_SIZE) {
           this.sendAudioFrame(FRAME_SIZE, false);
         }
-        // If there's a small remainder, send it as-is (better than dropping)
-        if (this.state.outboundAudioBuffer.length > 0) {
-          const remainder = this.state.outboundAudioBuffer;
-          this.state.outboundAudioBuffer = Buffer.alloc(0);
-          if (this.ws.readyState === WebSocket.OPEN && this.state.streamSid && !this.state.isClosed) {
-            try {
-              const mediaMessage = {
-                event: 'media',
-                streamSid: this.state.streamSid,
-                media: { 
-                  payload: remainder.toString('base64')
-                }
-              };
-              this.ws.send(JSON.stringify(mediaMessage));
-            } catch (err) {
-              console.warn(`⚠️ [${this.state.callSid}] Error sending final audio buffer:`, err.message);
-            }
-          }
-        }
+        // Drop remainder (do not send); Twilio expects consistent 20ms frames.
+        this.state.outboundAudioBuffer = Buffer.alloc(0);
       }
       
       // Stop pacer when response is done

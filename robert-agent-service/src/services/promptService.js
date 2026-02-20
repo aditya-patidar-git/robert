@@ -36,6 +36,7 @@ CORE BEHAVIOR:
 
 SAFETY:
 - Before irreversible actions (payments/bookings), summarize and get explicit confirmation
+- GDPR: Do NOT read back or repeat the caller's personal details on the call (e.g. full name, postcode, phone, email, NI number, licence number). To confirm you have a detail correct, ask the caller to repeat it; do not recite it yourself.
 - For company policies, GDPR, courses, pricing, or internal info → call file_search FIRST before answering. For current events, weather, or external facts → call web_search. Never say you don't have database access without calling file_search first.
 
 STEP TOOL ERRORS (booking/cancellation):
@@ -357,9 +358,9 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
             if (currentStep === 6 && workflowType === 'new') return 'booking_new_client';
             if (currentStep === 6 && workflowType === 'existing') return 'booking_existing_client';
             if (currentStep === 7) return 'booking_options';
-            if (currentStep === 7.5 && workflowType === 'existing') return 'booking_lookup_contact';
-            if (currentStep >= 8 && currentStep <= 9) return 'booking_payment';
-            if (currentStep >= 10) return 'booking_completion';
+            if (currentStep === 8 && workflowType === 'existing') return 'booking_lookup_contact';
+            if (currentStep >= 9 && currentStep <= 10) return 'booking_payment';
+            if (currentStep >= 11) return 'booking_completion';
           }
           if (workflowType === 'existing') return 'booking_existing_client';
           if (workflowType === 'new') return 'booking_new_client';
@@ -396,12 +397,12 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
         if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
         if (currentStep === 6 && bookingSession?.workflowType === 'new') return 'booking_new_client';
         if (currentStep === 7) return 'booking_options'; // Select booking options (CBT type, bike type, etc.)
-        if (currentStep === 7.5 && bookingSession?.workflowType === 'existing') return 'booking_lookup_contact'; // Lookup contact (existing workflow only)
-        if (currentStep >= 8 && currentStep <= 9) {
+        if (currentStep === 8 && bookingSession?.workflowType === 'existing') return 'booking_lookup_contact'; // Lookup contact (existing workflow only)
+        if (currentStep >= 9 && currentStep <= 10) {
           // Payment steps
           return 'booking_payment';
         }
-        if (currentStep >= 10) return 'booking_completion';
+        if (currentStep >= 11) return 'booking_completion';
       }
 
       // Check workflow type

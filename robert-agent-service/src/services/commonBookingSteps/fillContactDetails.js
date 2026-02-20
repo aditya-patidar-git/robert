@@ -45,29 +45,128 @@ async function fillTextField(iframe, labelText, fieldId, value) {
 }
 
 /**
- * Helper function to select dropdown option with label and ID fallback
+ * Exact option labels for the "Licence held" dropdown (order matches UI).
+ * Used to map client phrases to exact dropdown text and to avoid matching
+ * other dropdowns (e.g. Riding experience "full control" option).
+ */
+const LICENCE_HELD_EXACT_OPTIONS = [
+  'Prov licence with valid cat A',
+  'Prov licence cat P only',
+  'European license with D9 counterpart',
+  'Foreign licence',
+  'No licence',
+  'Full UK car licence',
+  'Full UK automatic bike licence',
+  'Full UK manual bike licence',
+  'Full EU Motorcycle Licence'
+];
+
+/**
+ * Map client phrase to exact "Licence held" dropdown label.
+ * @param {string} optionValue - Raw value (e.g. "full", "provisional")
+ * @returns {string} Exact label to select, or optionValue if it already matches an option
+ */
+function resolveLicenceHeldLabel(optionValue) {
+  if (!optionValue || typeof optionValue !== 'string') return optionValue;
+  const normalized = optionValue.trim().toLowerCase().replace(/\s+/g, ' ');
+  const map = {
+    'provisional': 'Prov licence with valid cat A',
+    'prov': 'Prov licence with valid cat A',
+    'prov licence cat p': 'Prov licence cat P only',
+    'cat p only': 'Prov licence cat P only',
+    'full': 'Full UK car licence',
+    'full licence': 'Full UK car licence',
+    'full uk car': 'Full UK car licence',
+    'full car': 'Full UK car licence',
+    'full uk manual bike': 'Full UK manual bike licence',
+    'full manual bike': 'Full UK manual bike licence',
+    'full uk automatic bike': 'Full UK automatic bike licence',
+    'full eu motorcycle': 'Full EU Motorcycle Licence',
+    'european': 'European license with D9 counterpart',
+    'european d9': 'European license with D9 counterpart',
+    'd9': 'European license with D9 counterpart',
+    'foreign': 'Foreign licence',
+    'no licence': 'No licence'
+  };
+  if (map[normalized]) return map[normalized];
+  // Exact match (case-insensitive) against known options
+  const match = LICENCE_HELD_EXACT_OPTIONS.find(opt => opt.trim().toLowerCase() === normalized);
+  if (match) return match;
+  return optionValue;
+}
+
+/**
+ * Select option from a DevExtreme dropdown by scoping to the visible overlay.
+ * Avoids matching options from other dropdowns (e.g. Riding experience).
+ * @returns {Promise<boolean>} true if selection was done via overlay
+ */
+async function selectOptionFromOverlay(iframe, page, fieldId, exactLabel) {
+  const dropdownInput = iframe.locator(`#${fieldId} .dx-texteditor-input`);
+  await dropdownInput.click();
+  await page.waitForTimeout(500);
+  const overlay = iframe.locator('.dx-dropdowneditor-overlay .dx-list-items');
+  await overlay.waitFor({ state: 'visible', timeout: 5000 });
+  const optionsContainer = iframe.locator('.dx-dropdowneditor-overlay .dx-list-items');
+  const items = optionsContainer.locator('.dx-item');
+  const count = await items.count();
+  for (let i = 0; i < count; i++) {
+    const item = items.nth(i);
+    const content = item.locator('.dx-item-content');
+    const text = (await content.textContent()).trim();
+    if (text === exactLabel) {
+      await item.waitFor({ state: 'visible', timeout: 5000 });
+      await item.click();
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Helper function to select dropdown option with label and ID fallback.
+ * For "Licence held" we scope to the open overlay and use exact label mapping
+ * so we never match the Riding experience "full control" option.
  */
 async function selectDropdownOption(iframe, page, labelText, fieldId, optionValue) {
+  const isLicenceHeld = fieldId === 'xid_29019' || labelText === 'Licence held';
+
+  if (isLicenceHeld) {
+    const exactLabel = resolveLicenceHeldLabel(optionValue);
+    try {
+      const done = await selectOptionFromOverlay(iframe, page, fieldId, exactLabel);
+      if (done) {
+        console.log(`✅ [STEP 7] Selected ${labelText} = "${exactLabel}" (from "${optionValue}") using overlay`);
+        return;
+      }
+      throw new Error(`No option matching "${exactLabel}" in Licence held dropdown. Valid options: ${LICENCE_HELD_EXACT_OPTIONS.join(', ')}`);
+    } catch (overlayError) {
+      throw new Error(`Failed to select ${labelText}: ${overlayError.message}`);
+    }
+  }
+
   try {
     // Try getByLabel first
     let field = iframe.getByLabel(labelText);
     let selectorUsed = `getByLabel("${labelText}")`;
-    
+
     if (await field.count() === 0) {
       // Fallback to ID-based selector - click to open dropdown
       const dropdownInput = iframe.locator(`#${fieldId} .dx-texteditor-input`);
       await dropdownInput.click();
       await page.waitForTimeout(500);
-      
-      // Select option from dropdown
-      const option = iframe.locator(`.dx-item:has-text("${optionValue}")`).first();
+
+      // For non-Licence-held dropdowns, try overlay first to avoid cross-matches, then global
+      const overlay = iframe.locator('.dx-dropdowneditor-overlay .dx-list-items');
+      const overlayVisible = await overlay.isVisible().catch(() => false);
+      const optionsRoot = overlayVisible ? overlay : iframe;
+      const option = optionsRoot.locator(`.dx-item:has-text("${optionValue}")`).first();
       await option.waitFor({ state: 'visible', timeout: 5000 });
       await option.click();
       selectorUsed = `#${fieldId} dropdown`;
       console.log(`✅ [STEP 7] Selected ${labelText} = "${optionValue}" using ${selectorUsed}`);
       return;
     }
-    
+
     // Use getByLabel selectOption
     await field.selectOption({ label: optionValue });
     console.log(`✅ [STEP 7] Selected ${labelText} = "${optionValue}" using ${selectorUsed}`);
@@ -77,12 +176,15 @@ async function selectDropdownOption(iframe, page, labelText, fieldId, optionValu
       const dropdownInput = iframe.locator(`#${fieldId} .dx-texteditor-input`);
       await dropdownInput.click();
       await page.waitForTimeout(500);
-      const option = iframe.locator(`.dx-item:has-text("${optionValue}")`).first();
+      const overlay = iframe.locator('.dx-dropdowneditor-overlay .dx-list-items');
+      const overlayVisible = await overlay.isVisible().catch(() => false);
+      const optionsRoot = overlayVisible ? overlay : iframe;
+      const option = optionsRoot.locator(`.dx-item:has-text("${optionValue}")`).first();
       await option.waitFor({ state: 'visible', timeout: 5000 });
       await option.click();
       console.log(`✅ [STEP 7] Selected ${labelText} = "${optionValue}" using fallback #${fieldId}`);
     } catch (fallbackError) {
-      throw new Error(`Failed to select ${labelText}: ${error.message}`);
+      throw new Error(`Failed to select ${labelText}: ${fallbackError.message}`);
     }
   }
 }

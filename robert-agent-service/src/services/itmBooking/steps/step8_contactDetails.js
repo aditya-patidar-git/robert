@@ -8,7 +8,7 @@ import * as commonSteps from '../../commonBookingSteps/index.js';
 export async function step8ContactDetails(page, bookingArgs, callContext, screenshotsDir, screenshots, workflowType = 'existing') {
   if (workflowType === 'existing') {
     // EXISTING CLIENT: Fill MISSING fields only
-    // Note: Contact lookup is now handled by Step 7.5, so this step only handles field checking and filling
+    // Note: Contact lookup is now handled by Step 8, so this step only handles field checking and filling
     console.log('📝 Step 8: Checking and filling missing contact details...');
     screenshots.push(await commonSteps.takeScreenshot(page, 'step-8-contact-details.png', screenshotsDir));
     console.log('✅ Step 8 completed: Contact details updated');
