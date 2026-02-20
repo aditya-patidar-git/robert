@@ -50,6 +50,13 @@ export class ToolCallHandler {
       this.state,
       getWsRef
     );
+    progressIndicatorService.sendImmediateToolStartAcknowledgment(
+      this.state.callSid,
+      name,
+      this.openaiWs,
+      conversationBehaviorConfig,
+      this.state
+    );
 
     const progressCallback = null;
     
