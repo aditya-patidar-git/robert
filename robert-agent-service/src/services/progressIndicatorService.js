@@ -32,11 +32,22 @@ class ProgressIndicatorService {
 
   /**
    * Get the tool-start acknowledgment message for create-booking steps (booking_step_*).
+   * Returns null for payment steps to avoid race: only one response.create in flight so
+   * response.done does not wrongly set waitingForUser; the agent's reply from triggerResponse provides the message.
+   * Returns null for check_availability so no ack is sent until the tool returns—avoids agent suggesting imaginary slots.
    * @param {string} toolName - Name of the tool
-   * @returns {string|null} - Message to speak, or null if not a booking step or no message defined
+   * @returns {string|null} - Message to speak, or null if not a booking step or no message defined (or payment/availability step)
    */
   getToolStartMessage(toolName) {
     if (!toolName || !toolName.startsWith('booking_step_')) {
+      return null;
+    }
+    // Skip immediate ack for payment steps to avoid race with triggerResponse (Option A)
+    if (toolName === 'booking_step_process_payment' || toolName === 'booking_step_send_payment_request') {
+      return null;
+    }
+    // Skip ack for availability: no message until tool returns to prevent agent suggesting imaginary slots
+    if (toolName === 'booking_step_check_availability') {
       return null;
     }
     return BOOKING_STEP_TOOL_START_MESSAGES[toolName] || null;
@@ -197,21 +208,9 @@ class ProgressIndicatorService {
     if (!config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) {
       return;
     }
+    // Only start execution tracking. Scheduled generic acknowledgements are disabled;
+    // path-based progress (progressCallback at each tool substep) is the source of updates.
     this.startToolExecution(callId, toolName, stateManager);
-    const baseThreshold = config.progressIndicators.acknowledgmentThresholdMs || 2000;
-    const isStepBasedTool = toolName && toolName.startsWith('booking_step_');
-    // Use base (shorter) threshold for long-running steps that benefit from early ack: check_availability, authenticate
-    const useShortThreshold = toolName === 'booking_step_check_availability' || toolName === 'booking_step_authenticate';
-    const threshold = useShortThreshold ? baseThreshold : (isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold);
-    setTimeout(() => {
-      const ws = getWsRef ? getWsRef() : openaiWs;
-      if (!ws || ws.readyState !== 1) return;
-      const sent = this.checkAndSendAcknowledgment(callId, ws, config);
-      if (!sent) {
-        const exec = this.getExecutionInfo(callId);
-        if (exec) this.startPeriodicUpdates(callId, ws, config);
-      }
-    }, threshold);
   }
 
   /**

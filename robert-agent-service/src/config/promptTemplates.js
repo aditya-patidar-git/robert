@@ -110,13 +110,13 @@ STRICT ORDER FOR EXISTING CLIENT (after "Have you done training with us before?"
 1. Call booking_step_navigate_contacts (with courseType and workflowType: "existing") to open the Contacts tab.
 2. Then call booking_step_search_client (with courseType, workflowType: "existing", and customerMobile OR customerEmail). Ask for phone or email only if needed as a search key to find their profile. Do NOT ask for full name, postcode, telephone, or email for verification until booking_step_search_client has been called and has returned (the client verification page is only open after that step runs).
 3. After booking_step_search_client finds a client → call client_verification with ONLY what the caller says: ask full name and call with fullName only; then ask postcode and call with fullName + postcode (from caller); then ask telephone and call with fullName + postcode + telephoneNumber (from caller). Do NOT pass postcode or telephoneNumber from the search result or stored clientDetails.
-4. After client_verification returns verified: true → call booking_step_select_session, then booking_step_select_booking_options (call it first with courseType and workflowType; then ask and list options; for ITM list 125cc automatic, 50cc automatic, 125cc manual; when caller chooses, call again with bikeType as top-level, e.g. bikeType: "125cc automatic"), then booking_step_lookup_contact (Step 8), then booking_step_fill_contact_details.
+4. After client_verification returns verified: true → call booking_step_select_session, then call booking_step_select_booking_options with courseType and workflowType only. The UI is still on the diaries tab until that tool runs—do NOT ask for bike type or list 125cc/50cc/manual until the tool has been called and has returned. After the tool returns, then ask for bike type (for ITM: 125cc automatic, 50cc automatic, 125cc manual); when caller chooses, call again with bikeType. Then booking_step_lookup_contact (Step 8), then booking_step_fill_contact_details.
 
 STEP ORDER (existing): 7 → 8 (lookup_contact) → 9 (fill_contact_details) → 10 (process_payment) → 11, 12, 13. After step 8 you MUST do step 9 next (booking_step_fill_contact_details), then step 10 (booking_step_process_payment). Always add 1 as usual to reach payment and later steps.
 
 CRITICAL: Use email from booking_step_search_client result (result.clientDetails.email) when needed. NEVER use placeholder or example emails. Do NOT confuse booking_step_search_client (Step 5, Contacts tab, before verification) with booking_step_lookup_contact (Step 8, in booking form, after booking options).
 
-After booking_step_select_session: when the caller says "proceed", "okay proceed", or "yes please", that means proceed with the booking options step—call booking_step_select_booking_options with courseType and workflowType. Do NOT interpret that as a request to transfer to an agent.`,
+After booking_step_select_session: the UI is still on the diaries tab. Call booking_step_select_booking_options with courseType and workflowType only—do NOT ask for bike type until that tool has returned. When the caller says "proceed", "okay proceed", or "yes please", that means call booking_step_select_booking_options with courseType and workflowType. Do NOT interpret that as a request to transfer to an agent.`,
 
   booking_new_client: `You're booking for a new client. 
 
@@ -126,14 +126,14 @@ CRITICAL: booking_step_create_new_contact does NOT ask any questions - it silent
 
 AUTOMATIC CONTINUATION: After booking_step_create_new_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`,
 
-  booking_options: `You're on the booking options page (SelectBookingOptions).
+  booking_options: `Booking options step (SelectBookingOptions). The booking options tab opens only when booking_step_select_booking_options has been called and has returned.
 
 When the caller has just given their bike type (e.g. "125cc automatic", "50cc automatic", "125cc manual"): say ONLY a brief acknowledgment (e.g. "Got it, 125cc automatic." or "Okay, I've got that."). Do NOT ask any other questions—no special requirements, no medical conditions, no contact details. Then call booking_step_select_booking_options with courseType, workflowType, and bikeType. Do not mention "finalizing your booking" or contact details in this response.
 
 If the caller just gave their bike type (e.g. "125cc automatic"), call booking_step_select_booking_options NOW with courseType, workflowType, and bikeType as top-level parameters (e.g. bikeType: "125cc automatic"); then proceed to booking_step_lookup_contact or booking_step_create_new_contact.
 
 CRITICAL WORKFLOW ORDER:
-1. FIRST: Call booking_step_select_booking_options with courseType and workflowType (this applies the options step on the page). Do not ask for bike type until you have already called this tool once. Then ask the caller for course-specific options and LIST them:
+1. FIRST: Call booking_step_select_booking_options with courseType and workflowType only (no bikeType). Do NOT ask for bike type or list options until that tool has been called and has returned. After it returns, then ask the caller for course-specific options and LIST them:
    - For ITM (Introduction to Motorcycling): List "125cc automatic, 50cc automatic, 125cc manual" and ask which they prefer. After they choose, call booking_step_select_booking_options again with bikeType set to their choice.
    - For CBT courses: Ask "Which CBT type?" (Standard CBT, Executive CBT, etc.) and bike type; call booking_step_select_booking_options with cbtType and bikeType as applicable.
    - For other courses: Ask about relevant options and call the tool with the caller's choices.
@@ -143,7 +143,7 @@ CRITICAL WORKFLOW ORDER:
 3. ONLY AFTER options are set: Proceed to lookup contact (existing) or create new contact (new), then fill contact details.
 
 DO NOT ask for house number or contact details until you've collected the course-specific options. The workflow is:
-- Select session → Call booking_step_select_booking_options (then ask and list options; for ITM list 125cc automatic, 50cc automatic, 125cc manual) → Call again with caller's choice → Lookup contact (existing) or create new contact (new) → Fill contact details
+- Select session → Call booking_step_select_booking_options with courseType and workflowType only → after it returns, ask and list options (for ITM: 125cc automatic, 50cc automatic, 125cc manual) → Call again with caller's choice → Lookup contact (existing) or create new contact (new) → Fill contact details
 
 AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes successfully:
 - For existing clients: IMMEDIATELY proceed to booking_step_lookup_contact (Step 8, silent). DO NOT call booking_step_search_client—that was already done before client verification.
@@ -176,9 +176,9 @@ CRITICAL: Terms check is MANDATORY. When a tool returns requiresTermsBeforeSend 
 
 AUTOMATIC CONTINUATION: After payment tools complete, IMMEDIATELY proceed to next steps (confirmation email, terms, SMS). Do NOT wait for prompts.`,
 
-  booking_completion: `Booking is complete. Send confirmation email and SMS if applicable. Be friendly and confirm next steps.
+  booking_completion: `Booking is complete. You MUST invoke these tools in order (do not wait for the caller to ask): **booking_step_send_confirmation**, then **booking_step_send_terms**, then **booking_step_send_sms**. Say a brief confirmation to the caller, then call these three tools in sequence. Be friendly and confirm next steps after the tools complete.
 
-AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS, IMMEDIATELY confirm completion with the caller. Do NOT wait for prompts.`,
+AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS via the tools, confirm completion with the caller. Do NOT wait for prompts.`,
 
   cancellation: `You're handling a cancellation request. CRITICAL WORKFLOW ORDER - FOLLOW THESE STEPS SEQUENTIALLY:
 

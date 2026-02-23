@@ -272,6 +272,7 @@ const bookingStepSendPaymentRequestSchema = z.object({
   clientEmail: z.string().email().optional(),
   clientMobile: z.string().optional(),
   confirmed: z.boolean().optional(),
+  confirmationReceived: z.boolean().optional(), // alias for confirmed (model sometimes sends this)
   termsAcceptedBeforeSend: z.boolean().optional()
 });
 

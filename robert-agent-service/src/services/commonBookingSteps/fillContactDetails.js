@@ -189,7 +189,10 @@ async function selectDropdownOption(iframe, page, labelText, fieldId, optionValu
   }
 }
 
-export async function fillContactDetails(page, contactDetails, screenshotsDir, addressConfirmed = false, progressCallback = null) {
+/**
+ * @param {boolean} [skipNextClick=false] - If true, fill all provided fields but do NOT click Next (used when required fields are missing so we don't navigate away).
+ */
+export async function fillContactDetails(page, contactDetails, screenshotsDir, addressConfirmed = false, progressCallback = null, skipNextClick = false) {
   try {
     console.log('📝 [STEP 7] Filling contact details for new client...');
     
@@ -415,7 +418,12 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
     await takeScreenshot(page, 'contact-details-filled.png', screenshotsDir);
     progressCallback?.({ message: 'Saving your details.' });
     
-    // 16. Click Next button (only if address was confirmed or no address was auto-populated)
+    // 16. Click Next button only when skipNextClick is false (e.g. when required fields are complete)
+    if (skipNextClick) {
+      console.log('⏭️ [STEP 7] Skipping Next click (required fields incomplete—caller will collect and retry).');
+      return;
+    }
+    
     // If address confirmation is required, it should have been returned earlier
     console.log('👆 [STEP 7] Clicking Next button...');
     let nextButton = eventBookingIframe.locator('#diaryNewCourseBookingWiz_nextBtn').first();

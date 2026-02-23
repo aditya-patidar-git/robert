@@ -413,9 +413,9 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       // Phase 0: After check_availability (step 1), present ONLY slots from tool result; do NOT invent slots; do NOT ask for full name or contact details
       if (toolName === 'booking_step_check_availability' && toolResult?.success === true) {
         const slotsFromTool = toolResult?.message ? ` Tool result message: "${toolResult.message}"` : '';
-        const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST present ONLY the slot(s) listed in the tool result message (see "Slots to present:" in the message)—do NOT invent, add, or substitute any other times or slots.${slotsFromTool} After the caller confirms a slot, call booking_step_authenticate only. Do NOT ask for full name, email, postcode, telephone, or any contact or personal details—only confirm the slot then proceed to authentication.`;
+        const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool} After the caller confirms a slot, call booking_step_authenticate only. Do NOT ask for full name, email, postcode, telephone, or any contact or personal details—only confirm the slot then proceed to authentication.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
-        console.log(`🎯 [${callId}] Check availability completed - instructing to present ONLY tool result slots, then booking_step_authenticate; no contact questions`);
+        console.log(`🎯 [${callId}] Check availability completed - instructing to present ONLY tool result slots (verbatim), then booking_step_authenticate; no contact questions`);
       }
 
       // Phase 1: After search_client finds a client with requiresVerification, agent MUST call client_verification (not search_client again), then after verified call booking_step_select_session
@@ -445,7 +445,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
       // Phase 2: After select_session, call select_booking_options in this turn first; do NOT ask for bike type until after the tool returns
       if (toolName === 'booking_step_select_session' && toolResult?.success === true) {
-        const instruction = `CRITICAL: booking_step_select_session completed. Do not call it again. In this turn you MUST: (1) Say ONLY a brief confirmation (e.g. "Session selected. Proceeding to booking options.")—do NOT ask for bike type, do NOT list 125cc/50cc/manual options, do NOT say "which bike type would you prefer". (2) Call **booking_step_select_booking_options** with courseType and workflowType from the current session in this same turn. The tool will return that bike type is needed; we will then wait for the caller to say their preference—do not generate a second message asking for bike type. After the caller says their choice, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
+        const instruction = `CRITICAL: booking_step_select_session completed. The UI is still on the diaries tab—the booking options tab opens only when you call booking_step_select_booking_options. In this turn you MUST: (1) Say ONLY a brief confirmation (e.g. "Session selected. Proceeding to booking options.")—do NOT ask for bike type, do NOT list 125cc/50cc/manual options, do NOT say "which bike type would you prefer". (2) Call **booking_step_select_booking_options** with courseType and workflowType from the current session in this same turn. Only after the tool returns may you ask for bike type. After the caller says their choice, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select session completed - instructing to call booking_step_select_booking_options next`);
         const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
@@ -541,6 +541,17 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
         console.log(`🎯 [${callId}] send_payment_request requiresConfirmation - instructing to confirm with caller then call again with confirmed: true`);
+      }
+
+      // send_payment_request returned payment completed / booking finalized: agent MUST call send_confirmation, send_terms, send_sms in order (do not wait for caller)
+      const isBookingFinalized = toolName === 'booking_step_send_payment_request' && toolResult?.success === true &&
+        (toolResult?.paymentCompleted === true || toolResult?.bookingFinalized === true);
+      if (isBookingFinalized) {
+        const instruction = `CRITICAL: Booking is finalized. In this turn you MUST call **booking_step_send_confirmation**, then **booking_step_send_terms**, then **booking_step_send_sms** (in that order). Do not wait for the caller to ask—proceed automatically. Say a brief confirmation to the caller (e.g. "Your booking is complete. I'm sending your confirmation and details now.") then invoke these three tools in sequence.`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] send_payment_request booking finalized - instructing to call send_confirmation, send_terms, send_sms in order`);
       }
 
       if (toolName === 'transfer_call' && toolResult?.allTransferNumbersFailed === true && toolResult?.messageForCaller) {

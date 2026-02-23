@@ -32,6 +32,11 @@ export class ToolCallHandler {
   async handleToolCall(event) {
     const { call_id, name, arguments: args } = event.item;
     
+    // Release response lock so the tool-call response doesn't block acks/progress during execution.
+    // Progress and acknowledgements can now acquire the lock and keep the caller in the loop.
+    this.state.activeResponseId = null;
+    this.state.releaseResponseLock();
+
     // Store tool call info for tracking
     const toolStartTime = Date.now();
     this.state.pendingToolCalls.set(call_id, {
@@ -58,16 +63,13 @@ export class ToolCallHandler {
       this.state
     );
 
-    // Path-based progress: speak short phrases at each step (via sendProgressUpdate = holding response, never sets waitingForUser)
-    const PATH_PROGRESS_THROTTLE_MS = 4000;
+    // Path-based progress: speak short phrases at each step (via sendProgressUpdate = holding response, never sets waitingForUser).
+    // Serialize with response lock so we never overlap response.create (no race). Attempt every callback; send only when lock free.
     const progressCallback = conversationBehaviorConfig?.progressIndicators?.enabled && this.openaiWs
       ? (data) => {
           const message = data?.message;
           if (!message || typeof message !== 'string') return;
-          const now = Date.now();
-          const last = this.state.lastPathProgressSentAt ?? 0;
-          if (now - last < PATH_PROGRESS_THROTTLE_MS) return;
-          this.state.lastPathProgressSentAt = now;
+          if (!this.state.tryAcquireResponseLock()) return;
           progressIndicatorService.sendProgressUpdate(this.state.callSid, message, this.openaiWs);
         }
       : null;

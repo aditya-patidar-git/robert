@@ -16,10 +16,10 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
  * @returns {Promise<Object>} Step execution result
  */
 export async function executeCheckAvailability(page, args, sessionState, screenshotsDir, progressCallback = null) {
-  progressCallback?.({ message: 'Checking availability for you.' });
+  // No progress/ack during availability check: prevents agent from speaking before tool returns and suggesting imaginary slots
   const courseType = args.courseType || sessionState?.courseType;
   
-  // Use existing checkAvailabilityAndNoteDetails logic
+  // Use existing checkAvailabilityAndNoteDetails logic (pass null so no path-based messages during check)
   const preferences = {
     preferredDate: args.preferredDate,
     preferredTime: args.preferredTime,
@@ -32,7 +32,7 @@ export async function executeCheckAvailability(page, args, sessionState, screens
     courseType, 
     screenshotsDir, 
     preferences,
-    progressCallback
+    null
   );
 
   // CRITICAL FIX: Ensure selectedSlot includes course name

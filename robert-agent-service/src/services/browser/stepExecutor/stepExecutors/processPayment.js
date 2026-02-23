@@ -76,7 +76,7 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     // Step 1: Select "Send a payment request" option (updated strategy)
     progressCallback?.({ message: 'Selecting payment option.' });
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
-    await selectPaymentOption(page, screenshotsDir, 'request');
+    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback);
     screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', screenshotsDir));
 
     // Verify page transition completed before proceeding

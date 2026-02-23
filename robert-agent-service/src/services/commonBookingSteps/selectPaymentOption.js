@@ -5,12 +5,14 @@ import { takeScreenshot } from './utils.js';
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} paymentType - Payment type: 'now' (default) for "Take a payment now", 'none' for "No payment required"
+ * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  */
-export async function selectPaymentOption(page, screenshotsDir, paymentType = 'now') {
+export async function selectPaymentOption(page, screenshotsDir, paymentType = 'now', progressCallback = null) {
   try {
     console.log(`💳 [STEP 10] Selecting payment option (type: ${paymentType})...`);
     
     // Wait for payment page to load - give more time for page transition
+    progressCallback?.({ message: 'Waiting for payment page.' });
     console.log('⏳ [STEP 10] Waiting for payment page to load...');
     await page.waitForTimeout(5000); // Increased from 3000 to 5000
     
@@ -68,6 +70,7 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
       searchContext = page;
     }
     
+    progressCallback?.({ message: 'Moving to payment method dropdown.' });
     // Wait for dropdown to be visible with increased timeout and retry logic
     let dropdownFound = false;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -98,6 +101,7 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
     }
     
     // Click on the dropdown to open it (same pattern as Contacts tab and location dropdown)
+    progressCallback?.({ message: 'Opening payment options.' });
     console.log('💳 [STEP 10] Clicking payment dropdown to open...');
     // Try clicking the dropdown button first (more specific), then fallback to the container
     const dropdownButton = paymentDropdown.locator('[role="button"][aria-label="Select"], .dx-dropdowneditor-button').first();
@@ -109,6 +113,7 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
     }
     
     // WAIT FOR DROPDOWN MENU TO APPEAR - 2 seconds (same as Contacts tab pattern)
+    progressCallback?.({ message: 'Waiting for payment dropdown.' });
     console.log('⏳ [STEP 10] Waiting for payment dropdown menu to appear...');
     await page.waitForTimeout(2000);
     

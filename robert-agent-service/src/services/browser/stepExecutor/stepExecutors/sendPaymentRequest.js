@@ -33,7 +33,7 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     
     // Step 1: Select "Send a payment request" option
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
-    await selectPaymentOption(page, screenshotsDir, 'request');
+    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback);
     
     // Step 2: Wait for page transition to paymentRequestLink page
     console.log('⏳ [SEND_PAYMENT_REQUEST] Waiting for page transition to payment request link page...');
@@ -83,16 +83,17 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
   
   // FIX: Explicitly check for true boolean value, not just truthy
   // Handle both boolean true and string "true" (in case it comes as string from JSON)
-  // Also accept confirmedByClient (model sometimes sends this instead of confirmed)
+  // Also accept confirmedByClient and confirmationReceived (model sometimes sends these instead of confirmed)
   const confirmed = args.confirmed === true || args.confirmed === 'true' ||
-    args.confirmedByClient === true || args.confirmedByClient === 'true';
+    args.confirmedByClient === true || args.confirmedByClient === 'true' ||
+    args.confirmationReceived === true || args.confirmationReceived === 'true';
   
   // Extract termsAcceptedBeforeSend parameter (MANDATORY check)
   const termsAcceptedBeforeSend = args.termsAcceptedBeforeSend === true ? true : (args.termsAcceptedBeforeSend === false ? false : undefined);
   
   // Debug logging to trace parameter passing
   console.log(`🔍 [SEND_PAYMENT_REQUEST] All args keys:`, Object.keys(args));
-  console.log(`🔍 [SEND_PAYMENT_REQUEST] Confirmed parameter: confirmed=${args.confirmed}, confirmedByClient=${args.confirmedByClient}, evaluated as: ${confirmed}`);
+  console.log(`🔍 [SEND_PAYMENT_REQUEST] Confirmed parameter: confirmed=${args.confirmed}, confirmedByClient=${args.confirmedByClient}, confirmationReceived=${args.confirmationReceived}, evaluated as: ${confirmed}`);
   console.log(`🔍 [SEND_PAYMENT_REQUEST] TermsAcceptedBeforeSend parameter: ${args.termsAcceptedBeforeSend} (type: ${typeof args.termsAcceptedBeforeSend}), evaluated as: ${termsAcceptedBeforeSend}`);
   
   const result = await sendPaymentRequest(

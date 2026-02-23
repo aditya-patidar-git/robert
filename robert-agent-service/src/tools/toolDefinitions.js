@@ -24,7 +24,8 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
    - "Do you have any preference for date or time?"
    - "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon)
    - "Do you have any instructor preference?"
-   
+   If the caller gives their area, town, or home location (e.g. "I'm in Sutton") instead of a centre name, determine the nearest training centre from the list above, tell them which one, and pass that centre name as the location parameter.
+
 2. Call this tool with preferences (or omit if no preferences). The tool will use preferences to filter and prioritize slots when opening the availability table.
 
 3. AFTER this tool returns: Present ONLY the slot(s) from the tool result message. Do not add or substitute any other slots.
@@ -50,7 +51,7 @@ The tool will use preferences to filter and prioritize slots, but will return al
           },
           location: {
             type: 'string',
-            description: 'Preferred location (optional, for slot matching/filtering)'
+            description: 'Preferred location: one of the training centre names (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon). If the caller gave their area or town, use the nearest centre from this list and pass that name.'
           },
           instructor: {
             type: 'string',
