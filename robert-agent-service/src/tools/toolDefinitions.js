@@ -325,7 +325,7 @@ CRITICAL WORKFLOW:
           },
           licenceHeld: {
             type: 'string',
-            description: 'Type of licence held (e.g., "Full UK Car", "Provisional Motorcycle", etc.)'
+            description: 'Type of licence held. Use the EXACT option text the caller chose from this list: Prov licence with valid cat A, Prov licence cat P only, European license with D9 counterpart, Foreign licence, No licence, Full UK car licence, Full UK automatic bike licence, Full UK manual bike licence, Full EU Motorcycle Licence. List these options to the caller and pass their choice verbatim.'
           },
           addressConfirmed: {
             type: 'boolean',

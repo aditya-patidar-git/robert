@@ -82,6 +82,9 @@ function resolveLicenceHeldLabel(optionValue) {
     'full manual bike': 'Full UK manual bike licence',
     'full uk automatic bike': 'Full UK automatic bike licence',
     'full eu motorcycle': 'Full EU Motorcycle Licence',
+    'motorcycle': 'Full EU Motorcycle Licence',
+    'motorcycle licence': 'Full EU Motorcycle Licence',
+    'motorcycle license': 'Full EU Motorcycle Licence',
     'european': 'European license with D9 counterpart',
     'european d9': 'European license with D9 counterpart',
     'd9': 'European license with D9 counterpart',
@@ -93,6 +96,15 @@ function resolveLicenceHeldLabel(optionValue) {
   const match = LICENCE_HELD_EXACT_OPTIONS.find(opt => opt.trim().toLowerCase() === normalized);
   if (match) return match;
   return optionValue;
+}
+
+/**
+ * Returns the exact "Licence held" dropdown options as a comma-separated list for use in prompts.
+ * Use this so the agent can list options and ask the caller to choose one; then pass the exact option text as licenceHeld.
+ * @returns {string}
+ */
+export function getLicenceHeldOptionsForPrompt() {
+  return LICENCE_HELD_EXACT_OPTIONS.join(', ');
 }
 
 /**

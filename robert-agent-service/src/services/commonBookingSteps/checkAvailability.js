@@ -1,4 +1,22 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, extractLocationIdentifier } from './utils.js';
+
+/** Postcode prefix to centre name for location matching (matches utils.js centres) */
+const POSTCODE_TO_CENTRE = {
+  RM9: 'Dagenham',
+  EN11: 'Hoddesdon',
+  HA0: 'Alperton',
+  CR0: 'Croydon',
+  HA8: 'Edgware',
+  SE3: 'Eltham',
+  KT3: 'Wimbledon'
+};
+
+function normaliseToCentreName(identifier) {
+  if (!identifier) return null;
+  const key = String(identifier).toUpperCase();
+  if (POSTCODE_TO_CENTRE[key]) return POSTCODE_TO_CENTRE[key];
+  return identifier;
+}
 
 /**
  * Course type to availability URL mapping
@@ -332,13 +350,15 @@ export function selectBestMatchingSlot(allSlots, preferences = {}) {
   const { preferredDate, preferredTime, location, instructor } = preferences;
 
   // P2 FIX A2: Strict Location Filtering
-  // If location preference is provided, filter slots strictly by location first
+  // Use extractLocationIdentifier (city name or postcode) so "Dagenham" matches slots with "Dagenham" or "RM9" in address
   let filteredSlots = allSlots;
   if (location) {
-    const prefLoc = normalizeLocation(location);
+    const prefId = extractLocationIdentifier(location);
+    const prefCentre = normaliseToCentreName(prefId);
     const locationMatches = allSlots.filter(slot => {
-      const slotLoc = normalizeLocation(slot.location);
-      return slotLoc && prefLoc && (slotLoc === prefLoc || slotLoc.includes(prefLoc) || prefLoc.includes(slotLoc));
+      const slotId = extractLocationIdentifier(slot.location);
+      const slotCentre = normaliseToCentreName(slotId);
+      return prefCentre && slotCentre && prefCentre.toLowerCase() === slotCentre.toLowerCase();
     });
 
     if (locationMatches.length > 0) {
@@ -402,16 +422,16 @@ export function selectBestMatchingSlot(allSlots, preferences = {}) {
       }
     }
 
-    // Match location preference
+    // Match location preference (same identifier logic as filter above)
     if (location) {
-      const slotLocation = normalizeLocation(slot.location);
-      const preferredLocation = normalizeLocation(location);
+      const prefId = extractLocationIdentifier(location);
+      const slotId = extractLocationIdentifier(slot.location);
+      const prefCentre = normaliseToCentreName(prefId);
+      const slotCentre = normaliseToCentreName(slotId);
 
-      if (slotLocation && preferredLocation) {
-        if (slotLocation === preferredLocation || slotLocation.includes(preferredLocation) || preferredLocation.includes(slotLocation)) {
-          score += 6;
-          matchDetails.push('location');
-        }
+      if (prefCentre && slotCentre && prefCentre.toLowerCase() === slotCentre.toLowerCase()) {
+        score += 6;
+        matchDetails.push('location');
       }
     }
 

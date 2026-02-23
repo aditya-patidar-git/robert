@@ -10,6 +10,7 @@ import { AFTER_LOGIN_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_ME
 import sessionStateManager from './browser/sessionStateManager.js';
 import progressIndicatorService from './progressIndicatorService.js';
 import { getNextStepName } from './browser/stepConfiguration.js';
+import { getLicenceHeldOptionsForPrompt } from './commonBookingSteps/index.js';
 
 /** Cancellation step tools in order (step 1..14). Used to recover from wrong/non-existent tool by running the correct next step. */
 const CANCELLATION_TOOL_ORDER = [
@@ -518,7 +519,11 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         toolResult.missingFields.length > 0;
       if (isFillContactDetailsMissing) {
         const msg = toolResult.message || `I need your ${(toolResult.missingFields || []).join(', ')}; could you please provide them?`;
-        const instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". Ask the caller to REPEAT each missing detail so you can confirm you have it correct. Do NOT read back or repeat the caller's personal details on the call (GDPR). Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
+        let instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". For each required detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Do NOT move to the next question until the current one has been repeated and verified. Do NOT read back or repeat the caller's personal details on the call (GDPR). Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
+        if (toolResult.missingFields?.includes('licenceHeld')) {
+          const optionsList = getLicenceHeldOptionsForPrompt();
+          instruction += ` For licence type (licenceHeld): list these exact options and ask the caller to choose one: ${optionsList}. Pass the exact option text they choose as licenceHeld—do not guess from vague terms like "motorcycle".`;
+        }
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
@@ -536,7 +541,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
       // send_payment_request returned requiresConfirmation: agent must ask user to confirm email/phone, then call again with confirmed: true to click "Send by email now" and start polling
       if (toolName === 'booking_step_send_payment_request' && toolResult?.requiresConfirmation === true) {
-        const instruction = toolResult.instruction || `CRITICAL: The payment request form is filled but not yet sent. Ask the caller to confirm the ${toolResult.deliveryMethod === 'sms' ? 'phone number' : 'email address'} (e.g. "Just to confirm, the payment request will be sent to ${toolResult.emailAddress || toolResult.phoneNumber || 'that address'}. Could you please confirm that this is correct?"). When they say yes, call **booking_step_send_payment_request** again with the SAME courseType, workflowType, deliveryMethod, clientEmail/clientMobile, and termsAcceptedBeforeSend: true, plus **confirmed: true**. Do NOT call without confirmed: true or the send button will not be clicked.`;
+        const instruction = toolResult.instruction || `CRITICAL: The payment request form is filled but not yet sent. Ask the caller to confirm the ${toolResult.deliveryMethod === 'sms' ? 'phone number' : 'email address'} (e.g. "Just to confirm, the payment request will be sent to ${toolResult.emailAddress || toolResult.phoneNumber || 'that address'}. Could you please confirm that this is correct?"). When they say yes, you MUST call the SAME tool **booking_step_send_payment_request** again with the SAME courseType, workflowType, deliveryMethod, clientEmail/clientMobile, and termsAcceptedBeforeSend: true, plus **confirmed: true**. There is NO tool named booking_step_confirm_payment_request—use only **booking_step_send_payment_request** with confirmed: true. Do NOT call without confirmed: true or the send button will not be clicked.`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;

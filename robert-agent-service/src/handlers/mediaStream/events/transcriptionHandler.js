@@ -269,7 +269,8 @@ export class TranscriptionHandler {
         this.bargeInHandler.responseHandler.immediatelyStopAudio();
       }
       
-      // Continue normal processing
+      // Do not create a response for "stop" - user intended to interrupt / end, not get a reply
+      return { processed: true, shouldCreateResponse: false };
     }
     
     // CRITICAL FIX: Handle transcriptions after barge-in

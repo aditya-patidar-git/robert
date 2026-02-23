@@ -113,12 +113,10 @@ class ProgressIndicatorService {
       stateManager.clearToolExecutionCompleting();
     }
     
-    // Check if we should delay periodic updates (after bike type questions completion)
+    // Delay periodic updates only for the short "one click" step (create_new_contact). No delay for
+    // lookup_contact (long 30–40s step needs 3 updates from start) or fill_contact_details.
     const bikeTypeCompletion = conversations[callSid]?.bikeTypeQuestionsCompleted;
-    const shouldDelayPeriodicUpdates = bikeTypeCompletion && 
-      (toolName === 'booking_step_lookup_contact' || 
-       toolName === 'booking_step_create_new_contact' || 
-       toolName === 'booking_step_fill_contact_details');
+    const shouldDelayPeriodicUpdates = bikeTypeCompletion && toolName === 'booking_step_create_new_contact';
     
     // Enable progress tracking for all tools, including step-based tools
     // Step-based tools will use longer thresholds to avoid redundant messages for quick steps
@@ -184,6 +182,7 @@ class ProgressIndicatorService {
       lastUpdateTime: Date.now(),
       updateInterval: null,
       updateTimeout: null, // Track setTimeout for periodic updates
+      ackFallbackTimeout: null, // Timer for fallback ack if immediate ack was not sent
       periodicUpdateCount: 0, // Track how many periodic updates have been sent
       maxPeriodicUpdates: maxPeriodicUpdates, // Maximum number of periodic updates allowed for this tool
       stateManager: stateManager, // Store reference for thread-safe checks
@@ -208,9 +207,18 @@ class ProgressIndicatorService {
     if (!config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) {
       return;
     }
-    // Only start execution tracking. Scheduled generic acknowledgements are disabled;
-    // path-based progress (progressCallback at each tool substep) is the source of updates.
     this.startToolExecution(callId, toolName, stateManager);
+    // Fallback ack: if no ack sent within 500ms (e.g. immediate ack skipped due to lock), try once
+    const execution = this.activeExecutions.get(callId);
+    if (execution) {
+      execution.ackFallbackTimeout = setTimeout(() => {
+        const exec = this.activeExecutions.get(callId);
+        if (!exec || exec.acknowledgmentSent) return;
+        const ws = typeof getWsRef === 'function' ? getWsRef() : openaiWs;
+        if (!ws || ws.readyState !== 1) return;
+        this.checkAndSendAcknowledgment(callId, ws, config);
+      }, 500);
+    }
   }
 
   /**
@@ -274,14 +282,7 @@ class ProgressIndicatorService {
       try {
         if (openaiWs && openaiWs.readyState === 1) { // WebSocket.OPEN
           execution.expectHoldingResponse = true; // Next response.created is this acknowledgment; do not set waitingForUser when it completes
-          openaiWs.send(JSON.stringify({
-            type: 'response.create',
-            response: {
-              modalities: ['audio', 'text']
-            }
-          }));
-          
-          // Inject the acknowledgment message
+          // Item-first: conversation item must exist before response.create (Realtime API requirement)
           openaiWs.send(JSON.stringify({
             type: 'conversation.item.create',
             item: {
@@ -293,6 +294,13 @@ class ProgressIndicatorService {
                   text: message
                 }
               ]
+            }
+          }));
+          openaiWs.send(JSON.stringify({
+            type: 'response.create',
+            response: {
+              modalities: ['audio', 'text'],
+              instructions: `Say exactly: "${(message || '').replace(/"/g, '\\"')}"`
             }
           }));
           
@@ -746,6 +754,10 @@ class ProgressIndicatorService {
     const execution = this.activeExecutions.get(callSid);
     if (execution) {
       try {
+        if (execution.ackFallbackTimeout) {
+          clearTimeout(execution.ackFallbackTimeout);
+          execution.ackFallbackTimeout = null;
+        }
         // Clear setTimeout (for single periodic update)
         if (execution.updateTimeout) {
           clearTimeout(execution.updateTimeout);
@@ -793,8 +805,12 @@ class ProgressIndicatorService {
    * @param {string} callSid - Call SID
    */
   endToolExecution(callSid) {
-    this.stopPeriodicUpdates(callSid);
     const execution = this.activeExecutions.get(callSid);
+    if (execution?.ackFallbackTimeout) {
+      clearTimeout(execution.ackFallbackTimeout);
+      execution.ackFallbackTimeout = null;
+    }
+    this.stopPeriodicUpdates(callSid);
     if (execution) {
       const duration = Date.now() - execution.startTime;
       console.log(`📊 [${callSid}] Tool execution completed: ${execution.toolName} (duration: ${duration}ms)`);

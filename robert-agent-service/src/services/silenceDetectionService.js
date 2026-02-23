@@ -98,6 +98,15 @@ class SilenceDetectionService {
     state.proactiveCount++;
 
     try {
+      // Item-first: conversation item must exist before response.create (Realtime API requirement)
+      openaiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: message }]
+        }
+      }));
       openaiWs.send(JSON.stringify({
         type: 'response.create',
         response: {
