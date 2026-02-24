@@ -4,7 +4,7 @@
  */
 
 import { trace } from '@opentelemetry/api';
-import CallRecord from '../models/callRecord.js';
+import CallRecord from '../models/CallRecord.js';
 
 const tracer = trace.getTracer('trace-aggregation-service', '1.0.0');
 

@@ -1,6 +1,6 @@
 import gdprService from '../services/gdprService.js';
 import observabilityService from '../services/observabilityService.js';
-import CallRecord from '../models/callRecord.js';
+import CallRecord from '../models/CallRecord.js';
 
 // Get all DSAR requests
 export const getDSARRequests = async (req, res) => {

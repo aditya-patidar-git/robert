@@ -3,7 +3,7 @@
  * Calculates groundedness metrics for AI responses based on KB usage and citations
  */
 
-import CallRecord from '../models/callRecord.js';
+import CallRecord from '../models/CallRecord.js';
 
 /**
  * Groundedness KPI Service
