@@ -28,6 +28,8 @@ class ProgressIndicatorService {
     this.activeExecutions = new Map(); // callSid -> { toolName, startTime, acknowledgmentSent, lastUpdateTime, updateInterval }
     this.holdingResponseIds = new Map(); // callSid -> Set of responseId (acknowledgments/periodic updates; do not set waitingForUser when these complete)
     this.expectNonWaitingResponseCallSids = new Set(); // callSids for which the next response.created should be registered as non-waiting (e.g. "Your booking options are successfully selected")
+    this.pendingFirstProgress = new Map(); // callSid -> { toolName } — send first progress only after model's response.done
+    this.progressQueue = new Map(); // callSid -> string[] — path-based messages; send next only after previous response.done
   }
 
   /**
@@ -208,7 +210,8 @@ class ProgressIndicatorService {
       return;
     }
     this.startToolExecution(callId, toolName, stateManager);
-    // Fallback ack: if no ack sent within 500ms (e.g. immediate ack skipped due to lock), try once
+    // First progress is sent after model's response.done via trySendFirstProgressAfterResponseDone (no race).
+    // Fallback ack: if no ack sent within 500ms (e.g. response.done delayed), try once
     const execution = this.activeExecutions.get(callId);
     if (execution) {
       execution.ackFallbackTimeout = setTimeout(() => {
@@ -218,6 +221,126 @@ class ProgressIndicatorService {
         if (!ws || ws.readyState !== 1) return;
         this.checkAndSendAcknowledgment(callId, ws, config);
       }, 500);
+    }
+  }
+
+  /** Register that first progress should be sent after the next response.done (model's turn with tool call). */
+  setPendingFirstProgress(callSid, toolName) {
+    if (callSid && toolName) this.pendingFirstProgress.set(callSid, { toolName });
+  }
+
+  clearPendingFirstProgress(callSid) {
+    if (callSid) this.pendingFirstProgress.delete(callSid);
+  }
+
+  /** Whether first progress is pending for this call (model's response.done not yet processed). */
+  hasPendingFirstProgress(callSid) {
+    return !!(callSid && this.pendingFirstProgress.has(callSid));
+  }
+
+  /** Enqueue a path-based progress message; send happens when previous response.done (via trySendNextProgressUpdate). */
+  enqueueProgressUpdate(callSid, message) {
+    if (!callSid || !message || typeof message !== 'string') return;
+    if (!this.progressQueue.has(callSid)) this.progressQueue.set(callSid, []);
+    this.progressQueue.get(callSid).push(message.trim());
+  }
+
+  clearProgressQueue(callSid) {
+    if (callSid) this.progressQueue.delete(callSid);
+  }
+
+  /**
+   * Send first progress only after model's response.done (no race with API one-active-response rule).
+   * Called from responseHandler.handleResponseDone when we receive response.done.
+   */
+  trySendFirstProgressAfterResponseDone(callSid, openaiWs, config, stateManager) {
+    const pending = this.pendingFirstProgress.get(callSid);
+    if (!pending || !config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) return;
+    const execution = this.activeExecutions.get(callSid);
+    if (!execution || execution.acknowledgmentSent) {
+      this.clearPendingFirstProgress(callSid);
+      return;
+    }
+    if (stateManager) {
+      if (stateManager.toolExecutionCompleting || stateManager.isInterrupted) {
+        this.clearPendingFirstProgress(callSid);
+        return;
+      }
+      if (!stateManager.tryAcquireResponseLock()) return;
+    }
+    const message = this.getToolStartMessage(pending.toolName);
+    this.clearPendingFirstProgress(callSid);
+    if (!message) {
+      if (stateManager) stateManager.releaseResponseLock();
+      return;
+    }
+    try {
+      execution.expectHoldingResponse = true;
+      openaiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: message }]
+        }
+      }));
+      openaiWs.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          modalities: ['audio', 'text'],
+          instructions: `Say exactly: "${(message || '').replace(/"/g, '\\"')}"`
+        }
+      }));
+      execution.acknowledgmentSent = true;
+      if (execution.allowsPeriodicUpdates) this.startPeriodicUpdates(callSid, openaiWs, config);
+      console.log(`✅ [${callSid}] Sent first progress after response.done for ${pending.toolName}: "${message}"`);
+    } catch (err) {
+      console.error(`❌ [${callSid}] Error sending first progress:`, err);
+      if (stateManager) stateManager.releaseResponseLock();
+    }
+  }
+
+  /**
+   * Send next message from progress queue (or start periodic); only when no progress response in flight.
+   * Called after a holding response.done or from progressCallback (enqueue then try send).
+   */
+  trySendNextProgressUpdate(callSid, openaiWs, config, stateManager) {
+    if (!config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) return;
+    const execution = this.activeExecutions.get(callSid);
+    if (!execution) return;
+    if (execution.expectHoldingResponse) return; // previous progress not yet completed
+    if (stateManager && (stateManager.toolExecutionCompleting || stateManager.isInterrupted)) return;
+    if (stateManager && !stateManager.tryAcquireResponseLock()) return;
+    const queue = this.progressQueue.get(callSid);
+    const message = queue && queue.length > 0 ? queue.shift() : null;
+    if (!message) {
+      if (queue && queue.length === 0) this.progressQueue.delete(callSid);
+      if (stateManager) stateManager.releaseResponseLock();
+      if (execution.allowsPeriodicUpdates) this.startPeriodicUpdates(callSid, openaiWs, config);
+      return;
+    }
+    try {
+      execution.expectHoldingResponse = true;
+      openaiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: message }]
+        }
+      }));
+      openaiWs.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          modalities: ['audio', 'text'],
+          instructions: `Say exactly: "${(message || '').replace(/"/g, '\\"')}"`
+        }
+      }));
+      console.log(`💬 [${callSid}] Sent queued progress update: "${message}"`);
+    } catch (err) {
+      console.error(`❌ [${callSid}] Error sending queued progress:`, err);
+      execution.expectHoldingResponse = false;
+      if (stateManager) stateManager.releaseResponseLock();
     }
   }
 
@@ -305,6 +428,7 @@ class ProgressIndicatorService {
           }));
           
           execution.acknowledgmentSent = true;
+          this.clearPendingFirstProgress(callSid);
           console.log(`✅ [${callSid}] Sent acknowledgment after ${elapsed}ms: "${message}"`);
           
           // Start periodic updates only for whitelisted tools
@@ -811,6 +935,8 @@ class ProgressIndicatorService {
       execution.ackFallbackTimeout = null;
     }
     this.stopPeriodicUpdates(callSid);
+    this.clearProgressQueue(callSid);
+    this.clearPendingFirstProgress(callSid);
     if (execution) {
       const duration = Date.now() - execution.startTime;
       console.log(`📊 [${callSid}] Tool execution completed: ${execution.toolName} (duration: ${duration}ms)`);
