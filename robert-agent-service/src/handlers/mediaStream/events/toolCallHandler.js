@@ -55,22 +55,15 @@ export class ToolCallHandler {
       this.state,
       getWsRef
     );
-    progressIndicatorService.sendImmediateToolStartAcknowledgment(
-      this.state.callSid,
-      name,
-      this.openaiWs,
-      conversationBehaviorConfig,
-      this.state
-    );
+    progressIndicatorService.setPendingFirstProgress(this.state.callSid, name);
 
-    // Path-based progress: speak short phrases at each step (via sendProgressUpdate = holding response, never sets waitingForUser).
-    // Serialize with response lock so we never overlap response.create (no race). Attempt every callback; send only when lock free.
+    // Path-based progress: enqueue messages; next is sent only after previous response.done (no race with API).
     const progressCallback = conversationBehaviorConfig?.progressIndicators?.enabled && this.openaiWs
       ? (data) => {
           const message = data?.message;
           if (!message || typeof message !== 'string') return;
-          if (!this.state.tryAcquireResponseLock()) return;
-          progressIndicatorService.sendProgressUpdate(this.state.callSid, message, this.openaiWs);
+          progressIndicatorService.enqueueProgressUpdate(this.state.callSid, message);
+          progressIndicatorService.trySendNextProgressUpdate(this.state.callSid, this.openaiWs, conversationBehaviorConfig, this.state);
         }
       : null;
 

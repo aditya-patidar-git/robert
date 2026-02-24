@@ -6,6 +6,12 @@ import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
  * Handles recording consent and memory consent detection from transcriptions.
  * Only runs when we're past language selection (so e.g. "Let's go with English" is not treated as consent).
  */
+/** Strip trailing punctuation so e.g. "Certainly." matches consent patterns */
+function normalizeForConsent(transcript) {
+  if (typeof transcript !== 'string') return '';
+  return transcript.trim().replace(/[.!?,;:]+$/, '').toLowerCase();
+}
+
 export class ConsentHandler {
   constructor(stateManager, memoryManager) {
     this.state = stateManager;
@@ -16,7 +22,7 @@ export class ConsentHandler {
    * Detect consent from transcript
    */
   detectConsent(transcript) {
-    const transcriptLower = transcript.toLowerCase().trim();
+    const transcriptLower = normalizeForConsent(transcript);
     
     const explicitConsentPatterns = [
       /^(yes|yeah|yep|yup|okay|ok|sure|absolutely|definitely|of course|certainly|i consent|i agree|i do|go ahead|please do)$/i,
@@ -89,8 +95,9 @@ export class ConsentHandler {
     const { consentDetected, declineDetected } = this.detectConsent(transcript);
     
     // Reset timeout when user speaks (if not obvious consent/decline)
-    const quickConsentCheck = /^(yes|yeah|yep|yup|okay|ok|sure|absolutely|definitely|of course|certainly|i consent|i agree|i do|go ahead)$/i.test(transcript.toLowerCase().trim());
-    const quickDeclineCheck = /^(no|nope|nah|not|don't|do not|refuse|decline|disagree|i don't|i do not)\s/i.test(transcript.toLowerCase().trim());
+    const normalized = normalizeForConsent(transcript);
+    const quickConsentCheck = /^(yes|yeah|yep|yup|okay|ok|sure|absolutely|definitely|of course|certainly|i consent|i agree|i do|go ahead)$/i.test(normalized);
+    const quickDeclineCheck = /^(no|nope|nah|not|don't|do not|refuse|decline|disagree|i don't|i do not)\s/i.test(normalized);
     
     if (this.state.consentTimeout && transcript && transcript.trim().length > 0 && !quickConsentCheck && !quickDeclineCheck) {
       clearTimeout(this.state.consentTimeout);

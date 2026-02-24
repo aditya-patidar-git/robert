@@ -599,6 +599,12 @@ export class ToolCoordinator {
               console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] transcription.completed`);
               this.state.explicitResponseRequested = true;
               await this.createAudioResponse();
+              // Prevent grace period from creating a duplicate response for this transcript
+              if (this.state.pendingTranscriptionsAfterGrace?.length) {
+                this.state.pendingTranscriptionsAfterGrace = this.state.pendingTranscriptionsAfterGrace.filter(
+                  t => (t?.transcript || '').trim() !== (transcriptText || '').trim()
+                );
+              }
               console.log(`🎯 [${this.state.callSid}] Created response after high-quality transcription (quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
               if (isTransferToHumanRequest(transcriptText)) {
                 try {

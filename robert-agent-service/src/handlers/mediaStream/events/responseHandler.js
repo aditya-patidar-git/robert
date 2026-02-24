@@ -526,6 +526,13 @@ export class ResponseHandler {
       console.error(`   📋 Response object:`, JSON.stringify(event.response, null, 2));
     }
     
+    // Send first progress when model's response.done arrives, even if activeResponseId was already cleared
+    // (e.g. in handleToolCall) so the caller hears progress during long tool runs.
+    const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+    if (conversationBehaviorConfig && progressIndicatorService.hasPendingFirstProgress(this.state.callSid)) {
+      progressIndicatorService.trySendFirstProgressAfterResponseDone(this.state.callSid, this.ws, conversationBehaviorConfig, this.state);
+    }
+
     // Only clear response tracking if this is the active response
     if (responseId === this.state.activeResponseId) {
       // Log audio summary before clearing state
@@ -639,6 +646,8 @@ export class ResponseHandler {
       if (isHoldingResponse) {
         this.state.waitingForUser = false;
         progressIndicatorService.removeHoldingResponse(this.state.callSid, responseId);
+        this.state.releaseResponseLock();
+        progressIndicatorService.trySendNextProgressUpdate(this.state.callSid, this.ws, conversationBehaviorConfig, this.state);
         console.log(`📢 [${this.state.callSid}] Response done (holding message - ack/periodic update) - NOT setting waitingForUser`);
       } else {
         this.state.waitingForUser = !activeToolExecution && !hasPendingRecoveryTool;

@@ -76,7 +76,7 @@ export async function executeNewClientFlow(page, args, sessionState, screenshots
   if (skipNextClick) {
     const labelsList = missingFromArgs.map(p => FIELD_LABELS_SHORT[p] || p).join(', ');
     const message = `I need your ${labelsList}; could you please provide them?`;
-    const instruction = `Collect ONLY these missing details from the caller. Ask the caller to REPEAT each missing detail so you can confirm you have it correct before calling the tool again. Do NOT read back or repeat the caller's personal details on the call (GDPR). When you have confirmed values for all of: ${missingFromArgs.join(', ')}, call booking_step_fill_contact_details ONCE with those parameters.`;
+    const instruction = `Collect ONLY these missing details from the caller. For each detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Do NOT move to the next question until the current one has been repeated and verified. Do NOT read back or repeat the caller's personal details on the call (GDPR). When you have confirmed values for all of: ${missingFromArgs.join(', ')}, call booking_step_fill_contact_details ONCE with those parameters.`;
     console.log(`⚠️ [STEP 7] Missing required fields from args (${missingFromArgs.length}): ${missingFromArgs.join(', ')} — did not click Next`);
     return {
       success: true,

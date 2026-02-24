@@ -149,7 +149,9 @@ AUTOMATIC CONTINUATION: After booking_step_select_booking_options completes succ
 - For existing clients: IMMEDIATELY proceed to booking_step_lookup_contact (Step 8, silent). DO NOT call booking_step_search_client—that was already done before client verification.
 - For new clients: IMMEDIATELY proceed to booking_step_create_new_contact (silent), then booking_step_fill_contact_details.
 
-CRITICAL: booking_step_fill_contact_details checks ALL required fields and returns a full list of missing ones (missingFields). Ask the caller for ALL missing details using the tool's message; collect them iteratively. Then call the tool ONCE with all collected parameters to fill the form; only after that does the flow proceed to the payment page.`,
+CRITICAL: booking_step_fill_contact_details checks ALL required fields and returns a full list of missing ones (missingFields). Ask the caller for ALL missing details using the tool's message; collect them iteratively. After each answer, your next turn MUST be to ask the caller to repeat that same detail to cross-verify before asking for the next one. Then call the tool ONCE with all collected parameters to fill the form; only after that does the flow proceed to the payment page.
+
+For LICENCE TYPE (licenceHeld): Do NOT accept a vague answer (e.g. "motorcycle"). List the exact options and ask the caller to choose one. Valid options (use this exact text in the tool call): Prov licence with valid cat A, Prov licence cat P only, European license with D9 counterpart, Foreign licence, No licence, Full UK car licence, Full UK automatic bike licence, Full UK manual bike licence, Full EU Motorcycle Licence. When the caller picks one, pass that exact option text as licenceHeld.`,
 
   booking_lookup_contact: `You're looking up an existing client contact. This is a silent step - do NOT ask any questions. The system will automatically look up the client and proceed to fill contact details.
 
