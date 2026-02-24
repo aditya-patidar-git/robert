@@ -409,7 +409,7 @@ export const getToolMetrics = async (req, res) => {
     }
 
     // Query tool metrics from database
-    const CallRecord = (await import('../models/callRecord.js')).default;
+    const CallRecord = (await import('../models/CallRecord.js')).default;
     const query = {};
     
     // Apply time range filter
@@ -496,7 +496,7 @@ export const getSIPMetrics = async (req, res) => {
   try {
     const { timeRange = '24h' } = req.query;
     
-    const CallRecord = (await import('../models/callRecord.js')).default;
+    const CallRecord = (await import('../models/CallRecord.js')).default;
     const query = { entryPath: 'SIP' };
     
     // Apply time range filter

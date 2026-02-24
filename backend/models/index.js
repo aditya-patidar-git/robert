@@ -27,7 +27,7 @@ import LanguageVoiceMapping from './LanguageVoiceMapping.js';
 import AuditLog from './AuditLog.js';
 import Alert from './Alert.js';
 import DSARRequest from './DSARRequest.js';
-import CallRecord from './callRecord.js';
+import CallRecord from './CallRecord.js';
 import ComplaintRecord from './ComplaintRecord.js';
 import EscalationLog from './EscalationLog.js';
 import Provenance from './Provenance.js';
