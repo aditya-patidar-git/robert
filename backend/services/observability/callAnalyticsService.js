@@ -3,7 +3,7 @@
  * Handles call-related analytics and database queries
  */
 
-import CallRecord from '../../models/callRecord.js';
+import CallRecord from '../../models/CallRecord.js';
 import ConversationContext from '../../models/ConversationContext.js';
 import loggingService from './loggingService.js';
 

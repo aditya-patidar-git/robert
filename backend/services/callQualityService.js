@@ -4,7 +4,7 @@
  * with time-range filtering and statistical calculations
  */
 
-import CallRecord from '../models/callRecord.js';
+import CallRecord from '../models/CallRecord.js';
 
 class CallQualityService {
   /**

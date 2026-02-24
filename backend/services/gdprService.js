@@ -3,7 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import DSARRequest from '../models/DSARRequest.js';
-import CallRecord from '../models/callRecord.js';
+import CallRecord from '../models/CallRecord.js';
 import AuditLog from '../models/AuditLog.js';
 import emailService from './emailService.js';
 

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import CallRecord from '../models/callRecord.js';
+import CallRecord from '../models/CallRecord.js';
 
 /**
  * Service to periodically clean up stale "In Progress" calls
