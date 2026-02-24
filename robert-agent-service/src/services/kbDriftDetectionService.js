@@ -57,7 +57,7 @@ class KBDriftDetectionService {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           }
         });
-        
+
         // Extract text content from HTML (simple extraction)
         const html = response.data;
         const textContent = this.extractTextFromHTML(html);
@@ -67,18 +67,18 @@ class KBDriftDetectionService {
         console.log(`⚠️ [KB DRIFT] Axios failed for ${url}, using Playwright...`);
         await this.initializeBrowser();
         const page = await this.browser.newPage();
-        
+
         try {
           await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
           const textContent = await page.evaluate(() => {
             // Remove script and style elements
             const scripts = document.querySelectorAll('script, style, noscript');
             scripts.forEach(el => el.remove());
-            
+
             // Get text content
             return document.body.innerText || document.body.textContent || '';
           });
-          
+
           await page.close();
           return textContent;
         } catch (playwrightError) {
@@ -102,10 +102,10 @@ class KBDriftDetectionService {
     let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
     text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
     text = text.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '');
-    
+
     // Remove HTML tags
     text = text.replace(/<[^>]+>/g, ' ');
-    
+
     // Decode HTML entities (basic)
     text = text.replace(/&nbsp;/g, ' ');
     text = text.replace(/&amp;/g, '&');
@@ -113,10 +113,10 @@ class KBDriftDetectionService {
     text = text.replace(/&gt;/g, '>');
     text = text.replace(/&quot;/g, '"');
     text = text.replace(/&#39;/g, "'");
-    
+
     // Normalize whitespace
     text = text.replace(/\s+/g, ' ').trim();
-    
+
     return text;
   }
 
@@ -128,12 +128,12 @@ class KBDriftDetectionService {
   async readKBFile(filePath) {
     try {
       const content = await fs.promises.readFile(filePath, 'utf-8');
-      
+
       // If it's HTML, extract text
       if (path.extname(filePath).toLowerCase() === '.html') {
         return this.extractTextFromHTML(content);
       }
-      
+
       return content;
     } catch (error) {
       console.error(`❌ [KB DRIFT] Error reading KB file ${filePath}:`, error);
@@ -185,16 +185,16 @@ class KBDriftDetectionService {
     try {
       // Read KB file content
       const kbContent = await this.readKBFile(filePath);
-      
+
       // Fetch website content
       const websiteContent = await this.fetchWebsiteContent(websiteUrl);
-      
+
       // Calculate similarity
       const similarity = this.calculateSimilarity(kbContent, websiteContent);
       const difference = 1 - similarity;
-      
+
       const isStale = difference > this.driftThreshold;
-      
+
       return {
         filePath,
         fileName: path.basename(filePath),
@@ -225,23 +225,23 @@ class KBDriftDetectionService {
   async generateDriftReport(fileUrlMappings = []) {
     try {
       console.log('🔍 [KB DRIFT] Starting drift detection...');
-      
+
       await this.initializeBrowser();
-      
+
       const results = [];
       const staleFiles = [];
-      
+
       for (const mapping of fileUrlMappings) {
         const result = await this.detectDriftForFile(mapping.filePath, mapping.url);
         results.push(result);
-        
+
         if (result.isStale) {
           staleFiles.push(result);
         }
       }
-      
+
       await this.cleanupBrowser();
-      
+
       const report = {
         generatedAt: new Date().toISOString(),
         totalFiles: results.length,
@@ -256,15 +256,15 @@ class KBDriftDetectionService {
           similarity: f.similarity
         }))
       };
-      
+
       console.log(`✅ [KB DRIFT] Drift detection completed:`);
       console.log(`   - Total files: ${report.totalFiles}`);
       console.log(`   - Stale files: ${report.staleFiles}`);
-      
+
       if (report.staleFiles > 0) {
         console.warn(`⚠️ [KB DRIFT] Found ${report.staleFiles} stale files that need updating`);
       }
-      
+
       return report;
     } catch (error) {
       await this.cleanupBrowser();
@@ -301,11 +301,11 @@ class KBDriftDetectionService {
       // Strategy 2: Query KB database for source URLs
       try {
         const mongoose = (await import('mongoose')).default;
-        const KnowledgeBase = (await import('../../database/models/KnowledgeBase.js')).default;
-        
+        const KnowledgeBase = (await import('../database/models/KnowledgeBase.js')).default;
+
         // Check if mongoose is connected
         if (mongoose.connection.readyState === 1) {
-          const kbFiles = await KnowledgeBase.find({ 
+          const kbFiles = await KnowledgeBase.find({
             status: 'Active',
             sourceUrl: { $exists: true, $ne: null }
           }).select('filename uploadPath sourceUrl').lean();
@@ -349,7 +349,7 @@ class KBDriftDetectionService {
       if (fs.existsSync(this.sourceDirectory)) {
         const files = fs.readdirSync(this.sourceDirectory, { recursive: true });
         const inferredMappings = [];
-        
+
         for (const file of files) {
           if (file.endsWith('.pdf') || file.endsWith('.html') || file.endsWith('.md')) {
             // Try to infer URL from filename (very basic - can be improved)

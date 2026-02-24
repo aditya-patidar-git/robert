@@ -43,17 +43,17 @@ initializeMetrics();
     console.log('\n' + '='.repeat(80));
     console.log('🚀 ROBERT AGENT SERVICE STARTING');
     console.log('='.repeat(80) + '\n');
-    
+
     await secretsManager.initialize();
     console.log('✅ Secrets Manager initialized successfully');
-    
+
     // Initialize session management service AFTER environment variables are loaded
     // This ensures Twilio Sync can access env vars during initialization
     await sessionManagementService.initialize();
     console.log('✅ Session Management Service initialized');
     const metrics = await sessionManagementService.getSessionMetrics();
     console.log(`📊 Session Management: TTL=${metrics.sessionTTLMinutes}min, Max=${metrics.maxSessions}, Cleanup=${metrics.cleanupIntervalSeconds}s`);
-    
+
     // Validate SIP configuration on startup
     const sipService = (await import('../services/sipService.js')).default;
     const sipValidation = sipService.validateOnStartup();
@@ -130,9 +130,9 @@ app.get('/', async (_, res) => {
   }
   const sipStats = _sipService.getStats();
   const sipValidation = _sipService.validateOnStartup();
-  
-  res.json({ 
-    status: 'ok', 
+
+  res.json({
+    status: 'ok',
     service: 'robert-voice-agent',
     configs: {
       ai: configManager.getAIConfig() ? 'loaded' : 'not loaded',
@@ -167,7 +167,7 @@ app.get('/health', async (req, res) => {
 
     // Determine HTTP status code based on health
     const httpStatus = healthStatus.status === 'unhealthy' ? 503 : 200;
-    
+
     // Support minimal response for load balancer probes
     if (req.query.minimal === 'true') {
       return res.status(httpStatus).json({
@@ -306,13 +306,13 @@ app.get('/api/diagnostic/call/:callSid', async (req, res) => {
     const { callSid } = req.params;
     const audioDiagnosticService = (await import('../services/audioDiagnosticService.js')).default;
     const { conversations } = await import('../shared/state.js');
-    
+
     const conversation = conversations[callSid];
     const diagnostic = audioDiagnosticService.getDiagnostics(callSid);
-    
+
     // Get additional state if available
     const stateManager = conversation?.stateManager || null;
-    
+
     const response = {
       callSid,
       hasConversation: !!conversation,
@@ -336,7 +336,7 @@ app.get('/api/diagnostic/call/:callSid', async (req, res) => {
         isInterrupted: stateManager.isInterrupted || false
       } : null
     };
-    
+
     res.json(response);
   } catch (error) {
     console.error('Error getting diagnostic:', error);
@@ -360,19 +360,19 @@ app.get('/api/test/email-connection', async (req, res) => {
   try {
     const emailService = (await import('../services/emailService.js')).default;
     const result = await emailService.testConnection();
-    
+
     // Mask sensitive information in config
     const maskEmail = (email) => {
       if (!email) return 'Not configured';
       const [local, domain] = email.split('@');
       return local ? `${local.substring(0, 3)}***@${domain}` : `***@${domain}`;
     };
-    
+
     res.json({
       success: result.connected,
       connected: result.connected,
-      message: result.connected 
-        ? 'SMTP connection test successful' 
+      message: result.connected
+        ? 'SMTP connection test successful'
         : `SMTP connection test failed: ${result.error}`,
       error: result.error || null,
       config: {
@@ -420,24 +420,24 @@ app.get('/api/tools/definitions', (req, res) => {
   try {
     const toolDefinitions = toolExecutor.getToolDefinitions();
     const availableTools = toolExecutor.getAvailableTools();
-    
+
     // Map to expected format with descriptions
     const tools = toolDefinitions.map(def => ({
       name: def.name,
       description: def.description || '',
       parameters: def.parameters || {}
     }));
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       tools,
       count: tools.length
     });
   } catch (error) {
     console.error('Error fetching tool definitions:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -446,46 +446,83 @@ app.get('/api/tools/definitions', (req, res) => {
 app.post('/api/tools/browser/execute', async (req, res) => {
   try {
     const { task, args, callContext } = req.body;
-    
+
     if (!task) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Task is required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Task is required'
       });
     }
 
     const browserAgentService = (await import('../services/browser/index.js')).default;
     const result = await browserAgentService.executeTask(task, args || {}, callContext || {});
-    
-    res.json({ 
-      success: true, 
-      result 
+
+    res.json({
+      success: true,
+      result
     });
   } catch (error) {
     console.error('Error executing browser task:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
 
 // API Route - ITM Booking Demo (for testing)
-// Note: This endpoint requires the backend to manage browser instance
-// and pass page data, which is complex over HTTP. 
-// For now, we'll return an error suggesting to use the backend directly
-app.post('/api/booking/itm/demo', async (req, res) => {
+// Now refactored to handle browser management internally for service separation
+app.post('/api/booking/itm/execute', async (req, res) => {
   try {
-    res.status(501).json({ 
-      success: false, 
-      error: 'ITM Booking Demo requires browser instance management. Use backend endpoint directly for testing.' 
+    const { chromium } = await import('playwright');
+    const itmBookingService = (await import('../services/itmBooking/index.js')).default;
+
+    console.log('🚀 [AGENT] Starting ITM booking execution via API...');
+
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    try {
+      const result = await itmBookingService.executeITMBookingDemo(page);
+      res.json({ success: true, result });
+    } finally {
+      await browser.close();
+    }
+  } catch (error) {
+    console.error('❌ [AGENT] Error in ITM booking execution:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API Route - Text Similarity and Content Fetching (for KB Mapping)
+app.post('/api/utils/similarity', async (req, res) => {
+  try {
+    const { url, kbContent } = req.body;
+    const kbDriftDetectionService = (await import('../services/kbDriftDetectionService.js')).default;
+
+    if (!url || !kbContent) {
+      return res.status(400).json({ success: false, error: 'URL and kbContent are required' });
+    }
+
+    const websiteContent = await kbDriftDetectionService.fetchWebsiteContent(url);
+    const similarity = kbDriftDetectionService.calculateSimilarity(kbContent, websiteContent);
+
+    res.json({
+      success: true,
+      similarity,
+      difference: 1 - similarity,
+      isStale: (1 - similarity) > kbDriftDetectionService.driftThreshold,
+      kbContentLength: kbContent.length,
+      websiteContentLength: websiteContent.length
     });
   } catch (error) {
-    console.error('Error in ITM booking demo:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    console.error('❌ [AGENT] Error in similarity check:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -548,7 +585,7 @@ app.get('/call', async (req, res) => {
       return res.status(500).send('Failed to create call');
     }
     pendingCalls.delete(key);
-    
+
     res.send(`Call ${method} created: ${call.sid}`);
   } catch (err) {
     console.error('❌ [DEBUG] Error creating call:', err);
@@ -564,10 +601,10 @@ server.listen(PORT, async () => {
   console.log(`🌐 Tunnel URL: https://${TUNNEL_DOMAIN}`);
   const toolConfigsCount = configManager.getAllToolConfigs().length;
   console.log(`📋 Configs: AI=${configManager.getAIConfig() ? '✅' : '❌'}, Audio=${configManager.getAudioConfig() ? '✅' : '❌'}, Telephony=${configManager.getTelephonyConfig() ? '✅' : '❌'}, Tools=${toolConfigsCount > 0 ? `✅ (${toolConfigsCount})` : '❌'}`);
-  
+
   // Validate all configurations at startup
   validateAndLogStartupConfig();
-  
+
   // Initialize browser agent service (includes pool initialization)
   try {
     await browserAgentService.initialize();
@@ -581,7 +618,7 @@ server.listen(PORT, async () => {
     console.error('❌ Error initializing browser agent service:', error);
     // Don't fail startup if browser pool fails to initialize
   }
-  
+
   // Initialize scheduled jobs
   try {
     scheduler.registerJob(memoryCleanupJob.name, memoryCleanupJob.schedule, memoryCleanupJob.run);
@@ -597,7 +634,7 @@ server.listen(PORT, async () => {
     console.error('❌ Error initializing scheduled jobs:', error);
     // Don't fail startup if jobs fail to initialize
   }
-  
+
   const callTo = CALL_TO || '<CALL_TO>';
   console.log(`CALL NOW → http://localhost:${PORT}/call?to=${callTo} (${VERIFIED_CALLER_ID || 'VERIFIED_CALLER_ID'} → ${callTo})\n`);
 });

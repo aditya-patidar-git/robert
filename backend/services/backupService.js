@@ -19,12 +19,12 @@ import { createGunzip } from 'zlib';
 import { pipeline } from 'stream/promises';
 import * as tar from 'tar';
 import mongoose from 'mongoose';
-import { 
-  modelRegistry, 
-  getAllModelKeys, 
+import {
+  modelRegistry,
+  getAllModelKeys,
   getModelsSortedByPriority,
   isValidModelKey,
-  getDefaultBackupCollections 
+  getDefaultBackupCollections
 } from '../models/index.js';
 import websocketService from './websocketService.js';
 
@@ -227,7 +227,7 @@ class BackupService {
       };
     } catch (error) {
       console.error(`❌ Backup failed: ${error.message}`);
-      
+
       // Emit backup failed event
       websocketService.emitBackupProgress({
         backupId,
@@ -236,7 +236,7 @@ class BackupService {
         message: `Backup failed: ${error.message}`,
         error: { message: error.message }
       });
-      
+
       // Cleanup on failure
       if (fs.existsSync(backupPath)) {
         fs.rmSync(backupPath, { recursive: true, force: true });
@@ -296,9 +296,9 @@ class BackupService {
    */
   serializeDocument(doc) {
     if (!doc) return doc;
-    
+
     const serialized = {};
-    
+
     for (const [key, value] of Object.entries(doc)) {
       if (value === null || value === undefined) {
         serialized[key] = value;
@@ -310,7 +310,7 @@ class BackupService {
         serialized[key] = { $date: value.toISOString() };
       } else if (Array.isArray(value)) {
         // Handle arrays
-        serialized[key] = value.map(item => 
+        serialized[key] = value.map(item =>
           typeof item === 'object' ? this.serializeDocument(item) : item
         );
       } else if (typeof value === 'object') {
@@ -320,7 +320,7 @@ class BackupService {
         serialized[key] = value;
       }
     }
-    
+
     return serialized;
   }
 
@@ -331,9 +331,9 @@ class BackupService {
    */
   deserializeDocument(doc) {
     if (!doc) return doc;
-    
+
     const deserialized = {};
-    
+
     for (const [key, value] of Object.entries(doc)) {
       if (value === null || value === undefined) {
         deserialized[key] = value;
@@ -345,7 +345,7 @@ class BackupService {
         deserialized[key] = new Date(value.$date);
       } else if (Array.isArray(value)) {
         // Handle arrays
-        deserialized[key] = value.map(item => 
+        deserialized[key] = value.map(item =>
           typeof item === 'object' ? this.deserializeDocument(item) : item
         );
       } else if (typeof value === 'object') {
@@ -355,7 +355,7 @@ class BackupService {
         deserialized[key] = value;
       }
     }
-    
+
     return deserialized;
   }
 
@@ -366,19 +366,19 @@ class BackupService {
   async copyAuditLogFiles(destPath) {
     try {
       const sourcePath = path.join(__dirname, '../../audit-logs');
-      
+
       if (!fs.existsSync(sourcePath)) {
         console.log('ℹ️ No audit logs directory found');
         return;
       }
 
       fs.mkdirSync(destPath, { recursive: true });
-      
+
       const files = fs.readdirSync(sourcePath);
       for (const file of files) {
         const sourceFile = path.join(sourcePath, file);
         const destFile = path.join(destPath, file);
-        
+
         if (fs.statSync(sourceFile).isFile()) {
           fs.copyFileSync(sourceFile, destFile);
         }
@@ -396,23 +396,23 @@ class BackupService {
    */
   async copyScreenshots(destPath) {
     try {
-      const sourcePath = process.env.SCREENSHOTS_DIRECTORY || 
-        path.join(__dirname, '../../../robert-agent-service/screenshots');
-      
+      const sourcePath = process.env.SCREENSHOTS_DIRECTORY ||
+        path.join(__dirname, '../screenshots');
+
       if (!fs.existsSync(sourcePath)) {
         console.log('ℹ️ No screenshots directory found');
         return;
       }
 
       fs.mkdirSync(destPath, { recursive: true });
-      
+
       const maxScreenshots = 1000;
       const files = fs.readdirSync(sourcePath).slice(0, maxScreenshots);
-      
+
       for (const file of files) {
         const sourceFile = path.join(sourcePath, file);
         const destFile = path.join(destPath, file);
-        
+
         if (fs.statSync(sourceFile).isFile()) {
           fs.copyFileSync(sourceFile, destFile);
         }
@@ -465,7 +465,7 @@ class BackupService {
       }
 
       const files = fs.readdirSync(this.backupDirectory);
-      
+
       for (const file of files) {
         if (file.endsWith('.tar.gz')) {
           const filePath = path.join(this.backupDirectory, file);
@@ -501,13 +501,13 @@ class BackupService {
   async getBackupDetails(backupId) {
     try {
       const backupFile = path.join(this.backupDirectory, `${backupId}.tar.gz`);
-      
+
       if (!fs.existsSync(backupFile)) {
         throw new Error('Backup not found');
       }
 
       const stats = fs.statSync(backupFile);
-      
+
       // Try to extract and read metadata
       let metadata = null;
       try {
@@ -613,7 +613,7 @@ class BackupService {
         // Get IDs for comparison
         const currentDocs = await model.find({}, { _id: 1 }).lean();
         const currentIds = new Set(currentDocs.map(d => d._id.toString()));
-        
+
         const backupIds = new Set(
           backupData.data[collectionKey]
             .filter(d => d._id)
@@ -735,7 +735,7 @@ class BackupService {
 
         try {
           const restored = await this.restoreCollection(
-            collectionKey, 
+            collectionKey,
             backupData.data[collectionKey],
             mode
           );
@@ -761,7 +761,7 @@ class BackupService {
         backupId,
         status: results.success ? 'completed' : 'completed_with_errors',
         progress: 100,
-        message: results.success 
+        message: results.success
           ? `Restore completed: ${Object.keys(results.restored).length} collections restored`
           : `Restore completed with ${results.errors.length} errors`,
         restoredCount: Object.keys(results.restored).length,
@@ -771,7 +771,7 @@ class BackupService {
       return results;
     } catch (error) {
       console.error(`❌ Restore failed: ${error.message}`);
-      
+
       // Emit restore failed event
       websocketService.emitRestoreProgress({
         backupId,
@@ -808,7 +808,7 @@ class BackupService {
     if (mode === 'overwrite') {
       // Clear collection and insert all documents
       await model.deleteMany({});
-      
+
       if (deserializedDocs.length > 0) {
         if (isSingleton) {
           await model.create(deserializedDocs[0]);
@@ -821,7 +821,7 @@ class BackupService {
       for (const doc of deserializedDocs) {
         const id = doc._id;
         delete doc._id; // Remove _id for update
-        
+
         if (id) {
           await model.findByIdAndUpdate(id, doc, { upsert: true, new: true });
         } else {
@@ -843,9 +843,9 @@ class BackupService {
    */
   deserializeDocumentSync(doc) {
     if (!doc) return doc;
-    
+
     const deserialized = {};
-    
+
     for (const [key, value] of Object.entries(doc)) {
       if (value === null || value === undefined) {
         deserialized[key] = value;
@@ -857,9 +857,9 @@ class BackupService {
         deserialized[key] = new Date(value.$date);
       } else if (Array.isArray(value)) {
         // Handle arrays
-        deserialized[key] = value.map(item => 
-          typeof item === 'object' && item !== null 
-            ? this.deserializeDocumentSync(item) 
+        deserialized[key] = value.map(item =>
+          typeof item === 'object' && item !== null
+            ? this.deserializeDocumentSync(item)
             : item
         );
       } else if (typeof value === 'object') {
@@ -869,7 +869,7 @@ class BackupService {
         deserialized[key] = value;
       }
     }
-    
+
     return deserialized;
   }
 
@@ -881,14 +881,14 @@ class BackupService {
   async deleteBackup(backupId) {
     try {
       const backupFile = path.join(this.backupDirectory, `${backupId}.tar.gz`);
-      
+
       if (!fs.existsSync(backupFile)) {
         throw new Error('Backup not found');
       }
 
       fs.unlinkSync(backupFile);
       console.log(`✅ Backup deleted: ${backupId}`);
-      
+
       return true;
     } catch (error) {
       console.error('Error deleting backup:', error);
@@ -904,7 +904,7 @@ class BackupService {
   async validateBackup(backupId) {
     try {
       const backupFile = path.join(this.backupDirectory, `${backupId}.tar.gz`);
-      
+
       if (!fs.existsSync(backupFile)) {
         return {
           valid: false,
@@ -913,7 +913,7 @@ class BackupService {
       }
 
       const stats = fs.statSync(backupFile);
-      
+
       if (stats.size === 0) {
         return {
           valid: false,
@@ -924,7 +924,7 @@ class BackupService {
       // Try to extract and validate data
       try {
         const backupData = await this.extractBackupData(backupId);
-        
+
         if (!backupData.metadata || !backupData.data) {
           return {
             valid: false,
@@ -960,7 +960,7 @@ class BackupService {
    */
   getAvailableCollections() {
     const collections = {};
-    
+
     for (const [key, info] of Object.entries(modelRegistry)) {
       collections[key] = {
         displayName: info.displayName,
@@ -969,7 +969,7 @@ class BackupService {
         hasExcludedFields: info.excludeFields.length > 0
       };
     }
-    
+
     return collections;
   }
 

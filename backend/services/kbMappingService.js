@@ -13,9 +13,9 @@ const __dirname = dirname(__filename);
  */
 class KBMappingService {
   constructor() {
-    // Default mapping file location (can be overridden)
-    this.mappingFilePath = process.env.KB_MAPPING_FILE_PATH || 
-      path.join(__dirname, '../../robert-agent-service/config/kb-file-mappings.json');
+    // Default mapping file location (configurable via environment variable)
+    this.mappingFilePath = process.env.KB_MAPPING_FILE_PATH ||
+      path.join(__dirname, '../config/kb-file-mappings.json');
   }
 
   /**
@@ -60,7 +60,7 @@ class KBMappingService {
   async getMappingByFileId(fileId) {
     try {
       const kbFile = await KnowledgeBase.findById(fileId).select('filename uploadPath sourceUrl lastDriftCheck').lean();
-      
+
       if (!kbFile || !kbFile.sourceUrl) {
         return null;
       }
@@ -180,7 +180,7 @@ class KBMappingService {
         try {
           // Find KB file by filename or title
           let kbFile = null;
-          
+
           if (mapping.fileId) {
             kbFile = await KnowledgeBase.findById(mapping.fileId);
           } else if (mapping.filename) {
@@ -250,7 +250,7 @@ class KBMappingService {
   async syncWithDatabase() {
     try {
       const mappings = await this.getAllMappings();
-      
+
       const mappingData = {
         version: '1.0',
         lastUpdated: new Date().toISOString(),
@@ -348,11 +348,11 @@ class KBMappingService {
   async validateUrl(url) {
     try {
       new URL(url);
-      
+
       // Try to fetch URL to verify it's accessible
       const axios = (await import('axios')).default;
       const response = await axios.head(url, { timeout: 5000 });
-      
+
       return {
         valid: true,
         statusCode: response.status
@@ -374,7 +374,7 @@ class KBMappingService {
   async testMapping(fileId) {
     try {
       const mapping = await this.getMappingByFileId(fileId);
-      
+
       if (!mapping) {
         throw new Error('Mapping not found');
       }
@@ -384,18 +384,21 @@ class KBMappingService {
         throw new Error('KB file not found');
       }
 
-      // Fetch website content
-      const kbDriftDetectionService = (await import('../../robert-agent-service/src/services/kbDriftDetectionService.js')).default;
-      const websiteContent = await kbDriftDetectionService.fetchWebsiteContent(mapping.url);
+      // Fetch similarity analysis from agent service via API
+      const AGENT_SERVICE_URL = process.env.AGENT_SERVICE_URL || 'http://localhost:3002';
+      const axios = (await import('axios')).default;
 
-      // Calculate similarity
-      const similarity = kbDriftDetectionService.calculateSimilarity(
-        kbFile.content,
-        websiteContent
-      );
+      const response = await axios.post(`${AGENT_SERVICE_URL}/api/utils/similarity`, {
+        url: mapping.url,
+        kbContent: kbFile.content
+      }, { timeout: 30000 });
 
-      const difference = 1 - similarity;
-      const isStale = difference > kbDriftDetectionService.driftThreshold;
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.error || 'Failed to test mapping via agent API');
+      }
+
+      const { similarity, difference, isStale } = response.data;
+      const driftThreshold = response.data.driftThreshold || 0.2;
 
       return {
         success: true,
