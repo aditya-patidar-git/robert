@@ -11,8 +11,8 @@ class ITMBookingService {
   constructor() {
     this.crmCredentials = {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
-      loginName: process.env.CRM_LOGIN || 'universalmct',
-      username: process.env.CRM_USERNAME || 'auagent',
+      loginName: process.env.CRM_LOGIN || process.env.CRM_LOGIN_NAME,
+      username: process.env.CRM_USERNAME,
       password: process.env.CRM_PASSWORD,
       availabilityUrl: 'https://www.bookcbtnow.com/incontact/public/gateway.aspx?func_id=79A2A98E7C95DA57&obc_id=C9170432CA66685F'
     };
@@ -106,9 +106,9 @@ class ITMBookingService {
       workflowType: 'existing',
       customerMobile: testMobile,
       customerEmail: testEmail,
-      preferredDate: process.env.TEST_PREFERRED_DATE || '2026-03-29',
-      preferredTime: process.env.TEST_PREFERRED_TIME || '17:00',
-      location: process.env.TEST_LOCATION || 'Croydon, South London, CR0',
+      preferredDate: process.env.TEST_PREFERRED_DATE,
+      preferredTime: process.env.TEST_PREFERRED_TIME,
+      location: process.env.TEST_LOCATION,
       // ITM-specific preferences
       bikeType: process.env.TEST_BIKE_TYPE || null,
       // Terms acceptance (convert string to boolean)

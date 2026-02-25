@@ -114,7 +114,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
     if (!stateManager) {
       return 'no stateManager';
     }
-    
+
     const reasons = [];
     if (stateManager.isResponding) {
       reasons.push('isResponding=true');
@@ -122,7 +122,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
     if (stateManager.activeResponseId !== null) {
       reasons.push(`activeResponseId=${stateManager.activeResponseId}`);
     }
-    
+
     return reasons.length > 0 ? reasons.join(', ') : 'unknown';
   }
 
@@ -136,7 +136,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
   async submitResult(callId, toolCallId, result, options = {}) {
     // Get WebSocket from stored reference or state manager as fallback
     const openaiWs = this.openaiWs || this.stateManager?.openaiWs;
-    
+
     if (!openaiWs || openaiWs.readyState !== 1) {
       const wsState = openaiWs ? openaiWs.readyState : 'null';
       const callClosed = this.stateManager?.isClosed ? ' (call closed)' : '';
@@ -150,7 +150,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
     }
 
     const output = JSON.stringify(result);
-    
+
     try {
       openaiWs.send(JSON.stringify({
         type: 'conversation.item.create',
@@ -178,7 +178,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
   async triggerResponse(callId, options = {}) {
     // Get WebSocket from stored reference or state manager as fallback
     const openaiWs = this.openaiWs || this.stateManager?.openaiWs;
-    
+
     if (!openaiWs || openaiWs.readyState !== 1) {
       console.warn(`⚠️ [${callId}] Cannot trigger response - WebSocket not ready (state: ${openaiWs?.readyState || 'null'})`);
       return;
@@ -189,53 +189,71 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       return;
     }
 
+    const toolResult = options?.toolResult;
+    const isPriorityResult = toolResult && (
+      toolResult.requiresConfirmation === true ||
+      toolResult.requiresPreferences === true ||
+      toolResult.requiresTermsBeforeSend === true ||
+      toolResult.requiresPaymentMethod === true ||
+      (Array.isArray(toolResult.missingFields) && toolResult.missingFields.length > 0)
+    );
+
+    if (!isPriorityResult) {
+      await progressIndicatorService.waitForAcknowledgmentCompletion(callId, 5000);
+    }
+
     // Retry configuration
     const MAX_RETRIES = 5;
     const RETRY_DELAY_MS = 150; // Wait 150ms between retries
     const MAX_WAIT_TIME_MS = 1000; // Maximum total wait time: 5 retries * 150ms = 750ms (within 1s limit)
-    
+
     let retryCount = 0;
     let lockAcquired = false;
-    
+
     // Retry loop to acquire lock
     while (retryCount < MAX_RETRIES && !lockAcquired) {
       if (this.stateManager && this.stateManager.tryAcquireResponseLock()) {
         lockAcquired = true;
         break;
       }
-      
+
       // Log why lock acquisition failed
       const lockReason = this._getLockUnavailableReason(this.stateManager);
-      
+
       if (retryCount === 0) {
         // First attempt failed - log with details
         console.warn(`⚠️ [${callId}] Response lock not available (attempt ${retryCount + 1}/${MAX_RETRIES}): ${lockReason}. Retrying...`);
       }
-      
+
       retryCount++;
-      
+
       // Wait before retrying (except on last attempt)
       if (retryCount < MAX_RETRIES) {
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
       }
     }
-    
+
     // Check if we successfully acquired the lock
     if (!lockAcquired) {
       const finalLockReason = this._getLockUnavailableReason(this.stateManager);
-      
-      console.error(`❌ [${callId}] Failed to acquire response lock after ${MAX_RETRIES} attempts. Final state: ${finalLockReason}. Agent will wait for user input instead of automatically continuing.`);
-      console.error(`   This may cause the agent to appear unresponsive. Tool: ${options?.toolName || 'unknown'}`);
-      
-      // CRITICAL RACE CONDITION FIX: Clear completion flag if lock acquisition failed
-      // Prevents flag from being stuck if response creation fails
+
+      console.error(`❌ [${callId}] Failed to acquire response lock after ${MAX_RETRIES} attempts. Final state: ${finalLockReason}.`);
+      console.warn(`⚠️ [${callId}] Force-releasing stuck lock to ensure tool result is spoken. Tool: ${options?.toolName || 'unknown'}`);
+
       if (this.stateManager) {
-        this.stateManager.clearToolExecutionCompleting();
-        console.log(`🔓 [${callId}] Cleared toolExecutionCompleting flag after lock acquisition failure`);
+        this.stateManager.releaseResponseLock();
+        lockAcquired = this.stateManager.tryAcquireResponseLock();
+
+        if (!lockAcquired) {
+          console.error(`❌ [${callId}] Force-release failed. Agent will wait for user input instead of automatically continuing.`);
+          this.stateManager.clearToolExecutionCompleting();
+          return;
+        }
+      } else {
+        return;
       }
-      return;
     }
-    
+
     // Lock acquired successfully - proceed with response creation
     try {
       const callSid = callId;
@@ -246,12 +264,12 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       if ((options?.toolName && options.toolName.startsWith('booking_step_')) || conversations[callSid]?.workflowContext === 'booking') {
         workflowPhase = workflowPhase || 'booking_start';
       }
-      
+
       // Get booking session info if available
       let courseType = null;
       let workflowType = null;
       let currentStep = null;
-      
+
       if (callSid && conversations[callSid]?.bookingSession) {
         const bookingSession = conversations[callSid].bookingSession;
         courseType = bookingSession.courseType;
@@ -293,7 +311,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         currentStep,
         activeTool: null // Tool just completed
       });
-      
+
       // CRITICAL FIX: For client_verification specifically, handle both success and incomplete cases
       const toolName = options?.toolName;
       const toolResult = options?.toolResult;
@@ -366,33 +384,33 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
               telephoneNumber: 'telephone number'
             };
             const missingFieldNames = toolResult.missingFields?.map(f => fieldNames[f] || f).join(', ') || 'missing fields';
-            
+
             return `CRITICAL: Client verification is INCOMPLETE. You have collected: ${toolResult.verifiedFields?.join(', ') || 'none'}. You MUST immediately ask for the next missing field: ${missingFieldNames}. Use the exact prompt: "${toolResult.message}". Then call client_verification again with only the field(s) the caller has just said—use fullName and postcode from the previous tool result if already verified, and add ONLY the new value the caller spoke. Do NOT pass postcode or telephoneNumber from stored clientDetails—only use what the caller actually said. If the caller provides multiple fields in one response, extract them and call the tool with those caller-spoken values only. Do NOT wait for the user to ask "are you still there". Continue the verification flow immediately.`;
           })();
-          
-          responseInstructions = responseInstructions 
+
+          responseInstructions = responseInstructions
             ? `${continueInstruction}\n\n${responseInstructions}`
             : continueInstruction;
           console.log(`🎯 [${callId}] Client verification incomplete - instructing to ask for missing fields: ${toolResult.missingFields?.join(', ')}${toolResult.requiresImmediateContinuation ? ' (requires immediate continuation)' : ''}`);
         } else if (toolResult && toolResult.verified) {
           // Verification successful - agent must confirm and ask for explicit yes/no before proceeding
           const nextStepTool = toolResult.nextStepTool || 'booking_step_select_session';
-          
+
           // Check if we're in a cancellation workflow
-          const isCancellationWorkflow = (options?.toolName && options.toolName.startsWith('cancellation_step_')) || 
-                                         conversations[callSid]?.workflowContext === 'cancellation' ||
-                                         workflowPhase === 'cancellation';
-          
+          const isCancellationWorkflow = (options?.toolName && options.toolName.startsWith('cancellation_step_')) ||
+            conversations[callSid]?.workflowContext === 'cancellation' ||
+            workflowPhase === 'cancellation';
+
           // Use appropriate fallback message based on workflow type
           const fallbackMessage = isCancellationWorkflow
             ? 'You are successfully verified. Would you like to proceed with cancelling your booking? Please say yes or no.'
             : 'You are successfully verified. Would you like to proceed with your booking? Please say yes or no.';
-          
+
           if (toolResult.requiresExplicitConfirmation) {
             // New behavior: Ask for explicit confirmation before proceeding
             const confirmationInstruction = `CRITICAL: You MUST say EXACTLY: "${toolResult.message || fallbackMessage}" Then WAIT for the caller to respond with "yes" or "no". DO NOT proceed to the next step until the caller explicitly confirms with "yes". If the caller says "no", ask how you can help them instead. Only after the caller says "yes", proceed to call the next step tool: ${nextStepTool}.`;
-            
-            responseInstructions = responseInstructions 
+
+            responseInstructions = responseInstructions
               ? `${confirmationInstruction}\n\n${responseInstructions}`
               : confirmationInstruction;
             console.log(`🎯 [${callId}] Client verification successful - instructing explicit confirmation before proceeding: ${nextStepTool}`);
@@ -402,8 +420,8 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
               ? 'Now let me continue with your cancellation.'
               : 'Now let me continue with your booking.';
             const immediateResponseInstruction = `CRITICAL: You MUST speak immediately without waiting. Start with EXACTLY: "You are successfully verified." Then IMMEDIATELY in the SAME response, continue with: "${continuationMessage}" Then IMMEDIATELY call the next step tool: ${nextStepTool} WITHOUT waiting for any user response or prompt. Do NOT pause after saying "You are successfully verified" - immediately continue and call the tool in the same response. Do NOT wait for prompts or user input. The verification is complete - proceed automatically to the next step.`;
-            
-            responseInstructions = responseInstructions 
+
+            responseInstructions = responseInstructions
               ? `${immediateResponseInstruction}\n\n${responseInstructions}`
               : immediateResponseInstruction;
             console.log(`🎯 [${callId}] Client verification successful - instructing immediate confirmation and next step: ${nextStepTool}${toolResult.requiresImmediateNextStep ? ' (requires immediate next step)' : ''}`);
@@ -706,7 +724,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           console.log(`🎯 [${callId}] Template page opened - say-only then inject select_template`);
         }
       }
-      
+
       if (retryCount > 0) {
         console.log(`✅ [${callId}] Successfully acquired response lock after ${retryCount} retry attempt(s)`);
       }
@@ -721,17 +739,17 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           tool_choice: toolChoiceForResponse
         }
       }));
-      
+
       // Small delay to ensure session update is processed
       await new Promise(resolve => setTimeout(resolve, 150));
-      
+
       // Track when selectBookingOptions completes successfully to delay periodic updates
       if (toolName === 'booking_step_select_booking_options' && toolResult?.success === true) {
         // Estimate acknowledgment end time based on response instructions
         const acknowledgmentText = responseInstructions || 'Booking options selected successfully';
         const estimatedDuration = this.estimateAcknowledgmentDuration(acknowledgmentText);
         const acknowledgmentEndTime = Date.now() + estimatedDuration;
-        
+
         // Store in conversation state for delayed periodic update start
         if (!conversations[callSid]) {
           conversations[callSid] = {};
@@ -742,7 +760,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         };
         console.log(`📊 [${callId}] Bike type questions completed - acknowledgment will end at ${new Date(acknowledgmentEndTime).toISOString()} (estimated ${estimatedDuration}ms)`);
       }
-      
+
       // Step 2: Create response with contextual instructions
       const responseCreatePayload = {
         type: 'response.create',
@@ -750,7 +768,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           modalities: ['audio', 'text']
         }
       };
-      
+
       // PHASE 1: Include contextual instructions to ensure automatic continuation
       if (responseInstructions) {
         responseCreatePayload.response.instructions = responseInstructions;
@@ -765,14 +783,14 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
       openaiWs.send(JSON.stringify(responseCreatePayload));
       console.log(`✅ [${callId}] Response triggered after tool completion with contextual instructions`);
-      
+
       // CRITICAL RACE CONDITION FIX: Clear completion flag after response is created
       // This allows normal operation to resume
       if (this.stateManager) {
         this.stateManager.clearToolExecutionCompleting();
         console.log(`🔓 [${callId}] Cleared toolExecutionCompleting flag after response creation`);
       }
-      
+
       // Step 3: Re-enable tools after delay
       setTimeout(() => {
         if (openaiWs && openaiWs.readyState === 1) {
@@ -784,7 +802,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           }));
         }
       }, 3000);
-      
+
     } catch (error) {
       console.error(`❌ [${callId}] Error triggering response:`, error);
       // Release lock and clear completion flag on error

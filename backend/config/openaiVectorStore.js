@@ -1,5 +1,6 @@
-const DEFAULT_VECTOR_STORE_ID = 'vs_68b70556ca1081918dd5dbe56042a419';
-const DEFAULT_VECTOR_STORE_NAME = 'UNIVERSALAIDATABASE';
-
-export const VECTOR_STORE_ID = process.env.OPENAI_VECTOR_STORE_ID || DEFAULT_VECTOR_STORE_ID;
-export const VECTOR_STORE_NAME = process.env.OPENAI_VECTOR_STORE_NAME || DEFAULT_VECTOR_STORE_NAME;
+/**
+ * OpenAI vector store configuration. No hardcoded defaults - set OPENAI_VECTOR_STORE_ID
+ * and OPENAI_VECTOR_STORE_NAME in environment.
+ */
+export const VECTOR_STORE_ID = process.env.OPENAI_VECTOR_STORE_ID || null;
+export const VECTOR_STORE_NAME = process.env.OPENAI_VECTOR_STORE_NAME || null;

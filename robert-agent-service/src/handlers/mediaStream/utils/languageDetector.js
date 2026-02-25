@@ -54,19 +54,21 @@ export class LanguageDetector {
       
       // Get updated config with new language (respects database config priority)
       const config = configManager.getConfigForNumber(this.state.phoneNumber, detectedLanguageCode);
+      // ISO-639-1 for transcription API (e.g. en-GB -> en)
+      const iso6391 = detectedLanguageCode.length === 2 ? detectedLanguageCode : (detectedLanguageCode.split('-')[0] || 'en');
       
-      // Update OpenAI session with new language and voice (use config.voice to respect database settings)
-      // Use robust send method with connection manager support
+      // Update OpenAI session with new language, voice, and input transcription language (keeps transcripts in selected language)
       this.state.sendToOpenAI({
         type: 'session.update',
         session: {
           modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
           voice: config.voice.id,
-          instructions: config.instructions
+          instructions: config.instructions,
+          input_audio_transcription: { model: 'gpt-4o-transcribe', language: iso6391 }
         }
       }, { priority: 'high' });
       
-      console.log(`🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${config.voice.id}`);
+      console.log(`🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${config.voice.id}, transcription language: ${iso6391}`);
       console.log(`✅ [${this.state.callSid}] Language preference marked as selected - can proceed to business questions`);
       return true;
     } catch (error) {
