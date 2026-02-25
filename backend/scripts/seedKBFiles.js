@@ -4,6 +4,12 @@ import KnowledgeBase from '../models/KnowledgeBase.js';
 
 dotenv.config();
 
+const vectorStoreId = process.env.OPENAI_VECTOR_STORE_ID;
+if (!vectorStoreId || vectorStoreId.trim() === '') {
+  console.error('❌ OPENAI_VECTOR_STORE_ID is required for seeding. Set it in .env');
+  process.exit(1);
+}
+
 const sampleKBFiles = [
   {
     title: "CBT Policy Document",
@@ -17,7 +23,7 @@ const sampleKBFiles = [
     tags: ["Policy", "CBT", "Training"],
     lastSynced: new Date(),
     openaiFileId: "file-cbt-policy-2025",
-    vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || "vs_68b70556ca1081918dd5dbe56042a419",
+    vectorStoreId,
     createdBy: "admin"
   },
   {
@@ -32,7 +38,7 @@ const sampleKBFiles = [
     tags: ["T&Cs", "Booking", "Policy"],
     lastSynced: new Date(),
     openaiFileId: "file-booking-tcs-2025",
-    vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || "vs_68b70556ca1081918dd5dbe56042a419",
+    vectorStoreId,
     createdBy: "admin"
   },
   {
@@ -47,7 +53,7 @@ const sampleKBFiles = [
     tags: ["Pricing", "Costs", "Fees"],
     lastSynced: new Date(),
     openaiFileId: "file-pricing-2025",
-    vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || "vs_68b70556ca1081918dd5dbe56042a419",
+    vectorStoreId,
     createdBy: "admin"
   },
   {
@@ -62,7 +68,7 @@ const sampleKBFiles = [
     tags: ["Locations", "Centres", "Contact"],
     lastSynced: new Date(),
     openaiFileId: "file-locations-2025",
-    vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || "vs_68b70556ca1081918dd5dbe56042a419",
+    vectorStoreId,
     createdBy: "admin"
   },
   {
@@ -77,7 +83,7 @@ const sampleKBFiles = [
     tags: ["Safety", "Equipment", "Requirements"],
     lastSynced: new Date(),
     openaiFileId: "file-safety-equipment-2025",
-    vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || "vs_68b70556ca1081918dd5dbe56042a419",
+    vectorStoreId,
     createdBy: "admin"
   },
   {
@@ -92,7 +98,7 @@ const sampleKBFiles = [
     tags: ["Theory", "Test", "DVSA"],
     lastSynced: new Date(),
     openaiFileId: "file-theory-test-2025",
-    vectorStoreId: process.env.OPENAI_VECTOR_STORE_ID || "vs_68b70556ca1081918dd5dbe56042a419",
+    vectorStoreId,
     createdBy: "admin"
   }
 ];

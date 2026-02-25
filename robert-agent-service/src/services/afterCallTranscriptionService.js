@@ -16,18 +16,25 @@ function getOpenAIClient() {
 
 /**
  * Fetch recording audio buffer from Twilio URL.
+ * Requires TWILIO_SID and TWILIO_AUTH_TOKEN to be set (no empty fallbacks).
  * @param {string} recordingUrl
  * @returns {Promise<Buffer|null>}
  */
 async function fetchRecordingBuffer(recordingUrl) {
+  const sid = process.env.TWILIO_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !authToken || String(sid).trim() === '' || String(authToken).trim() === '') {
+    console.warn('[afterCallTranscription] TWILIO_SID and TWILIO_AUTH_TOKEN required to fetch recording');
+    return null;
+  }
   let url = recordingUrl.endsWith('.mp3') ? recordingUrl : `${recordingUrl}.mp3`;
   if (url && url.startsWith('/')) {
     url = 'https://api.twilio.com' + url;
   }
   const response = await axios.get(url, {
     auth: {
-      username: process.env.TWILIO_SID || '',
-      password: process.env.TWILIO_AUTH_TOKEN || ''
+      username: sid,
+      password: authToken
     },
     responseType: 'arraybuffer',
     timeout: 60000,
@@ -62,6 +69,10 @@ export async function transcribeRecording(callSid) {
   }
   if (!buffer || buffer.length === 0) return null;
 
+  // Use call's selected language for transcription (ISO-639-1) so transcript matches language used on call
+  const recordLang = record.language || 'en-GB';
+  const iso6391 = recordLang.length === 2 ? recordLang : (recordLang.split('-')[0] || 'en');
+
   const model = audioConfig.transcriptionModel || 'whisper-1';
   const tmpDir = os.tmpdir();
   const tmpPath = path.join(tmpDir, `rec-${callSid}-${Date.now()}.mp3`);
@@ -72,7 +83,8 @@ export async function transcribeRecording(callSid) {
       const transcription = await openai.audio.transcriptions.create({
         file: fs.createReadStream(tmpPath),
         model: 'whisper-1',
-        response_format: 'verbose_json'
+        response_format: 'verbose_json',
+        language: iso6391
       });
       const segments = (transcription.segments || []).map((seg) => ({
         role: 'user',
@@ -92,7 +104,8 @@ export async function transcribeRecording(callSid) {
     }
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tmpPath),
-      model: 'gpt-4o-transcribe'
+      model: 'gpt-4o-transcribe',
+      language: iso6391
     });
     const text = (transcription && transcription.text) ? String(transcription.text).trim() : '';
     if (!text) return [];

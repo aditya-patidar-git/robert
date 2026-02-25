@@ -22,7 +22,11 @@ async function testOpenAI() {
     console.log(`✅ Vector stores API working, found ${vectorStores.data.length} stores`);
 
     // Test 3: Check specific vector store
-    const targetStoreId = process.env.OPENAI_VECTOR_STORE_ID || 'vs_68b70556ca1081918dd5dbe56042a419';
+    const targetStoreId = process.env.OPENAI_VECTOR_STORE_ID;
+    if (!targetStoreId) {
+      console.error('OPENAI_VECTOR_STORE_ID is required. Set it in .env');
+      process.exit(1);
+    }
     const targetStore = vectorStores.data.find(store => store.id === targetStoreId);
     
     if (targetStore) {

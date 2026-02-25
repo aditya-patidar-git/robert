@@ -60,12 +60,25 @@ export class ToolCallHandler {
     // Path-based progress: enqueue messages; next is sent only after previous response.done (no race with API).
     const progressCallback = conversationBehaviorConfig?.progressIndicators?.enabled && this.openaiWs
       ? (data) => {
-          const message = data?.message;
+          const message = (typeof data === 'object' && data !== null && data.message != null)
+            ? data.message
+            : (typeof data === 'string' ? data : null);
           if (!message || typeof message !== 'string') return;
-          progressIndicatorService.enqueueProgressUpdate(this.state.callSid, message);
+          progressIndicatorService.clearProgressCallbackFallback(this.state.callSid);
+          if (!progressIndicatorService.throttleProgressCallback(this.state.callSid, data)) return;
+          progressIndicatorService.enqueueProgressUpdate(this.state.callSid, data);
           progressIndicatorService.trySendNextProgressUpdate(this.state.callSid, this.openaiWs, conversationBehaviorConfig, this.state);
         }
       : null;
+
+    if (progressCallback) {
+      progressIndicatorService.startProgressCallbackFallback(
+        this.state.callSid,
+        () => (this.state.isClosed ? null : this.openaiWs),
+        conversationBehaviorConfig,
+        this.state
+      );
+    }
 
     // Execute tool using unified service
     const executionResult = await toolExecutionService.executeTool({

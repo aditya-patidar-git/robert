@@ -14,8 +14,8 @@ class BrowserAgentService {
   constructor() {
     this.crmCredentials = {
       loginUrl: 'https://takeabyte.co.uk/InContact/Account/Login',
-      loginName: process.env.CRM_LOGIN || 'universalmct',
-      username: process.env.CRM_USERNAME || 'auagent',
+      loginName: process.env.CRM_LOGIN || process.env.CRM_LOGIN_NAME,
+      username: process.env.CRM_USERNAME,
       password: process.env.CRM_PASSWORD,
       userAgent: 'auagent'
     };

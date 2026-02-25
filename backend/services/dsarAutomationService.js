@@ -136,7 +136,7 @@ class DSARAutomationService {
       }
 
       await this.emailTransporter.sendMail({
-        from: process.env.SMTP_FROM || 'noreply@robert-ai.com',
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
         to: email,
         subject,
         text,

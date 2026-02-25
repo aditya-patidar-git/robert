@@ -217,7 +217,7 @@ class EmailService {
 
     // Prepare mail options
     const mailOptions = {
-      from: from || process.env.SMTP_FROM || 'robert@universalmct.co.uk',
+      from: from || process.env.SMTP_FROM,
       to: recipients.join(', '),
       subject,
       text,

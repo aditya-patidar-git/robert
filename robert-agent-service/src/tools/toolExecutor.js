@@ -262,6 +262,18 @@ class ToolExecutor {
       normalized.customerMobile = normalized.phoneOrEmail;
       delete normalized.phoneOrEmail;
     }
+    // Same tools: model sometimes sends "contact" (phone or email) instead of customerMobile/customerEmail
+    if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
+        normalized.contact != null && normalized.contact !== '') {
+      const contact = String(normalized.contact).trim();
+      if (contact.includes('@') && (normalized.customerEmail == null || normalized.customerEmail === '')) {
+        normalized.customerEmail = contact;
+      } else if (normalized.customerMobile == null || normalized.customerMobile === '') {
+        // Treat as phone: strip to digits for UK format (no spaces)
+        normalized.customerMobile = contact.replace(/\D/g, '') || contact;
+      }
+      delete normalized.contact;
+    }
     // booking_step_fill_contact_details: model often sends name/email/mobile; schema expects customerName/customerEmail/customerMobile
     if (toolName === 'booking_step_fill_contact_details') {
       if (normalized.name != null && (normalized.customerName == null || normalized.customerName === '')) {

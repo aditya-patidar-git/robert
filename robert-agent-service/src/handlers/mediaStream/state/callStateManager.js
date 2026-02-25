@@ -14,7 +14,7 @@ export class CallStateManager {
     this.isClosed = false;
     this.accepting = true;
     this.openaiConnectionManager = null; // Reference to WebSocketConnectionManager for robust sending
-    
+
     // Constants
     this.MAX_CALL_DURATION_MS = 3600000; // 1 hour max
     this.MAX_ERROR_COUNT = 5;
@@ -26,7 +26,7 @@ export class CallStateManager {
     this.DUPLICATE_CALL_WINDOW_MS = 3000; // 3 seconds
     this.WORKFLOW_TIMEOUT_MS = 900000; // 15 minutes
     this.CONTINUATION_TIMEOUT_MS = 300000; // 5 minutes
-    
+
     // Error and timing tracking
     this.errorCount = 0;
     this.audioChunkCount = 0;  // Keep for backward compatibility
@@ -34,7 +34,7 @@ export class CallStateManager {
     this.outboundAudioChunkCount = 0;  // Track outbound audio separately
     this.audioChunkWarningLogged = false;
     this.audioDeltaLogged = false;
-    
+
     // Outbound audio buffering and pacing
     this.outboundAudioBuffer = null;  // Buffer for pacing audio chunks (Buffer object)
     this.lastOutboundSendTime = 0;  // Last time we sent an audio frame
@@ -45,12 +45,13 @@ export class CallStateManager {
     this.pickupLatencyStartTime = null;  // Set on start event for pickup→first-greeting timing
     this.startTimeout = null;
     this.durationTimer = null;
-    
+
     // Response state
     this.isResponding = false;
     this.waitingForUser = true;
     this.lastUserTranscript = null;
-    
+    this.responseLockTimer = null;
+
     // Response tracking for barge-in
     this.activeResponseId = null;
     this.responseItemId = null;
@@ -75,11 +76,11 @@ export class CallStateManager {
     this.userSpeechStartedTime = 0;
     this.pendingBargeInCheck = false; // Flag to track when user is speaking but we're waiting for transcription to check for "stop"
     this.interruptionTimeout = null; // Timeout to clear isInterrupted if transcriptions don't arrive
-    
+
     // Initial greeting tracking
     this.hasInitialGreetingBeenSent = false;
     this.hasInitialGreetingCompleted = false;
-    
+
     // Recording consent tracking
     this.recordingConsentState = {
       requested: false,
@@ -88,7 +89,7 @@ export class CallStateManager {
       respondedAt: null
     };
     this.consentTimeout = null;
-    
+
     // Language preference tracking
     this.waitingForLanguage = false;
     this.languagePreferenceState = {
@@ -98,7 +99,7 @@ export class CallStateManager {
       askedAt: null,
       selectedAt: null
     };
-    
+
     // Tool execution tracking
     this.pendingToolCalls = new Map(); // call_id -> { name, arguments, startTime }
     this.recentToolCalls = new Map(); // callSid -> [{ name, parameters, timestamp }]
@@ -107,20 +108,20 @@ export class CallStateManager {
     this.expectedContinuations = new Map(); // toolName -> { previousCallId, structuredFlags, timestamp, callSid }
     this.toolExecutionCompleting = false; // Flag to prevent periodic updates during tool completion (race condition fix)
     this.toolExecutionCompletingTimeout = null; // Safety timeout to auto-clear stuck flag
-    
+
     // VAD Calibration tracking
     this.calibrationSamples = [];
     this.calibrationStartTime = null;
     this.calibrationComplete = false;
     this.calibratedThreshold = null;
-    
+
     // Speech Continuation Grace Period tracking
     this.speechStoppedTime = 0;
     this.speechContinuationGraceTimer = null;
     this.speechResumedDuringGrace = false;
     this.gracePeriodExtensionCount = 0;
     this.pendingTranscriptionsAfterGrace = [];
-    
+
     // Audio quality metrics
     this.audioMetrics = {
       incomingTimestamps: [],
@@ -132,11 +133,11 @@ export class CallStateManager {
       lastOutgoingTime: null,
       lastResponseTime: null
     };
-    
+
     // Background noise filtering - track pending audio segments
     this.pendingAudioSegments = new Map(); // itemId → { timestamp, committedAt, transcriptionReceived, transcriptionQuality }
     this.segmentTranscriptionMap = new Map(); // itemId → { transcript, confidence, quality, timestamp }
-    
+
     // Event waiting promises for race condition fixes
     this.pendingSessionUpdatePromise = null;
     this.pendingItemCreatePromise = null;
@@ -308,6 +309,18 @@ export class CallStateManager {
     // Atomically set the lock
     this.isResponding = true;
     this.explicitResponseRequested = true;
+
+    // Fail-safe to prevent deadlocks: if a response isn't created within 5 seconds, forcefully release the lock
+    if (this.responseLockTimer) {
+      clearTimeout(this.responseLockTimer);
+    }
+    this.responseLockTimer = setTimeout(() => {
+      if (this.isResponding && this.activeResponseId === null) {
+        console.warn(`⚠️ [${this.callSid}] Response lock timeout triggered (5s)! Forcefully releasing stuck lock to prevent deadlock.`);
+        this.releaseResponseLock();
+      }
+    }, 5000);
+
     return true;
   }
 
@@ -317,6 +330,10 @@ export class CallStateManager {
   releaseResponseLock() {
     this.isResponding = false;
     this.explicitResponseRequested = false;
+    if (this.responseLockTimer) {
+      clearTimeout(this.responseLockTimer);
+      this.responseLockTimer = null;
+    }
   }
 
   /**
@@ -339,7 +356,7 @@ export class CallStateManager {
   cleanupOldSegments() {
     const now = Date.now();
     const MAX_SEGMENT_AGE_MS = 30000; // 30 seconds
-    
+
     // Clean up pending segments
     for (const [itemId, segment] of this.pendingAudioSegments.entries()) {
       const age = now - segment.timestamp;

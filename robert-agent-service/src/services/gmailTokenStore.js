@@ -2,14 +2,24 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
-const DEFAULT_TOKEN_PATH = './data/gmail-tokens.json';
+/**
+ * Gmail OAuth token storage. In production, GMAIL_OAUTH_TOKEN_PATH must be set.
+ * In development, falls back to ./data/gmail-tokens.json if not set.
+ */
+const DEV_DEFAULT_TOKEN_PATH = './data/gmail-tokens.json';
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 const KEY_LENGTH = 32;
 
 function getTokenPath() {
-  return process.env.GMAIL_OAUTH_TOKEN_PATH || DEFAULT_TOKEN_PATH;
+  if (process.env.GMAIL_OAUTH_TOKEN_PATH) {
+    return process.env.GMAIL_OAUTH_TOKEN_PATH;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return null;
+  }
+  return DEV_DEFAULT_TOKEN_PATH;
 }
 
 function getEncryptionKey() {
@@ -37,7 +47,9 @@ function encrypt(plain, key) {
 }
 
 export function getTokens() {
-  const tokenPath = path.resolve(getTokenPath());
+  const rawPath = getTokenPath();
+  if (!rawPath) return null;
+  const tokenPath = path.resolve(rawPath);
   try {
     if (!fs.existsSync(tokenPath)) return null;
     const data = fs.readFileSync(tokenPath, 'utf8');
@@ -55,7 +67,12 @@ export function getTokens() {
 }
 
 export function setTokens(tokens) {
-  const tokenPath = path.resolve(getTokenPath());
+  const rawPath = getTokenPath();
+  if (!rawPath) {
+    console.warn('Gmail token path not configured (set GMAIL_OAUTH_TOKEN_PATH in production)');
+    return;
+  }
+  const tokenPath = path.resolve(rawPath);
   const dir = path.dirname(tokenPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
