@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 // dotenv is already loaded in server.js, no need to reload here
 import AIConfig from '../models/AIConfig.js';
 import ModelHistory from '../models/ModelHistory.js';
+import { getShuttingDown } from '../utils/shutdown.js';
 
 // Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
 let openaiClient = null;
@@ -23,6 +24,7 @@ class ModelDiscoveryService {
 
   // Discover and cache model capabilities from OpenAI /v1/models API
   async discoverModels() {
+    if (getShuttingDown()) return this.getModelCapabilities().length ? Array.from(this.capabilityRegistry.values()) : this.getFallbackModels();
     try {
       console.log('🔍 Starting model discovery from OpenAI /v1/models...');
       
@@ -59,16 +61,17 @@ class ModelDiscoveryService {
       this.capabilityRegistry.clear();
       
       for (const model of models) {
+        if (getShuttingDown()) break;
         this.capabilityRegistry.set(model.id, model);
-        
-        // Track model history
         await this.trackModelHistory(model, previousRegistry.get(model.id));
       }
 
-      // Mark removed models
-      for (const [modelId, previousModel] of previousRegistry.entries()) {
-        if (!this.capabilityRegistry.has(modelId)) {
-          await this.markModelRemoved(modelId);
+      if (!getShuttingDown()) {
+        for (const [modelId, previousModel] of previousRegistry.entries()) {
+          if (getShuttingDown()) break;
+          if (!this.capabilityRegistry.has(modelId)) {
+            await this.markModelRemoved(modelId);
+          }
         }
       }
 
@@ -365,22 +368,16 @@ class ModelDiscoveryService {
     }
   }
 
-  // Start periodic discovery
+  // Start periodic discovery (caller should run discoverModels() once at startup; we only schedule the interval)
   startPeriodicDiscovery() {
     console.log('🔄 Starting periodic model discovery...');
     console.log(`⏰ Discovery interval: ${this.discoveryInterval / 1000 / 60} minutes (${this.discoveryInterval / 1000 / 60 / 60} hours)`);
-    
-    // Run immediately
-    console.log('🔄 Running initial model discovery...');
-    this.discoverModels().catch(error => {
-      console.error('❌ Initial model discovery failed:', error);
-    });
-    
+    // No immediate run here – initializeServices already ran discoverModels() once
     // Then run every hour
     const intervalId = setInterval(() => {
+      if (getShuttingDown()) return;
       const now = new Date();
       console.log(`⏰ [${now.toISOString()}] Scheduled model discovery check...`);
-      
       if (this.isDiscoveryNeeded()) {
         console.log('🔄 Discovery needed - running scheduled model discovery...');
         this.discoverModels().catch(error => {
@@ -498,6 +495,7 @@ class ModelDiscoveryService {
 
   // Track model history
   async trackModelHistory(model, previousModel) {
+    if (getShuttingDown()) return;
     try {
       const capabilities = {
         contextLimit: model.contextLimit,
@@ -558,6 +556,7 @@ class ModelDiscoveryService {
 
   // Mark model as removed
   async markModelRemoved(modelId) {
+    if (getShuttingDown()) return;
     try {
       const history = await ModelHistory.findOne({ modelId })
         .sort({ discoveredAt: -1 });

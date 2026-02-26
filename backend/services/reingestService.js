@@ -1,11 +1,9 @@
 import openaiService from './openaiService.js';
 import KnowledgeBase from '../models/KnowledgeBase.js';
 import driftDetectionService from './driftDetectionService.js';
-import { VECTOR_STORE_ID } from '../config/openaiVectorStore.js';
 
 class ReingestService {
   constructor() {
-    this.vectorStoreId = VECTOR_STORE_ID;
     this.reingestStatus = {
       isRunning: false,
       lastRun: null,
@@ -127,7 +125,7 @@ class ReingestService {
       const openaiFile = await openaiService.uploadFile(fileContent, fileName);
       
       // Add to vector store
-      await openaiService.addFileToVectorStore(this.vectorStoreId, openaiFile.id);
+      await openaiService.addFileToVectorStore(openaiFile.id);
 
       return openaiFile;
 

@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { VECTOR_STORE_ID, VECTOR_STORE_NAME } from '../config/openaiVectorStore.js';
+import { getVectorStoreId, getVectorStoreName } from '../config/openaiVectorStore.js';
 
 // Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
 let openaiClient = null;
@@ -13,10 +13,7 @@ function getOpenAIClient() {
 }
 
 class FileSearchService {
-  constructor() {
-    this.vectorStoreId = VECTOR_STORE_ID;
-    this.vectorStoreName = VECTOR_STORE_NAME;
-  }
+  constructor() {}
 
   // Extract readable text from content (handles string, object, or array structures)
   extractTextFromContent(content) {
@@ -99,7 +96,7 @@ Summary:`;
     try {
       console.log(`🔍 Searching files with query: "${query}"`);
       
-      if (!this.vectorStoreId) {
+      if (!getVectorStoreId()) {
         throw new Error('Vector store ID not configured');
       }
 
@@ -114,7 +111,7 @@ Summary:`;
       const openai = getOpenAIClient();
 
       // Get vector store
-      const vectorStore = await openai.vectorStores.retrieve(this.vectorStoreId);
+      const vectorStore = await openai.vectorStores.retrieve(getVectorStoreId());
       
       if (!vectorStore) {
         throw new Error('Vector store not found');
@@ -132,7 +129,7 @@ Summary:`;
 
       // Perform the search
       const searchResults = await openai.vectorStores.search(
-        this.vectorStoreId,
+        getVectorStoreId(),
         searchParams
       );
 
@@ -237,8 +234,8 @@ Summary:`;
         totalResults: results.length,
         totalMatches: rawResults.length,
         vectorStore: {
-          id: this.vectorStoreId,
-          name: this.vectorStoreName
+          id: getVectorStoreId(),
+          name: getVectorStoreName()
         },
         searchParams: {
           maxResults,
@@ -263,7 +260,7 @@ Summary:`;
       const openai = getOpenAIClient();
       
       // Get files from vector store
-      const vectorStoreFiles = await openai.vectorStores.files.list(this.vectorStoreId);
+      const vectorStoreFiles = await openai.vectorStores.files.list(getVectorStoreId());
       
       // Filter files by tags if specified
       let fileIds = null;
@@ -315,8 +312,8 @@ Summary:`;
       console.log('📊 Getting vector store status...');
       
       const openai = getOpenAIClient();
-      const vectorStore = await openai.vectorStores.retrieve(this.vectorStoreId);
-      const files = await openai.vectorStores.files.list(this.vectorStoreId);
+      const vectorStore = await openai.vectorStores.retrieve(getVectorStoreId());
+      const files = await openai.vectorStores.files.list(getVectorStoreId());
       
       return {
         id: vectorStore.id,
@@ -377,7 +374,7 @@ Summary:`;
         testResults: results,
         totalTests: testQueries.length,
         successfulTests: results.filter(r => r.success).length,
-        vectorStoreId: this.vectorStoreId
+        vectorStoreId: getVectorStoreId()
       };
 
     } catch (error) {

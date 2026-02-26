@@ -158,30 +158,31 @@ app.get('/', async (_, res) => {
 // Comprehensive health endpoint (for load balancers and monitoring)
 app.get('/health', async (req, res) => {
   try {
-    // Get full health status with all service metrics
     const healthStatus = await healthCheckService.getFullStatus({
       sessionManagementService,
       browserAgentService,
       distributedStateService
     });
 
-    // Determine HTTP status code based on health
     const httpStatus = healthStatus.status === 'unhealthy' ? 503 : 200;
 
-    // Support minimal response for load balancer probes
-    if (req.query.minimal === 'true') {
+    // Production: always return minimal response (no components, connections, or execution details)
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction || req.query.minimal === 'true') {
       return res.status(httpStatus).json({
         status: healthStatus.status,
-        uptime: healthStatus.uptime
+        uptime: healthStatus.uptime,
+        ...(isProduction && { timestamp: new Date().toISOString() })
       });
     }
 
     res.status(httpStatus).json(healthStatus);
   } catch (error) {
     console.error('❌ [Health] Error getting health status:', error);
+    const isProduction = process.env.NODE_ENV === 'production';
     res.status(503).json({
       status: 'unhealthy',
-      error: error.message,
+      error: isProduction ? 'Unavailable' : error.message,
       timestamp: new Date().toISOString()
     });
   }
@@ -191,6 +192,13 @@ app.get('/health', async (req, res) => {
 app.get('/health/quick', (req, res) => {
   const quickStatus = healthCheckService.getQuickStatus();
   const httpStatus = quickStatus.status === 'unhealthy' ? 503 : 200;
+  // Production: return only status and uptime (no session/heap metrics)
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(httpStatus).json({
+      status: quickStatus.status,
+      uptime: quickStatus.uptime
+    });
+  }
   res.status(httpStatus).json(quickStatus);
 });
 

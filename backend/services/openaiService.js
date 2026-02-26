@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { VECTOR_STORE_ID, VECTOR_STORE_NAME } from '../config/openaiVectorStore.js';
+import { getVectorStoreId, getVectorStoreName } from '../config/openaiVectorStore.js';
 
 // Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
 let openaiClient = null;
@@ -14,33 +14,44 @@ function getOpenAIClient() {
 
 class OpenAIService {
   constructor() {
-    this.vectorStoreId = VECTOR_STORE_ID;
-    this.vectorStoreName = VECTOR_STORE_NAME;
+    /** Set when creating a new store (only when OPENAI_VECTOR_STORE_ID is not set) */
+    this._cachedVectorStoreId = null;
   }
 
-  // Get or create vector store
+  /** Effective vector store ID: from env at use time, or cached after creating one. */
+  _getEffectiveVectorStoreId() {
+    return getVectorStoreId() || this._cachedVectorStoreId || null;
+  }
+
+  // Get or create vector store (never creates when OPENAI_VECTOR_STORE_ID is set)
   async getVectorStore() {
     try {
       const openai = getOpenAIClient();
-      // First, try to get the existing vector store
-      const vectorStores = await openai.vectorStores.list();
-      const existingStore = vectorStores.data.find(store => store.id === this.vectorStoreId);
-      
-      if (existingStore) {
-        console.log(`✅ Found existing vector store: ${existingStore.name}`);
-        return existingStore;
+      const envId = getVectorStoreId();
+
+      if (envId) {
+        // ID is set in env: use existing store only, never create
+        const store = await openai.vectorStores.retrieve(envId);
+        console.log(`✅ Using existing vector store: ${store.name} (${store.id})`);
+        return store;
       }
 
-      // If not found, create a new one
-      console.log(`⚠️ Vector store ${this.vectorStoreId} not found. Creating new one...`);
+      // No env ID: create a new store (e.g. dev) and cache id
+      const name = getVectorStoreName() || 'Robert Knowledge Base';
+      console.log('⚠️ OPENAI_VECTOR_STORE_ID not set. Creating new vector store...');
       const newStore = await openai.vectorStores.create({
-        name: this.vectorStoreName,
+        name,
         description: 'Universal Motorcycle Training Knowledge Base'
       });
-      
+      this._cachedVectorStoreId = newStore.id;
       console.log(`✅ Created new vector store: ${newStore.id}`);
       return newStore;
     } catch (error) {
+      const envId = getVectorStoreId();
+      if (envId) {
+        console.error(`Vector store not found for OPENAI_VECTOR_STORE_ID=${envId}:`, error.message);
+        throw new Error(`Vector store "${envId}" not found. Check OPENAI_VECTOR_STORE_ID or create the store in OpenAI.`);
+      }
       console.error('Error getting vector store:', error);
       throw new Error(`Failed to get vector store: ${error.message}`);
     }
@@ -70,7 +81,7 @@ class OpenAIService {
   async addFileToVectorStore(fileId, metadata = {}) {
     try {
       const openai = getOpenAIClient();
-      const vectorStoreFile = await openai.vectorStores.files.create(this.vectorStoreId, {
+      const vectorStoreFile = await openai.vectorStores.files.create(this._getEffectiveVectorStoreId(), {
         file_id: fileId
       });
 
@@ -94,7 +105,7 @@ class OpenAIService {
       }
 
       const openai = getOpenAIClient();
-      const results = await openai.vectorStores.search(this.vectorStoreId, searchParams);
+      const results = await openai.vectorStores.search(this._getEffectiveVectorStoreId(), searchParams);
       
       console.log(`✅ Found ${results.data.length} results for query: "${query}"`);
       return results.data;
@@ -128,7 +139,7 @@ class OpenAIService {
   async listVectorStoreFiles() {
     try {
       const openai = getOpenAIClient();
-      const files = await openai.vectorStores.files.list(this.vectorStoreId);
+      const files = await openai.vectorStores.files.list(this._getEffectiveVectorStoreId());
       return files.data;
     } catch (error) {
       console.error('Error listing vector store files:', error);
@@ -140,7 +151,7 @@ class OpenAIService {
   async removeFileFromVectorStore(fileId) {
     try {
       const openai = getOpenAIClient();
-      await openai.vectorStores.files.del(this.vectorStoreId, fileId);
+      await openai.vectorStores.files.del(this._getEffectiveVectorStoreId(), fileId);
       console.log(`✅ File ${fileId} removed from vector store`);
       return true;
     } catch (error) {
@@ -210,7 +221,7 @@ class OpenAIService {
     return {
       type: 'file_search',
       file_search: {
-        vector_store_ids: [this.vectorStoreId],
+        vector_store_ids: [this._getEffectiveVectorStoreId()],
         ...(fileIds && { file_ids: fileIds })
       }
     };
@@ -229,7 +240,7 @@ class OpenAIService {
           content: result.content?.substring(0, 200) + '...'
         })),
         total_results: results.length,
-        vector_store_id: this.vectorStoreId
+        vector_store_id: this._getEffectiveVectorStoreId()
       };
 
       return testResults;

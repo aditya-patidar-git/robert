@@ -18,6 +18,7 @@ import mongoose from "mongoose";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { initializeTelemetry, shutdownTelemetry } from "./utils/telemetry.js";
+import { setShuttingDown } from "./utils/shutdown.js";
 import { initializeMetrics } from "./services/metricsService.js";
 
 // Initialize OpenTelemetry before other imports
@@ -77,6 +78,7 @@ import { generateToken, requireCsrf, getCsrfCookieOptions, COOKIE_NAME } from ".
 const app = express();
 app.set('trust proxy', 1);
 const httpServer = createServer(app);
+const serverStartTime = Date.now();
 
 // Export io for controllers
 export const io = new Server(httpServer, {
@@ -132,6 +134,12 @@ mongoose.connect(mongoUri, { maxPoolSize: 50, serverSelectionTimeoutMS: 5000 })
 
 // Health check
 app.get("/", (req, res) => res.send("Robert AI backend alive"));
+
+// Public health endpoint (no auth; for load balancers). No sensitive data.
+app.get("/health", (req, res) => {
+  const uptime = Math.round((Date.now() - serverStartTime) / 1000);
+  res.json({ status: "ok", uptime });
+});
 
 // Rate limit: strict for login (brute-force protection)
 const authLimiter = rateLimit({
@@ -265,6 +273,7 @@ let isShuttingDown = false;
 async function shutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
+  setShuttingDown(); // Signal long-running work (e.g. model discovery) to stop
   console.log('Shutting down gracefully...');
   try {
     await shutdownTelemetry();

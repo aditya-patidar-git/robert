@@ -220,8 +220,9 @@ class TwilioPayService {
     }
 
     // TODO: Integrate with payment gateway (Stripe, PayPal, etc.)
-    // For now, return a placeholder
-    const paymentLink = `${process.env.BASE_URL || 'https://example.com'}/pay/${bookingId || Date.now()}`;
+    // For now, return a placeholder (user opens link in browser; frontend serves /pay/*)
+    const baseUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'https://example.com').replace(/\/$/, '');
+    const paymentLink = `${baseUrl}/pay/${bookingId || Date.now()}`;
 
     console.log('🔗 [PAYMENT LINK] Generated payment link:', paymentLink);
 
