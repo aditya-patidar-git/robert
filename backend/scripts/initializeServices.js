@@ -20,10 +20,15 @@ async function initializeServices() {
     await voiceDiscoveryService.discoverVoices();
     console.log('✅ Voice discovery initialized');
 
-    // 3. Test OpenAI connection
+    // 3. Test OpenAI connection / vector store
     console.log('🔗 Testing OpenAI connection...');
-    const vectorStore = await openaiService.getVectorStore();
-    console.log(`✅ OpenAI connected, vector store: ${vectorStore.id}`);
+    let vectorStore = null;
+    try {
+      vectorStore = await openaiService.getVectorStore();
+      console.log(`✅ OpenAI connected, vector store: ${vectorStore.id}`);
+    } catch (err) {
+      console.warn('⚠️ Vector store not configured or not accessible:', err.message);
+    }
 
     // 4. Check migration status
     console.log('📊 Checking migration status...');
@@ -60,10 +65,7 @@ async function initializeServices() {
     return {
       modelDiscovery: modelDiscoveryService.getDiscoveryStatus(),
       voiceDiscovery: voiceDiscoveryService.getDiscoveryStatus(),
-      vectorStore: {
-        id: vectorStore.id,
-        name: vectorStore.name
-      },
+      vectorStore: vectorStore ? { id: vectorStore.id, name: vectorStore.name } : null,
       migration: migrationStatus
     };
   } catch (error) {

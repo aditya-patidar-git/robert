@@ -18,6 +18,10 @@ const VectorStoreStatus = ({
         <Alert severity="error">
           Failed to load vector store status: {vectorStoreError.message}
         </Alert>
+      ) : vectorStoreStatus?.vectorStoreError ? (
+        <Alert severity="warning">
+          Vector store not available. {vectorStoreStatus.vectorStoreError}
+        </Alert>
       ) : vectorStoreStatus && (vectorStoreStatus.id || vectorStoreStatus.status) ? (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
           <Box>

@@ -1,10 +1,13 @@
 import { OpenAI, toFile } from 'openai';
-import { VECTOR_STORE_ID } from '../config/openaiVectorStore.js';
+import { getVectorStoreId } from '../config/openaiVectorStore.js';
 
 class OpenAIFilesService {
   constructor() {
     this._openai = null;
-    this.vectorStoreId = VECTOR_STORE_ID;
+  }
+
+  get vectorStoreId() {
+    return getVectorStoreId();
   }
 
   get openai() {
@@ -238,9 +241,13 @@ class OpenAIFilesService {
 
   // Get vector store status
   async getVectorStoreStatus() {
+    const vectorStoreId = this.vectorStoreId;
+    if (!vectorStoreId) {
+      throw new Error('Vector store not configured. Set OPENAI_VECTOR_STORE_ID in environment.');
+    }
     try {
-      const vectorStore = await this.openai.vectorStores.retrieve(this.vectorStoreId);
-      const files = await this.openai.vectorStores.files.list(this.vectorStoreId);
+      const vectorStore = await this.openai.vectorStores.retrieve(vectorStoreId);
+      const files = await this.openai.vectorStores.files.list(vectorStoreId);
       
       return {
         id: vectorStore.id,

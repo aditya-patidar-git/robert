@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { VECTOR_STORE_ID, VECTOR_STORE_NAME } from '../config/openaiVectorStore.js';
+import { getVectorStoreId, getVectorStoreName } from '../config/openaiVectorStore.js';
 
 // Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
 let openaiClient = null;
@@ -13,36 +13,29 @@ function getOpenAIClient() {
 }
 
 class OpenAIService {
-  constructor() {
-    this.vectorStoreId = VECTOR_STORE_ID;
-    this.vectorStoreName = VECTOR_STORE_NAME;
+  get vectorStoreId() {
+    return getVectorStoreId();
   }
 
-  // Get or create vector store
+  get vectorStoreName() {
+    return getVectorStoreName();
+  }
+
+  // Get configured vector store by ID only (never create)
   async getVectorStore() {
+    const vectorStoreId = getVectorStoreId();
+    if (!vectorStoreId) {
+      console.warn('OPENAI_VECTOR_STORE_ID not set; vector store unavailable.');
+      throw new Error('Vector store not configured. Set OPENAI_VECTOR_STORE_ID in environment.');
+    }
     try {
       const openai = getOpenAIClient();
-      // First, try to get the existing vector store
-      const vectorStores = await openai.vectorStores.list();
-      const existingStore = vectorStores.data.find(store => store.id === this.vectorStoreId);
-      
-      if (existingStore) {
-        console.log(`✅ Found existing vector store: ${existingStore.name}`);
-        return existingStore;
-      }
-
-      // If not found, create a new one
-      console.log(`⚠️ Vector store ${this.vectorStoreId} not found. Creating new one...`);
-      const newStore = await openai.vectorStores.create({
-        name: this.vectorStoreName,
-        description: 'Universal Motorcycle Training Knowledge Base'
-      });
-      
-      console.log(`✅ Created new vector store: ${newStore.id}`);
-      return newStore;
+      const vectorStore = await openai.vectorStores.retrieve(vectorStoreId);
+      console.log(`✅ Using existing vector store: ${vectorStore.id} (${vectorStore.name})`);
+      return vectorStore;
     } catch (error) {
-      console.error('Error getting vector store:', error);
-      throw new Error(`Failed to get vector store: ${error.message}`);
+      console.error(`Vector store not accessible: ${vectorStoreId}`, error?.message || error);
+      throw new Error(`Vector store not accessible: ${error?.message || error}`);
     }
   }
 

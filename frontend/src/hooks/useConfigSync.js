@@ -22,13 +22,24 @@ const useConfigSync = (configTypes = ['all']) => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 
                        import.meta.env.REACT_APP_BACKEND_URL || 
                        'http://localhost:5000';
+
+    // Send JWT so backend socketAuthMiddleware can authorize the connection
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
     
     // Use Socket.IO client (Socket.IO handles protocol automatically)
     const socket = io(backendUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5
+      reconnectionAttempts: 5,
+      auth: {
+        token: token || undefined
+      },
+      ...(token && {
+        extraHeaders: {
+          Authorization: `Bearer ${token}`
+        }
+      })
     });
 
     socketRef.current = socket;

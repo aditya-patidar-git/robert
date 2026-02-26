@@ -19,16 +19,17 @@ class VectorStoreService extends BaseService {
    */
   async getStatus() {
     const response = await this.get('/vector-store/status');
-    const data = response.data?.vectorStore || response.data;
-    
+    const data = response.data?.vectorStore ?? response.data;
+    const vectorStoreError = response.data?.vectorStoreError;
     return {
       id: data?.id,
       status: data?.status,
-      fileCount: data?.fileCount,
+      fileCount: data?.fileCount ?? response.data?.files,
       name: data?.name,
       created_at: data?.created_at,
       lastUpdated: new Date().toISOString(),
-      vectorStoreId: data?.id
+      vectorStoreId: data?.id,
+      vectorStoreError: vectorStoreError || null
     };
   }
 

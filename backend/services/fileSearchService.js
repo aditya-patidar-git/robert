@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { VECTOR_STORE_ID, VECTOR_STORE_NAME } from '../config/openaiVectorStore.js';
+import { getVectorStoreId, getVectorStoreName } from '../config/openaiVectorStore.js';
 
 // Lazy initialization: Create OpenAI client only when needed (after dotenv loads)
 let openaiClient = null;
@@ -13,9 +13,12 @@ function getOpenAIClient() {
 }
 
 class FileSearchService {
-  constructor() {
-    this.vectorStoreId = VECTOR_STORE_ID;
-    this.vectorStoreName = VECTOR_STORE_NAME;
+  get vectorStoreId() {
+    return getVectorStoreId();
+  }
+
+  get vectorStoreName() {
+    return getVectorStoreName();
   }
 
   // Extract readable text from content (handles string, object, or array structures)
@@ -311,12 +314,15 @@ Summary:`;
 
   // Get vector store status
   async getVectorStoreStatus() {
+    const vectorStoreId = this.vectorStoreId;
+    if (!vectorStoreId) {
+      throw new Error('Vector store not configured. Set OPENAI_VECTOR_STORE_ID in environment.');
+    }
     try {
       console.log('📊 Getting vector store status...');
-      
       const openai = getOpenAIClient();
-      const vectorStore = await openai.vectorStores.retrieve(this.vectorStoreId);
-      const files = await openai.vectorStores.files.list(this.vectorStoreId);
+      const vectorStore = await openai.vectorStores.retrieve(vectorStoreId);
+      const files = await openai.vectorStores.files.list(vectorStoreId);
       
       return {
         id: vectorStore.id,

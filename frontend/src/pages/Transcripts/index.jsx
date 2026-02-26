@@ -440,7 +440,7 @@ const TranscriptsComplaintsPage = () => {
   const handleViewComplaint = useCallback(async (complaint) => {
     try {
       const data = await complaintService.getComplaint(complaint._id || complaint.id);
-      setSelectedComplaint(data);
+      setSelectedComplaint(data?.data ?? data);
       setComplaintDetailDialog(true);
     } catch (error) {
       showError('Failed to load complaint details');
