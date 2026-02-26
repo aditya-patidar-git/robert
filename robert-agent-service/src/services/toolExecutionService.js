@@ -335,6 +335,10 @@ class ToolExecutionService {
         callContext,
         progressCallback
       );
+      if (toolName === 'booking_step_select_booking_options') {
+        if (!conversations[callSid || callId]) conversations[callSid || callId] = {};
+        conversations[callSid || callId].selectBookingOptionsInvoked = true;
+      }
     } catch (error) {
       console.error(`❌ [${callSid || callId}] Tool ${toolName} execution error:`, error);
       let lastError = error;

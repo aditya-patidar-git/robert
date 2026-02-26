@@ -33,6 +33,9 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     // Get conversation state for tracking
     const conversation = callSid ? conversations[callSid] : null;
     
+    // Normalize mobile number early if needed (for use in search input)
+    let normalizedMobile = null;
+    
     // Handle mobile search retry logic
     if (searchType === 'mobile') {
       // Validate UK mobile format
@@ -44,8 +47,8 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
         };
       }
       
-      // Normalize mobile number
-      const normalizedMobile = normalizeUKMobile(searchValue);
+      // Normalize mobile number (removes dashes, spaces, etc.)
+      normalizedMobile = normalizeUKMobile(searchValue);
       if (!normalizedMobile) {
         return {
           found: false,
@@ -132,7 +135,13 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       finalSearchType = 'email';
       console.log(`🔍 [CLIENT SEARCH] Smart search selected - using email: ${email}`);
     } else if (searchType === 'mobile') {
-      console.warn(`⚠️ [CLIENT SEARCH] Smart search selected but no email provided - using mobile number (this may not work correctly)`);
+      // Use normalized mobile number (without dashes/spaces) for search input
+      if (normalizedMobile) {
+        finalSearchValue = normalizedMobile;
+        console.log(`🔍 [CLIENT SEARCH] Using normalized mobile number for search: ${normalizedMobile} (original: ${searchValue})`);
+      } else {
+        console.warn(`⚠️ [CLIENT SEARCH] Smart search selected but no email provided - using mobile number (this may not work correctly)`);
+      }
     }
 
     // Execute search

@@ -173,7 +173,7 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
 
     // Add critical rules if in booking flow
     if (workflowPhase && workflowPhase.startsWith('booking_')) {
-      instructions += `\n\nCRITICAL RULES:\n- NEVER say "Booking confirmed" unless paymentCompleted: true in tool result\n- Terms acceptance ONLY after payment confirmed, before final "Make booking" click\n- For existing clients: Use email from booking_step_search_client result ONLY`;
+      instructions += `\n\nCRITICAL RULES:\n- NEVER say "Booking confirmed", "you're all set", or give date/time/location summary unless paymentCompleted: true in tool result\n- There is NO tool named booking_step_confirm_booking—after select_booking_options use booking_step_lookup_contact or booking_step_create_new_contact\n- Terms acceptance ONLY after payment confirmed, before final "Make booking" click\n- For existing clients: Use email from booking_step_search_client result ONLY`;
     }
 
     // Add critical rules if in cancellation flow

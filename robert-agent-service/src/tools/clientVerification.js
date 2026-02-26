@@ -334,7 +334,7 @@ class ClientVerificationTool {
             requiresExplicitConfirmation: true,
             requiresImmediateNextStep: false,
             offerUpdatePhone: true,
-            offerUpdatePhoneInstruction: 'Ask the caller: "Would you like us to update your telephone number to the one you just provided?" If they say yes, offer to transfer them to an agent and use the transfer_call tool.'
+            offerUpdatePhoneInstruction: 'Optional, later in the call: If the caller wants to change the number we have on file to a different one, ask "Would you like to change the telephone number we have on file to a different one? If so, I can transfer you to an agent." If they say yes, offer transfer and use the transfer_call tool. Do NOT ask this immediately after verification—only if relevant (e.g. they later give a different number or ask to update it).'
           };
         } else {
           // TelephoneNumber mismatch - first offer last-four-digits confirmation per doc (A)

@@ -262,7 +262,7 @@ const bookingStepSendTermsSchema = z.object({
 const bookingStepSendSMSSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
-  customerMobile: z.string()
+  customerMobile: z.string().optional() // optional so agent can ask caller when form and stored value are empty
 });
 
 const bookingStepSendPaymentRequestSchema = z.object({
@@ -272,6 +272,7 @@ const bookingStepSendPaymentRequestSchema = z.object({
   clientEmail: z.string().email().optional(),
   clientMobile: z.string().optional(),
   confirmed: z.boolean().optional(),
+  confirmedByClient: z.boolean().optional(), // model sometimes sends this instead of confirmed
   confirmationReceived: z.boolean().optional(), // alias for confirmed (model sometimes sends this)
   termsAcceptedBeforeSend: z.boolean().optional()
 });

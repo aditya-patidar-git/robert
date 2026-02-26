@@ -317,6 +317,7 @@ export class CallStateManager {
     this.responseLockTimer = setTimeout(() => {
       if (this.isResponding && this.activeResponseId === null) {
         console.warn(`⚠️ [${this.callSid}] Response lock timeout triggered (5s)! Forcefully releasing stuck lock to prevent deadlock.`);
+        this.activeResponseId = null; // Ensure clean state so periodic updates can acquire lock
         this.releaseResponseLock();
       }
     }, 5000);

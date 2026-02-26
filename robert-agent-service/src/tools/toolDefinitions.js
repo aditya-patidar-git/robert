@@ -372,7 +372,7 @@ CRITICAL WORKFLOW:
     {
       type: 'function',
       name: 'booking_step_send_payment_request',
-      description: `Step 9 (Existing) / Step 8 (New): Send payment request via email or SMS. Use this AFTER selecting "Send a payment request" option in payment dropdown. The system will automatically poll every 30 seconds for up to 5 minutes to detect when the client completes payment and the "Make booking" button appears, then click it automatically.`,
+      description: `Step 9 (Existing) / Step 8 (New): Send payment request via email or SMS. Use this AFTER selecting "Send a payment request" option in payment dropdown. IMPORTANT: This is the ONLY tool for sending the payment link—there is no separate "confirm" tool. When the tool returns requiresConfirmation, ask the caller to confirm the email/phone, then call THIS SAME TOOL again (booking_step_send_payment_request) with the same parameters plus confirmed: true to click "Send by email now" / "Send by SMS" and send the link. Do NOT call any tool named booking_step_confirm_payment_request; use only this tool with confirmed: true. The system will poll for payment completion and click "Make booking" automatically.`,
       parameters: {
         type: 'object',
         properties: {
@@ -401,7 +401,7 @@ CRITICAL WORKFLOW:
           },
           confirmed: {
             type: 'boolean',
-            description: 'Whether the client has confirmed the email/phone number. Set to false on first call to get confirmation, then set to true after client confirms. Default: false'
+            description: 'Set to false (or omit) on first call; when the tool returns requiresConfirmation, ask the caller to confirm the email/phone, then call THIS SAME TOOL (booking_step_send_payment_request) again with the SAME parameters plus confirmed: true. Only confirmed: true will click "Send by email now" / "Send by SMS". There is no other tool for confirmation—use only booking_step_send_payment_request with confirmed: true. Default: false'
           },
           termsAcceptedBeforeSend: {
             type: 'boolean',
@@ -480,10 +480,10 @@ CRITICAL WORKFLOW:
           },
           customerMobile: {
             type: 'string',
-            description: 'Customer mobile number (11 digits, UK format)'
+            description: 'Customer mobile number (11 digits, UK format). Use stored client mobile when available; if missing and form is empty, the tool will ask you to collect it from the caller and call again.'
           }
         },
-        required: ['courseType', 'workflowType', 'customerMobile']
+        required: ['courseType', 'workflowType']
       }
     }
   ];
@@ -729,7 +729,7 @@ This tool returns guidance messages directing to the appropriate tools.`,
 3. THIRD: After postcode is verified, ask for telephone number using: "Thank you. Finally, could you please confirm your telephone number?"
    - Call this tool with fullName, postcode (already verified) AND telephoneNumber parameter
    - Wait for verification result
-   - If verified, verification is complete; if the tool returns offerUpdatePhone: true, ask "Would you like us to update your telephone number to the new one?" and if yes offer to transfer to an agent (use transfer_call)
+   - If verified, verification is complete; if the tool returns offerUpdatePhone: true, later in the call you may ask "Would you like to change the telephone number we have on file to a different one? If so, I can transfer you to an agent." Only ask if relevant (e.g. they later give a different number). If yes, offer transfer (use transfer_call)
    - If mismatch: when the tool returns a "last four digits" confirmation prompt, use that exact message to ask the caller to confirm the number on file; otherwise use the exact error message provided and ask again (up to 7 attempts)
 
 🚨 CRITICAL SECURITY RULE: You MUST ONLY use values that the caller ACTUALLY SPOKE in this conversation. DO NOT use values from stored client details, CRM data, or conversation context. Extract ONLY what the caller says.

@@ -18,7 +18,8 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
 export async function executeSendSMS(page, args, sessionState, screenshotsDir, progressCallback = null) {
   progressCallback?.({ message: 'Sending the SMS.' });
   const courseType = args.courseType || sessionState?.courseType;
-  
+  const clientMobile = args.customerMobile || args.clientMobile || sessionState?.customerMobile || null;
+
   // Map course type to SMS template type
   let smsCourseType = 'tfl-one-to-one';
   if (courseType === 'TfL Beyond CBT' || courseType === 'TfL - Beyond CBT - Skills for Delivery Riders') {
@@ -27,8 +28,16 @@ export async function executeSendSMS(page, args, sessionState, screenshotsDir, p
     smsCourseType = 'full-licence';
   }
   
-  // Use existing sendSMSConfirmation logic
-  await commonSteps.sendSMSConfirmation(page, screenshotsDir, smsCourseType, progressCallback);
+  const result = await commonSteps.sendSMSConfirmation(page, screenshotsDir, smsCourseType, clientMobile, progressCallback);
+
+  if (result?.requiresClientMobile === true) {
+    return {
+      success: false,
+      requiresClientMobile: true,
+      message: result.message,
+      instruction: result.instruction
+    };
+  }
 
   return {
     success: true,

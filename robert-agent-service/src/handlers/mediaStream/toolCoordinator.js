@@ -91,7 +91,7 @@ export class ToolCoordinator {
     });
     console.log(`🔍 [INTENT] [${callSid}] detectIntent result: shouldUpdateTools=${intentResult?.shouldUpdateTools}, newWorkflowContext=${intentResult?.newWorkflowContext}, phase=${intentResult?.phase}`);
     if (!intentResult.shouldUpdateTools || !intentResult.newWorkflowContext) return false;
-    if (!conversations[callSid]) conversations[callSid] = {};
+    if (!conversations[callSid]) conversations[callSid] = { prematureResponses: {} };
     conversations[callSid].workflowContext = intentResult.newWorkflowContext;
     console.log(`🎯 [${callSid}] Intent detected: "${transcriptText.trim()}" - updating tools and workflow phase to ${intentResult.phase}`);
     const toolsUpdated = this.openaiIntegration.updateToolsForPhase(intentResult.phase);

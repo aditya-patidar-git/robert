@@ -47,9 +47,12 @@ export async function executeCheckAvailability(page, args, sessionState, screens
   }
 
   const slotsToAnnounce = result.slotsToAnnounce ?? [];
-  const slotsSummary = slotsToAnnounce.length > 0
-    ? slotsToAnnounce.map(s => `${s.date} at ${s.time}, ${s.location}, ${s.price}`).join('; ')
-    : (result.selectedSlot ? `${result.selectedSlot.date} at ${result.selectedSlot.time}, ${result.selectedSlot.location}, ${result.selectedSlot.price}` : 'No slots');
+  // Prefer selectedSlot (best match for preferences) for the message so we never announce a different slot (e.g. allSlots[0] fallback)
+  const slotsSummary = result.selectedSlot
+    ? `${result.selectedSlot.date} at ${result.selectedSlot.time}, ${result.selectedSlot.location}, ${result.selectedSlot.price}`
+    : slotsToAnnounce.length > 0
+      ? slotsToAnnounce.map(s => `${s.date} at ${s.time}, ${s.location}, ${s.price}`).join('; ')
+      : 'No slots';
 
   return {
     success: true,

@@ -8,6 +8,7 @@ import testClientRegistry from '../../../services/testClientRegistry.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
 import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
+import { detectPrematureQuestion } from '../../../services/toolResultSubmitter.js';
 
 /**
  * Response Handler
@@ -532,12 +533,6 @@ export class ResponseHandler {
       console.error(`   📋 Response object:`, JSON.stringify(event.response, null, 2));
     }
 
-    // Send first progress when model's response.done arrives, even if activeResponseId was already cleared
-    // (e.g. in handleToolCall) so the caller hears progress during long tool runs.
-    const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
-    if (conversationBehaviorConfig && progressIndicatorService.hasPendingFirstProgress(this.state.callSid)) {
-      progressIndicatorService.trySendFirstProgressAfterResponseDone(this.state.callSid, this.ws, conversationBehaviorConfig, this.state);
-    }
 
     // Only clear response tracking if this is the active response
     if (responseId === this.state.activeResponseId) {
@@ -603,6 +598,17 @@ export class ResponseHandler {
         const logText = fullResponseText.length > maxLogLen ? `${fullResponseText.substring(0, maxLogLen)}... (${fullResponseText.length} chars)` : fullResponseText;
         console.log(`[AGENT] [${this.state.callSid}] "${logText}"`);
         appendTranscriptEntry(this.state.callSid, entry, { consentGiven: conv.recordingConsent?.given === true }).catch(() => { });
+
+        // Detect premature questions (e.g. bike type before booking_step_select_booking_options)
+        // Only treat as premature if the tool has NOT been invoked yet in this session
+        const toolAlreadyInvoked = conv.selectBookingOptionsInvoked === true;
+        const premature = !toolAlreadyInvoked && detectPrematureQuestion(fullResponseText, 'booking_step_select_booking_options', {
+          outputItems: outputItems || []
+        });
+        if (premature) {
+          conv.pendingPrematureQuestion = { ...premature, detectedAt: Date.now() };
+          console.log(`📝 [${this.state.callSid}] Detected premature ${premature.type} question - waiting for user response`);
+        }
       }
 
       console.log(`✅ [${this.state.callSid}] Response done - ID: ${responseId}, status: ${status}`);
@@ -650,13 +656,10 @@ export class ResponseHandler {
       const hasPendingRecoveryTool = !!this.state.pendingChainedToolCall;
       const isHoldingResponse = progressIndicatorService.isHoldingResponse(this.state.callSid, responseId);
       if (isHoldingResponse) {
-        const actualDuration = this.state.responseStartTime != null ? Date.now() - this.state.responseStartTime : 0;
-        progressIndicatorService.onAcknowledgmentCompleted(this.state.callSid, responseId, actualDuration);
         this.state.waitingForUser = false;
         progressIndicatorService.removeHoldingResponse(this.state.callSid, responseId);
         this.state.releaseResponseLock();
-        progressIndicatorService.trySendNextProgressUpdate(this.state.callSid, this.ws, conversationBehaviorConfig, this.state);
-        console.log(`📢 [${this.state.callSid}] Response done (holding message - ack/periodic update) - NOT setting waitingForUser`);
+        console.log(`📢 [${this.state.callSid}] Response done (holding message - periodic update) - NOT setting waitingForUser`);
       } else {
         this.state.waitingForUser = !activeToolExecution && !hasPendingRecoveryTool;
         if (activeToolExecution) {

@@ -370,6 +370,26 @@ class ToolExecutor {
         }
       }
 
+      // Alias resolution: "booking_step_confirm_payment_request" → "booking_step_send_payment_request" with confirmed: true
+      // There is NO separate confirm tool; the model sometimes invents this name. Redirect to send_payment_request and force confirmed: true so the send button is clicked.
+      if (resolvedToolName === 'booking_step_confirm_payment_request') {
+        if (this.toolRegistry.has('booking_step_send_payment_request')) {
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "booking_step_confirm_payment_request" → booking_step_send_payment_request with confirmed: true`);
+          parameters = { ...parameters, confirmed: true };
+          resolvedToolName = 'booking_step_send_payment_request';
+        }
+      }
+
+      // Alias resolution: "booking_step_confirm_booking" does not exist. Model invents it after select_booking_options. Redirect to the actual next step: lookup_contact (existing) or create_new_contact (new).
+      if (resolvedToolName === 'booking_step_confirm_booking') {
+        const wt = parameters?.workflowType || conversations[callSid]?.bookingSession?.workflowType || 'existing';
+        const nextTool = wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact';
+        if (this.toolRegistry.has(nextTool)) {
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "booking_step_confirm_booking" → ${nextTool} (workflowType: ${wt})`);
+          resolvedToolName = nextTool;
+        }
+      }
+
       if (!this.toolRegistry.has(resolvedToolName)) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: `Tool not found: ${resolvedToolName}` });
         span.end();
