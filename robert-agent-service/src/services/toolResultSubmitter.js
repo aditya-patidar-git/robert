@@ -96,6 +96,105 @@ class ToolResultSubmitter {
 }
 
 /**
+ * Premature question detection and response storage helpers.
+ * Used when the agent asks for preferences (e.g. bike type) before invoking the relevant tool.
+ */
+
+/** Patterns that indicate a bike-type-related question (asked before booking_step_select_booking_options) */
+const BIKE_TYPE_QUESTION_PATTERNS = [
+  /\b(which|what)\s+(type\s+of\s+)?bike\b/i,
+  /\bbike\s+(type|preference)\b/i,
+  /\b125cc\s+automatic|50cc\s+automatic|125cc\s+manual\b/i,
+  /\b(automatic|manual)\s+(or|and)\b/i,
+  /\bwould you (like|prefer).*(125cc|50cc|automatic|manual)/i,
+  /\bwhich.*(125cc|50cc|automatic|manual|scooter|geared)/i
+];
+
+/**
+ * Detect if agent response contains premature questions (e.g. bike type before booking_step_select_booking_options).
+ * @param {string} responseText - Full agent response text
+ * @param {string} expectedTool - Tool that should be invoked before asking (e.g. 'booking_step_select_booking_options')
+ * @param {Object} [context] - Optional context: { outputItems } to check if tool was called in same response
+ * @returns {{ isPremature: boolean, type: string }|null} Premature question info or null
+ */
+export function detectPrematureQuestion(responseText, expectedTool, context = {}) {
+  if (!responseText || typeof responseText !== 'string') return null;
+  if (expectedTool !== 'booking_step_select_booking_options') return null;
+
+  const outputItems = context.outputItems || [];
+  const toolWasCalledInResponse = outputItems.some(
+    item => item.type === 'function_call' && item.name === expectedTool
+  );
+  if (toolWasCalledInResponse) return null;
+
+  const text = responseText.toLowerCase().trim();
+  const hasBikeTypeQuestion = BIKE_TYPE_QUESTION_PATTERNS.some(p => p.test(text));
+  if (!hasBikeTypeQuestion) return null;
+
+  return { isPremature: true, type: 'bikeType', expectedTool };
+}
+
+/**
+ * Store user response to a premature question in conversation state.
+ * @param {string} callSid - Call SID
+ * @param {string} responseText - User's transcribed response
+ * @param {{ type: string, expectedTool: string }} prematureQuestion - From detectPrematureQuestion
+ */
+export function storePrematureResponse(callSid, responseText, prematureQuestion) {
+  if (!callSid || !responseText || !prematureQuestion?.type) return;
+  if (!conversations[callSid]) conversations[callSid] = {};
+  if (!conversations[callSid].prematureResponses) conversations[callSid].prematureResponses = {};
+  conversations[callSid].prematureResponses[prematureQuestion.type] = {
+    responseText: (responseText || '').trim(),
+    storedAt: Date.now(),
+    expectedTool: prematureQuestion.expectedTool
+  };
+  console.log(`📝 [${callSid}] Stored premature response for ${prematureQuestion.type}: "${(responseText || '').slice(0, 60)}..."`);
+}
+
+/**
+ * Match stored response against valid options (case-insensitive, flexible).
+ * @param {string} callSid - Call SID
+ * @param {string} preferenceType - e.g. 'bikeType'
+ * @param {string[]} validOptions - Valid option strings (e.g. ['125cc automatic', '50cc automatic', '125cc manual'])
+ * @returns {string|null} Matched valid option or null
+ */
+export function matchStoredResponse(callSid, preferenceType, validOptions) {
+  if (!callSid || !preferenceType || !Array.isArray(validOptions) || validOptions.length === 0) return null;
+  const stored = conversations[callSid]?.prematureResponses?.[preferenceType];
+  if (!stored?.responseText) return null;
+
+  const userText = stored.responseText.toLowerCase().trim();
+  const normalizedOptions = validOptions.map(o => (o || '').toLowerCase().trim());
+
+  for (let i = 0; i < normalizedOptions.length; i++) {
+    const opt = normalizedOptions[i];
+    if (userText === opt) return validOptions[i];
+    if (userText.includes(opt) || opt.includes(userText)) return validOptions[i];
+  }
+  if (/^(125|50)\s*cc\s+automatic$/i.test(userText)) return userText.includes('50') ? '50cc automatic' : '125cc automatic';
+  if (/^(125|50)\s*cc\s+manual$/i.test(userText)) return '125cc manual';
+  if (/\bautomatic\b/i.test(userText) && !/\bmanual\b/i.test(userText)) {
+    if (/\b50\b/i.test(userText)) return '50cc automatic';
+    return '125cc automatic';
+  }
+  if (/\bmanual\b/i.test(userText) && /\b125\b/i.test(userText)) return '125cc manual';
+
+  return null;
+}
+
+/**
+ * Clear stored response after use.
+ * @param {string} callSid - Call SID
+ * @param {string} preferenceType - e.g. 'bikeType'
+ */
+export function clearStoredResponse(callSid, preferenceType) {
+  if (!callSid || !conversations[callSid]?.prematureResponses) return;
+  delete conversations[callSid].prematureResponses[preferenceType];
+  console.log(`🗑️ [${callSid}] Cleared stored premature response for ${preferenceType}`);
+}
+
+/**
  * WebSocket result submitter for Media Streams
  */
 export class WebSocketResultSubmitter extends ToolResultSubmitter {
@@ -198,9 +297,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       (Array.isArray(toolResult.missingFields) && toolResult.missingFields.length > 0)
     );
 
-    if (!isPriorityResult) {
-      await progressIndicatorService.waitForAcknowledgmentCompletion(callId, 5000);
-    }
+    // No longer waiting for acknowledgments - they have been removed
 
     // Retry configuration
     const MAX_RETRIES = 5;
@@ -429,12 +526,14 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         }
       }
 
-      // Phase 0: After check_availability (step 1), present ONLY slots from tool result; do NOT invent slots; do NOT ask for full name or contact details
+      // Phase 0: After check_availability (step 1), present ONLY slots from tool result; do NOT invent slots; IMMEDIATELY call authenticate after slot confirmation
       if (toolName === 'booking_step_check_availability' && toolResult?.success === true) {
         const slotsFromTool = toolResult?.message ? ` Tool result message: "${toolResult.message}"` : '';
-        const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool} After the caller confirms a slot, call booking_step_authenticate only. Do NOT ask for full name, email, postcode, telephone, or any contact or personal details—only confirm the slot then proceed to authentication.`;
+        const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool} 
+
+MANDATORY WORKFLOW: After the caller confirms a slot (e.g. "yes", "that works", "okay", "proceed"), you MUST IMMEDIATELY call booking_step_authenticate with the agreedSlot parameter containing the slot details from the tool result. Do NOT ask for full name, email, postcode, telephone, or any contact or personal details. Do NOT ask "Could you please tell me your full name?" or any similar questions. ONLY confirm the slot and then IMMEDIATELY call booking_step_authenticate.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
-        console.log(`🎯 [${callId}] Check availability completed - instructing to present ONLY tool result slots (verbatim), then booking_step_authenticate; no contact questions`);
+        console.log(`🎯 [${callId}] Check availability completed - instructing to present ONLY tool result slots (verbatim), then IMMEDIATELY call booking_step_authenticate; no contact questions`);
       }
 
       // Phase 1: After search_client finds a client with requiresVerification, agent MUST call client_verification (not search_client again), then after verified call booking_step_select_session
@@ -464,9 +563,18 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
       // Phase 2: After select_session, call select_booking_options in this turn first; do NOT ask for bike type until after the tool returns
       if (toolName === 'booking_step_select_session' && toolResult?.success === true) {
-        const instruction = `CRITICAL: booking_step_select_session completed. The UI is still on the diaries tab—the booking options tab opens only when you call booking_step_select_booking_options. In this turn you MUST: (1) Say ONLY a brief confirmation (e.g. "Session selected. Proceeding to booking options.")—do NOT ask for bike type, do NOT list 125cc/50cc/manual options, do NOT say "which bike type would you prefer". (2) Call **booking_step_select_booking_options** with courseType and workflowType from the current session in this same turn. Only after the tool returns may you ask for bike type. After the caller says their choice, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
+        const instruction = `CRITICAL: booking_step_select_session completed. The UI is still on the diaries tab—the booking options tab opens only when you call booking_step_select_booking_options. 
+
+ABSOLUTE REQUIREMENT: In your response, you MUST:
+1. Say ONLY a brief confirmation (e.g. "Session selected. Proceeding to booking options." or "Got it, proceeding.") 
+2. DO NOT mention bike type, bike preference, automatic/manual, 125cc, 50cc, or any booking options in your response AT ALL
+3. DO NOT ask "what type of bike" or "which bike type would you prefer" or any variation
+4. DO NOT say "Now let's move on to selecting your booking options" followed by asking about bike type
+5. IMMEDIATELY call **booking_step_select_booking_options** with courseType and workflowType from the current session in this same turn
+
+Only AFTER booking_step_select_booking_options returns may you ask for bike type. After the caller says their choice, call **booking_step_select_booking_options** again with courseType, workflowType, and **bikeType** (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options. After options are set, use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
-        console.log(`🎯 [${callId}] Select session completed - instructing to call booking_step_select_booking_options next`);
+        console.log(`🎯 [${callId}] Select session completed - STRICT instruction: do NOT mention bike type in response, call booking_step_select_booking_options immediately`);
         const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
         if (this.stateManager && reqCourseType) {
           const session = sessionStateManager.getSession(callSid);
@@ -478,12 +586,38 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         }
       }
 
-      // When select_booking_options returns requiresPreferences (e.g. missing bikeType), ask once only—do not repeat if already asked
+      // When select_booking_options returns requiresPreferences (e.g. missing bikeType), check for stored premature response first
       const isSelectBookingOptionsRequiresPrefs = toolName === 'booking_step_select_booking_options' && toolResult?.requiresPreferences === true;
       if (isSelectBookingOptionsRequiresPrefs) {
-        const noRepeatInstruction = `CRITICAL: The tool needs the caller's bike type preference. If you already asked for bike type in your previous message, do NOT ask again—wait for the caller's answer. If you have not asked yet, ask once using the message below and list the three options (125cc automatic, 50cc automatic, 125cc manual).`;
-        responseInstructions = responseInstructions ? `${noRepeatInstruction}\n\n${responseInstructions}` : noRepeatInstruction;
-        console.log(`🎯 [${callId}] Select booking options requires preferences (e.g. bikeType) - instructing to ask once only, do not repeat`);
+        const validBikeTypes = toolResult?.validOptions?.bikeType || ['125cc automatic', '50cc automatic', '125cc manual'];
+        const matchedBikeType = matchStoredResponse(callSid, 'bikeType', validBikeTypes);
+
+        if (matchedBikeType) {
+          clearStoredResponse(callSid, 'bikeType');
+          const instruction = `CRITICAL: The caller already told you their bike type: "${matchedBikeType}". Do NOT ask again. Call **booking_step_select_booking_options** immediately with courseType, workflowType, and bikeType: "${matchedBikeType}".`;
+          responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+          this.stateManager.pendingChainedToolCall = {
+            toolName: 'booking_step_select_booking_options',
+            args: {
+              courseType: courseType || sessionStateManager.getSession(callSid)?.courseType,
+              workflowType: workflowType || sessionStateManager.getSession(callSid)?.workflowType || 'existing',
+              bikeType: matchedBikeType
+            }
+          };
+          console.log(`🎯 [${callId}] Select booking options requires preferences - using stored bikeType: "${matchedBikeType}"`);
+        } else {
+          const noRepeatInstruction = `CRITICAL: The tool needs the caller's bike type preference. If you already asked for bike type in your previous message, do NOT ask again—wait for the caller's answer. If you have not asked yet, ask once using the message below and list the three options (125cc automatic, 50cc automatic, 125cc manual).`;
+          responseInstructions = responseInstructions ? `${noRepeatInstruction}\n\n${responseInstructions}` : noRepeatInstruction;
+          console.log(`🎯 [${callId}] Select booking options requires preferences (e.g. bikeType) - instructing to ask once only, do not repeat`);
+        }
+      }
+
+      // Handle validation errors gracefully - when bikeType is invalid (e.g., "automatic" instead of "125cc automatic")
+      const isSelectBookingOptionsValidationError = toolName === 'booking_step_select_booking_options' && toolResult?.success === false && toolResult?.error && toolResult.error.includes('Invalid enum value');
+      if (isSelectBookingOptionsValidationError) {
+        const gracefulErrorInstruction = `CRITICAL: The bike type provided was not specific enough. The caller said something like "automatic" but the system needs the full option. Gracefully explain: "I need a bit more detail. For the Introduction to Motorcycling course, please choose one of: 125cc automatic, 50cc automatic, or 125cc manual." Then wait for their response and call booking_step_select_booking_options again with the correct bikeType value. Do NOT repeat the error message verbatim—handle it conversationally.`;
+        responseInstructions = responseInstructions ? `${gracefulErrorInstruction}\n\n${responseInstructions}` : gracefulErrorInstruction;
+        console.log(`🎯 [${callId}] Select booking options validation error - instructing graceful handling`);
       }
 
       // Phase 3: After select_booking_options (or alias e.g. booking_step_finalize), call lookup_contact (existing) or create_new_contact (new) next
@@ -493,7 +627,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         const wt = workflowType || conversations[callSid]?.bookingSession?.workflowType;
         const instruction = wt === 'new'
           ? `CRITICAL: Do not call booking_step_select_booking_options again. Say only a brief confirmation (e.g. "Your booking options are successfully selected."). Do NOT mention "contact details" or "finalize your contact details". Do not ask any questions. Call booking_step_create_new_contact next with courseType and workflowType: "new". Then immediately call booking_step_fill_contact_details.`
-          : `CRITICAL: Do not call booking_step_select_booking_options again. Say ONLY 2-5 words (e.g. "Options set." or "Done."). Do NOT say any other sentence or list next steps. Then call booking_step_lookup_contact with courseType and workflowType: "existing". This step is silent (no questions)—do not ask about contact until booking_step_fill_contact_details has run and returned missingFields.`;
+          : `CRITICAL: Do not call booking_step_select_booking_options again. Say ONLY 2-5 words (e.g. "Options set." or "Done."). Do NOT say any other sentence or list next steps. Do NOT say the booking is confirmed, that they are all set, or that the booking is complete—payment has not been done yet. Then call booking_step_lookup_contact with courseType and workflowType: "existing". This step is silent (no questions)—do not ask about contact until booking_step_fill_contact_details has run and returned missingFields.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Select booking options completed - instructing to call ${wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact'} next`);
         const nextTool = wt === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact';
@@ -548,6 +682,26 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         console.log(`🎯 [${callId}] Fill contact details incomplete - instructing to collect all missing then call once: ${toolResult.missingFields?.join(', ')}`);
       }
 
+      // Phase 6: After fill_contact_details completes successfully (no missingFields), call process_payment in the same turn—do not wait for caller
+      const isFillContactDetailsComplete = toolName === 'booking_step_fill_contact_details' &&
+        toolResult?.success === true &&
+        (!Array.isArray(toolResult?.missingFields) || toolResult.missingFields.length === 0);
+      if (isFillContactDetailsComplete) {
+        const instruction = `CRITICAL: booking_step_fill_contact_details completed. Do NOT wait for the caller to say "proceed". In this turn say ONLY a brief confirmation (e.g. "Contact details done. Proceeding to payment.") and IMMEDIATELY call **booking_step_process_payment** with courseType and workflowType. Do not ask any questions—call the tool in this same response.`;
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (this.stateManager && reqCourseType) {
+          const session = sessionStateManager.getSession(callSid);
+          this.stateManager.pendingChainedToolCall = {
+            toolName: 'booking_step_process_payment',
+            args: { courseType: reqCourseType, workflowType: workflowType || session?.workflowType || 'existing' }
+          };
+          console.log(`🎯 [${callId}] Fill contact details completed - instructing to call booking_step_process_payment in same turn; pending recovery tool set`);
+        } else {
+          console.log(`🎯 [${callId}] Fill contact details completed - instructing to call booking_step_process_payment in same turn`);
+        }
+      }
+
       // process_payment returned requiresPaymentMethod: agent must use booking_step_send_payment_request next, not process_payment again
       if (toolName === 'booking_step_process_payment' && toolResult?.requiresPaymentMethod === true) {
         const instruction = toolResult.instruction || `CRITICAL: Do NOT call booking_step_process_payment again. Ask the caller: "Would you like to receive the payment request via email or SMS?" When they answer, call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms" (and courseType, workflowType, and clientEmail or clientMobile as needed).`;
@@ -557,13 +711,40 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         console.log(`🎯 [${callId}] process_payment requiresPaymentMethod - instructing to call booking_step_send_payment_request next`);
       }
 
-      // send_payment_request returned requiresConfirmation: agent must ask user to confirm email/phone, then call again with confirmed: true to click "Send by email now" and start polling
-      if (toolName === 'booking_step_send_payment_request' && toolResult?.requiresConfirmation === true) {
-        const instruction = toolResult.instruction || `CRITICAL: The payment request form is filled but not yet sent. Ask the caller to confirm the ${toolResult.deliveryMethod === 'sms' ? 'phone number' : 'email address'} (e.g. "Just to confirm, the payment request will be sent to ${toolResult.emailAddress || toolResult.phoneNumber || 'that address'}. Could you please confirm that this is correct?"). When they say yes, you MUST call the SAME tool **booking_step_send_payment_request** again with the SAME courseType, workflowType, deliveryMethod, clientEmail/clientMobile, and termsAcceptedBeforeSend: true, plus **confirmed: true**. There is NO tool named booking_step_confirm_payment_request—use only **booking_step_send_payment_request** with confirmed: true. Do NOT call without confirmed: true or the send button will not be clicked.`;
+      // send_payment_request returned requiresClientEmail: agent must ask caller for email, then call again with clientEmail
+      if (toolName === 'booking_step_send_payment_request' && toolResult?.requiresClientEmail === true) {
+        const instruction = toolResult.instruction || `CRITICAL: Ask the caller: "What email address should I send the payment link to?" When they give it, call **booking_step_send_payment_request** again with the same parameters (courseType, workflowType, deliveryMethod: "email", termsAcceptedBeforeSend as before) and **clientEmail** set to the address they said. Do not use a different tool.`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
-        console.log(`🎯 [${callId}] send_payment_request requiresConfirmation - instructing to confirm with caller then call again with confirmed: true`);
+        console.log(`🎯 [${callId}] send_payment_request requiresClientEmail - instructing to ask caller for email then call again with clientEmail`);
+      }
+
+      // send_payment_request returned requiresClientMobile (SMS): agent must ask caller for mobile, then call again with clientMobile
+      if (toolName === 'booking_step_send_payment_request' && toolResult?.requiresClientMobile === true) {
+        const instruction = toolResult.instruction || `CRITICAL: Ask the caller: "What mobile number should I send the payment link to?" When they give it, call **booking_step_send_payment_request** again with the same parameters (courseType, workflowType, deliveryMethod: "sms", termsAcceptedBeforeSend as before) and **clientMobile** set to the number they said. Do not use a different tool.`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] send_payment_request requiresClientMobile - instructing to ask caller for mobile then call again with clientMobile`);
+      }
+
+      // send_payment_request returned requiresConfirmation: agent must ask user to confirm email/phone, then call again with confirmed: true to click "Send by email now" and start polling
+      if (toolName === 'booking_step_send_payment_request' && toolResult?.requiresConfirmation === true) {
+        const instruction = toolResult.instruction || `CRITICAL — CORRECT TOOL NAME ONLY: When the caller confirms the ${toolResult.deliveryMethod === 'sms' ? 'phone number' : 'email address'}, you MUST call **booking_step_send_payment_request** again (the SAME tool, not any other). Use the exact name: booking_step_send_payment_request. Pass the SAME parameters: courseType, workflowType, deliveryMethod, clientEmail or clientMobile, termsAcceptedBeforeSend: true, and you MUST add **confirmed: true**. Do NOT call a tool named "booking_step_confirm_payment_request"—that tool does not exist. Only **booking_step_send_payment_request** with confirmed: true will click "Send by email now" / "Send by SMS" and send the link. Ask the caller: "Just to confirm, the payment request will be sent to ${toolResult.emailAddress || toolResult.phoneNumber || 'that address'}. Could you please confirm that this is correct?" When they say yes, invoke **booking_step_send_payment_request** with confirmed: true.`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] send_payment_request requiresConfirmation - instructing to confirm with caller then call again with confirmed: true (emphasizing correct tool: booking_step_send_payment_request only)`);
+      }
+
+      // send_sms returned requiresClientMobile: agent must ask caller for mobile, then call again with customerMobile
+      if (toolName === 'booking_step_send_sms' && toolResult?.requiresClientMobile === true) {
+        const instruction = toolResult.instruction || `CRITICAL: Ask the caller: "What mobile number should I send the SMS confirmation to?" When they give it, call **booking_step_send_sms** again with the same courseType and workflowType and **customerMobile** set to the number they said. Do not use a different tool.`;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] send_sms requiresClientMobile - instructing to ask caller for mobile then call again with customerMobile`);
       }
 
       // send_payment_request returned payment completed / booking finalized: agent MUST call send_confirmation, send_terms, send_sms in order (do not wait for caller)

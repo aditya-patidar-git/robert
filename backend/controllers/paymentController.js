@@ -83,7 +83,7 @@ export const handleTwilioPayCallback = async (req, res) => {
 export const createPaymentLink = async (req, res) => {
   try {
     const { amount, currency, description, customerEmail, customerPhone, bookingId } = req.body;
-    
+    const baseUrl = (process.env.FRONTEND_URL || process.env.BASE_URL || 'https://example.com').replace(/\/$/, '');
     const paymentLink = await twilioPayService.createPaymentLink({
       amount,
       currency,
@@ -91,8 +91,8 @@ export const createPaymentLink = async (req, res) => {
       customerEmail,
       customerPhone,
       bookingId,
-      returnUrl: `${process.env.BASE_URL || 'https://example.com'}/payment/success`,
-      cancelUrl: `${process.env.BASE_URL || 'https://example.com'}/payment/cancel`
+      returnUrl: `${baseUrl}/payment/success`,
+      cancelUrl: `${baseUrl}/payment/cancel`
     });
 
     res.json({

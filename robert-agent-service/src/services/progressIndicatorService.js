@@ -1,83 +1,23 @@
 /**
  * Progress Indicator Service
- * Provides feedback to callers during long-running tool operations
+ * Provides periodic updates during long-running tool operations
  */
 
 import { conversations } from '../shared/state.js';
 
-/** Per-tool messages for immediate tool-start acknowledgments (create booking workflow). Short phrases to minimize race conditions and prioritize tool results. */
-const BOOKING_STEP_TOOL_START_MESSAGES = {
-  booking_step_check_availability: 'Checking availability.',
-  booking_step_authenticate: 'Logging in.',
-  booking_step_navigate_contacts: 'Opening contacts.',
-  booking_step_search_client: 'Finding your client.',
-  booking_step_select_session: 'Selecting session.',
-  booking_step_select_booking_options: 'Loading options.',
-  booking_step_lookup_contact: 'Looking up contact.',
-  booking_step_create_new_contact: 'Adding new contact.',
-  booking_step_fill_contact_details: 'Filling details.',
-  booking_step_process_payment: 'Processing payment.',
-  booking_step_send_payment_request: 'Sending payment link.',
-  booking_step_send_confirmation: 'Sending confirmation.',
-  booking_step_send_terms: 'Sending terms.',
-  booking_step_send_sms: 'Sending SMS.'
-};
-
 class ProgressIndicatorService {
   constructor() {
-    this.activeExecutions = new Map(); // callSid -> { toolName, startTime, acknowledgmentSent, lastUpdateTime, updateInterval }
-    this.holdingResponseIds = new Map(); // callSid -> Set of responseId (acknowledgments/periodic updates; do not set waitingForUser when these complete)
+    this.activeExecutions = new Map(); // callSid -> { toolName, startTime, lastUpdateTime, updateTimeout, periodicUpdateCount, maxPeriodicUpdates, stateManager, allowsPeriodicUpdates, delayedStartTime, expectHoldingResponse }
+    this.holdingResponseIds = new Map(); // callSid -> Set of responseId (periodic updates; do not set waitingForUser when these complete)
     this.expectNonWaitingResponseCallSids = new Set(); // callSids for which the next response.created should be registered as non-waiting (e.g. "Your booking options are successfully selected")
-    this.pendingFirstProgress = new Map(); // callSid -> { toolName } — send first progress only after model's response.done
-    this.progressQueue = new Map(); // callSid -> string[] — path-based messages; send next only after previous response.done
-    // Production fixes: throttling, priority queue, duration-aware scheduling
-    this.lastAcknowledgmentTime = new Map(); // callSid -> timestamp
-    this.throttledQueue = new Map(); // callSid -> Array<{data, timestamp}>
-    this.priorityQueue = new Map(); // callSid -> { high: [], normal: [], low: [] }
-    this.currentAcknowledgmentInFlight = new Map(); // callSid -> { message, startTime, estimatedDuration, scheduledTime }
-    this.lastProgressCallbackTime = new Map(); // callSid -> timestamp
-    this.lastProgressTask = new Map(); // callSid -> { task, timestamp }
-    this.fallbackAckTimer = new Map(); // callSid -> timeoutId
-    this.progressCallbackFallbackContext = new Map(); // callSid -> { getWsRef, config, stateManager }
-    this.MAX_QUEUE_SIZE = 10;
-    this.MAX_THROTTLED_QUEUE_SIZE = 5;
-    this.THROTTLE_INTERVAL_MS = 3000;
-    this.DEBOUNCE_TASK_MS = 1000;
-    this.FALLBACK_ACK_MS = 5000;
+    /** First periodic update fires after this (ms) so at least one fires before tool often ends. */
+    this.FIRST_PERIODIC_INTERVAL_MS = 6000;
+    /** Retry delay when response lock is unavailable (ms). */
+    this.PERIODIC_UPDATE_RETRY_DELAY_MS = 2500;
+    /** Max retries (total attempts = 1 + this value). */
+    this.MAX_PERIODIC_UPDATE_RETRIES = 2;
   }
 
-  /**
-   * Get the tool-start acknowledgment message for create-booking steps (booking_step_*).
-   * Returns null for payment steps to avoid race: only one response.create in flight so
-   * response.done does not wrongly set waitingForUser; the agent's reply from triggerResponse provides the message.
-   * Returns null for check_availability so no ack is sent until the tool returns—avoids agent suggesting imaginary slots.
-   * @param {string} toolName - Name of the tool
-   * @returns {string|null} - Message to speak, or null if not a booking step or no message defined (or payment/availability step)
-   */
-  getToolStartMessage(toolName) {
-    if (!toolName || !toolName.startsWith('booking_step_')) {
-      return null;
-    }
-    // Skip immediate ack for payment steps to avoid race with triggerResponse (Option A)
-    if (toolName === 'booking_step_process_payment' || toolName === 'booking_step_send_payment_request') {
-      return null;
-    }
-    // Skip ack for availability: no message until tool returns to prevent agent suggesting imaginary slots
-    if (toolName === 'booking_step_check_availability') {
-      return null;
-    }
-    return BOOKING_STEP_TOOL_START_MESSAGES[toolName] || null;
-  }
-
-  /**
-   * Check if a tool is a step-based booking tool
-   * @param {string} toolName - Name of the tool
-   * @returns {boolean} - True if it's a step-based tool
-   */
-  isStepBasedTool(toolName) {
-    // Step-based tools start with "booking_step_"
-    return toolName && toolName.startsWith('booking_step_');
-  }
 
   /**
    * Check if periodic updates should be enabled for a tool
@@ -90,6 +30,7 @@ class ProgressIndicatorService {
     // Booking workflow:
     // 1. booking_step_search_client - navigates from client search page to client verification page
     // 2. booking_step_select_session - navigates after client verification page to selectBookingOptions page
+    // 2b. booking_step_select_booking_options - applies bike type/preferences and taps Next (slow when called with bikeType)
     // 3. booking_step_lookup_contact - looks up existing client contact (existing workflow only)
     // 4. booking_step_create_new_contact - creates new client contact (new workflow only)
     // 5. booking_step_fill_contact_details - fills contact details form and checks for missing fields sequentially
@@ -103,6 +44,7 @@ class ProgressIndicatorService {
     // 12. cancellation_step_send_confirmation - sends cancellation confirmation email
     return toolName === 'booking_step_search_client'
       || toolName === 'booking_step_select_session'
+      || toolName === 'booking_step_select_booking_options'
       || toolName === 'booking_step_lookup_contact'
       || toolName === 'booking_step_create_new_contact'
       || toolName === 'booking_step_fill_contact_details'
@@ -129,6 +71,14 @@ class ProgressIndicatorService {
       stateManager.clearToolExecutionCompleting();
     }
 
+    // Resolve alias so periodic updates are enabled when model calls booking_step_confirm_booking
+    // (redirected by executor to lookup_contact or create_new_contact; we need the same name for progress)
+    if (toolName === 'booking_step_confirm_booking') {
+      const workflowType = conversations[callSid]?.bookingSession?.workflowType || 'existing';
+      toolName = workflowType === 'new' ? 'booking_step_create_new_contact' : 'booking_step_lookup_contact';
+      console.log(`🔧 [${callSid}] Progress: resolved booking_step_confirm_booking → ${toolName} (workflowType: ${workflowType})`);
+    }
+
     // Delay periodic updates only for the short "one click" step (create_new_contact). No delay for
     // lookup_contact (long 30–40s step needs 3 updates from start) or fill_contact_details.
     const bikeTypeCompletion = conversations[callSid]?.bikeTypeQuestionsCompleted;
@@ -140,8 +90,9 @@ class ProgressIndicatorService {
     // Tools that get 3 periodic updates (after bike type questions until client details page):
     // - booking_step_lookup_contact (existing workflow only - 3 updates)
     // - booking_step_fill_contact_details (existing workflow only - 3 updates)
+    // - booking_step_search_client (find and verify client - 3 updates)
+    // - cancellation_step_search_client (find and verify client - cancellation, 3 updates)
     // Tools that get 2 periodic updates:
-    // - booking_step_search_client (find and verify client - create booking)
     // - booking_step_create_new_contact (new workflow only - 2 updates)
     // - booking_step_fill_contact_details (new workflow only - 2 updates)
     // Booking: booking_step_select_session, booking_step_send_confirmation, booking_step_send_terms, booking_step_send_sms
@@ -149,16 +100,17 @@ class ProgressIndicatorService {
     //               cancellation_step_send_confirmation
     // Others get 1 update
     const toolsWithThreeUpdates = [
-      'booking_step_lookup_contact'
+      'booking_step_lookup_contact',
+      'booking_step_search_client',
+      'cancellation_step_search_client'
     ];
     const toolsWithTwoUpdates = [
-      'booking_step_search_client',
       'booking_step_create_new_contact',
       'booking_step_select_session',
+      'booking_step_select_booking_options',
       'booking_step_send_confirmation',
       'booking_step_send_terms',
       'booking_step_send_sms',
-      'cancellation_step_search_client',
       'cancellation_step_locate_booking',
       'cancellation_step_fill_cancellation_form',
       'cancellation_step_send_confirmation'
@@ -194,26 +146,22 @@ class ProgressIndicatorService {
     this.activeExecutions.set(callSid, {
       toolName,
       startTime: Date.now(),
-      acknowledgmentSent: false,
       lastUpdateTime: Date.now(),
-      updateInterval: null,
       updateTimeout: null, // Track setTimeout for periodic updates
-      ackFallbackTimeout: null, // Timer for fallback ack if immediate ack was not sent
       periodicUpdateCount: 0, // Track how many periodic updates have been sent
       maxPeriodicUpdates: maxPeriodicUpdates, // Maximum number of periodic updates allowed for this tool
       stateManager: stateManager, // Store reference for thread-safe checks
-      isStepBasedTool: this.isStepBasedTool(toolName), // Track if this is a step-based tool for threshold adjustment
       allowsPeriodicUpdates: allowsPeriodicUpdates, // Track if this tool should have periodic updates enabled
       delayedStartTime: delayedStartTime, // When to start periodic updates (if delayed)
-      expectHoldingResponse: false // Set true before sending ack/periodic response.create; cleared when response.created is notified
+      expectHoldingResponse: false // Set true before sending periodic response.create; cleared when response.created is notified
     });
-    console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${this.isStepBasedTool(toolName) ? ' (step-based, using longer threshold)' : ''}${allowsPeriodicUpdates ? ' (periodic updates enabled)' : ''}`);
+    console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${allowsPeriodicUpdates ? ' (periodic updates enabled)' : ''}`);
   }
 
   /**
-   * Schedule acknowledgment and periodic updates (shared by Media Streams and SIP).
+   * Schedule periodic updates for long-running tools (shared by Media Streams and SIP).
    * @param {string} callId - Call identifier (callSid or SIP call_id)
-   * @param {string} toolName - Tool name (for step-based threshold)
+   * @param {string} toolName - Tool name
    * @param {WebSocket} openaiWs - WebSocket to send items
    * @param {Object} config - ConversationBehaviorConfig
    * @param {Object|null} stateManager - Optional; null for SIP
@@ -224,417 +172,16 @@ class ProgressIndicatorService {
       return;
     }
     this.startToolExecution(callId, toolName, stateManager);
-    // First progress is sent after model's response.done via trySendFirstProgressAfterResponseDone (no race).
-    // Fallback ack: if no ack sent within 500ms (e.g. response.done delayed), try once
+    // Start periodic updates immediately for whitelisted tools
     const execution = this.activeExecutions.get(callId);
-    if (execution) {
-      execution.ackFallbackTimeout = setTimeout(() => {
-        const exec = this.activeExecutions.get(callId);
-        if (!exec || exec.acknowledgmentSent) return;
+    if (execution && execution.allowsPeriodicUpdates) {
         const ws = typeof getWsRef === 'function' ? getWsRef() : openaiWs;
-        if (!ws || ws.readyState !== 1) return;
-        this.checkAndSendAcknowledgment(callId, ws, config);
-      }, 500);
-    }
-  }
-
-  /** Register that first progress should be sent after the next response.done (model's turn with tool call). */
-  setPendingFirstProgress(callSid, toolName) {
-    if (callSid && toolName) this.pendingFirstProgress.set(callSid, { toolName });
-  }
-
-  clearPendingFirstProgress(callSid) {
-    if (callSid) this.pendingFirstProgress.delete(callSid);
-  }
-
-  /** Whether first progress is pending for this call (model's response.done not yet processed). */
-  hasPendingFirstProgress(callSid) {
-    return !!(callSid && this.pendingFirstProgress.has(callSid));
-  }
-
-  /**
-   * Start fallback timer: if no progressCallback is called for FALLBACK_ACK_MS, send generic "Still working on that."
-   * Call from tool handler when progressCallback is enabled. Cleared when progressCallback runs or tool ends.
-   * @param {string} callSid - Call SID
-   * @param {function(): WebSocket|null} getWsRef - Get WebSocket (e.g. () => openaiWs)
-   * @param {Object} config - ConversationBehaviorConfig
-   * @param {Object|null} stateManager - State manager for trySendNextProgressUpdate
-   */
-  startProgressCallbackFallback(callSid, getWsRef, config, stateManager) {
-    this.clearProgressCallbackFallback(callSid);
-    this.progressCallbackFallbackContext.set(callSid, { getWsRef, config, stateManager });
-    const timeoutId = setTimeout(() => {
-      this.fallbackAckTimer.delete(callSid);
-      const ctx = this.progressCallbackFallbackContext.get(callSid);
-      this.progressCallbackFallbackContext.delete(callSid);
-      if (!ctx) return;
-      const ws = typeof ctx.getWsRef === 'function' ? ctx.getWsRef() : null;
-      if (!ws || ws.readyState !== 1) return;
-      if (!this.activeExecutions.has(callSid)) return;
-      this.enqueueProgressUpdate(callSid, 'Still working on that.');
-      this.trySendNextProgressUpdate(callSid, ws, ctx.config, ctx.stateManager);
-    }, this.FALLBACK_ACK_MS);
-    this.fallbackAckTimer.set(callSid, timeoutId);
-  }
-
-  /**
-   * Clear the progressCallback fallback timer (call when progressCallback is invoked or tool ends).
-   * @param {string} callSid - Call SID
-   */
-  clearProgressCallbackFallback(callSid) {
-    const existing = this.fallbackAckTimer.get(callSid);
-    if (existing != null) {
-      clearTimeout(existing);
-      this.fallbackAckTimer.delete(callSid);
-    }
-    this.progressCallbackFallbackContext.delete(callSid);
-  }
-
-  /** Enqueue a path-based progress message; send happens when previous response.done (via trySendNextProgressUpdate).
-   * Supports string or structured object { message, currentTask }. Max queue size MAX_QUEUE_SIZE; drops oldest if full.
-   * Debounces duplicate currentTask within DEBOUNCE_TASK_MS.
-   */
-  enqueueProgressUpdate(callSid, messageOrData) {
-    if (!callSid) return;
-    const message = typeof messageOrData === 'string'
-      ? messageOrData
-      : (messageOrData && typeof messageOrData.message === 'string' ? messageOrData.message : null);
-    if (!message || !message.trim()) return;
-    const currentTask = messageOrData && typeof messageOrData === 'object' ? messageOrData.currentTask : null;
-    const now = Date.now();
-    if (currentTask) {
-      const last = this.lastProgressTask.get(callSid);
-      if (last && last.task === currentTask && (now - last.timestamp) < this.DEBOUNCE_TASK_MS) {
-        return;
-      }
-      this.lastProgressTask.set(callSid, { task: currentTask, timestamp: now });
-    }
-    const trimmed = message.trim();
-    if (!this.progressQueue.has(callSid)) this.progressQueue.set(callSid, []);
-    const queue = this.progressQueue.get(callSid);
-    if (queue.length >= this.MAX_QUEUE_SIZE) {
-      queue.shift();
-      console.warn(`⚠️ [${callSid}] Progress queue full, dropped oldest message`);
-    }
-    queue.push(trimmed);
-  }
-
-  clearProgressQueue(callSid) {
-    if (callSid) this.progressQueue.delete(callSid);
-  }
-
-  /**
-   * Throttle progressCallback: max 1 acknowledgment per THROTTLE_INTERVAL_MS per call.
-   * If throttled, queue for later (up to MAX_THROTTLED_QUEUE_SIZE).
-   * @param {string} callSid - Call SID
-   * @param {Object} data - Progress data { message, currentTask, ... }
-   * @returns {boolean} - True if can proceed, false if throttled
-   */
-  throttleProgressCallback(callSid, data) {
-    if (!callSid) return false;
-    const lastTime = this.lastAcknowledgmentTime.get(callSid) || 0;
-    const now = Date.now();
-    const timeSinceLastAck = now - lastTime;
-
-    if (timeSinceLastAck < this.THROTTLE_INTERVAL_MS) {
-      if (!this.throttledQueue.has(callSid)) this.throttledQueue.set(callSid, []);
-      const queue = this.throttledQueue.get(callSid);
-      if (queue.length < this.MAX_THROTTLED_QUEUE_SIZE) {
-        queue.push({ data, timestamp: now });
-      }
-      return false;
-    }
-
-    this.lastAcknowledgmentTime.set(callSid, now);
-    return true;
-  }
-
-  /**
-   * Enqueue a message into the priority queue for this call.
-   * @param {string} callSid - Call SID
-   * @param {string} message - Message to speak
-   * @param {'high'|'normal'|'low'} priority - Priority level (high = tool results with questions, normal = progress acks, low = informational)
-   */
-  enqueuePriorityAcknowledgment(callSid, message, priority = 'normal') {
-    if (!callSid || !message || typeof message !== 'string') return;
-    const trimmed = message.trim();
-    if (!trimmed) return;
-    if (!this.priorityQueue.has(callSid)) {
-      this.priorityQueue.set(callSid, { high: [], normal: [], low: [] });
-    }
-    const pq = this.priorityQueue.get(callSid);
-    const arr = pq[priority];
-    if (!Array.isArray(arr)) return;
-    if (arr.length >= this.MAX_QUEUE_SIZE) {
-      arr.shift();
-      console.warn(`⚠️ [${callSid}] Priority queue ${priority} full, dropped oldest`);
-    }
-    arr.push(trimmed);
-  }
-
-  /**
-   * Get next message to send: priority queue (high -> normal -> low) then progressQueue.
-   * @param {string} callSid - Call SID
-   * @returns {string|null} - Message or null
-   */
-  getNextAcknowledgmentMessage(callSid) {
-    const pq = this.priorityQueue.get(callSid);
-    if (pq) {
-      if (pq.high.length > 0) return pq.high.shift();
-      if (pq.normal.length > 0) return pq.normal.shift();
-      if (pq.low.length > 0) return pq.low.shift();
-      if (pq.high.length === 0 && pq.normal.length === 0 && pq.low.length === 0) {
-        this.priorityQueue.delete(callSid);
+      if (ws && ws.readyState === 1) {
+        this.startPeriodicUpdates(callId, ws, config);
       }
     }
-    const queue = this.progressQueue.get(callSid);
-    const message = queue && queue.length > 0 ? queue.shift() : null;
-    if (queue && queue.length === 0) this.progressQueue.delete(callSid);
-    return message;
   }
 
-  /**
-   * Send first progress only after model's response.done (no race with API one-active-response rule).
-   * Called from responseHandler.handleResponseDone when we receive response.done.
-   */
-  trySendFirstProgressAfterResponseDone(callSid, openaiWs, config, stateManager) {
-    const pending = this.pendingFirstProgress.get(callSid);
-    if (!pending || !config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) return;
-    const execution = this.activeExecutions.get(callSid);
-    if (!execution || execution.acknowledgmentSent) {
-      this.clearPendingFirstProgress(callSid);
-      return;
-    }
-    if (stateManager) {
-      if (stateManager.toolExecutionCompleting || stateManager.isInterrupted) {
-        this.clearPendingFirstProgress(callSid);
-        return;
-      }
-      if (!stateManager.tryAcquireResponseLock()) return;
-    }
-    const message = this.getToolStartMessage(pending.toolName);
-    this.clearPendingFirstProgress(callSid);
-    if (!message) {
-      if (stateManager) stateManager.releaseResponseLock();
-      return;
-    }
-    try {
-      execution.expectHoldingResponse = true;
-      openaiWs.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: message }]
-        }
-      }));
-      openaiWs.send(JSON.stringify({
-        type: 'response.create',
-        response: {
-          modalities: ['audio', 'text'],
-          instructions: `Say exactly: "${(message || '').replace(/"/g, '\\"')}"`
-        }
-      }));
-      execution.acknowledgmentSent = true;
-      if (execution.allowsPeriodicUpdates) this.startPeriodicUpdates(callSid, openaiWs, config);
-      console.log(`✅ [${callSid}] Sent first progress after response.done for ${pending.toolName}: "${message}"`);
-    } catch (err) {
-      console.error(`❌ [${callSid}] Error sending first progress:`, err);
-      if (stateManager) stateManager.releaseResponseLock();
-    }
-  }
-
-  /**
-   * Send next message from progress queue (or start periodic); only when no progress response in flight.
-   * Uses priority queue (high -> normal -> low) then progressQueue. Tracks currentAcknowledgmentInFlight for duration-aware scheduling.
-   * Called after a holding response.done or from progressCallback (enqueue then try send).
-   */
-  trySendNextProgressUpdate(callSid, openaiWs, config, stateManager) {
-    if (!config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) return;
-    const execution = this.activeExecutions.get(callSid);
-    if (!execution) return;
-    if (execution.expectHoldingResponse) return; // previous progress not yet completed
-    if (stateManager && (stateManager.toolExecutionCompleting || stateManager.isInterrupted)) return;
-    if (stateManager && !stateManager.tryAcquireResponseLock()) return;
-    const message = this.getNextAcknowledgmentMessage(callSid);
-    if (!message) {
-      if (stateManager) stateManager.releaseResponseLock();
-      if (execution.allowsPeriodicUpdates) this.startPeriodicUpdates(callSid, openaiWs, config);
-      return;
-    }
-    try {
-      execution.expectHoldingResponse = true;
-      const startTime = Date.now();
-      const estimatedDuration = this.estimateAudioDuration(message);
-      this.currentAcknowledgmentInFlight.set(callSid, { message, startTime, estimatedDuration, scheduledTime: startTime });
-      openaiWs.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: message }]
-        }
-      }));
-      openaiWs.send(JSON.stringify({
-        type: 'response.create',
-        response: {
-          modalities: ['audio', 'text'],
-          instructions: `Say exactly: "${(message || '').replace(/"/g, '\\"')}"`
-        }
-      }));
-      console.log(`💬 [${callSid}] Sent queued progress update: "${message}"`);
-    } catch (err) {
-      console.error(`❌ [${callSid}] Error sending queued progress:`, err);
-      execution.expectHoldingResponse = false;
-      this.currentAcknowledgmentInFlight.delete(callSid);
-      if (stateManager) stateManager.releaseResponseLock();
-    }
-  }
-
-  /**
-   * Check if acknowledgment should be sent and send it
-   * @param {string} callSid - Call SID
-   * @param {WebSocket} openaiWs - OpenAI WebSocket connection
-   * @param {Object} config - ConversationBehaviorConfig
-   * @returns {boolean} - True if acknowledgment was sent
-   */
-  checkAndSendAcknowledgment(callSid, openaiWs, config) {
-    const execution = this.activeExecutions.get(callSid);
-    if (!execution || !config?.progressIndicators?.enabled) {
-      return false;
-    }
-
-    // CRITICAL RACE CONDITION FIX: Check completion flag FIRST (highest priority)
-    if (execution.stateManager && execution.stateManager.toolExecutionCompleting) {
-      console.log(`🛑 [${callSid}] Skipping acknowledgment - tool execution completing (race condition prevention)`);
-      return false;
-    }
-
-    // CRITICAL: Don't send acknowledgment if user has interrupted
-    if (execution.stateManager && execution.stateManager.isInterrupted) {
-      console.log(`🛑 [${callSid}] Skipping acknowledgment - user has interrupted`);
-      return false;
-    }
-
-    const elapsed = Date.now() - execution.startTime;
-    // Use longer threshold for step-based tools (5s) to avoid redundant messages for quick steps; exception: check_availability and authenticate use base (2s) for earlier ack
-    const baseThreshold = config.progressIndicators.acknowledgmentThresholdMs || 2000;
-    const useShortThreshold = execution.toolName === 'booking_step_check_availability' || execution.toolName === 'booking_step_authenticate';
-    const threshold = useShortThreshold ? baseThreshold : (execution.isStepBasedTool ? Math.max(baseThreshold * 2.5, 5000) : baseThreshold);
-
-    if (!execution.acknowledgmentSent && elapsed >= threshold) {
-      // Double-check completion flag and interruption state before sending
-      if (execution.stateManager && execution.stateManager.toolExecutionCompleting) {
-        console.log(`🛑 [${callSid}] Skipping acknowledgment - tool execution completing before send (race condition prevention)`);
-        return false;
-      }
-      if (execution.stateManager && execution.stateManager.isInterrupted) {
-        console.log(`🛑 [${callSid}] Skipping acknowledgment - user interrupted before send`);
-        return false;
-      }
-
-      // CRITICAL RACE CONDITION FIX: Acquire response lock atomically before sending
-      // This prevents race conditions with tool completion responses
-      if (execution.stateManager && !execution.stateManager.tryAcquireResponseLock()) {
-        // Lock not available - another response is being created (likely tool completion)
-        // Skip this acknowledgment to avoid "conversation_already_has_active_response" error
-        return false;
-      }
-
-      const messages = config.progressIndicators.acknowledgmentMessages || [
-        "Let me check that for you.",
-        "I'm looking into that now.",
-        "Just a moment, please."
-      ];
-
-      const message = messages[Math.floor(Math.random() * messages.length)];
-
-      try {
-        if (openaiWs && openaiWs.readyState === 1) { // WebSocket.OPEN
-          execution.expectHoldingResponse = true; // Next response.created is this acknowledgment; do not set waitingForUser when it completes
-          openaiWs.send(JSON.stringify({
-            type: 'response.create',
-            response: {
-              modalities: ['audio', 'text'],
-              instructions: `CRITICAL: You MUST say EXACTLY and ONLY: "${(message || '').replace(/"/g, '\\"')}". Do NOT add or rephrase. This is a holding message only; say ONLY this and nothing else.`
-            }
-          }));
-
-          execution.acknowledgmentSent = true;
-          this.clearPendingFirstProgress(callSid);
-          console.log(`✅ [${callSid}] Sent acknowledgment after ${elapsed}ms: "${message}"`);
-
-          // Start periodic updates only for whitelisted tools
-          if (execution.allowsPeriodicUpdates) {
-            this.startPeriodicUpdates(callSid, openaiWs, config);
-          }
-
-          return true;
-        }
-      } catch (err) {
-        console.error(`❌ [${callSid}] Error sending acknowledgment:`, err);
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Send an immediate tool-start acknowledgment for create-booking steps (one phrase per step).
-   * Message is sent as a holding response so response.done does not set waitingForUser.
-   * Call immediately after scheduleAcknowledgmentAndPeriodicUpdates so execution already exists.
-   * @param {string} callId - Call SID
-   * @param {string} toolName - Tool name (e.g. booking_step_search_client)
-   * @param {WebSocket} openaiWs - OpenAI WebSocket connection
-   * @param {Object} config - ConversationBehaviorConfig
-   * @param {Object|null} stateManager - Optional state manager for guards
-   */
-  sendImmediateToolStartAcknowledgment(callId, toolName, openaiWs, config, stateManager) {
-    if (!config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) {
-      return;
-    }
-    const message = this.getToolStartMessage(toolName);
-    if (!message) {
-      return;
-    }
-    const execution = this.activeExecutions.get(callId);
-    if (!execution) {
-      return;
-    }
-    if (stateManager) {
-      if (stateManager.toolExecutionCompleting) {
-        return;
-      }
-      if (stateManager.isInterrupted) {
-        return;
-      }
-      if (!stateManager.tryAcquireResponseLock()) {
-        return;
-      }
-    }
-    try {
-      execution.expectHoldingResponse = true;
-      openaiWs.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: message }]
-        }
-      }));
-      openaiWs.send(JSON.stringify({
-        type: 'response.create',
-        response: { modalities: ['audio', 'text'] }
-      }));
-      execution.acknowledgmentSent = true;
-      if (execution.allowsPeriodicUpdates) {
-        this.startPeriodicUpdates(callId, openaiWs, config);
-      }
-      console.log(`✅ [${callId}] Sent immediate tool-start acknowledgment for ${toolName}: "${message}"`);
-    } catch (err) {
-      console.error(`❌ [${callId}] Error sending immediate tool-start acknowledgment:`, err);
-    }
-  }
 
   /**
    * Start sending periodic updates during long operations
@@ -688,127 +235,115 @@ class ProgressIndicatorService {
       "Please bear with me for a moment"
     ];
 
+    // First periodic update fires earlier (6s default) so at least one is sent before tool often ends
+    const firstIntervalMs = Math.min(updateInterval, this.FIRST_PERIODIC_INTERVAL_MS);
+
     // Use setTimeout instead of setInterval to send only ONE update
-    execution.updateTimeout = setTimeout(async () => {
-      // Atomic check: get execution atomically (thread-safe per callSid)
-      const execution = this.activeExecutions.get(callSid);
-      if (!execution || !openaiWs || openaiWs.readyState !== 1) {
-        this.stopPeriodicUpdates(callSid);
+    execution.updateTimeout = setTimeout(() => {
+      this.trySendOnePeriodicUpdate(callSid, openaiWs, config, 0, null, updateInterval, messages);
+    }, firstIntervalMs);
+  }
+
+  /**
+   * Schedule a retry for sending a periodic update when lock was unavailable.
+   * @param {string} callSid - Call SID
+   * @param {WebSocket} openaiWs - OpenAI WebSocket
+   * @param {Object} config - ConversationBehaviorConfig
+   * @param {number} retryCount - Current retry count (0 = first attempt)
+   * @param {Object|null} scheduleNextArgs - null for first update; { updateGapMs, messages } for next updates
+   * @param {number} updateInterval - updateIntervalMs from config
+   * @param {Array<string>} messages - updateMessages from config
+   */
+  schedulePeriodicUpdateRetry(callSid, openaiWs, config, retryCount, scheduleNextArgs, updateInterval, messages) {
+    if (retryCount >= this.MAX_PERIODIC_UPDATE_RETRIES) {
+      console.log(`⏭️ [${callSid}] Periodic update retry limit reached (${retryCount}), skipping this update`);
         return;
       }
+    const delayMs = this.PERIODIC_UPDATE_RETRY_DELAY_MS;
+    console.log(`⏱️ [${callSid}] Scheduling periodic update retry ${retryCount + 1}/${this.MAX_PERIODIC_UPDATE_RETRIES} in ${delayMs}ms`);
+    setTimeout(() => {
+      this.trySendOnePeriodicUpdate(callSid, openaiWs, config, retryCount + 1, scheduleNextArgs, updateInterval, messages);
+    }, delayMs);
+  }
 
-      // Check if we've already sent the maximum number of periodic updates
-      if (execution.periodicUpdateCount >= execution.maxPeriodicUpdates) {
-        return;
-      }
-
-      // CRITICAL: Check if user has interrupted before sending periodic update
-      if (execution.stateManager) {
-        // CRITICAL RACE CONDITION FIX: Check completion flag FIRST (highest priority)
-        // This prevents periodic updates from firing when tool is completing
-        if (execution.stateManager.toolExecutionCompleting) {
-          console.log(`🛑 [${callSid}] Skipping periodic update - tool execution completing (race condition prevention)`);
+  /**
+   * Try once to send one periodic update (first or next in sequence). Skips if lock unavailable; schedules retry when under limit.
+   * @param {string} callSid - Call SID
+   * @param {WebSocket} openaiWs - OpenAI WebSocket
+   * @param {Object} config - ConversationBehaviorConfig
+   * @param {number} retryCount - Retry attempt (0 = first attempt)
+   * @param {Object|null} scheduleNextArgs - null for first update; { updateGapMs, messages } for next update
+   * @param {number} updateInterval - updateIntervalMs from config
+   * @param {Array<string>} messages - updateMessages from config
+   */
+  async trySendOnePeriodicUpdate(callSid, openaiWs, config, retryCount, scheduleNextArgs, updateInterval, messages) {
+    const execution = this.activeExecutions.get(callSid);
+    if (!execution || !openaiWs || openaiWs.readyState !== 1) {
           this.stopPeriodicUpdates(callSid);
           return;
         }
-
-        // Check for interruption (second priority)
-        if (execution.stateManager.isInterrupted) {
-          console.log(`🛑 [${callSid}] Skipping periodic update - user has interrupted`);
-          this.stopPeriodicUpdates(callSid);
-          return;
-        }
-
-        // Check if response is already active
-        if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
-          // Skip this update - response already active (prevents "conversation already has active response" error)
-          console.log(`⏭️ [${callSid}] Skipping periodic update - response already active (isResponding: ${execution.stateManager.isResponding}, activeResponseId: ${execution.stateManager.activeResponseId})`);
-          return;
-        }
-      }
-
-      const elapsed = Date.now() - execution.startTime;
-      const message = messages[Math.floor(Math.random() * messages.length)];
-
-      try {
-        // Double-check interruption and response state before sending
+    if (execution.periodicUpdateCount >= execution.maxPeriodicUpdates) return;
         if (execution.stateManager) {
-          // CRITICAL RACE CONDITION FIX: Double-check completion flag before sending
           if (execution.stateManager.toolExecutionCompleting) {
-            console.log(`🛑 [${callSid}] Skipping periodic update - tool execution completing before send (race condition prevention)`);
             this.stopPeriodicUpdates(callSid);
             return;
           }
           if (execution.stateManager.isInterrupted) {
-            console.log(`🛑 [${callSid}] Skipping periodic update - user interrupted before send`);
-            this.stopPeriodicUpdates(callSid);
+            console.log(`⏭️ [${callSid}] Periodic update (retry ${retryCount}) - interrupted (will retry)`);
+            this.schedulePeriodicUpdateRetry(callSid, openaiWs, config, retryCount, scheduleNextArgs, updateInterval, messages);
             return;
           }
-
-          // CRITICAL RACE CONDITION FIX: Acquire response lock atomically before sending
-          // This prevents race conditions with tool completion responses
+      if (execution.stateManager.isResponding || execution.stateManager.activeResponseId !== null) {
+        console.log(`⏭️ [${callSid}] Periodic update (retry ${retryCount}) - response already active`);
+        this.schedulePeriodicUpdateRetry(callSid, openaiWs, config, retryCount, scheduleNextArgs, updateInterval, messages);
+        return;
+      }
           if (!execution.stateManager.tryAcquireResponseLock()) {
-            // Lock not available - another response is being created (likely tool completion)
-            // Skip this periodic update to avoid "conversation_already_has_active_response" error
+        console.log(`⏭️ [${callSid}] Periodic update (retry ${retryCount}) - response lock unavailable`);
+        this.schedulePeriodicUpdateRetry(callSid, openaiWs, config, retryCount, scheduleNextArgs, updateInterval, messages);
             return;
           }
         }
-
-        // CRITICAL FIX: Disable tools before sending periodic update to prevent AI from responding.
-        // Periodic updates are informational only; do not wait for caller—agent continues tool flow.
-        openaiWs.send(JSON.stringify({
-          type: 'session.update',
-          session: {
-            tool_choice: 'none'
-          }
-        }));
-
-        // Wait briefly for session update to take effect
+    const isFirst = scheduleNextArgs === null;
+    const message = isFirst ? messages[Math.floor(Math.random() * messages.length)] : messages[0];
+    const elapsed = Date.now() - execution.startTime;
+    try {
+      openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'none' } }));
         await new Promise(resolve => setTimeout(resolve, 100));
-
-        execution.expectHoldingResponse = true; // Next response.created is this periodic update; do not set waitingForUser when it completes
+      execution.expectHoldingResponse = true;
         openaiWs.send(JSON.stringify({
           type: 'response.create',
           response: {
             modalities: ['audio', 'text'],
-            instructions: `CRITICAL: You MUST say EXACTLY and ONLY: "${(message || '').replace(/"/g, '\\"')}". Do NOT add or rephrase. This is a holding message only; say ONLY this and nothing else.`
+          instructions: `CRITICAL: You MUST say EXACTLY and ONLY: "${(message || '').replace(/"/g, '\\"')}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT mention contact details, payment, bike type, transfer, updating phone number, or any step of the booking or cancellation flow. Do NOT offer to transfer or to update details. Do not call any tools. This is a generic holding message only—say ONLY the exact phrase above and nothing else.`
           }
         }));
-
         execution.lastUpdateTime = Date.now();
         execution.periodicUpdateCount++;
         console.log(`📊 [${callSid}] Sent periodic update ${execution.periodicUpdateCount}/${execution.maxPeriodicUpdates} after ${elapsed}ms: "${message}"`);
-
         const estimatedAudioDuration = this.estimateAudioDuration(message);
-        const firstUpdateCompletionTime = Date.now() + estimatedAudioDuration;
-        console.log(`⏱️ [${callSid}] First update estimated completion time: ${new Date(firstUpdateCompletionTime).toISOString()} (${estimatedAudioDuration}ms audio duration)`);
-
-        const isCancellationStep = execution.toolName.startsWith('cancellation_step_');
-        if (!isCancellationStep) {
+      const updateCompletionTime = Date.now() + estimatedAudioDuration;
+      if (!execution.toolName.startsWith('cancellation_step_')) {
           const reenableDelayMs = Math.max(2000, estimatedAudioDuration + 1000);
           setTimeout(() => {
             if (openaiWs && openaiWs.readyState === 1) {
-              openaiWs.send(JSON.stringify({
-                type: 'session.update',
-                session: { tool_choice: 'auto' }
-              }));
+            openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'auto' } }));
             }
           }, reenableDelayMs);
         }
-
-        // Schedule next periodic update if needed (for tools with 2 or 3 updates)
-        // Next update starts updateInterval after previous update completes
-        const nextUpdateGapMs = updateInterval;
         if (execution.periodicUpdateCount < execution.maxPeriodicUpdates) {
-          this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, firstUpdateCompletionTime, nextUpdateGapMs, messages);
+        if (isFirst) {
+          this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, updateCompletionTime, updateInterval, messages);
         } else {
-          execution.updateTimeout = null; // Clear timeout reference if no more updates needed
+          this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, updateCompletionTime, scheduleNextArgs.updateGapMs, scheduleNextArgs.messages);
+        }
+      } else {
+        execution.updateTimeout = null;
         }
       } catch (err) {
         console.error(`❌ [${callSid}] Error sending periodic update:`, err);
         this.stopPeriodicUpdates(callSid);
       }
-    }, updateInterval);
   }
 
   /**
@@ -845,121 +380,8 @@ class ProgressIndicatorService {
         return;
       }
 
-      // CRITICAL: Check if user has interrupted before sending periodic update
-      if (exec.stateManager) {
-        if (exec.stateManager.toolExecutionCompleting) {
-          console.log(`🛑 [${callSid}] Skipping periodic update ${exec.periodicUpdateCount + 1} - tool execution completing (race condition prevention)`);
-          this.stopPeriodicUpdates(callSid);
-          return;
-        }
-
-        if (exec.stateManager.isInterrupted) {
-          console.log(`🛑 [${callSid}] Skipping periodic update ${exec.periodicUpdateCount + 1} - user has interrupted`);
-          this.stopPeriodicUpdates(callSid);
-          return;
-        }
-
-        if (exec.stateManager.isResponding || exec.stateManager.activeResponseId !== null) {
-          console.log(`⏭️ [${callSid}] Skipping periodic update ${exec.periodicUpdateCount + 1} - response already active`);
-          return;
-        }
-      }
-
-      const elapsed = Date.now() - exec.startTime;
-      // Use first message (generic message for all periodic updates)
-      const message = messages[0];
-
-      try {
-        // Double-check interruption and response state before sending
-        if (exec.stateManager) {
-          if (exec.stateManager.toolExecutionCompleting) {
-            console.log(`🛑 [${callSid}] Skipping periodic update ${exec.periodicUpdateCount + 1} - tool execution completing before send (race condition prevention)`);
-            this.stopPeriodicUpdates(callSid);
-            return;
-          }
-          if (exec.stateManager.isInterrupted) {
-            console.log(`🛑 [${callSid}] Skipping periodic update ${exec.periodicUpdateCount + 1} - user interrupted before send`);
-            this.stopPeriodicUpdates(callSid);
-            return;
-          }
-
-          if (!exec.stateManager.tryAcquireResponseLock()) {
-            return;
-          }
-        }
-
-        // CRITICAL FIX: Disable tools before sending periodic update. Informational only; do not wait for caller.
-        openaiWs.send(JSON.stringify({
-          type: 'session.update',
-          session: {
-            tool_choice: 'none'
-          }
-        }));
-
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // CRITICAL: Send conversation.item.create FIRST so the message exists when response.create is called
-        // This ensures the AI can reference the exact message that was just added
-        openaiWs.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'assistant',
-            content: [
-              {
-                type: 'text',
-                text: message
-              }
-            ]
-          }
-        }));
-
-        // Wait for message to be added to conversation before creating response
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // CRITICAL: Add explicit instructions to force exact message repetition
-        // This prevents the AI from generating additional questions or content based on workflow phase
-        const periodicUpdateInstructions = `CRITICAL: You MUST say EXACTLY and ONLY: "${message}". Do NOT add or rephrase. Do NOT mention next steps, verification, or asking for name. This is a holding message only; say ONLY this and nothing else.`;
-
-        exec.expectHoldingResponse = true; // Next response.created is this periodic update; do not set waitingForUser when it completes
-        openaiWs.send(JSON.stringify({
-          type: 'response.create',
-          response: {
-            modalities: ['audio', 'text'],
-            instructions: periodicUpdateInstructions
-          }
-        }));
-
-        exec.lastUpdateTime = Date.now();
-        exec.periodicUpdateCount++;
-
-        const estimatedAudioDuration = this.estimateAudioDuration(message);
-        const updateCompletionTime = Date.now() + estimatedAudioDuration;
-        console.log(`📊 [${callSid}] Sent periodic update ${exec.periodicUpdateCount}/${exec.maxPeriodicUpdates} after ${elapsed}ms: "${message}"`);
-
-        const isCancellationStep = exec.toolName.startsWith('cancellation_step_');
-        if (!isCancellationStep) {
-          const reenableDelayMs = Math.max(2000, estimatedAudioDuration + 1000);
-          setTimeout(() => {
-            if (openaiWs && openaiWs.readyState === 1) {
-              openaiWs.send(JSON.stringify({
-                type: 'session.update',
-                session: { tool_choice: 'auto' }
-              }));
-            }
-          }, reenableDelayMs);
-        }
-
-        // Schedule next periodic update if needed (recursive for 3 updates)
-        if (exec.periodicUpdateCount < exec.maxPeriodicUpdates) {
-          this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, updateCompletionTime, updateGapMs, messages);
-        } else {
-          exec.updateTimeout = null; // Clear timeout reference if no more updates needed
-        }
-      } catch (err) {
-        console.error(`❌ [${callSid}] Error sending periodic update ${exec.periodicUpdateCount + 1}:`, err);
-        this.stopPeriodicUpdates(callSid);
-      }
+      // Use shared try-once with retry (no bypass - production-safe)
+      await this.trySendOnePeriodicUpdate(callSid, openaiWs, config, 0, { updateGapMs, messages }, updateGapMs, messages);
     }, delayForNextUpdate);
   }
 
@@ -988,19 +410,10 @@ class ProgressIndicatorService {
     const execution = this.activeExecutions.get(callSid);
     if (execution) {
       try {
-        if (execution.ackFallbackTimeout) {
-          clearTimeout(execution.ackFallbackTimeout);
-          execution.ackFallbackTimeout = null;
-        }
         // Clear setTimeout (for single periodic update)
         if (execution.updateTimeout) {
           clearTimeout(execution.updateTimeout);
           execution.updateTimeout = null;
-        }
-        // Clear setInterval (for legacy/backward compatibility)
-        if (execution.updateInterval) {
-          clearInterval(execution.updateInterval);
-          execution.updateInterval = null;
         }
       } catch (err) {
         console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
@@ -1022,11 +435,6 @@ class ProgressIndicatorService {
           clearTimeout(execution.updateTimeout);
           execution.updateTimeout = null;
         }
-        // Clear setInterval (for legacy/backward compatibility)
-        if (execution.updateInterval) {
-          clearInterval(execution.updateInterval);
-          execution.updateInterval = null;
-        }
         console.log(`🛑 [${callSid}] Stopped periodic updates (execution still tracked for metrics)`);
       } catch (err) {
         console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
@@ -1039,21 +447,8 @@ class ProgressIndicatorService {
    * @param {string} callSid - Call SID
    */
   endToolExecution(callSid) {
-    const execution = this.activeExecutions.get(callSid);
-    if (execution?.ackFallbackTimeout) {
-      clearTimeout(execution.ackFallbackTimeout);
-      execution.ackFallbackTimeout = null;
-    }
     this.stopPeriodicUpdates(callSid);
-    this.clearProgressQueue(callSid);
-    this.clearPendingFirstProgress(callSid);
-    this.lastAcknowledgmentTime.delete(callSid);
-    this.throttledQueue.delete(callSid);
-    this.priorityQueue.delete(callSid);
-    this.currentAcknowledgmentInFlight.delete(callSid);
-    this.lastProgressCallbackTime.delete(callSid);
-    this.lastProgressTask.delete(callSid);
-    this.clearProgressCallbackFallback(callSid);
+    const execution = this.activeExecutions.get(callSid);
     if (execution) {
       const duration = Date.now() - execution.startTime;
       console.log(`📊 [${callSid}] Tool execution completed: ${execution.toolName} (duration: ${duration}ms)`);
@@ -1131,105 +526,12 @@ class ProgressIndicatorService {
   }
 
   /**
-   * Called when a holding acknowledgment response completes (response.done).
-   * Clears currentAcknowledgmentInFlight and drains throttled queue into progress queue so next trySendNextProgressUpdate can send them.
-   * @param {string} callSid - Call SID
-   * @param {string} responseId - Response ID (for logging)
-   * @param {number} actualDuration - Actual duration in ms (for logging/future use)
-   */
-  onAcknowledgmentCompleted(callSid, responseId, actualDuration) {
-    this.currentAcknowledgmentInFlight.delete(callSid);
-    const throttled = this.throttledQueue.get(callSid);
-    if (throttled && throttled.length > 0) {
-      while (throttled.length > 0) {
-        const { data } = throttled.shift();
-        if (data && (data.message || (typeof data === 'object' && data.message))) {
-          this.enqueueProgressUpdate(callSid, data);
-        }
-      }
-      this.throttledQueue.delete(callSid);
-    }
-  }
-
-  /**
-   * Wait for current acknowledgment to complete (or max wait) before e.g. submitting tool result.
-   * Used so tool result is sent after the current short acknowledgment finishes.
-   * @param {string} callSid - Call SID
-   * @param {number} maxWaitMs - Max time to wait (default 5000)
-   * @returns {Promise<void>}
-   */
-  async waitForAcknowledgmentCompletion(callSid, maxWaitMs = 5000) {
-    const inFlight = this.currentAcknowledgmentInFlight.get(callSid);
-    if (!inFlight) return;
-    const elapsed = Date.now() - inFlight.startTime;
-    const remaining = Math.max(0, inFlight.estimatedDuration - elapsed + 500);
-    const waitMs = Math.min(remaining, maxWaitMs);
-    if (waitMs > 0) {
-      await new Promise(r => setTimeout(r, waitMs));
-    }
-  }
-
-  /**
    * Clear holding response IDs for a call (call from full call cleanup only, not when a single tool ends).
    * @param {string} callSid - Call SID
    */
   clearHoldingResponsesForCall(callSid) {
     this.holdingResponseIds.delete(callSid);
     this.expectNonWaitingResponseCallSids.delete(callSid);
-    this.lastAcknowledgmentTime.delete(callSid);
-    this.throttledQueue.delete(callSid);
-    this.priorityQueue.delete(callSid);
-    this.currentAcknowledgmentInFlight.delete(callSid);
-    this.lastProgressCallbackTime.delete(callSid);
-    this.lastProgressTask.delete(callSid);
-    this.clearProgressCallbackFallback(callSid);
-  }
-
-  /**
-   * Send a progress update message to the caller
-   * @param {string} callSid - Call SID
-   * @param {string} message - Progress message
-   * @param {WebSocket} openaiWs - OpenAI WebSocket connection
-   */
-  sendProgressUpdate(callSid, message, openaiWs) {
-    if (!openaiWs || openaiWs.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    try {
-      // Register so response.done does not set waitingForUser (holding response)
-      const execution = this.activeExecutions.get(callSid);
-      if (execution) {
-        execution.expectHoldingResponse = true;
-      } else {
-        this.setExpectNonWaitingResponse(callSid);
-      }
-
-      // Create a conversation item with the progress message
-      openaiWs.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'assistant',
-          content: [{
-            type: 'text',
-            text: message
-          }]
-        }
-      }));
-
-      // Trigger response creation
-      openaiWs.send(JSON.stringify({
-        type: 'response.create',
-        response: {
-          modalities: ['audio', 'text']
-        }
-      }));
-
-      console.log(`💬 [${callSid}] Sent progress update: "${message}"`);
-    } catch (error) {
-      console.error(`❌ [${callSid}] Error sending progress update:`, error);
-    }
   }
 }
 

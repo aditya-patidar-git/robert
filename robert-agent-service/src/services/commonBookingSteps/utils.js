@@ -37,7 +37,6 @@ export function extractLocationIdentifier(locationText) {
   const postcodeMatch = locationText.match(postcodeRegex);
   if (postcodeMatch && postcodeMatch[1]) {
     const postcodePrefix = postcodeMatch[1];
-    console.log(`📍 Postcode extracted: "${postcodePrefix}"`);
     return postcodePrefix;
   }
   
@@ -49,7 +48,6 @@ export function extractLocationIdentifier(locationText) {
     // Use word boundary to avoid matching partial words (e.g., "Barnet" containing "Barn")
     const cityRegex = new RegExp(`\\b${city}\\b`, 'i');
     if (cityRegex.test(locationText)) {
-      console.log(`📍 City name extracted: "${city}"`);
       return city;
     }
   }
@@ -74,7 +72,6 @@ export function extractLocationIdentifier(locationText) {
     const wordLower = word.toLowerCase();
     // Return first meaningful word that's not in skip list and is capitalized (likely a city name)
     if (!skipWords.includes(wordLower) && word[0] === word[0].toUpperCase() && word.length > 2) {
-      console.log(`📍 Fallback word extracted: "${word}"`);
       return word;
     }
   }

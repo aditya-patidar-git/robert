@@ -69,7 +69,7 @@ export class ConnectionManager {
                 console.log(`📞 [${callSid}] Updated phoneNumber from CallRecord: ${phoneNumber}`);
                 // Update conversations for future reference
                 if (!conversations[callSid]) {
-                  conversations[callSid] = { transcript: [] };
+                  conversations[callSid] = { transcript: [], prematureResponses: {} };
                 }
                 conversations[callSid].from = phoneNumber;
               }

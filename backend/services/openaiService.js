@@ -63,7 +63,7 @@ class OpenAIService {
   async addFileToVectorStore(fileId, metadata = {}) {
     try {
       const openai = getOpenAIClient();
-      const vectorStoreFile = await openai.vectorStores.files.create(this.vectorStoreId, {
+      const vectorStoreFile = await openai.vectorStores.files.create(this._getEffectiveVectorStoreId(), {
         file_id: fileId
       });
 
@@ -87,7 +87,7 @@ class OpenAIService {
       }
 
       const openai = getOpenAIClient();
-      const results = await openai.vectorStores.search(this.vectorStoreId, searchParams);
+      const results = await openai.vectorStores.search(this._getEffectiveVectorStoreId(), searchParams);
       
       console.log(`✅ Found ${results.data.length} results for query: "${query}"`);
       return results.data;
@@ -121,7 +121,7 @@ class OpenAIService {
   async listVectorStoreFiles() {
     try {
       const openai = getOpenAIClient();
-      const files = await openai.vectorStores.files.list(this.vectorStoreId);
+      const files = await openai.vectorStores.files.list(this._getEffectiveVectorStoreId());
       return files.data;
     } catch (error) {
       console.error('Error listing vector store files:', error);
@@ -133,7 +133,7 @@ class OpenAIService {
   async removeFileFromVectorStore(fileId) {
     try {
       const openai = getOpenAIClient();
-      await openai.vectorStores.files.del(this.vectorStoreId, fileId);
+      await openai.vectorStores.files.del(this._getEffectiveVectorStoreId(), fileId);
       console.log(`✅ File ${fileId} removed from vector store`);
       return true;
     } catch (error) {
@@ -203,7 +203,7 @@ class OpenAIService {
     return {
       type: 'file_search',
       file_search: {
-        vector_store_ids: [this.vectorStoreId],
+        vector_store_ids: [this._getEffectiveVectorStoreId()],
         ...(fileIds && { file_ids: fileIds })
       }
     };
@@ -222,7 +222,7 @@ class OpenAIService {
           content: result.content?.substring(0, 200) + '...'
         })),
         total_results: results.length,
-        vector_store_id: this.vectorStoreId
+        vector_store_id: this._getEffectiveVectorStoreId()
       };
 
       return testResults;

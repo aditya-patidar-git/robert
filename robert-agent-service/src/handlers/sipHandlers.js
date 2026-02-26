@@ -689,13 +689,6 @@ export const handleToolExecution = async (req, res) => {
       null,
       () => getSipCallWebSocket(call_id)
     );
-    progressIndicatorService.sendImmediateToolStartAcknowledgment(
-      call_id,
-      name,
-      sipWs,
-      conversationBehaviorConfig,
-      null
-    );
 
     // Execute tool using unified service
     const executionResult = await toolExecutionService.executeTool({

@@ -118,8 +118,9 @@ class BrowserPoolService extends EventEmitter {
    * @returns {Promise<import('playwright').Browser>}
    */
   async defaultBrowserFactory() {
+    const headless = process.env.NODE_ENV === 'production';
     return await chromium.launch({
-      headless: false,
+      headless,
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-features=IsolateOrigins,site-per-process',

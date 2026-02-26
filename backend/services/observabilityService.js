@@ -22,6 +22,16 @@ class ObservabilityService {
     this.traces = tracingService;
     this.alerts = alertService;
     this.analytics = callAnalyticsService;
+    this.startTime = Date.now();
+  }
+
+  /**
+   * Get health status (safe for protected observability dashboard).
+   * @returns {{ status: string, uptime: number }}
+   */
+  getHealth() {
+    const uptime = Math.round((Date.now() - this.startTime) / 1000);
+    return { status: 'ok', uptime };
   }
 
   // ==================== Metrics Methods ====================

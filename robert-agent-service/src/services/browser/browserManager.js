@@ -9,6 +9,10 @@ import { loginToCRM } from '../commonBookingSteps/index.js';
 import { ensureDirectories } from '../commonBookingSteps/utils.js';
 import browserPoolService from './browserPoolService.js';
 
+// Production: headless; development: headed (for debugging). VPN path always uses headed.
+const isProduction = process.env.NODE_ENV === 'production';
+const headless = isProduction;
+
 export class BrowserManager {
   constructor(crmCredentials, screenshotsDir, auditDir) {
     this.crmCredentials = crmCredentials;
@@ -64,7 +68,7 @@ export class BrowserManager {
         browserFactory: async () => {
           console.log('🌐 Pool: Creating new browser instance with stealth mode...');
           return await chromium.launch({
-            headless: false,
+            headless,
             args: getStealthBrowserArgs()
           });
         }
@@ -365,7 +369,7 @@ export class BrowserManager {
     console.log('🌐 [PROD] Using default browser profile (no VPN needed)');
     
     this.browserInstance = await chromium.launch({ 
-      headless: false,
+      headless,
       args: getStealthBrowserArgs()
     });
     
@@ -403,7 +407,7 @@ export class BrowserManager {
       }
       
       this.browserInstance = await chromium.launch({
-        headless: false,
+        headless,
         args: getStealthBrowserArgs()
       });
       

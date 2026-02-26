@@ -131,6 +131,29 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     };
   }
   
+  // If email is required from caller (form and clientEmail both empty), return early
+  if (result.requiresClientEmail) {
+    return {
+      success: true,
+      paymentCompleted: false,
+      requiresClientEmail: true,
+      deliveryMethod: result.deliveryMethod ?? deliveryMethod,
+      message: result.message,
+      instruction: result.instruction
+    };
+  }
+
+  if (result.requiresClientMobile) {
+    return {
+      success: true,
+      paymentCompleted: false,
+      requiresClientMobile: true,
+      deliveryMethod: result.deliveryMethod ?? deliveryMethod,
+      message: result.message,
+      instruction: result.instruction
+    };
+  }
+  
   // If confirmation is required, return early
   if (result.requiresConfirmation) {
     return {

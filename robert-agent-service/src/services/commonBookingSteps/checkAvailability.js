@@ -321,7 +321,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       }
     }
 
-    if (slotsToAnnounce.length === 0 && allSlots.length > 0) slotsToAnnounce = [allSlots[0]];
+    if (slotsToAnnounce.length === 0 && allSlots.length > 0) slotsToAnnounce = selectedSlot ? [selectedSlot] : [allSlots[0]];
 
     return {
       allSlots,

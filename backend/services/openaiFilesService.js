@@ -98,10 +98,10 @@ class OpenAIFilesService {
   // Add file to vector store
   async addFileToVectorStore(fileId) {
     try {
-      console.log(`🔗 Adding file ${fileId} to vector store ${this.vectorStoreId}`);
+      console.log(`🔗 Adding file ${fileId} to vector store ${getVectorStoreId()}`);
       
       const vectorStoreFile = await this.openai.vectorStores.files.create(
-        this.vectorStoreId,
+        getVectorStoreId(),
         { file_id: fileId }
       );
 
@@ -121,7 +121,7 @@ class OpenAIFilesService {
       const files = await this.openai.files.list();
       
       // Get vector store files to check which files are in the vector store
-      const vectorStoreFiles = await this.openai.vectorStores.files.list(this.vectorStoreId);
+      const vectorStoreFiles = await this.openai.vectorStores.files.list(getVectorStoreId());
       const vectorStoreFileIds = new Set(vectorStoreFiles.data.map(f => f.id));
       
       // Get tags from KnowledgeBase model
@@ -193,7 +193,7 @@ class OpenAIFilesService {
       
       // First, remove from vector store if it exists there
       try {
-        await this.openai.vectorStores.files.del(this.vectorStoreId, fileId);
+        await this.openai.vectorStores.files.del(getVectorStoreId(), fileId);
         console.log(`✅ File removed from vector store: ${fileId}`);
       } catch (vectorError) {
         console.log(`ℹ️ File not in vector store: ${fileId}`);
@@ -223,7 +223,7 @@ class OpenAIFilesService {
       }
 
       const results = await this.openai.vectorStores.search(
-        this.vectorStoreId,
+        getVectorStoreId(),
         searchParams
       );
 
@@ -401,7 +401,7 @@ class OpenAIFilesService {
       const buffer = Buffer.from(content, 'utf-8');
       const fileObj = await toFile(buffer, filename);
       const result = await this.openai.vectorStores.files.uploadAndPoll(
-        this.vectorStoreId,
+        getVectorStoreId(),
         fileObj
       );
       console.log(`✅ Text content uploaded to vector store: ${result.id}, status: ${result.status}`);

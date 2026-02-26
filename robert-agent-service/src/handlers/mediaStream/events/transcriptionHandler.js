@@ -7,6 +7,8 @@ import conversationService from '../../../services/conversationService.js';
 import noiseFilterService from '../../../services/noiseFilterService.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
 import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
+import { storePrematureResponse } from '../../../services/toolResultSubmitter.js';
+import { conversations } from '../../../shared/state.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
 import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
 
@@ -173,9 +175,14 @@ export class TranscriptionHandler {
       });
     }
     
-    const { conversations } = await import('../../../shared/state.js');
-    this.appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations);
+    // Store response to pending premature question if applicable
     const conv = conversations[this.state.callSid];
+    if (conv?.pendingPrematureQuestion && transcript?.trim()) {
+      storePrematureResponse(this.state.callSid, transcript, conv.pendingPrematureQuestion);
+      delete conv.pendingPrematureQuestion;
+    }
+
+    this.appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations);
     appendTranscriptEntry(this.state.callSid, {
       role: 'user',
       text: transcript,

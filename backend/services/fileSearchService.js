@@ -102,7 +102,7 @@ Summary:`;
     try {
       console.log(`🔍 Searching files with query: "${query}"`);
       
-      if (!this.vectorStoreId) {
+      if (!getVectorStoreId()) {
         throw new Error('Vector store ID not configured');
       }
 
@@ -117,7 +117,7 @@ Summary:`;
       const openai = getOpenAIClient();
 
       // Get vector store
-      const vectorStore = await openai.vectorStores.retrieve(this.vectorStoreId);
+      const vectorStore = await openai.vectorStores.retrieve(getVectorStoreId());
       
       if (!vectorStore) {
         throw new Error('Vector store not found');
@@ -135,7 +135,7 @@ Summary:`;
 
       // Perform the search
       const searchResults = await openai.vectorStores.search(
-        this.vectorStoreId,
+        getVectorStoreId(),
         searchParams
       );
 
@@ -240,8 +240,8 @@ Summary:`;
         totalResults: results.length,
         totalMatches: rawResults.length,
         vectorStore: {
-          id: this.vectorStoreId,
-          name: this.vectorStoreName
+          id: getVectorStoreId(),
+          name: getVectorStoreName()
         },
         searchParams: {
           maxResults,
@@ -266,7 +266,7 @@ Summary:`;
       const openai = getOpenAIClient();
       
       // Get files from vector store
-      const vectorStoreFiles = await openai.vectorStores.files.list(this.vectorStoreId);
+      const vectorStoreFiles = await openai.vectorStores.files.list(getVectorStoreId());
       
       // Filter files by tags if specified
       let fileIds = null;
@@ -383,7 +383,7 @@ Summary:`;
         testResults: results,
         totalTests: testQueries.length,
         successfulTests: results.filter(r => r.success).length,
-        vectorStoreId: this.vectorStoreId
+        vectorStoreId: getVectorStoreId()
       };
 
     } catch (error) {

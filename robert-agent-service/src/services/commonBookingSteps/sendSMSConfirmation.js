@@ -6,9 +6,11 @@ import * as stationeryHelpers from './stationeryHelpers.js';
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} courseType - Course type enum value (can be simplified format like 'tfl-one-to-one' or full enum like 'ITM', 'CBT', etc.)
+ * @param {string|null} clientMobile - Optional client mobile number (from stored client details); when form and this are empty, returns requiresClientMobile so agent asks caller
  * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
+ * @returns {Promise<{success: boolean, smsSent?: boolean, requiresClientMobile?: boolean, message?: string, instruction?: string}>}
  */
-export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tfl-one-to-one', progressCallback = null) {
+export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tfl-one-to-one', clientMobile = null, progressCallback = null) {
   try {
     progressCallback?.({ message: 'Preparing the SMS.' });
     console.log('📱 [SMS] Sending SMS confirmation...');
@@ -105,29 +107,28 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
     
     await takeScreenshot(page, 'sms-page-loaded.png', screenshotsDir);
     
-    // Fill "Send To" input field with phone number
-    console.log('📱 [SMS] Filling "Send To" field with: 8120523400');
+    // Fill "Send To" input field: use existing value, or stored client mobile, or ask caller if both empty
     try {
-      // Locate the "Send To" input field using multiple selector strategies
       const sendToInput = smsSearchContext.locator('#smm_mobile_number input').first();
-      
-      // Wait for input field to be visible/attached
       await sendToInput.waitFor({ state: 'visible', timeout: 5000 });
-      
-      // Clear any existing value and fill with new number
-      await sendToInput.fill('8120523400');
-      await page.waitForTimeout(500);
-      
-      // Verify the value was set correctly
-      const inputValue = await sendToInput.inputValue();
-      if (inputValue === '8120523400') {
-        console.log('✅ [SMS] "Send To" field filled successfully');
+      const currentValue = (await sendToInput.inputValue())?.trim() ?? '';
+      if (currentValue) {
+        console.log(`📱 [SMS] "Send To" field already has value: ${currentValue}`);
+      } else if (clientMobile?.trim()) {
+        await sendToInput.fill(clientMobile.trim());
+        await page.waitForTimeout(500);
+        console.log(`📱 [SMS] Filled "Send To" from stored client mobile: ${clientMobile.trim()}`);
       } else {
-        console.log(`⚠️ [SMS] "Send To" field value mismatch. Expected: 8120523400, Got: ${inputValue}`);
+        console.log('📱 [SMS] "Send To" field empty and no client mobile—ask caller for number');
+        return {
+          success: false,
+          requiresClientMobile: true,
+          message: 'I need the mobile number to send the SMS confirmation to.',
+          instruction: 'Ask the caller: "What mobile number should I send the SMS confirmation to?" When they give it, call **booking_step_send_sms** again with the same courseType and workflowType and **customerMobile** set to the number they said. Do not use a different tool.'
+        };
       }
     } catch (error) {
       console.error('❌ [SMS] Error filling "Send To" field:', error.message);
-      // Continue execution - don't fail the entire process if this step fails
       console.log('⚠️ [SMS] Continuing with preset selection despite "Send To" field error');
     }
     
@@ -145,7 +146,7 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
     
     await takeScreenshot(page, 'sms-sent.png', screenshotsDir);
     console.log('✅ [SMS] SMS confirmation sent successfully');
-    
+    return { success: true, smsSent: true };
   } catch (error) {
     console.error('❌ [SMS] Error sending SMS confirmation:', error);
     await takeScreenshot(page, 'sms-error.png', screenshotsDir);

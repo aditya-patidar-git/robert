@@ -26,6 +26,7 @@ export const conversations = {}; // in-memory storage (maintained for backward c
 // Structure: {
 //   [callSid]: {
 //     transcript: [],
+//     prematureResponses: {},  // { bikeType: { responseText, storedAt, expectedTool } } - user responses to premature questions
 //     from: String,
 //     to: String,
 //     language: String,

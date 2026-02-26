@@ -205,7 +205,7 @@ export const handleMediaStreamConnection = (ws, req) => {
                 })
                     .then((recordingResult) => {
                         if (recordingResult.success || recordingResult.error === 'already_recording') {
-                            if (!conversations[callSid]) conversations[callSid] = {};
+                            if (!conversations[callSid]) conversations[callSid] = { prematureResponses: {} };
                             conversations[callSid].recordingStarted = true;
                             console.log(`[PICKUP_LATENCY] [${callSid}] T3 recording_started ${stateManager.pickupLatencyMs()}ms`);
                         }

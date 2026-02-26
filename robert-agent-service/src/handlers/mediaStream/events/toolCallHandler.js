@@ -1,6 +1,7 @@
 import toolExecutionService from '../../../services/toolExecutionService.js';
 import { WebSocketResultSubmitter } from '../../../services/toolResultSubmitter.js';
 import configManager from '../../../agent/configManager.js';
+import { conversations } from '../../../shared/state.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
 
 /**
@@ -31,10 +32,16 @@ export class ToolCallHandler {
    */
   async handleToolCall(event) {
     const { call_id, name, arguments: args } = event.item;
+
+    // Clear pending premature question when the expected tool is invoked (e.g. bike type question → select_booking_options)
+    if (name === 'booking_step_select_booking_options' && conversations[this.state.callSid]?.pendingPrematureQuestion) {
+      delete conversations[this.state.callSid].pendingPrematureQuestion;
+    }
     
-    // Release response lock so the tool-call response doesn't block acks/progress during execution.
-    // Progress and acknowledgements can now acquire the lock and keep the caller in the loop.
+    // Release response lock and clear response state so only the tool is active during execution.
+    // This ensures periodic updates can acquire the lock when they fire.
     this.state.activeResponseId = null;
+    this.state.isResponding = false;
     this.state.releaseResponseLock();
 
     // Store tool call info for tracking
@@ -55,30 +62,9 @@ export class ToolCallHandler {
       this.state,
       getWsRef
     );
-    progressIndicatorService.setPendingFirstProgress(this.state.callSid, name);
 
-    // Path-based progress: enqueue messages; next is sent only after previous response.done (no race with API).
-    const progressCallback = conversationBehaviorConfig?.progressIndicators?.enabled && this.openaiWs
-      ? (data) => {
-          const message = (typeof data === 'object' && data !== null && data.message != null)
-            ? data.message
-            : (typeof data === 'string' ? data : null);
-          if (!message || typeof message !== 'string') return;
-          progressIndicatorService.clearProgressCallbackFallback(this.state.callSid);
-          if (!progressIndicatorService.throttleProgressCallback(this.state.callSid, data)) return;
-          progressIndicatorService.enqueueProgressUpdate(this.state.callSid, data);
-          progressIndicatorService.trySendNextProgressUpdate(this.state.callSid, this.openaiWs, conversationBehaviorConfig, this.state);
-        }
-      : null;
-
-    if (progressCallback) {
-      progressIndicatorService.startProgressCallbackFallback(
-        this.state.callSid,
-        () => (this.state.isClosed ? null : this.openaiWs),
-        conversationBehaviorConfig,
-        this.state
-      );
-    }
+    // No progress callback - periodic updates are handled automatically
+    const progressCallback = null;
 
     // Execute tool using unified service
     const executionResult = await toolExecutionService.executeTool({

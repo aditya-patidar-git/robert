@@ -12,7 +12,7 @@ import { getTermsText, validateTermsAcceptance } from './termsUtils.js';
  * @param {boolean} confirmed - Whether client has confirmed the email/phone number (default: false)
  * @param {boolean|undefined} termsAcceptedBeforeSend - Whether client has accepted terms and conditions BEFORE sending payment request (MANDATORY)
  * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates (holding; never sets waitingForUser)
- * @returns {Promise<{success: boolean, paymentCompleted: boolean, requiresConfirmation?: boolean, requiresTermsBeforeSend?: boolean, termsText?: string, termsNotAccepted?: boolean, requiresRetry?: boolean, emailAddress?: string, phoneNumber?: string, error?: string}>}
+ * @returns {Promise<{success: boolean, paymentCompleted: boolean, requiresConfirmation?: boolean, requiresClientEmail?: boolean, requiresClientMobile?: boolean, requiresTermsBeforeSend?: boolean, termsText?: string, termsNotAccepted?: boolean, requiresRetry?: boolean, emailAddress?: string, phoneNumber?: string, error?: string, message?: string, instruction?: string}>}
  */
 export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null, confirmed = false, termsAcceptedBeforeSend = undefined, progressCallback = null) {
   try {
@@ -240,36 +240,73 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     }
     
     // Fill email or mobile if provided
-    if (deliveryMethod === 'email') {
-      progressCallback?.({ message: 'Filling in your email.' });
-      // HARDCODED: Always use test email for payment requests
-      const testEmail = 'aditya.patidar@kadellabs.com';
-      console.log(`📧 [PAYMENT_REQUEST] Filling email address (hardcoded for testing): ${testEmail}`);
-      const emailInput = searchContext.locator('#cnt_email input').first();
-      await emailInput.waitFor({ state: 'visible', timeout: 5000 });
-      await emailInput.fill(testEmail);
-      await page.waitForTimeout(500);
-    } else if (deliveryMethod === 'sms' && clientMobile) {
-      console.log(`📱 [PAYMENT_REQUEST] Filling mobile number: ${clientMobile}`);
-      const mobileInput = searchContext.locator('#cnt_mobile_number input').first();
-      await mobileInput.waitFor({ state: 'visible', timeout: 5000 });
-      await mobileInput.fill(clientMobile);
-      await page.waitForTimeout(500);
-    }
-    
-    // Read the current values from the form for confirmation
     let emailAddress = null;
     let phoneNumber = null;
-    
+
     if (deliveryMethod === 'email') {
-      // Use hardcoded test email
-      emailAddress = 'aditya.patidar@kadellabs.com';
-      console.log(`📧 [PAYMENT_REQUEST] Email address in form: ${emailAddress} (hardcoded for testing)`);
+      progressCallback?.({ message: 'Filling in your email.' });
+      const emailInput = searchContext.locator('#cnt_email input').first();
+      await emailInput.waitFor({ state: 'visible', timeout: 5000 });
+      const currentEmailValue = (await emailInput.inputValue())?.trim() ?? '';
+      if (currentEmailValue) {
+        emailAddress = currentEmailValue;
+        console.log(`📧 [PAYMENT_REQUEST] Email field already has value: ${emailAddress}`);
+      } else if (clientEmail?.trim()) {
+        await emailInput.fill(clientEmail.trim());
+        await page.waitForTimeout(500);
+        emailAddress = clientEmail.trim();
+        console.log(`📧 [PAYMENT_REQUEST] Filled email from stored client email: ${emailAddress}`);
+      } else {
+        console.log('📧 [PAYMENT_REQUEST] Email field empty and no client email—ask caller for email');
+        return {
+          success: true,
+          paymentCompleted: false,
+          requiresClientEmail: true,
+          deliveryMethod: 'email',
+          message: 'I need the email address to send the payment link to.',
+          instruction: 'Ask the caller: "What email address should I send the payment link to?" When they give it, call **booking_step_send_payment_request** again with the same parameters (courseType, workflowType, deliveryMethod: "email", termsAcceptedBeforeSend as before) and **clientEmail** set to the address they said. Do not use a different tool.'
+        };
+      }
     } else if (deliveryMethod === 'sms') {
+      progressCallback?.({ message: 'Filling in your mobile number.' });
+      const mobileInput = searchContext.locator('#cnt_mobile_number input').first();
+      await mobileInput.waitFor({ state: 'visible', timeout: 5000 });
+      const currentMobileValue = (await mobileInput.inputValue())?.trim() ?? '';
+      if (currentMobileValue) {
+        phoneNumber = currentMobileValue;
+        console.log(`📱 [PAYMENT_REQUEST] Mobile field already has value: ${phoneNumber}`);
+      } else if (clientMobile?.trim()) {
+        await mobileInput.fill(clientMobile.trim());
+        await page.waitForTimeout(500);
+        phoneNumber = clientMobile.trim();
+        console.log(`📱 [PAYMENT_REQUEST] Filled mobile from stored client mobile: ${phoneNumber}`);
+      } else {
+        console.log('📱 [PAYMENT_REQUEST] Mobile field empty and no client mobile—ask caller for number');
+        return {
+          success: true,
+          paymentCompleted: false,
+          requiresClientMobile: true,
+          deliveryMethod: 'sms',
+          message: 'I need the mobile number to send the payment link to.',
+          instruction: 'Ask the caller: "What mobile number should I send the payment link to?" When they give it, call **booking_step_send_payment_request** again with the same parameters (courseType, workflowType, deliveryMethod: "sms", termsAcceptedBeforeSend as before) and **clientMobile** set to the number they said. Do not use a different tool.'
+        };
+      }
+    }
+    
+    // Read the current values from the form for confirmation (email/phone already set above when we filled)
+    if (deliveryMethod === 'email' && emailAddress == null) {
+      try {
+        const emailInput = searchContext.locator('#cnt_email input').first();
+        emailAddress = (await emailInput.inputValue())?.trim() || null;
+        console.log(`📧 [PAYMENT_REQUEST] Email address in form: ${emailAddress ?? 'empty'}`);
+      } catch (error) {
+        console.warn('⚠️ [PAYMENT_REQUEST] Could not read email value:', error.message);
+      }
+    } else if (deliveryMethod === 'sms' && phoneNumber == null) {
       try {
         const mobileInput = searchContext.locator('#cnt_mobile_number input').first();
-        phoneNumber = await mobileInput.inputValue();
-        console.log(`📱 [PAYMENT_REQUEST] Phone number in form: ${phoneNumber}`);
+        phoneNumber = (await mobileInput.inputValue())?.trim() || null;
+        console.log(`📱 [PAYMENT_REQUEST] Phone number in form: ${phoneNumber ?? 'empty'}`);
       } catch (error) {
         console.warn('⚠️ [PAYMENT_REQUEST] Could not read mobile value:', error.message);
       }
