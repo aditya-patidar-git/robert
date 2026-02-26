@@ -6,6 +6,10 @@ class OpenAIFilesService {
     this._openai = null;
   }
 
+  get vectorStoreId() {
+    return getVectorStoreId();
+  }
+
   get openai() {
     if (!this._openai) {
       this._openai = new OpenAI({
@@ -237,9 +241,13 @@ class OpenAIFilesService {
 
   // Get vector store status
   async getVectorStoreStatus() {
+    const vectorStoreId = this.vectorStoreId;
+    if (!vectorStoreId) {
+      throw new Error('Vector store not configured. Set OPENAI_VECTOR_STORE_ID in environment.');
+    }
     try {
-      const vectorStore = await this.openai.vectorStores.retrieve(getVectorStoreId());
-      const files = await this.openai.vectorStores.files.list(getVectorStoreId());
+      const vectorStore = await this.openai.vectorStores.retrieve(vectorStoreId);
+      const files = await this.openai.vectorStores.files.list(vectorStoreId);
       
       return {
         id: vectorStore.id,

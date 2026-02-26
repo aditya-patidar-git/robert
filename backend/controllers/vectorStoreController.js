@@ -25,21 +25,14 @@ export const getVectorStoreStatus = async (req, res) => {
     });
   } catch (err) {
     console.error("Error getting vector store status:", err);
-    
-    // Return fallback data instead of error
-    res.json({
+    // Vector store not configured or not accessible - surface for UI
+    res.status(200).json({
       status: "success",
-      vectorStore: {
-        id: "unknown",
-        name: "Vector Store",
-        status: "error",
-        fileCounts: { total: 0, in_progress: 0, completed: 0, failed: 0 },
-        created_at: null
-      },
+      vectorStore: null,
+      vectorStoreError: err.message || "Vector store not available. Set OPENAI_VECTOR_STORE_ID and ensure it is accessible.",
       files: 0,
       migration: vectorMigrationService.getMigrationStatus(),
-      discovery: modelDiscoveryService.getDiscoveryStatus(),
-      error: err.message
+      discovery: modelDiscoveryService.getDiscoveryStatus()
     });
   }
 };

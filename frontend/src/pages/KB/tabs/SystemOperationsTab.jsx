@@ -77,6 +77,10 @@ const SystemOperationsTab = ({ state, handlers }) => {
                   <Alert severity="error" sx={{ mt: 1 }}>
                     {vectorStoreError.message}
                   </Alert>
+                ) : vectorStoreStatus?.vectorStoreError ? (
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    Vector store not available. {vectorStoreStatus.vectorStoreError}
+                  </Alert>
                 ) : vectorStoreStatus && (vectorStoreStatus.id || vectorStoreStatus.status) ? (
                   <Stack spacing={2}>
                     <Box>

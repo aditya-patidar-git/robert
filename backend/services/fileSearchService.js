@@ -13,7 +13,13 @@ function getOpenAIClient() {
 }
 
 class FileSearchService {
-  constructor() {}
+  get vectorStoreId() {
+    return getVectorStoreId();
+  }
+
+  get vectorStoreName() {
+    return getVectorStoreName();
+  }
 
   // Extract readable text from content (handles string, object, or array structures)
   extractTextFromContent(content) {
@@ -308,12 +314,15 @@ Summary:`;
 
   // Get vector store status
   async getVectorStoreStatus() {
+    const vectorStoreId = this.vectorStoreId;
+    if (!vectorStoreId) {
+      throw new Error('Vector store not configured. Set OPENAI_VECTOR_STORE_ID in environment.');
+    }
     try {
       console.log('📊 Getting vector store status...');
-      
       const openai = getOpenAIClient();
-      const vectorStore = await openai.vectorStores.retrieve(getVectorStoreId());
-      const files = await openai.vectorStores.files.list(getVectorStoreId());
+      const vectorStore = await openai.vectorStores.retrieve(vectorStoreId);
+      const files = await openai.vectorStores.files.list(vectorStoreId);
       
       return {
         id: vectorStore.id,

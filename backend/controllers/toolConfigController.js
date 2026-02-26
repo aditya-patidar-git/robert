@@ -101,8 +101,6 @@ export const getAllTools = async (req, res) => {
     });
 
     console.log(`✅ Returning ${tools.length} tools to frontend`);
-    console.log(`📋 Tool names:`, tools.map(t => t.name).join(', '));
-    
     res.json({ success: true, tools });
   } catch (error) {
     console.error('❌ Error fetching tools:', error);

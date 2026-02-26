@@ -32,17 +32,16 @@ export const searchFiles = async (req, res) => {
 export const getVectorStoreStatus = async (req, res) => {
   try {
     const status = await openaiFilesService.getVectorStoreStatus();
-
     res.json({
       status: "success",
       vectorStore: status
     });
   } catch (error) {
     console.error("Error fetching vector store status:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Failed to fetch vector store status",
-      error: error.message
+    res.status(200).json({
+      status: "success",
+      vectorStore: null,
+      vectorStoreError: error.message || "Vector store not available. Set OPENAI_VECTOR_STORE_ID and ensure it is accessible."
     });
   }
 };

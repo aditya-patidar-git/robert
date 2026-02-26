@@ -13,47 +13,29 @@ function getOpenAIClient() {
 }
 
 class OpenAIService {
-  constructor() {
-    /** Set when creating a new store (only when OPENAI_VECTOR_STORE_ID is not set) */
-    this._cachedVectorStoreId = null;
+  get vectorStoreId() {
+    return getVectorStoreId();
   }
 
-  /** Effective vector store ID: from env at use time, or cached after creating one. */
-  _getEffectiveVectorStoreId() {
-    return getVectorStoreId() || this._cachedVectorStoreId || null;
+  get vectorStoreName() {
+    return getVectorStoreName();
   }
 
-  // Get or create vector store (never creates when OPENAI_VECTOR_STORE_ID is set)
+  // Get configured vector store by ID only (never create)
   async getVectorStore() {
+    const vectorStoreId = getVectorStoreId();
+    if (!vectorStoreId) {
+      console.warn('OPENAI_VECTOR_STORE_ID not set; vector store unavailable.');
+      throw new Error('Vector store not configured. Set OPENAI_VECTOR_STORE_ID in environment.');
+    }
     try {
       const openai = getOpenAIClient();
-      const envId = getVectorStoreId();
-
-      if (envId) {
-        // ID is set in env: use existing store only, never create
-        const store = await openai.vectorStores.retrieve(envId);
-        console.log(`✅ Using existing vector store: ${store.name} (${store.id})`);
-        return store;
-      }
-
-      // No env ID: create a new store (e.g. dev) and cache id
-      const name = getVectorStoreName() || 'Robert Knowledge Base';
-      console.log('⚠️ OPENAI_VECTOR_STORE_ID not set. Creating new vector store...');
-      const newStore = await openai.vectorStores.create({
-        name,
-        description: 'Universal Motorcycle Training Knowledge Base'
-      });
-      this._cachedVectorStoreId = newStore.id;
-      console.log(`✅ Created new vector store: ${newStore.id}`);
-      return newStore;
+      const vectorStore = await openai.vectorStores.retrieve(vectorStoreId);
+      console.log(`✅ Using existing vector store: ${vectorStore.id} (${vectorStore.name})`);
+      return vectorStore;
     } catch (error) {
-      const envId = getVectorStoreId();
-      if (envId) {
-        console.error(`Vector store not found for OPENAI_VECTOR_STORE_ID=${envId}:`, error.message);
-        throw new Error(`Vector store "${envId}" not found. Check OPENAI_VECTOR_STORE_ID or create the store in OpenAI.`);
-      }
-      console.error('Error getting vector store:', error);
-      throw new Error(`Failed to get vector store: ${error.message}`);
+      console.error(`Vector store not accessible: ${vectorStoreId}`, error?.message || error);
+      throw new Error(`Vector store not accessible: ${error?.message || error}`);
     }
   }
 
