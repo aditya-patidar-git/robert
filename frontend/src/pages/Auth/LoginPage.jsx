@@ -68,6 +68,7 @@ const LoginPage = () => {
   }, [sendOtpCooldownSeconds]);
 
   const onSubmit = async (data) => {
+    console.log('[LOGIN TRACE] LoginPage: onSubmit started', { email: data?.email, hasPassword: !!data?.password });
     setIsLoading(true);
     setLoginError('');
 
@@ -87,7 +88,9 @@ const LoginPage = () => {
         return;
       }
       const payload = mfaRequired ? { ...getValues(), otp: otp.trim() } : data;
+      console.log('[LOGIN TRACE] LoginPage: calling login() with email', payload?.email);
       const result = await login(payload);
+      console.log('[LOGIN TRACE] LoginPage: login() returned', { success: result?.success, mfaRequired: result?.mfaRequired, needEmailVerification: result?.needEmailVerification, error: result?.error });
       if (result.success) {
         showSuccess(`Welcome back, ${result.user.username}!`);
         navigate('/admin/dashboard');
@@ -104,7 +107,7 @@ const LoginPage = () => {
         showError(result.error, result.isBlocked ? 'Account Suspended' : 'Login Failed');
       }
     } catch (err) {
-      console.error('Unexpected error:', err);
+      console.error('[LOGIN TRACE] LoginPage: unexpected error', err?.message, err?.response?.status, err?.response?.data);
       const errorMessage = 'An unexpected error occurred. Please try again.';
       setLoginError(errorMessage);
       showError(errorMessage);

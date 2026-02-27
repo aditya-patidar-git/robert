@@ -13,9 +13,9 @@ class ProgressIndicatorService {
     /** First periodic update fires after this (ms) so at least one fires before tool often ends. */
     this.FIRST_PERIODIC_INTERVAL_MS = 6000;
     /** Retry delay when response lock is unavailable (ms). */
-    this.PERIODIC_UPDATE_RETRY_DELAY_MS = 2500;
+    this.PERIODIC_UPDATE_RETRY_DELAY_MS = 3000;
     /** Max retries (total attempts = 1 + this value). */
-    this.MAX_PERIODIC_UPDATE_RETRIES = 2;
+    this.MAX_PERIODIC_UPDATE_RETRIES = 4;
   }
 
 
@@ -305,7 +305,20 @@ class ProgressIndicatorService {
           }
         }
     const isFirst = scheduleNextArgs === null;
-    const message = isFirst ? messages[Math.floor(Math.random() * messages.length)] : messages[0];
+    const sm = execution.stateManager;
+    const now = Date.now();
+
+    // Drop stale queued messages — they describe steps that have already passed (TTL 20s).
+    if (sm?.progressQueue) {
+      while (sm.progressQueue.length > 0 && (now - sm.progressQueue[0].queuedAt) > 20000) {
+        const dropped = sm.progressQueue.shift();
+        console.log(`🗑️ [${callSid}] Dropped stale progress message (age: ${now - dropped.queuedAt}ms): "${dropped.message}"`);
+      }
+    }
+
+    const queuedEntry = sm?.progressQueue?.shift();
+    const message = queuedEntry ? queuedEntry.message : (isFirst ? messages[Math.floor(Math.random() * messages.length)] : messages[0]);
+
     const elapsed = Date.now() - execution.startTime;
     try {
       openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'none' } }));
@@ -452,6 +465,10 @@ class ProgressIndicatorService {
     if (execution) {
       const duration = Date.now() - execution.startTime;
       console.log(`📊 [${callSid}] Tool execution completed: ${execution.toolName} (duration: ${duration}ms)`);
+      if (execution.stateManager?.progressQueue?.length > 0) {
+        console.log(`🗑️ [${callSid}] Flushing ${execution.stateManager.progressQueue.length} undelivered progress messages on tool end`);
+        execution.stateManager.progressQueue = [];
+      }
       this.activeExecutions.delete(callSid);
     }
   }

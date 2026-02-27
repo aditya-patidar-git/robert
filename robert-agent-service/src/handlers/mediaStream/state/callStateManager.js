@@ -109,6 +109,7 @@ export class CallStateManager {
     this.expectedContinuations = new Map(); // toolName -> { previousCallId, structuredFlags, timestamp, callSid }
     this.toolExecutionCompleting = false; // Flag to prevent periodic updates during tool completion (race condition fix)
     this.toolExecutionCompletingTimeout = null; // Safety timeout to auto-clear stuck flag
+    this.progressQueue = []; // { message: string, queuedAt: number } — path-based progress for periodic updates
 
     // VAD Calibration tracking
     this.calibrationSamples = [];

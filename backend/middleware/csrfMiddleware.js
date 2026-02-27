@@ -25,9 +25,12 @@ export function requireCsrf(req, res, next) {
   }
   const cookieToken = req.cookies?.[COOKIE_NAME];
   const headerToken = req.get(HEADER_NAME) || req.headers[HEADER_NAME];
+  console.log('[LOGIN TRACE] CSRF: checking', { method: req.method, path: req.path, hasCookie: !!cookieToken, hasHeader: !!headerToken, match: cookieToken === headerToken });
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+    console.log('[LOGIN TRACE] CSRF: rejected (403)', { method: req.method, path: req.path });
     return res.status(403).json({ error: 'Invalid or missing CSRF token' });
   }
+  console.log('[LOGIN TRACE] CSRF: passed');
   next();
 }
 

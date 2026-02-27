@@ -63,8 +63,19 @@ export class ToolCallHandler {
       getWsRef
     );
 
-    // No progress callback - periodic updates are handled automatically
-    const progressCallback = null;
+    const progressCallback = ({ message }) => {
+      if (
+        !message ||
+        this.state.toolExecutionCompleting ||
+        this.state.isInterrupted ||
+        this.state.isClosed
+      ) {
+        return;
+      }
+      if (this.state.progressQueue.length >= 10) return;
+      this.state.progressQueue.push({ message, queuedAt: Date.now() });
+      console.log(`📥 [${this.state.callSid}] Progress queued: "${message}" (queue depth: ${this.state.progressQueue.length})`);
+    };
 
     // Execute tool using unified service
     const executionResult = await toolExecutionService.executeTool({

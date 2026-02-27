@@ -1,6 +1,7 @@
 # Node modules
 node_modules/
 prompt-docs/
+robert_prod_envs/
 # Logs
 logs
 .cursor
