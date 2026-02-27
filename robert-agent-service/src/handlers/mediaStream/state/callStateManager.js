@@ -76,6 +76,7 @@ export class CallStateManager {
     this.userSpeechStartedTime = 0;
     this.pendingBargeInCheck = false; // Flag to track when user is speaking but we're waiting for transcription to check for "stop"
     this.interruptionTimeout = null; // Timeout to clear isInterrupted if transcriptions don't arrive
+    this.bargeInWorkflowSnapshot = null; // Workflow-critical state snapshot at barge-in for resume restore
 
     // Initial greeting tracking
     this.hasInitialGreetingBeenSent = false;
