@@ -10,10 +10,11 @@ import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
  * Production-ready: Supports concurrent calls, immediate Twilio-level audio stopping
  */
 export class BargeInHandler {
-  constructor(stateManager, openaiWs, responseHandler = null) {
+  constructor(stateManager, openaiWs, responseHandler = null, onBargeInSnapshot = null) {
     this.state = stateManager;
     this.openaiWs = openaiWs;
     this.responseHandler = responseHandler; // Reference to ResponseHandler for immediate audio stopping
+    this.onBargeInSnapshot = onBargeInSnapshot; // Optional: (callSid) => { bookingSession, workflowContext, lastAvailabilityCheck, phase }
   }
 
   /**
@@ -105,6 +106,22 @@ export class BargeInHandler {
   triggerImmediateBargeIn(source = 'speech_started') {
     const bargeInDetectionTime = Date.now();
     const isMultipleInterruption = this.state.isInterrupted;
+
+    // BARGE-IN WORKFLOW INVARIANT: This function must ONLY update call/response/audio state on
+    // this.state (interruption flags, response tracking, etc.). It must NOT clear or overwrite:
+    // conversations[callSid], workflow phase (openaiIntegration.currentWorkflowPhase), or tool
+    // execution state (pendingToolCalls, recentToolCalls, etc.), so the agent can resume the
+    // workflow from the same step and session after the user speaks again.
+
+    // Snapshot workflow-critical state for resume restore (belt-and-suspenders)
+    if (typeof this.onBargeInSnapshot === 'function') {
+      try {
+        this.state.bargeInWorkflowSnapshot = this.onBargeInSnapshot(this.state.callSid) || null;
+      } catch (err) {
+        console.warn(`⚠️ [${this.state.callSid}] Barge-in snapshot failed:`, err?.message || err);
+        this.state.bargeInWorkflowSnapshot = null;
+      }
+    }
     
     console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered from ${source} - stopping audio IMMEDIATELY (<200ms target)`);
     console.log(`🔍 [TEST-2] [${this.state.callSid}] BARGE-IN DETECTION START - timestamp: ${bargeInDetectionTime}`);

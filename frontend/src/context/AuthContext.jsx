@@ -162,8 +162,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (credentials) => {
+    console.log('[LOGIN TRACE] AuthContext.login: called with email', credentials?.email);
     try {
       const response = await authService.login(credentials);
+      console.log('[LOGIN TRACE] AuthContext.login: authService.login succeeded', { hasUser: !!response?.user, hasToken: !!response?.token });
       
       // Validate the response structure
       if (response && response.user && response.token) {
@@ -179,6 +181,7 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Invalid login response structure');
       }
     } catch (error) {
+      console.log('[LOGIN TRACE] AuthContext.login: caught error', { status: error?.response?.status, data: error?.response?.data, message: error?.message });
       const data = error?.response?.data;
       const message = data?.message || error?.message || 'Invalid credentials. Please try again.';
       const isBlocked = message.toLowerCase().includes('blocked') || message.toLowerCase().includes('suspended');

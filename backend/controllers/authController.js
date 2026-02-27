@@ -105,8 +105,10 @@ export const signup = async (req, res) => {
 // POST /auth/login
 export const login = async (req, res) => {
     const { email, password } = req.body;
+    console.log('[LOGIN TRACE] authController.login: entered', { email: req.body?.email, hasPassword: !!req.body?.password });
 
     const user = await User.findOne({ email });
+    console.log('[LOGIN TRACE] authController.login: user lookup', { found: !!user, email: req.body?.email });
     if (!user) {
         // Log failed login attempt (unknown email)
         await createAuditLog({
@@ -117,10 +119,12 @@ export const login = async (req, res) => {
             diff: { email, reason: 'unknown_email' },
             req
         });
+        console.log('[LOGIN TRACE] authController.login: returning 401 (user not found)');
         return res.status(401).json({ message: "Invalid email or password" });
     }
 
     const isValid = await verifyPassword(user.passwordHash, password);
+    console.log('[LOGIN TRACE] authController.login: password check', { isValid });
     if (!isValid) {
         // Log failed login attempt (wrong password)
         await createAuditLog({
@@ -131,6 +135,7 @@ export const login = async (req, res) => {
             diff: { reason: 'invalid_password' },
             req
         });
+        console.log('[LOGIN TRACE] authController.login: returning 401 (invalid password)');
         return res.status(401).json({ message: "Invalid email or password" });
     }
 
@@ -192,6 +197,7 @@ export const login = async (req, res) => {
         req
     });
 
+    console.log('[LOGIN TRACE] authController.login: success, sending token');
     res.json({
         token,
         user: {

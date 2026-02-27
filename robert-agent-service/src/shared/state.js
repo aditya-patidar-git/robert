@@ -198,11 +198,12 @@ export async function updateConversation(callSid, updates, ttl = undefined) {
   const localVerificationState = local?.verificationState;
 
   // When we're writing bookingSession (e.g. cancellation step update), use local as base so
-  // we don't overwrite with stale Sync data. getConversation() fetches from Sync and can
-  // overwrite in-memory state before setConversation runs, causing chained tools to see wrong step.
+  // we don't overwrite with stale Sync data. For other updates, use local as base when it exists
+  // so partial updates (e.g. searchRetryState, lookupRetryState) never overwrite in-memory
+  // workflow/session state with stale Sync data—important for barge-in resume and multi-call correctness.
   const existing = updates.bookingSession != null
     ? (local || {})
-    : (await getConversation(callSid) || {});
+    : (local != null ? local : (await getConversation(callSid) || {}));
   const merged = {
     ...existing,
     ...updates,

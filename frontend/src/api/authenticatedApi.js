@@ -153,7 +153,10 @@ authenticatedApiClient.interceptors.request.use(
         // Proceed without token; server will return 403 if required
       }
     }
-    
+    if (config.url && config.url.includes('/api/auth/login')) {
+      console.log('[LOGIN TRACE] authenticatedApi: sending POST /api/auth/login', { hasCsrf: !!config.headers['X-CSRF-Token'], baseURL: config.baseURL, url: config.url });
+    }
+
     return config;
   },
   (error) => {
@@ -251,6 +254,21 @@ authenticatedApiClient.interceptors.response.use(
       
       // Handle 401 Unauthorized - clear session and redirect to login
       if (status === 401) {
+        if (config?.url && config.url.includes('/api/auth/login')) {
+          console.log('[LOGIN TRACE] authenticatedApi: received 401 on login', {
+            status: error.response?.status,
+            body: error.response?.data,
+            bodyType: typeof error.response?.data,
+            hasData: !!error.response?.data
+          });
+          const body = error.response?.data;
+          const ourMessage = body?.message === 'Invalid email or password' || body?.message === 'Invalid or expired OTP';
+          if (!body || (typeof body === 'object' && Object.keys(body).length === 0) || !ourMessage) {
+            console.warn('[LOGIN TRACE] DIAGNOSIS: 401 with empty or unexpected body → request likely did NOT reach Node backend; blocked by proxy/load balancer/gateway in front of api.universalmct.ai');
+          } else {
+            console.warn('[LOGIN TRACE] DIAGNOSIS: 401 with backend JSON message → request reached Node; rejection is due to invalid credentials or OTP');
+          }
+        }
         retryCounts.delete(requestId);
         localStorage.removeItem('authToken');
         localStorage.removeItem('refreshToken');

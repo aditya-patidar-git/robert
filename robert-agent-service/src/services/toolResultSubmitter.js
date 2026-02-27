@@ -288,6 +288,12 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       return;
     }
 
+    // Barge-in: skip TTS when user interrupted; tool result is already in conversation and model context
+    if (this.stateManager?.isInterrupted === true) {
+      console.log(`ℹ️ [${callId}] Skipping response creation - user interrupted (barge-in); tool result already in conversation`);
+      return;
+    }
+
     const toolResult = options?.toolResult;
     const isPriorityResult = toolResult && (
       toolResult.requiresConfirmation === true ||

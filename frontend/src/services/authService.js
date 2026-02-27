@@ -22,7 +22,10 @@ class AuthService extends BaseService {
    * @returns {Promise<Object>} Login response with token
    */
   async login(credentials) {
-    const response = await this.post('/login', credentials);
+    console.log('[LOGIN TRACE] authService.login: sending POST /login for', credentials?.email);
+    try {
+      const response = await this.post('/login', credentials);
+      console.log('[LOGIN TRACE] authService.login: got response', { hasData: !!response, hasToken: !!(response?.data?.token || response?.token) });
     
     // Store token in localStorage
     if (response.data?.token) {
@@ -33,6 +36,10 @@ class AuthService extends BaseService {
     }
     
     return response.data || response;
+    } catch (err) {
+      console.log('[LOGIN TRACE] authService.login: post failed', { status: err?.response?.status, data: err?.response?.data });
+      throw err;
+    }
   }
 
   /**

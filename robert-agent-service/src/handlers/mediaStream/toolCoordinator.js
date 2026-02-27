@@ -41,7 +41,17 @@ export class ToolCoordinator {
     });
 
     // Initialize BargeInHandler with ResponseHandler reference for immediate Twilio-level audio stopping
-    this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler);
+    // and optional snapshot callback for workflow resume after barge-in
+    const onBargeInSnapshot = (callSid) => {
+      const conv = conversations[callSid];
+      return {
+        bookingSession: conv?.bookingSession ?? null,
+        workflowContext: conv?.workflowContext ?? null,
+        lastAvailabilityCheck: conv?.lastAvailabilityCheck ?? null,
+        phase: this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? null
+      };
+    };
+    this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler, onBargeInSnapshot);
     
     this.consentHandler = consentHandler;
     this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler, (text) => this.applyIntentFromTranscript(text), () => this.openaiIntegration?.getCurrentWorkflowPhase?.());
@@ -256,6 +266,31 @@ export class ToolCoordinator {
     }
     
     try {
+      // Restore workflow state from barge-in snapshot if set (belt-and-suspenders for resume after interruption)
+      const snapshot = this.state.bargeInWorkflowSnapshot;
+      if (snapshot && typeof snapshot === 'object') {
+        const callSid = this.state.callSid;
+        if (!conversations[callSid]) conversations[callSid] = {};
+        const conv = conversations[callSid];
+        if ((conv.bookingSession == null) && (snapshot.bookingSession != null)) {
+          conv.bookingSession = snapshot.bookingSession;
+          console.log(`📋 [${callSid}] Restored bookingSession from barge-in snapshot`);
+        }
+        if ((conv.workflowContext == null) && (snapshot.workflowContext != null)) {
+          conv.workflowContext = snapshot.workflowContext;
+          console.log(`📋 [${callSid}] Restored workflowContext from barge-in snapshot`);
+        }
+        if ((conv.lastAvailabilityCheck == null) && (snapshot.lastAvailabilityCheck != null)) {
+          conv.lastAvailabilityCheck = snapshot.lastAvailabilityCheck;
+          console.log(`📋 [${callSid}] Restored lastAvailabilityCheck from barge-in snapshot`);
+        }
+        if (snapshot.phase != null && this.openaiIntegration) {
+          this.openaiIntegration.setCurrentWorkflowPhase(snapshot.phase);
+          console.log(`📋 [${callSid}] Restored workflow phase from barge-in snapshot: ${snapshot.phase}`);
+        }
+        this.state.bargeInWorkflowSnapshot = null;
+      }
+
       const isInitialGreeting = !this.state.hasInitialGreetingBeenSent;
       const overrideWorkflowPhase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? undefined;
 

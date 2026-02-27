@@ -98,8 +98,12 @@ setWebSocketIO(io);
 websocketService.initialize();
 
 // Middlewares
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map(origin => origin.trim());
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: allowedOrigins,
   credentials: true
 }));
 app.use(bodyParser.json());
@@ -172,7 +176,13 @@ app.get("/api/csrf-token", (req, res) => {
 });
 
 // Auth Routes (CSRF required for state-changing requests)
-app.use("/api/auth", requireCsrf, authRoutes);
+app.use("/api/auth", (req, res, next) => {
+  console.log('[LOGIN TRACE] Backend: request to /api/auth', { method: req.method, path: req.path, url: req.originalUrl });
+  if (req.method === 'POST' && req.path === '/login') {
+    console.log('[LOGIN TRACE] Backend: POST /login REACHED NODE - if you see this in backend logs when login fails, the 401 is from this server; if you never see this, the 401 is from proxy/gateway in front.');
+  }
+  next();
+}, requireCsrf, authRoutes);
 
 // Admin Routes (CSRF required for state-changing requests)
 app.use("/api/admin", requireCsrf, adminRoutes);
