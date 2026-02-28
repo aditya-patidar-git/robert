@@ -656,6 +656,15 @@ export class ResponseHandler {
       const hasPendingRecoveryTool = !!this.state.pendingChainedToolCall;
       const isHoldingResponse = progressIndicatorService.isHoldingResponse(this.state.callSid, responseId);
       if (isHoldingResponse) {
+        // Warn if model output booking-like content instead of generic holding phrase
+        const bookingLike = fullResponseText && fullResponseText.length > 150 && (
+          /has been confirmed|you're all set|you'll receive a confirmation|confirmation shortly/i.test(fullResponseText) ||
+          /\b(tuesday|wednesday|thursday|friday|saturday|sunday)\s+the\s+\d+/i.test(fullResponseText) ||
+          /at\s+\d{2}:\d{2}\s+at\s+the\s+/i.test(fullResponseText)
+        );
+        if (bookingLike) {
+          console.warn(`⚠️ [${this.state.callSid}] Holding response contained booking-like content; expected only generic holding phrase. Len=${fullResponseText.length}`);
+        }
         this.state.waitingForUser = false;
         progressIndicatorService.removeHoldingResponse(this.state.callSid, responseId);
         this.state.releaseResponseLock();

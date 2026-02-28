@@ -317,9 +317,24 @@ class ProgressIndicatorService {
     }
 
     const queuedEntry = sm?.progressQueue?.shift();
-    const message = queuedEntry ? queuedEntry.message : (isFirst ? messages[Math.floor(Math.random() * messages.length)] : messages[0]);
+    let message = queuedEntry ? queuedEntry.message : (isFirst ? messages[Math.floor(Math.random() * messages.length)] : messages[0]);
+    // Restrict periodic updates to generic holding phrases only — never use booking confirmation or step-specific text
+    const genericMaxLen = 80;
+    const bookingConfirmationPhrases = ['has been confirmed', "you're all set", 'you\'ll receive a confirmation', 'confirmation shortly', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'at 09:00', 'at 10:00', 'introduction to motorcycling', 'eltham', 'location'];
+    const isGeneric = (m) => {
+      if (!m || m.length > genericMaxLen) return false;
+      const lower = m.toLowerCase();
+      return !bookingConfirmationPhrases.some(p => lower.includes(p));
+    };
+    if (!isGeneric(message)) {
+      if (queuedEntry) {
+        console.log(`🗑️ [${callSid}] Rejected non-generic progress message for periodic update (length=${(message || '').length}, using config): "${(message || '').substring(0, 50)}..."`);
+      }
+      message = isFirst ? messages[Math.floor(Math.random() * messages.length)] : messages[0];
+    }
 
     const elapsed = Date.now() - execution.startTime;
+    const escapedMessage = (message || '').replace(/"/g, '\\"');
     try {
       openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'none' } }));
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -328,7 +343,7 @@ class ProgressIndicatorService {
           type: 'response.create',
           response: {
             modalities: ['audio', 'text'],
-          instructions: `CRITICAL: You MUST say EXACTLY and ONLY: "${(message || '').replace(/"/g, '\\"')}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT mention contact details, payment, bike type, transfer, updating phone number, or any step of the booking or cancellation flow. Do NOT offer to transfer or to update details. Do not call any tools. This is a generic holding message only—say ONLY the exact phrase above and nothing else.`
+          instructions: `CRITICAL: You MUST say EXACTLY and ONLY: "${escapedMessage}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT mention contact details, payment, bike type, transfer, updating phone number, or any step of the booking or cancellation flow. Do NOT offer to transfer or to update details. Do NOT output any booking confirmation, course name, date, time, location, or "you're all set". Do not call any tools. This is a generic holding message only—say ONLY the exact phrase above and nothing else.`
           }
         }));
         execution.lastUpdateTime = Date.now();

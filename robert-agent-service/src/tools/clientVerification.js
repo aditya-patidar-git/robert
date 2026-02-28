@@ -161,9 +161,9 @@ class ClientVerificationTool {
             requiresImmediateContinuation: true
           };
         } else {
-          // FullName mismatch - increment attempts and ask again
+          // FullName mismatch - increment attempts and ask again (existing retry logic)
           incrementVerificationAttempt(conversation, 'fullName');
-          console.log(`❌ [${callSid}] Full name mismatch: stored="${storedName}", provided="${providedName}"`);
+          console.log(`❌ [${callSid}] Client verification discrepancy – fullName: stored="${storedName}", provided="${providedName}", attempt=${conversation.verificationAttempts.fullName}`);
           
           if (isMaxAttemptsExceeded(conversation)) {
             return {
@@ -228,9 +228,9 @@ class ClientVerificationTool {
             requiresImmediateContinuation: true
           };
         } else {
-          // Postcode mismatch - increment attempts and ask again
+          // Postcode mismatch - increment attempts and ask again (existing retry logic)
           incrementVerificationAttempt(conversation, 'postcode');
-          console.log(`❌ [${callSid}] Postcode mismatch: stored="${storedPostcode}", provided="${providedPostcode}"`);
+          console.log(`❌ [${callSid}] Client verification discrepancy – postcode: stored="${storedPostcode}", provided="${providedPostcode}", attempt=${conversation.verificationAttempts.postcode}`);
           
           if (isMaxAttemptsExceeded(conversation)) {
             return {
@@ -358,7 +358,7 @@ class ClientVerificationTool {
           }
 
           incrementVerificationAttempt(conversation, 'telephoneNumber');
-          console.log(`❌ [${callSid}] Telephone number mismatch: stored="${storedTelephone}", provided="${providedTelephone}"`);
+          console.log(`❌ [${callSid}] Client verification discrepancy – telephoneNumber: stored="${storedTelephone}", provided="${providedTelephone}", attempt=${conversation.verificationAttempts.telephoneNumber}`);
 
           if (isMaxAttemptsExceeded(conversation)) {
             return {

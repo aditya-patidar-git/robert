@@ -37,6 +37,15 @@ export class LookupContactStep extends BaseStepTool {
       return result;
     }
 
+    // Missing param (lookup was not run): do NOT increment attempt — instruct to use caller's/session value
+    const err = result.error ? String(result.error) : '';
+    if (result.success === false && (err.includes('requires mobile') || err.includes('None was available'))) {
+      return {
+        ...result,
+        instruction: `CRITICAL: You must call booking_step_lookup_contact with the search key: use customerMobile if the caller gave a phone number (or from session), customerEmail if they gave an email, or customerName for a name fragment. Do NOT ask them to repeat if they already provided it. Call the tool now with that parameter from their last message or from the conversation.`
+      };
+    }
+
     const escalation = sessionStateManager.incrementLookupAttempt(callSid);
 
     const paramKey = escalation.nextStrategy === 'mobile' ? 'customerMobile' : escalation.nextStrategy === 'email' ? 'customerEmail' : 'customerName';
