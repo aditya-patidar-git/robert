@@ -198,8 +198,9 @@ export class BargeInHandler {
     this.state.pendingTranscriptions = [];
     this.state.pendingBargeInCheck = false; // Clear the pending check flag
     
-    // CRITICAL: Stop periodic updates immediately when user interrupts
+    // CRITICAL: Stop periodic updates and cancel queue-driven update timer when user interrupts
     progressIndicatorService.stopPeriodicUpdates(this.state.callSid);
+    progressIndicatorService.onBargeIn(this.state.callSid);
     console.log(`🛑 [${this.state.callSid}] STEP 3: Stopped periodic updates due to barge-in`);
     
     // Cancel grace period if active

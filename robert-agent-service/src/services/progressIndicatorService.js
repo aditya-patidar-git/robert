@@ -16,6 +16,8 @@ class ProgressIndicatorService {
     this.PERIODIC_UPDATE_RETRY_DELAY_MS = 3000;
     /** Max retries (total attempts = 1 + this value). */
     this.MAX_PERIODIC_UPDATE_RETRIES = 4;
+    /** Min gap between queue-driven progress updates (ms). */
+    this.QUEUED_UPDATE_MIN_GAP_MS = 5000;
   }
 
 
@@ -143,17 +145,23 @@ class ProgressIndicatorService {
       }
     }
 
+    const existing = this.activeExecutions.get(callSid);
     this.activeExecutions.set(callSid, {
       toolName,
       startTime: Date.now(),
       lastUpdateTime: Date.now(),
       updateTimeout: null, // Track setTimeout for periodic updates
+      queueUpdateTimeout: null, // Track setTimeout for queue-driven progress updates (5s min gap)
       periodicUpdateCount: 0, // Track how many periodic updates have been sent
       maxPeriodicUpdates: maxPeriodicUpdates, // Maximum number of periodic updates allowed for this tool
+      queuedUpdateCount: 0, // Number of queue-driven updates sent this tool
+      maxQueuedUpdatesPerTool: 15, // Cap queue-driven updates per tool
       stateManager: stateManager, // Store reference for thread-safe checks
       allowsPeriodicUpdates: allowsPeriodicUpdates, // Track if this tool should have periodic updates enabled
       delayedStartTime: delayedStartTime, // When to start periodic updates (if delayed)
-      expectHoldingResponse: false // Set true before sending periodic response.create; cleared when response.created is notified
+      expectHoldingResponse: false, // Set true before sending periodic response.create; cleared when response.created is notified
+      getWsRef: existing?.getWsRef ?? null, // Preserve from first schedule (toolCallHandler); set by scheduleAcknowledgmentAndPeriodicUpdates
+      config: existing?.config ?? null // Preserve from first schedule
     });
     console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${allowsPeriodicUpdates ? ' (periodic updates enabled)' : ''}`);
   }
@@ -168,20 +176,200 @@ class ProgressIndicatorService {
    * @param {function(): WebSocket|null} [getWsRef] - Optional; re-fetch WS in timeout (e.g. () => getSipCallWebSocket(callId))
    */
   scheduleAcknowledgmentAndPeriodicUpdates(callId, toolName, openaiWs, config, stateManager, getWsRef) {
-    if (!config?.progressIndicators?.enabled || !openaiWs || openaiWs.readyState !== 1) {
+    if (!config?.progressIndicators?.enabled) {
+      console.log(`[PROGRESS] [${callId}] scheduleAcknowledgmentAndPeriodicUpdates SKIP: progressIndicators.enabled=false or no config`);
+      return;
+    }
+    if (!openaiWs || openaiWs.readyState !== 1) {
+      console.log(`[PROGRESS] [${callId}] scheduleAcknowledgmentAndPeriodicUpdates SKIP: no openaiWs or readyState=${openaiWs?.readyState}`);
       return;
     }
     this.startToolExecution(callId, toolName, stateManager);
     // Start periodic updates immediately for whitelisted tools
     const execution = this.activeExecutions.get(callId);
-    if (execution && execution.allowsPeriodicUpdates) {
-        const ws = typeof getWsRef === 'function' ? getWsRef() : openaiWs;
-      if (ws && ws.readyState === 1) {
-        this.startPeriodicUpdates(callId, ws, config);
+    if (execution) {
+      execution.getWsRef = typeof getWsRef === 'function' ? getWsRef : () => openaiWs;
+      execution.config = config;
+      console.log(`[PROGRESS] [${callId}] scheduleAcknowledgmentAndPeriodicUpdates: execution registered for ${toolName}, stateManager=${!!stateManager}, allowsPeriodicUpdates=${execution.allowsPeriodicUpdates}`);
+      if (execution.allowsPeriodicUpdates) {
+        const ws = execution.getWsRef();
+        if (ws && ws.readyState === 1) {
+          this.startPeriodicUpdates(callId, ws, config);
+        }
       }
+    } else {
+      console.log(`[PROGRESS] [${callId}] scheduleAcknowledgmentAndPeriodicUpdates: no execution after startToolExecution`);
     }
   }
 
+  /**
+   * Schedule one queue-driven progress update (event-driven, max 5s gap).
+   * Called when progressCallback pushes to the queue; only schedules if not already scheduled.
+   * @param {string} callSid - Call SID
+   */
+  scheduleQueuedProgressUpdate(callSid) {
+    const execution = this.activeExecutions.get(callSid);
+    if (!execution) {
+      console.log(`[PROGRESS] [${callSid}] scheduleQueuedProgressUpdate SKIP: no execution in activeExecutions`);
+      return;
+    }
+    if (!execution.config?.progressIndicators?.enabled) {
+      console.log(`[PROGRESS] [${callSid}] scheduleQueuedProgressUpdate SKIP: config.progressIndicators.enabled=false`);
+      return;
+    }
+    const queueLen = execution.stateManager?.progressQueue?.length ?? 0;
+    if (!queueLen) {
+      console.log(`[PROGRESS] [${callSid}] scheduleQueuedProgressUpdate SKIP: progressQueue.length=0`);
+      return;
+    }
+    if (execution.queueUpdateTimeout != null) {
+      console.log(`[PROGRESS] [${callSid}] scheduleQueuedProgressUpdate SKIP: already scheduled (queueUpdateTimeout set)`);
+      return; // Already scheduled
+    }
+    const openaiWs = execution.getWsRef ? execution.getWsRef() : null;
+    if (!openaiWs || openaiWs.readyState !== 1) {
+      console.log(`[PROGRESS] [${callSid}] scheduleQueuedProgressUpdate SKIP: no getWsRef or openaiWs readyState=${openaiWs?.readyState}`);
+      return;
+    }
+    const delayMs = Math.max(0, this.QUEUED_UPDATE_MIN_GAP_MS - (Date.now() - execution.lastUpdateTime));
+    execution.queueUpdateTimeout = setTimeout(() => {
+      execution.queueUpdateTimeout = null;
+      this.trySendOneProgressUpdate(callSid);
+    }, delayMs);
+    console.log(`⏱️ [${callSid}] Queue-driven update scheduled in ${delayMs}ms (queue depth: ${queueLen})`);
+  }
+
+  /**
+   * Send one progress update from the queue (FIFO). Same guards as periodic updates.
+   * Reschedules in 5s if queue still has items and under cap.
+   * @param {string} callSid - Call SID
+   */
+  async trySendOneProgressUpdate(callSid) {
+    const execution = this.activeExecutions.get(callSid);
+    if (!execution) {
+      console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate SKIP: no execution`);
+      return;
+    }
+    const openaiWs = execution.getWsRef ? execution.getWsRef() : null;
+    const config = execution.config;
+    if (!openaiWs || openaiWs.readyState !== 1) {
+      console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate SKIP: openaiWs missing or readyState=${openaiWs?.readyState}`);
+      return;
+    }
+    if (!config?.progressIndicators?.enabled) {
+      console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate SKIP: progressIndicators.enabled=false`);
+      return;
+    }
+    const maxQueued = execution.maxQueuedUpdatesPerTool ?? 15;
+    if (execution.queuedUpdateCount >= maxQueued) {
+      console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate SKIP: queuedUpdateCount ${execution.queuedUpdateCount} >= ${maxQueued}`);
+      return;
+    }
+    const sm = execution.stateManager;
+    if (sm) {
+      if (sm.toolExecutionCompleting) {
+        console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate SKIP: toolExecutionCompleting=true`);
+        return;
+      }
+      if (sm.isInterrupted) {
+        console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate SKIP: isInterrupted=true`);
+        return;
+      }
+      if (sm.isResponding || sm.activeResponseId !== null) {
+        console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate SKIP: isResponding=${sm.isResponding}, activeResponseId=${sm.activeResponseId}`);
+        return;
+      }
+      if (!sm.tryAcquireResponseLock()) {
+        console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate SKIP: could not acquire response lock`);
+        return;
+      }
+    }
+    const now = Date.now();
+    if (sm?.progressQueue) {
+      while (sm.progressQueue.length > 0 && (now - sm.progressQueue[0].queuedAt) > 20000) {
+        const dropped = sm.progressQueue.shift();
+        console.log(`🗑️ [${callSid}] Dropped stale progress message (age: ${now - dropped.queuedAt}ms): "${dropped.message}"`);
+      }
+    }
+    const queuedEntry = sm?.progressQueue?.shift();
+    const messages = config?.progressIndicators?.updateMessages || ['Please bear with me for a moment'];
+    let message = queuedEntry ? queuedEntry.message : messages[Math.floor(Math.random() * messages.length)];
+    console.log(`[PROGRESS] [${callSid}] trySendOneProgressUpdate: passed all guards, sending queue-driven update (fromQueue=${!!queuedEntry}, message="${(message || '').substring(0, 50)}...")`);
+    const genericMaxLen = 80;
+    const bookingConfirmationPhrases = ['has been confirmed', "you're all set", 'you\'ll receive a confirmation', 'confirmation shortly', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'at 09:00', 'at 10:00', 'introduction to motorcycling', 'eltham', 'location'];
+    const isGeneric = (m) => {
+      if (!m || m.length > genericMaxLen) return false;
+      const lower = m.toLowerCase();
+      return !bookingConfirmationPhrases.some(p => lower.includes(p));
+    };
+    if (!isGeneric(message)) {
+      if (queuedEntry) {
+        console.log(`🗑️ [${callSid}] Rejected non-generic progress message for queue update (length=${(message || '').length}, using config): "${(message || '').substring(0, 50)}..."`);
+      }
+      message = messages[Math.floor(Math.random() * messages.length)];
+    }
+    const elapsed = Date.now() - execution.startTime;
+    const escapedMessage = (message || '').replace(/"/g, '\\"');
+    try {
+      openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'none' } }));
+      await new Promise(resolve => setTimeout(resolve, 100));
+      execution.expectHoldingResponse = true;
+      openaiWs.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          modalities: ['audio', 'text'],
+          instructions: `CRITICAL: You MUST say EXACTLY and ONLY: "${escapedMessage}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT mention contact details, payment, bike type, transfer, updating phone number, or any step of the booking or cancellation flow. Do NOT output any booking confirmation, course name, date, time, location, or "you're all set". Do not call any tools. This is a generic holding message only—say ONLY the exact phrase above and nothing else.`
+        }
+      }));
+      execution.lastUpdateTime = Date.now();
+      execution.queuedUpdateCount = (execution.queuedUpdateCount || 0) + 1;
+      console.log(`📊 [${callSid}] Sent queue-driven update ${execution.queuedUpdateCount} after ${elapsed}ms: "${message}"`);
+      const estimatedAudioDuration = this.estimateAudioDuration(message);
+      const reenableDelayMs = Math.max(2000, estimatedAudioDuration + 1000);
+      if (!execution.toolName.startsWith('cancellation_step_')) {
+        setTimeout(() => {
+          if (openaiWs && openaiWs.readyState === 1) {
+            openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'auto' } }));
+          }
+        }, reenableDelayMs);
+      }
+      if (sm?.progressQueue?.length > 0 && execution.queuedUpdateCount < (execution.maxQueuedUpdatesPerTool ?? 15)) {
+        execution.queueUpdateTimeout = setTimeout(() => {
+          execution.queueUpdateTimeout = null;
+          this.trySendOneProgressUpdate(callSid);
+        }, this.QUEUED_UPDATE_MIN_GAP_MS);
+      }
+    } catch (err) {
+      console.error(`❌ [${callSid}] Error sending queue-driven update:`, err);
+    }
+  }
+
+  /**
+   * Called when user barges in: cancel any scheduled queue-driven update so updates are on hold until resume.
+   * @param {string} callSid - Call SID
+   */
+  onBargeIn(callSid) {
+    const execution = this.activeExecutions.get(callSid);
+    if (execution?.queueUpdateTimeout != null) {
+      clearTimeout(execution.queueUpdateTimeout);
+      execution.queueUpdateTimeout = null;
+      console.log(`🛑 [${callSid}] Cancelled queue-driven update timer due to barge-in (updates on hold until resume)`);
+    }
+  }
+
+  /**
+   * Called when isInterrupted is cleared: reschedule queue-driven update if queue has items and tool still running.
+   * @param {string} callSid - Call SID
+   * @param {Object} stateManager - State manager (to check isInterrupted)
+   */
+  maybeResumeQueuedUpdates(callSid, stateManager) {
+    if (stateManager?.isInterrupted) return;
+    const execution = this.activeExecutions.get(callSid);
+    if (!execution?.stateManager?.progressQueue?.length) return;
+    if (execution.queueUpdateTimeout != null) return;
+    this.scheduleQueuedProgressUpdate(callSid);
+    console.log(`▶️ [${callSid}] Resumed queue-driven updates (${execution.stateManager.progressQueue.length} in queue)`);
+  }
 
   /**
    * Start sending periodic updates during long operations
@@ -443,6 +631,11 @@ class ProgressIndicatorService {
           clearTimeout(execution.updateTimeout);
           execution.updateTimeout = null;
         }
+        // Clear queue-driven update timer
+        if (execution.queueUpdateTimeout) {
+          clearTimeout(execution.queueUpdateTimeout);
+          execution.queueUpdateTimeout = null;
+        }
       } catch (err) {
         console.error(`❌ [${callSid}] Error stopping periodic updates:`, err);
       }
@@ -462,6 +655,10 @@ class ProgressIndicatorService {
         if (execution.updateTimeout) {
           clearTimeout(execution.updateTimeout);
           execution.updateTimeout = null;
+        }
+        if (execution.queueUpdateTimeout) {
+          clearTimeout(execution.queueUpdateTimeout);
+          execution.queueUpdateTimeout = null;
         }
         console.log(`🛑 [${callSid}] Stopped periodic updates (execution still tracked for metrics)`);
       } catch (err) {

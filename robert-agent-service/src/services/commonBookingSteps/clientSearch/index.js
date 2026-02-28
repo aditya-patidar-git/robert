@@ -74,6 +74,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       }
     }
     
+    console.log(`[PROGRESS] [findAndVerifyClient] invoking progressCallback (hasCallback=${typeof progressCallback === 'function'}): "Opening the Contacts tab."`);
     progressCallback?.({ message: 'Opening the Contacts tab.' });
     console.log('👤 [CLIENT SEARCH] Navigating to Contacts tab...');
     
@@ -82,6 +83,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     await contactsTab.click();
     
     // Wait for page to fully load
+    console.log(`[PROGRESS] [findAndVerifyClient] progressCallback: "Loading the contacts page."`);
     progressCallback?.({ message: 'Loading the contacts page.' });
     console.log('⏳ [CLIENT SEARCH] Waiting for Contacts page to fully load...');
     await page.waitForTimeout(8000);
@@ -117,6 +119,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     console.log('✅ [CLIENT SEARCH] Iframe loaded, switching context...');
     
     // Select Smart search
+    console.log(`[PROGRESS] [findAndVerifyClient] progressCallback: "Searching for your profile."`);
     progressCallback?.({ message: 'Searching for your profile.' });
     await selectSmartSearch(iframe, page, screenshotsDir);
     
@@ -145,6 +148,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     }
 
     // Execute search
+    console.log(`[PROGRESS] [findAndVerifyClient] progressCallback: "Waiting for results, please hold on."`);
     progressCallback?.({ message: 'Waiting for results, please hold on.' });
     await executeSearch(iframe, page, finalSearchValue, screenshotsDir);
 

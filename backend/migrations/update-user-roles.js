@@ -17,7 +17,7 @@ const MIGRATION_VERSION = '1.0.0';
 
 async function connectToDatabase() {
     try {
-        await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/robert');
+        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/robert');
         console.log('✅ Connected to MongoDB');
     } catch (error) {
         console.error('❌ Failed to connect to MongoDB:', error);

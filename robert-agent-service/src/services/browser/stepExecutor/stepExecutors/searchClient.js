@@ -16,6 +16,7 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
  * @returns {Promise<Object>} Step execution result
  */
 export async function executeSearchClient(page, args, sessionState, screenshotsDir, progressCallback = null) {
+  console.log(`[PROGRESS] [searchClient] executeSearchClient: progressCallback=${typeof progressCallback === 'function' ? 'present' : 'null'}`);
   progressCallback?.({ message: 'Opening the client search.' });
   // Determine search type and value
   let searchType = null;
@@ -65,7 +66,8 @@ export async function executeSearchClient(page, args, sessionState, screenshotsD
   }
   
   try {
-    // Call findAndVerifyClient with correct parameters
+    // Call findAndVerifyClient with correct parameters (progressCallback flows for queue-driven updates)
+    console.log(`[PROGRESS] [searchClient] calling findAndVerifyClient with progressCallback=${typeof progressCallback === 'function' ? 'present' : 'null'}`);
     const result = await commonSteps.findAndVerifyClient(
       page, 
       searchType, 

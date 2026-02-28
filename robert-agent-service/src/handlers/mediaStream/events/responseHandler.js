@@ -704,6 +704,7 @@ export class ResponseHandler {
         this.state.isInterrupted = false;
         this.state.interruptionStartTime = 0;
         this.state.pendingTranscriptions = [];
+        progressIndicatorService.maybeResumeQueuedUpdates(this.state.callSid, this.state);
       }
 
       // Flush remaining audio buffer before response ends
