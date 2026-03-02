@@ -1,0 +1,47 @@
+name: Deploy Agent
+ 
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'robert-agent-service/**'
+ 
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+ 
+      - name: Copy Agent code to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.AGENT_EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.AGENT_SSH_KEY }}
+          source: "robert-agent-service/"
+          target: "/var/www/robert/"
+ 
+      - name: Deploy to Agent EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.AGENT_EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.AGENT_SSH_KEY }}
+          script: |
+            cd /var/www/robert/robert-agent-service || exit
+           
+            # Fetch secrets from AWS Secrets Manager and create .env file
+            aws secretsmanager get-secret-value --secret-id robert-agent-secrets --region us-east-1 --query SecretString --output text | jq -r 'to_entries|map("\(.key)=\(.value)")|.[]' > .env
+           
+            docker build -t robert-agent .
+            docker stop robert-agent || true
+            docker rm robert-agent || true
+            docker run -d \
+              --name robert-agent \
+              --restart always \
+              -p 3002:3002 \
+              --env-file .env \
+              robert-agent
+ 
+ 
