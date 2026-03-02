@@ -1,0 +1,47 @@
+name: Deploy Frontend
+ 
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'frontend/**'
+ 
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+ 
+      - name: Copy Frontend code to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.FRONTEND_EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "frontend/"
+          target: "/var/www/robert/"
+ 
+      - name: Deploy to Frontend EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.FRONTEND_EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/robert/frontend || exit
+           
+            # Fetch secrets from AWS Secrets Manager and create .env file
+            aws secretsmanager get-secret-value --secret-id robert-frontend-secrets --region us-east-1 --query SecretString --output text | jq -r 'to_entries|map("\(.key)=\(.value)")|.[]' > .env
+           
+            docker build -t robert-frontend .
+            docker stop robert-frontend || true
+            docker rm robert-frontend || true
+            docker run -d \
+              --name robert-frontend \
+              --restart always \
+              -p 80:80 \
+              --env-file .env \
+              robert-frontend
+ 
+ 
