@@ -18,7 +18,7 @@ jobs:
         with:
           host: ${{ secrets.FRONTEND_EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
           source: "frontend/"
           target: "/var/www/robert/"
  
@@ -27,7 +27,7 @@ jobs:
         with:
           host: ${{ secrets.FRONTEND_EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
           script: |
             cd /var/www/robert/frontend || exit
            
