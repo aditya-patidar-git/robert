@@ -22,6 +22,7 @@ RUN npm install
 # Copy application code
 COPY . .
 
+# copy bundle file
 COPY global-bundle.pem /app/global-bundle.pem
 
 # Expose the API port
