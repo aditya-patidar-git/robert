@@ -6,6 +6,11 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, ".env") });
 
+// Gmail OAuth redirect URI (used by gmailOAuthClient)
+if (!process.env.GMAIL_OAUTH_REDIRECT_URI && process.env.BASE_URL) {
+  process.env.GMAIL_OAUTH_REDIRECT_URI = process.env.BASE_URL.replace(/\/$/, '') + '/api/gmail/oauth/callback';
+}
+
 // Fail fast if required secrets are missing (before any services start)
 const assertEnv = (await import("./scripts/assertEnv.js")).default;
 assertEnv();
@@ -59,6 +64,7 @@ import conversationBehaviorRoutes from "./routes/conversationBehaviorRoutes.js";
 import templateRoutes from "./routes/templateRoutes.js";
 import kbMappingRoutes from "./routes/kbMappingRoutes.js";
 import alertRoutes from "./routes/alertRoutes.js";
+import gmailOAuthRoutes from "./routes/gmailOAuthRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import unansweredQuestionsRoutes from "./routes/unansweredQuestionsRoutes.js";
 import callCleanupService from "./services/callCleanupService.js";
@@ -115,7 +121,7 @@ logBypassIfActive();
 
 // MongoDB connection (MONGO_URI already asserted in assertEnv)
 const mongoUri = process.env.MONGO_URI;
-mongoose.connect(mongoUri, { maxPoolSize: 50, serverSelectionTimeoutMS: 5000 })
+mongoose.connect(mongoUri, { maxPoolSize: 50, serverSelectionTimeoutMS: 10000 })
   .then(async () => {
     console.log(`✅ [backend] Connected to MongoDB: ${mongoose.connection.db.databaseName}`);
 
@@ -201,6 +207,9 @@ app.use("/api/kb/mappings", kbMappingRoutes);
 
 // Alert Routes
 app.use("/api/alerts", alertRoutes);
+
+// Gmail OAuth (no CSRF; GET redirect/callback from Google)
+app.use("/api/gmail", gmailOAuthRoutes);
 
 // Payment Routes
 app.use("/api/payments", paymentRoutes);
