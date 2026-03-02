@@ -47,7 +47,15 @@ export class SearchClientStep extends BaseStepTool {
       return result;
     }
 
-    // Search failed or client not found — escalate
+    // Missing param (tool was not run): do NOT increment attempt — instruct to use caller's value
+    if (result.success === false && result.error && String(result.error).includes('is required for client search')) {
+      return {
+        ...result,
+        instruction: `CRITICAL: You must call booking_step_search_client with the search key the caller just gave. If they said a phone number, pass it as customerMobile (digits only, e.g. 11 digits for UK). If they said an email, pass it as customerEmail. If they said their name, pass it as customerName. Do NOT ask them to repeat if they already provided it. Call the tool now with that parameter from their last message.`
+      };
+    }
+
+    // Search ran but client not found — escalate (retry escalation)
     const escalation = sessionStateManager.incrementSearchAttempt(callSid);
 
     // Enhance the failed result with escalation guidance

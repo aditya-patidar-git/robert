@@ -478,8 +478,15 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       }
 
       if (isClientVerification) {
-        if (toolResult && !toolResult.verified && toolResult.missingFields) {
-          // Verification incomplete - agent must continue asking for ALL missing fields immediately
+        // Mismatch (wrong value for fullName, postcode, or telephoneNumber): say ONLY the mismatch message; do NOT repeat generic verification prompt
+        if (toolResult && Array.isArray(toolResult.mismatches) && toolResult.mismatches.length > 0) {
+          const mismatchInstruction = `CRITICAL: The caller gave a value that does NOT match our records (mismatched field(s): ${toolResult.mismatches.join(', ')}). You MUST NOT say "Thanks for this; I believe that I have found your profile" or "please confirm your full name" or "please confirm your postcode" or "please confirm your telephone number". Say ONLY the following exact message, then ask the caller to provide the correct value again: "${toolResult.message}". Then call client_verification again with the field(s) when the caller provides the correct value (use fullName/postcode from previous tool result if already verified; add ONLY the new value the caller spoke). Do NOT pass postcode or telephoneNumber from stored clientDetails—only use what the caller actually says.`;
+          responseInstructions = responseInstructions
+            ? `${mismatchInstruction}\n\n${responseInstructions}`
+            : mismatchInstruction;
+          console.log(`🎯 [${callId}] Client verification MISMATCH (wrong value) - instructing to say ONLY mismatch message, not generic prompt: ${toolResult.mismatches.join(', ')}`);
+        } else if (toolResult && !toolResult.verified && toolResult.missingFields) {
+          // Verification incomplete (field not yet provided) - agent must continue asking for missing fields
           const continueInstruction = toolResult.instruction || (() => {
             const fieldNames = {
               fullName: 'full name',

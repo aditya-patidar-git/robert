@@ -11,6 +11,7 @@ import { storePrematureResponse } from '../../../services/toolResultSubmitter.js
 import { conversations } from '../../../shared/state.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
 import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
+import progressIndicatorService from '../../../services/progressIndicatorService.js';
 
 /**
  * Transcription Handler
@@ -315,6 +316,7 @@ export class TranscriptionHandler {
         this.state.isInterrupted = false;
         this.state.interruptionStartTime = 0;
         this.state.pendingBargeInCheck = false;
+        progressIndicatorService.maybeResumeQueuedUpdates(this.state.callSid, this.state);
         // Continue with normal processing below (don't return early)
       } else {
         // Speech still ongoing: queue transcription and wait for speech_stopped
@@ -353,6 +355,7 @@ export class TranscriptionHandler {
       this.state.lastCancellationTime = 0;
       this.state.isInterrupted = false;
       this.state.interruptionStartTime = 0;
+      progressIndicatorService.maybeResumeQueuedUpdates(this.state.callSid, this.state);
       return { processed: true, shouldCreateResponse: false };
     }
     
@@ -466,7 +469,8 @@ export class TranscriptionHandler {
         // Clear interruption flag
         this.state.isInterrupted = false;
         this.state.interruptionStartTime = 0;
-        
+        progressIndicatorService.maybeResumeQueuedUpdates(this.state.callSid, this.state);
+
         // Check if it's a stop command (only "stop" word)
         const transcript = latestTranscription.transcript;
         const stopPattern = /\bstop\b/i; // Only match "stop" as a word (not substring like "stopped")
@@ -506,6 +510,7 @@ export class TranscriptionHandler {
             this.state.interruptionStartTime = 0;
             this.state.pendingBargeInCheck = false;
             this.state.interruptionTimeout = null;
+            progressIndicatorService.maybeResumeQueuedUpdates(this.state.callSid, this.state);
           }
         }, INTERRUPTION_TIMEOUT_MS);
         

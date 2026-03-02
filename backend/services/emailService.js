@@ -1,9 +1,11 @@
 import nodemailer from 'nodemailer';
+import * as gmailTokenStore from './gmailTokenStore.js';
 // dotenv is already loaded in server.js, no need to reload here
 
 /**
  * Email Service for backend (MCP Tools)
- * Provides email functionality for the backend service
+ * Provides email functionality for the backend service.
+ * Supports Gmail OAuth2 (when GMAIL_OAUTH_* and tokens are set) or SMTP.
  */
 class EmailService {
   constructor() {
@@ -21,10 +23,58 @@ class EmailService {
   }
 
   /**
-   * Initialize email transporter (SMTP) - called on first use
+   * Reinitialize transporter (e.g. after OAuth callback). Next send will rebuild transport.
+   */
+  reinitializeTransporter() {
+    this._transporterInitAttempted = false;
+    this.transporter = null;
+    this._ensureTransporter();
+  }
+
+  /**
+   * Initialize email transporter - Gmail OAuth2 if configured and tokens present, else SMTP.
    */
   _initializeTransporter() {
-    // Check if SMTP is configured
+    const smtpUser = (process.env.SMTP_USER || '').trim();
+    const smtpHost = (process.env.SMTP_HOST || '').toLowerCase();
+    const isGmail = smtpUser.toLowerCase().includes('@gmail.com') ||
+      smtpHost.includes('gmail.com') ||
+      smtpHost.includes('smtp.gmail.com');
+
+    // Gmail + OAuth: use OAuth2 if we have refresh token
+    if (isGmail && process.env.GMAIL_OAUTH_CLIENT_ID && process.env.GMAIL_OAUTH_CLIENT_SECRET) {
+      const tokens = gmailTokenStore.getTokens();
+      if (tokens?.refresh_token) {
+        try {
+          this.transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: parseInt(process.env.SMTP_PORT) || 587,
+            secure: false,
+            requireTLS: true,
+            auth: {
+              type: 'OAuth2',
+              user: process.env.SMTP_USER,
+              clientId: process.env.GMAIL_OAUTH_CLIENT_ID,
+              clientSecret: process.env.GMAIL_OAUTH_CLIENT_SECRET,
+              refreshToken: tokens.refresh_token
+            },
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000
+          });
+          console.log('✅ Backend email transporter initialized (Gmail OAuth2)');
+        } catch (error) {
+          console.error('❌ Error initializing backend Gmail OAuth transporter:', error.message);
+          this.transporter = null;
+        }
+      } else {
+        console.log('⚠️ Gmail OAuth not connected. Visit /api/gmail/auth to connect.');
+        this.transporter = null;
+      }
+      return;
+    }
+
+    // SMTP (plain user/pass)
     if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
       try {
         this.transporter = nodemailer.createTransport({

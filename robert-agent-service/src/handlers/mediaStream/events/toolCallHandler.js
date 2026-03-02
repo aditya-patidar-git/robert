@@ -54,6 +54,9 @@ export class ToolCallHandler {
     
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
     const getWsRef = () => (this.state.isClosed ? null : this.openaiWs);
+    const hasProgressConfig = !!conversationBehaviorConfig?.progressIndicators?.enabled;
+    console.log(`[PROGRESS] [${this.state.callSid}] handleToolCall: tool=${name}, progressIndicators.enabled=${hasProgressConfig}`);
+
     progressIndicatorService.scheduleAcknowledgmentAndPeriodicUpdates(
       this.state.callSid,
       name,
@@ -64,17 +67,31 @@ export class ToolCallHandler {
     );
 
     const progressCallback = ({ message }) => {
-      if (
-        !message ||
-        this.state.toolExecutionCompleting ||
-        this.state.isInterrupted ||
-        this.state.isClosed
-      ) {
+      // [PROGRESS] Extensive logging to pinpoint queue-driven update flow
+      const sid = this.state.callSid;
+      if (!message) {
+        console.log(`[PROGRESS] [${sid}] progressCallback invoked but SKIP: message empty`);
         return;
       }
-      if (this.state.progressQueue.length >= 10) return;
+      if (this.state.toolExecutionCompleting) {
+        console.log(`[PROGRESS] [${sid}] progressCallback invoked but SKIP: toolExecutionCompleting=true`);
+        return;
+      }
+      if (this.state.isInterrupted) {
+        console.log(`[PROGRESS] [${sid}] progressCallback invoked but SKIP: isInterrupted=true`);
+        return;
+      }
+      if (this.state.isClosed) {
+        console.log(`[PROGRESS] [${sid}] progressCallback invoked but SKIP: isClosed=true`);
+        return;
+      }
+      if (this.state.progressQueue.length >= 10) {
+        console.log(`[PROGRESS] [${sid}] progressCallback invoked but SKIP: queue full (${this.state.progressQueue.length} >= 10)`);
+        return;
+      }
       this.state.progressQueue.push({ message, queuedAt: Date.now() });
-      console.log(`📥 [${this.state.callSid}] Progress queued: "${message}" (queue depth: ${this.state.progressQueue.length})`);
+      console.log(`📥 [${sid}] Progress queued: "${message}" (queue depth: ${this.state.progressQueue.length})`);
+      progressIndicatorService.scheduleQueuedProgressUpdate(this.state.callSid);
     };
 
     // Execute tool using unified service

@@ -19,8 +19,9 @@ const useConfigSync = (configTypes = ['all']) => {
   useEffect(() => {
     // Get backend URL from environment or use default
     // Vite uses import.meta.env instead of process.env
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || 
-                       import.meta.env.REACT_APP_BACKEND_URL || 
+    const backendUrl = import.meta.env.VITE_API_BASE ||
+                       import.meta.env.VITE_BACKEND_URL ||
+                       import.meta.env.REACT_APP_BACKEND_URL ||
                        'http://localhost:5000';
 
     // Send JWT so backend socketAuthMiddleware can authorize the connection
