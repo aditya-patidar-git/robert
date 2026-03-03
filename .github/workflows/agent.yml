@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.AGENT_SSH_KEY }}
           source: "robert-agent-service/"
-          target: "/var/www/agent.universalmct.ai/"
+          target: "/var/www/robert-main/"
 
       - name: Deploy to Agent EC2
         uses: appleboy/ssh-action@master
@@ -29,7 +29,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.AGENT_SSH_KEY }}
           script: |
-            cd /var/www/agent.universalmct.ai/robert-agent-service || exit
+            cd /var/www/robert-main/robert-agent-service || exit
            
             # Fetch secrets from AWS Secrets Manager and create sanitized .env with AGENT_ prefix
             aws secretsmanager get-secret-value \
