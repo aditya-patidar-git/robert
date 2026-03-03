@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
 && rm -rf /var/lib/apt/lists/*
 
-# Set Working directory
+# Set Working Directory
 WORKDIR /app
 
 # Copy package files
