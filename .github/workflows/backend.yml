@@ -31,18 +31,24 @@ jobs:
           script: |
             cd /var/www/api.universalmct.ai/backend || exit
 
-            # Fetch secrets from AWS Secrets Manager and create .env with BACKEND_ prefix
+            # Fetch secrets from AWS Secrets Manager and create sanitized .env with BACKEND_ prefix
             aws secretsmanager get-secret-value \
               --secret-id robert-main-secret \
               --region eu-north-1 \
               --query SecretString \
-              --output text | jq -r 'to_entries | map("BACKEND_\(.key)=\(.value)") | .[]' > .env
+              --output text | \
+              jq -r 'to_entries | map("BACKEND_\(.key | gsub("[^A-Za-z0-9_]"; "_"))=\(.value)") | .[]' > .env
 
+            # Build Docker image
             docker build -t api.universalmct.ai:latest .
+
+            # Stop and remove old container if exists
             docker stop backend-container || true
             docker rm backend-container || true
+
+            # Run new container with .env
             docker run -d \
-              --name api.universalmct.ai \
+              --name backend-container \
               --restart always \
               -p 5000:5000 \
               --env-file .env \
