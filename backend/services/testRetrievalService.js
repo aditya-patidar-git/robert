@@ -1,6 +1,7 @@
 import fileSearchService from './fileSearchService.js';
 import uncertaintyGateService from './uncertaintyGateService.js';
 import KnowledgeBase from '../models/KnowledgeBase.js';
+import { escapeRegex } from '../utils/regexUtils.js';
 
 class TestRetrievalService {
   constructor() {
@@ -119,11 +120,12 @@ class TestRetrievalService {
   // Test database search functionality
   async testDatabaseSearch(query) {
     try {
+      const escapedQuery = escapeRegex(query);
       const results = await KnowledgeBase.find({
         $or: [
-          { title: { $regex: query, $options: 'i' } },
-          { content: { $regex: query, $options: 'i' } },
-          { tags: { $in: [new RegExp(query, 'i')] } }
+          { title: { $regex: escapedQuery, $options: 'i' } },
+          { content: { $regex: escapedQuery, $options: 'i' } },
+          { tags: { $in: [new RegExp(escapedQuery, 'i')] } }
         ],
         status: 'Active'
       }).limit(5);

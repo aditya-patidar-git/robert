@@ -1,6 +1,7 @@
 import gdprService from '../services/gdprService.js';
 import observabilityService from '../services/observabilityService.js';
 import CallRecord from '../models/CallRecord.js';
+import { escapeRegex } from '../utils/regexUtils.js';
 
 // Get all DSAR requests
 export const getDSARRequests = async (req, res) => {
@@ -34,9 +35,10 @@ export const getDSARRequests = async (req, res) => {
         
         // Search filter - search in requestorEmail or userIdentifier
         if (search) {
+            const escapedSearch = escapeRegex(search);
             filters.$or = [
-                { requestorEmail: { $regex: search, $options: 'i' } },
-                { userIdentifier: { $regex: search, $options: 'i' } }
+                { requestorEmail: { $regex: escapedSearch, $options: 'i' } },
+                { userIdentifier: { $regex: escapedSearch, $options: 'i' } }
             ];
         }
         
@@ -215,35 +217,30 @@ export const generateDSARExport = async (req, res) => {
     }
 };
 
-// Download DSAR export (filename is derived from DB only - never from req.params to prevent path traversal)
+// Download DSAR export (content served from DB; no file storage)
 export const downloadDSARExport = async (req, res) => {
     try {
         const { requestId } = req.params;
-        const path = await import('path');
-        const fs = await import('fs');
 
         const request = await gdprService.getDSARRequestStatus(requestId);
         if (!request) {
             return res.status(404).json({ success: false, error: 'Request not found' });
         }
-        if (!request.exportUrl) {
-            return res.status(404).json({ success: false, error: 'Export not found' });
+        if (!request.exportContent) {
+            return res.status(404).json({ success: false, error: 'Export not found or expired' });
         }
         if (request.exportExpiresAt && new Date(request.exportExpiresAt) < new Date()) {
             return res.status(410).json({ success: false, error: 'Export has expired' });
         }
 
-        const canonicalFileName = path.basename(request.exportUrl);
-        if (!canonicalFileName || canonicalFileName.includes('..') || canonicalFileName.includes('/')) {
+        const filename = request.exportFileName || `dsar-export-${requestId}.json`;
+        if (filename.includes('..') || filename.includes('/')) {
             return res.status(400).json({ success: false, error: 'Invalid export reference' });
         }
 
-        const exportPath = path.join('./audit-logs', 'exports', canonicalFileName);
-        if (!fs.existsSync(exportPath)) {
-            return res.status(404).json({ success: false, error: 'Export file not found' });
-        }
-
-        res.download(exportPath, canonicalFileName);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.type('application/json');
+        res.send(request.exportContent);
     } catch (error) {
         observabilityService.error('Download DSAR export error', { requestId: req.params.requestId, error: error.message });
         res.status(500).json({ success: false, error: error.message });
@@ -264,16 +261,16 @@ export const processDSARRequest = async (req, res) => {
         const request = await gdprService.getDSARRequestStatus(requestId);
         
         if (action === 'complete' && request.requestType === 'export') {
-            // Generate export if completing an export request
+            // Generate export (saves export content to DB and marks completed)
             const exportData = await gdprService.generateDSARExport(requestId, false);
-            request.status = 'completed';
-            request.completedAt = new Date();
-            request.processedBy = adminUser;
-            if (notes) request.notes = notes;
-            await request.save();
+            // Re-fetch so we have the document with export fields, then set processedBy/notes
+            const updatedRequest = await gdprService.getDSARRequestStatus(requestId);
+            updatedRequest.processedBy = adminUser;
+            if (notes) updatedRequest.notes = notes;
+            await updatedRequest.save();
             
             observabilityService.info('DSAR request completed with export', { requestId, adminUser });
-            return res.json({ success: true, request, export: exportData });
+            return res.json({ success: true, request: updatedRequest, export: exportData });
         } else if (action === 'complete' && request.requestType === 'delete') {
             // Delete user data if completing a delete request
             const deletionResult = await gdprService.deleteUserData(request.userIdentifier);
@@ -513,7 +510,7 @@ export const getConsentRecords = async (req, res) => {
         };
         
         if (callSid) {
-            filter.callSid = { $regex: callSid, $options: 'i' };
+            filter.callSid = { $regex: escapeRegex(callSid), $options: 'i' };
         }
         
         if (startDate || endDate) {

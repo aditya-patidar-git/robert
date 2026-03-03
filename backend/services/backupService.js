@@ -360,34 +360,11 @@ class BackupService {
   }
 
   /**
-   * Copy audit log files
-   * @param {string} destPath - Destination path
+   * Audit logs and DSAR exports are stored in MongoDB only; no file copy needed.
+   * @param {string} _destPath - Unused (kept for API compatibility)
    */
-  async copyAuditLogFiles(destPath) {
-    try {
-      const sourcePath = path.join(__dirname, '../../audit-logs');
-
-      if (!fs.existsSync(sourcePath)) {
-        console.log('ℹ️ No audit logs directory found');
-        return;
-      }
-
-      fs.mkdirSync(destPath, { recursive: true });
-
-      const files = fs.readdirSync(sourcePath);
-      for (const file of files) {
-        const sourceFile = path.join(sourcePath, file);
-        const destFile = path.join(destPath, file);
-
-        if (fs.statSync(sourceFile).isFile()) {
-          fs.copyFileSync(sourceFile, destFile);
-        }
-      }
-
-      console.log(`  ✓ Audit log files copied (${files.length} files)`);
-    } catch (error) {
-      console.warn(`  ⚠️ Audit log files copy failed: ${error.message}`);
-    }
+  async copyAuditLogFiles(_destPath) {
+    // No-op: audit logs and DSAR export content are in DB only
   }
 
   /**

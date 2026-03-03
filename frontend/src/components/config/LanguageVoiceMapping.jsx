@@ -37,6 +37,7 @@ import { useToast } from '../common/ToastProvider';
 import languageVoiceService from '../../services/languageVoiceService';
 import voiceService from '../../services/voiceService';
 import { filterValidRealtimeVoices } from '../../constants/validVoices';
+import { DEFAULT_VOICE_PREVIEW_TEXT } from '../../constants/voicePreview';
 
 // Common language codes reference
 const COMMON_LANGUAGE_CODES = [
@@ -170,7 +171,7 @@ const LanguageVoiceMapping = ({
       setPreviewingVoice({ voiceId, languageCode });
       
       // Use standard English text - it will be translated automatically
-      const sampleText = 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
+      const sampleText = DEFAULT_VOICE_PREVIEW_TEXT;
       
       // Prepare preview options with selected primary model and language
       const previewOptions = { 
@@ -184,66 +185,59 @@ const LanguageVoiceMapping = ({
       
       // Call preview API with translation to target language and selected model
       const previewResult = await voiceService.previewVoice(voiceId, sampleText, previewOptions);
-      
-      // Extract audio URL from response (handle multiple possible structures)
-      const audioUrl = previewResult?.audioUrl || previewResult?.url || 
-                      previewResult?.preview?.audioUrl || previewResult?.preview?.url ||
-                      previewResult?.data?.audioUrl || previewResult?.data?.url ||
-                      previewResult?.data?.preview?.audioUrl || previewResult?.data?.preview?.url;
-      
+
+      const preview = previewResult?.preview || previewResult?.data?.preview || previewResult?.data || previewResult;
+      const audioData = preview?.audioData;
+      const audioUrl = preview?.audioUrl || preview?.url ||
+        previewResult?.audioUrl || previewResult?.url;
+
+      const playBlobUrl = (blobUrl) => {
+        const audio = new Audio(blobUrl);
+        const handleEnded = () => {
+          URL.revokeObjectURL(blobUrl);
+          setPreviewingVoice(null);
+        };
+        const handleError = (e) => {
+          console.error('🔴 [LANGUAGE_VOICE_PREVIEW] Audio playback error:', e);
+          URL.revokeObjectURL(blobUrl);
+          setPreviewingVoice(null);
+          showError('Failed to play audio preview');
+        };
+        audio.addEventListener('ended', handleEnded);
+        audio.addEventListener('error', handleError);
+        audio.play();
+      };
+
+      if (audioData && typeof audioData === 'string' && audioData.length > 0) {
+        const binary = atob(audioData);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'audio/mpeg' });
+        const blobUrl = URL.createObjectURL(blob);
+        playBlobUrl(blobUrl);
+        const mapping = languageMappings.find(m => m.languageCode === languageCode);
+        const languageName = mapping?.languageName || languageCode;
+        showSuccess(`Playing preview in ${languageName}...`);
+        return;
+      }
+
       if (!audioUrl) {
-        console.error('🔴 [LANGUAGE_VOICE_PREVIEW] No audio URL in response:', previewResult);
-        showError('Preview generated but audio URL not found');
+        showError('Preview generated but audio not found in response');
         setPreviewingVoice(null);
         return;
       }
-      
-      // Build full audio URL
+
       const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3002';
-      const fullAudioUrl = audioUrl.startsWith('http') 
-        ? audioUrl 
-        : `${API_BASE}${audioUrl.startsWith('/') ? '' : '/'}${audioUrl}`;
-      
-      // Get auth token
+      const fullAudioUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE}${audioUrl.startsWith('/') ? '' : '/'}${audioUrl}`;
       const token = localStorage.getItem('authToken');
-      
-      // Fetch audio as blob with authentication
       const response = await fetch(fullAudioUrl, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         credentials: 'include'
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
-      }
-      
+      if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
-      
-      // Create and play audio element
-      const audio = new Audio(blobUrl);
-      
-      // Cleanup on end
-      const handleEnded = () => {
-        URL.revokeObjectURL(blobUrl);
-        setPreviewingVoice(null);
-      };
-      
-      // Handle errors
-      const handleError = (e) => {
-        console.error('🔴 [LANGUAGE_VOICE_PREVIEW] Audio playback error:', e);
-        URL.revokeObjectURL(blobUrl);
-        setPreviewingVoice(null);
-        showError('Failed to play audio preview');
-      };
-      
-      audio.addEventListener('ended', handleEnded);
-      audio.addEventListener('error', handleError);
-      
-      // Play immediately
-      await audio.play();
-      
-      // Get language name for success message
+      playBlobUrl(blobUrl);
       const mapping = languageMappings.find(m => m.languageCode === languageCode);
       const languageName = mapping?.languageName || languageCode;
       showSuccess(`Playing preview in ${languageName}...`);

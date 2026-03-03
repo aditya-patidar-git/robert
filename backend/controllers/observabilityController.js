@@ -10,8 +10,8 @@ import { metrics } from '@opentelemetry/api';
 export const getSystemMetrics = async (req, res) => {
   try {
     const { timeRange = '1h' } = req.query;
-    const metrics = await observabilityService.getSystemMetrics(timeRange);
-    res.json({ success: true, data: metrics });
+    const systemMetrics = await observabilityService.getSystemMetrics(timeRange);
+    res.json({ success: true, data: systemMetrics });
   } catch (error) {
     observabilityService.error('Get system metrics error', { error: error.message });
     res.status(500).json({ success: false, error: error.message });
@@ -51,9 +51,11 @@ export const getTraces = async (req, res) => {
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
 
     // Parse date range
-    if (dateRange) {
+    if (typeof dateRange === 'string' && dateRange.trim()) {
       const [start, end] = dateRange.split(',');
-      filters.dateRange = { start, end };
+      if (start !== undefined && end !== undefined) {
+        filters.dateRange = { start: start.trim(), end: end.trim() };
+      }
     }
 
     // Add search and other filters
@@ -74,9 +76,12 @@ export const getTraceStatistics = async (req, res) => {
   try {
     const filters = {};
     
-    if (req.query.dateRange) {
-      const [start, end] = req.query.dateRange.split(',');
-      filters.dateRange = { start, end };
+    const dateRange = req.query.dateRange;
+    if (typeof dateRange === 'string' && dateRange.trim()) {
+      const [start, end] = dateRange.split(',');
+      if (start !== undefined && end !== undefined) {
+        filters.dateRange = { start: start.trim(), end: end.trim() };
+      }
     }
     
     const statistics = await traceAggregationService.getTraceStatistics(filters);

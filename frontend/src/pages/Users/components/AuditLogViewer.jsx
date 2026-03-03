@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Box,
@@ -46,6 +46,15 @@ const AuditLogViewer = () => {
     page: 1,
     limit: 50
   });
+  const [startDateInput, setStartDateInput] = useState(null);
+  const [endDateInput, setEndDateInput] = useState(null);
+  const startDateDebounceRef = useRef(null);
+  const endDateDebounceRef = useRef(null);
+
+  useEffect(() => () => {
+    if (startDateDebounceRef.current) clearTimeout(startDateDebounceRef.current);
+    if (endDateDebounceRef.current) clearTimeout(endDateDebounceRef.current);
+  }, []);
 
   const { data: usersData } = useQuery({
     queryKey: ['users'],
@@ -93,7 +102,17 @@ const AuditLogViewer = () => {
   };
 
   const handleClearFilters = () => {
+    if (startDateDebounceRef.current) {
+      clearTimeout(startDateDebounceRef.current);
+      startDateDebounceRef.current = null;
+    }
+    if (endDateDebounceRef.current) {
+      clearTimeout(endDateDebounceRef.current);
+      endDateDebounceRef.current = null;
+    }
     setSelectedUser(null);
+    setStartDateInput(null);
+    setEndDateInput(null);
     setFilters({
       actorId: '',
       action: '',
@@ -205,14 +224,30 @@ const AuditLogViewer = () => {
           </TextField>
           <DatePicker
             label="Start Date"
-            value={filters.startDate}
-            onChange={(date) => handleFilterChange('startDate')(date)}
+            value={startDateInput}
+            onChange={(date) => setStartDateInput(date)}
+            onAccept={(date) => {
+              setStartDateInput(date);
+              if (startDateDebounceRef.current) clearTimeout(startDateDebounceRef.current);
+              startDateDebounceRef.current = setTimeout(() => {
+                startDateDebounceRef.current = null;
+                handleFilterChange('startDate')(date);
+              }, 400);
+            }}
             slotProps={{ textField: { size: 'small', sx: { minWidth: 150 } } }}
           />
           <DatePicker
             label="End Date"
-            value={filters.endDate}
-            onChange={(date) => handleFilterChange('endDate')(date)}
+            value={endDateInput}
+            onChange={(date) => setEndDateInput(date)}
+            onAccept={(date) => {
+              setEndDateInput(date);
+              if (endDateDebounceRef.current) clearTimeout(endDateDebounceRef.current);
+              endDateDebounceRef.current = setTimeout(() => {
+                endDateDebounceRef.current = null;
+                handleFilterChange('endDate')(date);
+              }, 400);
+            }}
             slotProps={{ textField: { size: 'small', sx: { minWidth: 150 } } }}
           />
           <Button

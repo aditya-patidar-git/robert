@@ -5,7 +5,7 @@ import testRetrievalService from '../../../services/testRetrievalService';
 import provenanceService from '../../../services/provenanceService';
 import { useToast } from '../../../components/common/ToastProvider';
 
-const AnalyticsMonitoringTab = ({ state, handlers }) => {
+const AnalyticsMonitoringTab = ({ state }) => {
   const { showSuccess, showError } = useToast();
   const [isTestRunning, setIsTestRunning] = useState(false);
   const {
@@ -58,25 +58,48 @@ const AnalyticsMonitoringTab = ({ state, handlers }) => {
       const startDate = new Date();
       const days = analyticsTimeRange === '24h' ? 1 : analyticsTimeRange === '7d' ? 7 : analyticsTimeRange === '30d' ? 30 : 90;
       startDate.setDate(startDate.getDate() - days);
-      
+
       const result = await provenanceService.exportProvenanceData(
         null,
         startDate.toISOString(),
         endDate.toISOString()
       );
-      
-      // Extract data from normalized response, or use result directly if not normalized
+
       const exportData = result.data?.data || result.data || result;
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      if (!Array.isArray(exportData)) {
+        showError('Export returned no data or invalid format');
+        return;
+      }
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      const baseName = `provenance-analytics-${dateStr}`;
+      const escapeCsv = (v) => {
+        if (v == null) return '';
+        const s = String(v);
+        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      };
+      const headers = ['callId', 'sessionId', 'query', 'filesUsed', 'similarityScores', 'timestamp', 'model', 'confidence'];
+      const rows = exportData.map((row) => [
+        escapeCsv(row.callId),
+        escapeCsv(row.sessionId),
+        escapeCsv(row.query),
+        escapeCsv(Array.isArray(row.filesUsed) ? row.filesUsed.join('; ') : row.filesUsed),
+        escapeCsv(Array.isArray(row.similarityScores) ? row.similarityScores.join('; ') : row.similarityScores),
+        escapeCsv(row.timestamp ? new Date(row.timestamp).toISOString() : ''),
+        escapeCsv(row.model),
+        escapeCsv(row.confidence != null ? String(row.confidence) : '')
+      ]);
+      const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `provenance-analytics-${new Date().toISOString().split('T')[0]}.json`;
+      link.download = `${baseName}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      
       showSuccess('Analytics data exported');
     } catch (error) {
       showError('Failed to export analytics data');
@@ -142,7 +165,7 @@ const AnalyticsMonitoringTab = ({ state, handlers }) => {
             {testResults.testResults && testResults.testResults.length > 0 && (
               <List>
                 {testResults.testResults.map((result, index) => (
-                  <ListItem key={index} divider>
+                  <ListItem key={`${result.query ?? ''}-${index}`} divider>
                     <ListItemText
                       primary={`Query: "${result.query}"`}
                       secondary={
@@ -196,16 +219,84 @@ const AnalyticsMonitoringTab = ({ state, handlers }) => {
             startIcon={<FileDownload />}
             onClick={handleExportData}
           >
-            Export Data
+            Export CSV
           </Button>
         </Box>
 
         {provenanceData && (
           <Box>
             <Typography variant="subtitle1" gutterBottom>Analytics Summary</Typography>
-            <Alert severity="info">
-              Analytics data loaded. Total records: {provenanceData.totalRecords || 0}
-            </Alert>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 2, mb: 3 }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Total Records</Typography>
+                <Typography variant="h6">{provenanceData.totalRecords ?? 0}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Total Calls</Typography>
+                <Typography variant="h6">{provenanceData.totalCalls ?? 0}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Total Files</Typography>
+                <Typography variant="h6">{provenanceData.totalFiles ?? 0}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Avg Similarity</Typography>
+                <Typography variant="h6">
+                  {typeof provenanceData.averageSimilarityScore === 'number'
+                    ? (provenanceData.averageSimilarityScore * 100).toFixed(1) + '%'
+                    : '—'}
+                </Typography>
+              </Box>
+            </Box>
+
+            {Array.isArray(provenanceData.mostUsedFiles) && provenanceData.mostUsedFiles.length > 0 && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" gutterBottom>Most Used Files</Typography>
+                <List dense disablePadding sx={{ bgcolor: 'action.hover', borderRadius: 1 }}>
+                  {provenanceData.mostUsedFiles.map((item, idx) => (
+                    <ListItem key={item.fileId ?? idx}>
+                      <ListItemText
+                        primary={item.fileId}
+                        secondary={`Used ${item.count} time${item.count !== 1 ? 's' : ''}`}
+                        primaryTypographyProps={{ variant: 'body2', sx: { fontFamily: 'monospace' } }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+
+            {Array.isArray(provenanceData.queryPatterns) && provenanceData.queryPatterns.length > 0 && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" gutterBottom>Top Query Patterns</Typography>
+                <List dense disablePadding sx={{ bgcolor: 'action.hover', borderRadius: 1 }}>
+                  {provenanceData.queryPatterns.map((item, idx) => (
+                    <ListItem key={`${item.query ?? ''}-${idx}`}>
+                      <ListItemText
+                        primary={item.query}
+                        secondary={`${item.count} time${item.count !== 1 ? 's' : ''}`}
+                        primaryTypographyProps={{ variant: 'body2' }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+
+            {provenanceData.timeDistribution && typeof provenanceData.timeDistribution === 'object' && Object.keys(provenanceData.timeDistribution).length > 0 && (
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>Usage by Hour (UTC)</Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {Object.entries(provenanceData.timeDistribution)
+                    .sort(([a], [b]) => Number(a) - Number(b))
+                    .map(([hour, count]) => (
+                      <Typography key={hour} component="span" variant="body2" sx={{ px: 1, py: 0.5, bgcolor: 'action.selected', borderRadius: 1 }}>
+                        {hour}:00 — {count}
+                      </Typography>
+                    ))}
+                </Box>
+              </Box>
+            )}
           </Box>
         )}
       </Paper>

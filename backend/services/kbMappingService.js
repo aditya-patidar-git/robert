@@ -26,9 +26,13 @@ class KBMappingService {
     try {
       // Try to load from file first
       if (fs.existsSync(this.mappingFilePath)) {
-        const fileContent = fs.readFileSync(this.mappingFilePath, 'utf8');
-        const mappingData = JSON.parse(fileContent);
-        return mappingData.mappings || [];
+        try {
+          const fileContent = fs.readFileSync(this.mappingFilePath, 'utf8');
+          const mappingData = JSON.parse(fileContent);
+          return mappingData.mappings || [];
+        } catch (parseErr) {
+          console.warn('KB mapping file parse error, falling back to database:', parseErr.message);
+        }
       }
 
       // Fallback: Query database for mappings
@@ -296,8 +300,12 @@ class KBMappingService {
 
       // Load existing mappings if file exists
       if (fs.existsSync(this.mappingFilePath)) {
-        const fileContent = fs.readFileSync(this.mappingFilePath, 'utf8');
-        mappingData = JSON.parse(fileContent);
+        try {
+          const fileContent = fs.readFileSync(this.mappingFilePath, 'utf8');
+          mappingData = JSON.parse(fileContent);
+        } catch (parseErr) {
+          console.warn('KB mapping file parse error, using empty mappings:', parseErr.message);
+        }
       }
 
       // Check if mapping already exists (by filePath)

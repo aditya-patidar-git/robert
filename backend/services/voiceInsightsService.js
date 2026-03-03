@@ -67,12 +67,12 @@ class VoiceInsightsService {
             _id: 0,
             period: '$_id',
             count: 1,
-            avgMOS: { $ifNull: [{ $round: ['$avgMOS', 2] }, null] },
-            avgLatency: { $ifNull: [{ $round: ['$avgLatency', 2] }, null] },
-            avgJitter: { $ifNull: [{ $round: ['$avgJitter', 2] }, null] },
-            avgPacketLoss: { $ifNull: [{ $round: ['$avgPacketLoss', 2] }, null] },
-            minMOS: { $ifNull: [{ $round: ['$minMOS', 2] }, null] },
-            maxMOS: { $ifNull: [{ $round: ['$maxMOS', 2] }, null] },
+            avgMOS: { $ifNull: ['$avgMOS', null] },
+            avgLatency: { $ifNull: ['$avgLatency', null] },
+            avgJitter: { $ifNull: ['$avgJitter', null] },
+            avgPacketLoss: { $ifNull: ['$avgPacketLoss', null] },
+            minMOS: { $ifNull: ['$minMOS', null] },
+            maxMOS: { $ifNull: ['$maxMOS', null] },
             latencyValues: 1,
             qualityDistribution: 1
           }
@@ -82,7 +82,9 @@ class VoiceInsightsService {
 
       const results = await CallRecord.aggregate(pipeline);
 
-      // Calculate quality distribution percentages
+      const round2 = (v) => (typeof v === 'number' && !Number.isNaN(v) ? Math.round(v * 100) / 100 : v);
+
+      // Round numeric fields and calculate quality distribution percentages (no $round in aggregation for MongoDB < 4.2)
       const processedResults = results.map(result => {
         const distribution = result.qualityDistribution || [];
         const total = distribution.length;
@@ -95,6 +97,12 @@ class VoiceInsightsService {
 
         return {
           ...result,
+          avgMOS: round2(result.avgMOS),
+          avgLatency: round2(result.avgLatency),
+          avgJitter: round2(result.avgJitter),
+          avgPacketLoss: round2(result.avgPacketLoss),
+          minMOS: round2(result.minMOS),
+          maxMOS: round2(result.maxMOS),
           qualityDistribution: {
             excellent: total > 0 ? Math.round((qualityCounts.excellent / total) * 100) : 0,
             good: total > 0 ? Math.round((qualityCounts.good / total) * 100) : 0,

@@ -2,6 +2,7 @@ import ComplaintRecord from "../models/ComplaintRecord.js";
 import CallRecord from "../models/CallRecord.js";
 import EscalationLog from "../models/EscalationLog.js";
 import { io } from "../server.js";
+import { escapeRegex } from "../utils/regexUtils.js";
 
 // Get all complaints with filtering and pagination
 export const getAllComplaints = async (req, res) => {
@@ -49,10 +50,11 @@ export const getAllComplaints = async (req, res) => {
 
     // Search filter
     if (search) {
+      const escapedSearch = escapeRegex(search);
       filter.$or = [
-        { callerId: { $regex: search, $options: 'i' } },
-        { complaintText: { $regex: search, $options: 'i' } },
-        { callSid: { $regex: search, $options: 'i' } }
+        { callerId: { $regex: escapedSearch, $options: 'i' } },
+        { complaintText: { $regex: escapedSearch, $options: 'i' } },
+        { callSid: { $regex: escapedSearch, $options: 'i' } }
       ];
     }
 

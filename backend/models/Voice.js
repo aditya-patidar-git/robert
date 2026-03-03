@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { DEFAULT_VOICE_PREVIEW_TEXT } from "../constants/voicePreview.js";
 
 const VoiceSchema = new mongoose.Schema({
   id: { 
@@ -54,7 +55,7 @@ const VoiceSchema = new mongoose.Schema({
   },
   sampleText: { 
     type: String,
-    default: "Good afternoon! This is Robert from Universal Motorcycle Training. I'd like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have."
+    default: DEFAULT_VOICE_PREVIEW_TEXT
   },
   createdBy: { 
     type: String, 
