@@ -1,28 +1,19 @@
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import DSARRequest from '../models/DSARRequest.js';
 import CallRecord from '../models/CallRecord.js';
 import AuditLog from '../models/AuditLog.js';
 import emailService from './emailService.js';
+import { escapeRegex } from '../utils/regexUtils.js';
 
 class GDPRService {
   constructor() {
-    this.auditLogPath = './audit-logs';
     this.dataRetentionDays = {
       transcripts: 90,
       recordings: 90,
       metadata: 365,
       personalData: 365
     };
-    this.ensureDirectories();
-  }
-
-  ensureDirectories() {
-    if (!fs.existsSync(this.auditLogPath)) {
-      fs.mkdirSync(this.auditLogPath, { recursive: true });
-    }
   }
 
   // PII Detection and Masking
@@ -218,11 +209,12 @@ class GDPRService {
     };
 
     // Find all call records for this user
+    const escapedIdentifier = escapeRegex(request.userIdentifier);
     const callRecords = await CallRecord.find({
       $or: [
         { from: request.userIdentifier },
         { to: request.userIdentifier },
-        { 'transcript': { $regex: request.userIdentifier, $options: 'i' } }
+        { 'transcript': { $regex: escapedIdentifier, $options: 'i' } }
       ]
     }).sort({ createdAt: -1 });
 
@@ -241,35 +233,26 @@ class GDPRService {
       });
     }
 
-    // Generate export file (JSON format)
+    // Store export in DB (no file storage)
     const exportData = JSON.stringify(userData, null, 2);
+    const requestId = request.requestId;
     const exportFileName = `dsar-export-${requestId}-${Date.now()}.json`;
-    const exportPath = path.join(this.auditLogPath, 'exports', exportFileName);
-    
-    // Ensure exports directory exists
-    const exportsDir = path.dirname(exportPath);
-    if (!fs.existsSync(exportsDir)) {
-      fs.mkdirSync(exportsDir, { recursive: true });
-    }
-
-    fs.writeFileSync(exportPath, exportData);
-
-    // Generate secure download URL (in production, use S3 or similar)
-    const exportUrl = `/api/gdpr/dsar/${requestId}/export/${exportFileName}`;
     const exportExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-    request.exportUrl = exportUrl;
+    request.exportFileName = exportFileName;
+    request.exportContent = exportData;
+    request.exportUrl = `/api/gdpr/dsar/${requestId}/export/${exportFileName}`;
     request.exportExpiresAt = exportExpiresAt;
     request.status = 'completed';
     request.completedAt = new Date();
     await request.save();
 
     // Send notification email
-    await this.sendExportReadyEmail(request.requestorEmail, requestId, exportUrl, exportExpiresAt);
+    await this.sendExportReadyEmail(request.requestorEmail, requestId, request.exportUrl, exportExpiresAt);
 
     return {
       requestId,
-      exportUrl,
+      exportUrl: request.exportUrl,
       exportExpiresAt,
       recordCount: callRecords.length,
       fileSize: Buffer.byteLength(exportData)
@@ -433,18 +416,9 @@ class GDPRService {
     return cleanupResults;
   }
 
-  // Audit Logging - writes to both file and MongoDB for unified access
+  // Audit Logging - MongoDB only (no file storage)
   async logAuditEvent(eventType, eventData) {
     const auditLogId = `audit_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    const timestamp = new Date();
-    
-    const auditLog = {
-      id: auditLogId,
-      eventType,
-      eventData,
-      timestamp: timestamp.toISOString(),
-      system: 'robert-ai'
-    };
 
     // Map eventType to targetType for consistent querying
     const targetTypeMap = {
@@ -459,23 +433,7 @@ class GDPRService {
       'compliance_report_generated': 'compliance'
     };
 
-    // Write to file (for backward compatibility and backup)
-    const logFile = path.join(this.auditLogPath, `audit_${timestamp.toISOString().split('T')[0]}.json`);
-    
-    try {
-      let existingLogs = [];
-      if (fs.existsSync(logFile)) {
-        const fileContent = fs.readFileSync(logFile, 'utf8');
-        existingLogs = JSON.parse(fileContent);
-      }
-      
-      existingLogs.push(auditLog);
-      fs.writeFileSync(logFile, JSON.stringify(existingLogs, null, 2));
-    } catch (fileError) {
-      console.error('File audit logging error:', fileError);
-    }
-
-    // Write to MongoDB for unified access via /api/admin/audit
+    // Write to MongoDB only (no file storage)
     try {
       await AuditLog.create({
         actorId: null, // System event - no user actor
@@ -491,62 +449,42 @@ class GDPRService {
           fileLogId: auditLogId
         }
       });
-      console.log(`📝 Audit log (DB + File): ${eventType}`);
+      console.log(`📝 Audit log: ${eventType}`);
     } catch (dbError) {
       console.error('MongoDB audit logging error:', dbError);
-      // Don't throw - file logging succeeded, DB failure shouldn't break the flow
-      console.log(`📝 Audit log (File only): ${eventType}`);
     }
   }
 
   async getAuditLogs(filters = {}) {
     const { startDate, endDate, eventType, limit = 100 } = filters;
-    
     try {
-      // Read actual audit logs from the file-based system
-      const auditLogs = [];
-      const today = new Date();
-      
-      // Read logs from the last 30 days by default, or use date filters
-      const start = startDate ? new Date(startDate) : new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
-      const end = endDate ? new Date(endDate) : today;
-      
-      // Iterate through date range and read log files
-      const currentDate = new Date(start);
-      while (currentDate <= end) {
-        const dateStr = currentDate.toISOString().split('T')[0];
-        const logFile = path.join(this.auditLogPath, `audit_${dateStr}.json`);
-        
-        if (fs.existsSync(logFile)) {
-          try {
-            const fileContent = fs.readFileSync(logFile, 'utf8');
-            const dayLogs = JSON.parse(fileContent);
-            auditLogs.push(...dayLogs);
-          } catch (parseError) {
-            console.error(`Error parsing audit log file ${logFile}:`, parseError);
-          }
-        }
-        
-        currentDate.setDate(currentDate.getDate() + 1);
+      const query = {};
+      // GDPR-related logs: written by gdprService (metadata.source) or by targetType
+      query.$or = [
+        { 'metadata.source': 'gdpr-service' },
+        { targetType: { $in: ['consent', 'dsar', 'gdpr', 'retention', 'compliance', 'breach'] } }
+      ];
+      if (startDate || endDate) {
+        query.createdAt = {};
+        if (startDate) query.createdAt.$gte = new Date(startDate);
+        if (endDate) query.createdAt.$lte = new Date(endDate);
       }
-      
-      // Apply filters
-      let filteredLogs = auditLogs;
-      
       if (eventType) {
-        filteredLogs = filteredLogs.filter(log => 
-          log.eventType && log.eventType.toLowerCase().includes(eventType.toLowerCase())
-        );
+        query.action = new RegExp(eventType, 'i');
       }
-      
-      // Sort by timestamp descending (newest first)
-      filteredLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-      
-      // Apply limit
-      return filteredLogs.slice(0, limit);
+      const logs = await AuditLog.find(query)
+        .sort({ createdAt: -1 })
+        .limit(Number(limit) || 100)
+        .lean();
+      return logs.map(log => ({
+        id: log._id?.toString(),
+        eventType: log.action,
+        eventData: log.eventData,
+        timestamp: log.createdAt,
+        system: log.system || 'robert-ai'
+      }));
     } catch (error) {
       console.error('Error reading audit logs:', error);
-      // Fallback to empty array if there's an error
       return [];
     }
   }

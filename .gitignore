@@ -2,8 +2,7 @@
 node_modules/
 prompt-docs/
 robert_prod_envs/
-RobertAi.pem
-global-bundle.pem
+
 # Logs
 logs
 .cursor

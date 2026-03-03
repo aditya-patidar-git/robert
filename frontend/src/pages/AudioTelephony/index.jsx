@@ -27,6 +27,7 @@ import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
 import configService from '../../services/configService';
 import voiceService from '../../services/voiceService';
 import { useQueryClient } from '@tanstack/react-query';
+import { DEFAULT_VOICE_PREVIEW_TEXT } from '../../constants/voicePreview';
 
 const AudioTelephonyPage = () => {
   const [activeTab, setActiveTab] = useState(0);
@@ -215,7 +216,7 @@ const AudioTelephonyPage = () => {
     const primaryModelId = watch('selectedModelId') || watch('selectedModel');
     console.log('🔵 [VOICE_PREVIEW] Primary model ID:', primaryModelId);
     
-    const previewText = text || selectedVoice.sampleText || 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
+    const previewText = text || selectedVoice.sampleText || DEFAULT_VOICE_PREVIEW_TEXT;
     console.log('🔵 [VOICE_PREVIEW] Calling mutation with:', { 
       voiceId: selectedVoice.id, 
       text: previewText,
@@ -249,164 +250,98 @@ const AudioTelephonyPage = () => {
       audioRef.current = null;
     }
     
-    // Fetch audio as blob with authentication
+    const playFromBlobUrl = (blobUrl) => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = blobUrl;
+      intervalRef.current = setInterval(() => {
+        if (!audioRef.current) return;
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        const audio = audioRef.current;
+        audio.src = blobUrl;
+        const handleCanPlay = () => {
+          setIsPlaying(true);
+          audio.play().catch(err => {
+            showError('Failed to play audio preview. Please check your browser audio settings.');
+            setIsPlaying(false);
+          });
+        };
+        const handleEnded = () => setIsPlaying(false);
+        const handleError = (e) => {
+          if (!audio.src || audio.src === '') return;
+          let msg = 'Failed to play audio preview.';
+          if (audio.error) {
+            switch (audio.error.code) {
+              case MediaError.MEDIA_ERR_ABORTED: msg = 'Audio playback was aborted.'; break;
+              case MediaError.MEDIA_ERR_NETWORK: msg = 'Network error while loading audio.'; break;
+              case MediaError.MEDIA_ERR_DECODE: msg = 'Audio format not supported by your browser.'; break;
+              case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED: msg = 'Audio format not supported.'; break;
+            }
+          }
+          showError(msg);
+          setIsPlaying(false);
+        };
+        const handlePause = () => setIsPlaying(false);
+        audio.addEventListener('canplay', handleCanPlay);
+        audio.addEventListener('ended', handleEnded);
+        audio.addEventListener('error', handleError);
+        audio.addEventListener('pause', handlePause);
+        audio.load();
+      }, 100);
+      setTimeout(() => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      }, 5000);
+    };
+
+    if (previewAudioUrl.startsWith('blob:')) {
+      playFromBlobUrl(previewAudioUrl);
+      return () => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.src = '';
+        }
+        if (blobUrlRef.current) {
+          URL.revokeObjectURL(blobUrlRef.current);
+          blobUrlRef.current = null;
+        }
+      };
+    }
+
     const fetchAudio = async () => {
       try {
         const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3002';
-        const fullAudioUrl = previewAudioUrl.startsWith('http') 
-          ? previewAudioUrl 
+        const fullAudioUrl = previewAudioUrl.startsWith('http')
+          ? previewAudioUrl
           : `${API_BASE}${previewAudioUrl.startsWith('/') ? '' : '/'}${previewAudioUrl}`;
-        
-        console.log('🔵 [VOICE_PREVIEW] Fetching audio from:', fullAudioUrl);
-        
-        // Get auth token from localStorage
         const token = localStorage.getItem('authToken');
         if (!token) {
-          console.error('🔴 [VOICE_PREVIEW] No auth token found');
           showError('Authentication required to play audio');
           return;
         }
-        
-        // Fetch audio with authentication
         const response = await fetch(fullAudioUrl, {
           method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
+          headers: { 'Authorization': `Bearer ${token}` },
           credentials: 'include'
         });
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
-        }
-        
-        // Convert to blob
+        if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status} ${response.statusText}`);
         const blob = await response.blob();
-        console.log('✅ [VOICE_PREVIEW] Audio blob created, size:', blob.size, 'type:', blob.type);
-        
-        // Create blob URL
         const blobUrl = URL.createObjectURL(blob);
-        console.log('✅ [VOICE_PREVIEW] Blob URL created:', blobUrl);
-        
-        // Store blob URL in ref for cleanup
-        if (blobUrlRef.current) {
-          URL.revokeObjectURL(blobUrlRef.current);
-        }
-        blobUrlRef.current = blobUrl;
-        
-        // Wait for audio element to be available, then set src
-        // Store interval in ref for cleanup
-        intervalRef.current = setInterval(() => {
-          if (audioRef.current) {
-            if (intervalRef.current) {
-              clearInterval(intervalRef.current);
-              intervalRef.current = null;
-            }
-            
-            const audio = audioRef.current;
-            audio.src = blobUrl;
-            console.log('🔵 [VOICE_PREVIEW] Audio element found, blob URL set, setting up event listeners');
-            
-            // Set up event listeners
-            const handleCanPlay = () => {
-              console.log('✅ [VOICE_PREVIEW] Audio can play - starting playback');
-              setIsPlaying(true);
-              audio.play().catch(error => {
-                console.error('🔴 [VOICE_PREVIEW] Error playing audio:', error);
-                showError('Failed to play audio preview. Please check your browser audio settings.');
-                setIsPlaying(false);
-              });
-            };
-            
-            const handleEnded = () => {
-              console.log('✅ [VOICE_PREVIEW] Audio playback ended');
-              setIsPlaying(false);
-            };
-            
-            const handleError = (e) => {
-              // Ignore errors from empty src (expected during cleanup)
-              if (!audio.src || audio.src === '') {
-                return;
-              }
-              
-              console.error('🔴 [VOICE_PREVIEW] Audio playback error:', e);
-              console.error('🔴 [VOICE_PREVIEW] Audio error details:', {
-                error: audio.error,
-                errorCode: audio.error?.code,
-                errorMessage: audio.error?.message,
-                networkState: audio.networkState,
-                readyState: audio.readyState
-              });
-              
-              let errorMessage = 'Failed to play audio preview.';
-              if (audio.error) {
-                switch (audio.error.code) {
-                  case MediaError.MEDIA_ERR_ABORTED:
-                    errorMessage = 'Audio playback was aborted.';
-                    break;
-                  case MediaError.MEDIA_ERR_NETWORK:
-                    errorMessage = 'Network error while loading audio.';
-                    break;
-                  case MediaError.MEDIA_ERR_DECODE:
-                    errorMessage = 'Audio format not supported by your browser.';
-                    break;
-                  case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                    errorMessage = 'Audio format not supported.';
-                    break;
-                  default:
-                    errorMessage = 'The audio may not be available or the format is not supported.';
-                }
-              }
-              
-              showError(errorMessage);
-              setIsPlaying(false);
-            };
-            
-            const handleLoadStart = () => {
-              console.log('🔵 [VOICE_PREVIEW] Audio loading started');
-            };
-            
-            const handleLoadedData = () => {
-              console.log('🔵 [VOICE_PREVIEW] Audio data loaded');
-            };
-            
-            const handlePlaying = () => {
-              console.log('✅ [VOICE_PREVIEW] Audio is now playing');
-            };
-            
-            const handlePause = () => {
-              console.log('🔵 [VOICE_PREVIEW] Audio paused');
-              setIsPlaying(false);
-            };
-            
-            audio.addEventListener('canplay', handleCanPlay);
-            audio.addEventListener('ended', handleEnded);
-            audio.addEventListener('error', handleError);
-            audio.addEventListener('loadstart', handleLoadStart);
-            audio.addEventListener('loadeddata', handleLoadedData);
-            audio.addEventListener('playing', handlePlaying);
-            audio.addEventListener('pause', handlePause);
-            
-            // Start loading the audio
-            console.log('🔵 [VOICE_PREVIEW] Starting to load audio from blob URL');
-            audio.load();
-          }
-        }, 100);
-        
-        // Cleanup interval after 5 seconds if element not found
-        setTimeout(() => {
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-          }
-        }, 5000);
-        
+        playFromBlobUrl(blobUrl);
       } catch (error) {
         console.error('🔴 [VOICE_PREVIEW] Error fetching audio:', error);
         showError(`Failed to load audio: ${error.message}`);
       }
     };
-    
+
     fetchAudio();
     
     // Cleanup function
@@ -631,7 +566,7 @@ const AudioTelephonyPage = () => {
                 fullWidth
                 multiline
                 rows={3}
-                defaultValue={selectedVoice.sampleText || 'Hello, this is a voice preview.'}
+                defaultValue={selectedVoice.sampleText || DEFAULT_VOICE_PREVIEW_TEXT}
                 label="Preview Text"
                 sx={{ mt: 2 }}
                 onChange={(e) => {
@@ -702,7 +637,7 @@ const AudioTelephonyPage = () => {
             startIcon={<PlayArrow />}
             onClick={() => {
               const textField = document.querySelector('textarea[aria-label="Preview Text"]');
-              const text = textField?.value || selectedVoice?.sampleText || 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
+              const text = textField?.value || selectedVoice?.sampleText || DEFAULT_VOICE_PREVIEW_TEXT;
               handlePlayPreview(text);
             }}
             disabled={voicePreviewMutation.isLoading || !selectedVoice}

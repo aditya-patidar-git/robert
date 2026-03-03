@@ -1,4 +1,7 @@
 // Get all voices from discovery service
+import Voice from '../models/Voice.js';
+import { DEFAULT_VOICE_PREVIEW_TEXT } from '../constants/voicePreview.js';
+
 export const getVoices = async (req, res) => {
   try {
     const { language, forceRefresh = false } = req.query;
@@ -103,7 +106,7 @@ export const createVoice = async (req, res) => {
         streaming: true,
         bargeIn: true
       },
-      sampleText: sampleText || "Good afternoon! This is Robert from Universal Motorcycle Training. I'd like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.",
+      sampleText: sampleText || DEFAULT_VOICE_PREVIEW_TEXT,
       createdBy: req.user?.id || "admin"
     });
 
@@ -222,8 +225,7 @@ export const previewVoice = async (req, res) => {
 
     // Import services
     const voiceDiscoveryService = (await import('../services/voiceDiscoveryService.js')).default;
-    const audioStorageService = (await import('../services/audioStorageService.js')).default;
-    
+
     // Get voice information
     const voice = voiceDiscoveryService.getVoice(voiceId);
     if (!voice) {
@@ -262,7 +264,7 @@ export const previewVoice = async (req, res) => {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    let previewText = text || voice.sampleText || 'Good afternoon! This is Robert from Universal Motorcycle Training. I\'d like to help you with your motorcycle training needs. We offer comprehensive courses covering everything from basic handling to advanced techniques. Our schedule is flexible, and we can arrange lessons at your convenience. Would you like to book a lesson or perhaps enquire about our available courses? Please feel free to ask me any questions you might have.';
+    let previewText = text || voice.sampleText || DEFAULT_VOICE_PREVIEW_TEXT;
     
     // Translate text if translateTo is provided and different from English
     if (translateTo) {
@@ -330,11 +332,12 @@ export const previewVoice = async (req, res) => {
       console.log(`🔵 [VOICE_PREVIEW] Voice language from discovery service: ${voice.language}`);
       console.log(`🔵 [VOICE_PREVIEW] translateTo parameter: ${translateTo}`);
 
+      // Verbatim instruction: model must speak only the user message, no additions
+      const verbatimInstruction = ' CRITICAL: Speak ONLY the user\'s message word-for-word. Do not add, rephrase, or expand. No extra greetings, sign-offs, or filler.';
       // Determine system instructions based on language for accent control
       // Priority: translateTo parameter (for Language/Voice Mapping previews) > voice.language (from database)
-      // Use very explicit and strong instructions for accent control
-      let systemInstructions = 'You are a helpful assistant that can generate audio from text. Speak clearly and naturally.';
-      
+      let systemInstructions = 'You are a helpful assistant that can generate audio from text. Speak clearly and naturally.' + verbatimInstruction;
+
       // Determine which language code to use for accent control
       let accentLanguage = null;
       if (translateTo) {
@@ -356,10 +359,10 @@ export const previewVoice = async (req, res) => {
       }
 
       if (accentLanguage === 'en-GB') {
-        systemInstructions = 'You are a helpful assistant that can generate audio from text. CRITICAL: You MUST speak with a clear, authentic British English accent. Use British pronunciation patterns, British intonation, and British speech rhythm. Pronounce words like a native British English speaker from England. Enunciate clearly with British English phonetics. This is essential - the accent must be distinctly British, not American.';
+        systemInstructions = 'You are a helpful assistant that can generate audio from text. CRITICAL: You MUST speak with a clear, authentic British English accent. Use British pronunciation patterns, British intonation, and British speech rhythm. Pronounce words like a native British English speaker from England. Enunciate clearly with British English phonetics. This is essential - the accent must be distinctly British, not American.' + verbatimInstruction;
         console.log('🔵 [VOICE_PREVIEW] Using STRONG British English accent instructions (from ' + (translateTo ? 'translateTo parameter' : 'voice.language') + ')');
       } else if (accentLanguage === 'en-US') {
-        systemInstructions = 'You are a helpful assistant that can generate audio from text. Speak in a clear American English accent with proper pronunciation.';
+        systemInstructions = 'You are a helpful assistant that can generate audio from text. Speak in a clear American English accent with proper pronunciation.' + verbatimInstruction;
         console.log('🔵 [VOICE_PREVIEW] Using American English accent instructions (from ' + (translateTo ? 'translateTo parameter' : 'voice.language') + ')');
       } else {
         console.log(`⚠️ [VOICE_PREVIEW] Unknown language: ${accentLanguage || voice.language}, using default instructions`);
@@ -396,21 +399,14 @@ export const previewVoice = async (req, res) => {
         throw new Error('No audio data in Chat Completions response');
       }
 
-      // Decode base64 audio to buffer
       const buffer = Buffer.from(audioData, 'base64');
-      
-      console.log(`✅ [VOICE_PREVIEW] Audio generated successfully, size: ${buffer.length} bytes`);
+      console.log(`✅ [VOICE_PREVIEW] Audio generated successfully, size: ${buffer.length} bytes (inline, no file save)`);
 
-      // Save audio file
-      const { filename, url } = await audioStorageService.saveAudio(buffer, voiceId, previewText);
-      
-      console.log(`✅ [VOICE_PREVIEW] Audio saved, URL: ${url}`);
-
-      // Return preview data with URL
+      // Return preview data with inline base64 audio (Option A - no file storage)
       const previewData = {
         voiceId,
         text: previewText,
-        audioUrl: url,
+        audioData,
         duration: Math.ceil(buffer.length / 16000), // Rough estimate: ~16KB per second for MP3
         format: "mp3",
         modelId: primaryModelId,

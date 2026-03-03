@@ -3,6 +3,7 @@ import EscalationLog from "../models/EscalationLog.js";
 import ComplaintRecord from "../models/ComplaintRecord.js";
 import Provenance from "../models/Provenance.js";
 import { io } from "../server.js";
+import { escapeRegex } from "../utils/regexUtils.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -36,11 +37,12 @@ export const getAllTranscripts = async (req, res) => {
 
     // Search filter
     if (search) {
+      const escapedSearch = escapeRegex(search);
       filter.$or = [
-        { from: { $regex: search, $options: 'i' } },
-        { to: { $regex: search, $options: 'i' } },
-        { 'transcript.text': { $regex: search, $options: 'i' } },
-        { summary: { $regex: search, $options: 'i' } }
+        { from: { $regex: escapedSearch, $options: 'i' } },
+        { to: { $regex: escapedSearch, $options: 'i' } },
+        { 'transcript.text': { $regex: escapedSearch, $options: 'i' } },
+        { summary: { $regex: escapedSearch, $options: 'i' } }
       ];
     }
 
@@ -163,14 +165,15 @@ export const searchTranscripts = async (req, res) => {
       return res.status(400).json({ error: 'Search query is required' });
     }
 
+    const escapedQ = escapeRegex(q);
     const searchFilter = {
       $or: [
-        { from: { $regex: q, $options: 'i' } },
-        { to: { $regex: q, $options: 'i' } },
-        { 'transcript.text': { $regex: q, $options: 'i' } },
-        { summary: { $regex: q, $options: 'i' } },
-        { 'escalation.reason': { $regex: q, $options: 'i' } },
-        { 'complaint.complaintText': { $regex: q, $options: 'i' } }
+        { from: { $regex: escapedQ, $options: 'i' } },
+        { to: { $regex: escapedQ, $options: 'i' } },
+        { 'transcript.text': { $regex: escapedQ, $options: 'i' } },
+        { summary: { $regex: escapedQ, $options: 'i' } },
+        { 'escalation.reason': { $regex: escapedQ, $options: 'i' } },
+        { 'complaint.complaintText': { $regex: escapedQ, $options: 'i' } }
       ],
       ...filters
     };

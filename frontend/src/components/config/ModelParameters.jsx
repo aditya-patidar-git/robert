@@ -17,10 +17,10 @@ const ModelParameters = ({
   readOnly = false
 }) => {
   const [modelParameters, setModelParameters] = useState(null);
+  const selectedModel = modelId || watch('selectedModel');
 
   // Fetch model parameters when model selection changes
   useEffect(() => {
-    const selectedModel = modelId || watch('selectedModel');
     if (selectedModel) {
       aiService.getModelParameters(selectedModel)
         .then(params => setModelParameters(params))
@@ -31,7 +31,7 @@ const ModelParameters = ({
     } else {
       setModelParameters(null);
     }
-  }, [modelId, watch('selectedModel')]);
+  }, [modelId, selectedModel]);
 
   if (!control) {
     return null;

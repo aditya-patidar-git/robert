@@ -63,8 +63,7 @@ const SIPAnalyticsDashboard = ({ timeRange = '24h' }) => {
     {
       id: 'success-rate',
       title: 'Success Rate',
-      value: metrics?.successRate || 0,
-      unit: '',
+      value: metrics?.successRate ?? 0,
       color: 'success',
       icon: CheckCircle,
       type: 'percentage',
@@ -73,8 +72,7 @@ const SIPAnalyticsDashboard = ({ timeRange = '24h' }) => {
     {
       id: 'failure-rate',
       title: 'Failure Rate',
-      value: metrics?.failureRate || 0,
-      unit: '',
+      value: metrics?.failureRate ?? 0,
       color: 'error',
       icon: ErrorIcon,
       type: 'percentage',
@@ -83,10 +81,10 @@ const SIPAnalyticsDashboard = ({ timeRange = '24h' }) => {
     {
       id: 'avg-duration',
       title: 'Avg Call Duration',
-      value: metrics?.averageDuration || 0,
-      unit: 's',
+      value: metrics?.averageDuration ?? 0,
       color: 'info',
       icon: Timer,
+      type: 'duration',
       subtitle: 'Average call duration in seconds'
     }
   ];

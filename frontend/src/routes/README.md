@@ -11,8 +11,6 @@ This directory contains the routing configuration for the React application usin
 
 ### Public Routes
 - `/` - Home page
-- `/mvp` - MVP page
-
 ### Authentication Routes (`/auth`)
 - `/auth/login` - Login page (wrapped in AuthLayout)
 

@@ -5,7 +5,6 @@ import AdminLayout from '../layouts/AdminLayout';
 import ProtectedRoute from '../components/common/ProtectedRoute';
 import { AuthProvider } from '../context/AuthContext';
 
-import Mvp from '../pages/Mvp';
 import LoginPage from '../pages/Auth/LoginPage';
 import RegisterPage from '../pages/Auth/RegisterPage';
 import ProfilePage from '../pages/Auth/ProfilePage';
@@ -31,10 +30,6 @@ const AppRoutes = createBrowserRouter([
         path: '',
         element: <AuthLayout />,
         children: [{ path: '', element: <LoginPage /> }],
-      },
-      {
-        path: 'mvp',
-        element: <Mvp />,
       },
       {
         path: 'auth',

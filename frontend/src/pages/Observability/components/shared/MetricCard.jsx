@@ -15,7 +15,8 @@ const MetricCard = ({
   color = 'primary',
   icon: Icon = null,
   subtitle = null,
-  size = 'medium' // 'small' | 'medium' | 'large'
+  size = 'medium', // 'small' | 'medium' | 'large'
+  type = null // 'percentage' | 'duration' for special formatting
 }) => {
   const sizeStyles = {
     small: { padding: 1.5, titleVariant: 'body2', valueVariant: 'h6' },
@@ -25,15 +26,19 @@ const MetricCard = ({
 
   const styles = sizeStyles[size] || sizeStyles.medium;
 
-  const formatValue = (val) => {
-    if (typeof val === 'number') {
-      if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
-      if (val >= 1000) return `${(val / 1000).toFixed(1)}K`;
-      if (val < 1 && val > 0) return val.toFixed(3);
-      return val.toFixed(1);
-    }
-    return val;
+  const formatValue = (val, valueType) => {
+    if (val == null || typeof val !== 'number' || Number.isNaN(val)) return '–';
+    if (valueType === 'percentage') return `${(val * 100).toFixed(1)}%`;
+    if (valueType === 'duration') return `${Number(val).toFixed(2)} s`;
+    if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
+    if (val >= 1000) return `${(val / 1000).toFixed(1)}K`;
+    if (val < 1 && val > 0) return val.toFixed(3);
+    return val.toFixed(1);
   };
+
+  const displayValue = (type === 'percentage' || type === 'duration'
+    ? formatValue(value, type)
+    : `${formatValue(value)}${unit ? ` ${unit}` : ''}`) || '–';
 
   const getTrendColor = () => {
     if (!trend) return 'default';
@@ -85,7 +90,7 @@ const MetricCard = ({
           mb: subtitle ? 0.5 : 0
         }}
       >
-        {formatValue(value)}{unit && ` ${unit}`}
+        {displayValue}
       </Typography>
       
       {subtitle && (

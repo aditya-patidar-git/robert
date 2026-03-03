@@ -298,7 +298,13 @@ class RestoreService {
         return;
       }
 
-      const configs = JSON.parse(fs.readFileSync(configsFile, 'utf8'));
+      let configs;
+      try {
+        configs = JSON.parse(fs.readFileSync(configsFile, 'utf8'));
+      } catch (parseErr) {
+        console.warn('⚠️ Invalid configs JSON in backup:', parseErr.message);
+        return;
+      }
 
       // Restore AIConfig
       if (configs.aiConfig) {
@@ -383,30 +389,11 @@ class RestoreService {
   }
 
   /**
-   * Restore audit logs
-   * @param {string} auditLogsPath - Path to audit logs
-   * @returns {Promise<void>}
+   * Audit logs and DSAR exports are stored in MongoDB only; no file restore.
+   * @param {string} _auditLogsPath - Unused (kept for API compatibility)
    */
-  async restoreAuditLogs(auditLogsPath) {
-    try {
-      const destPath = path.join(__dirname, '../../audit-logs');
-      fs.mkdirSync(destPath, { recursive: true });
-
-      const files = fs.readdirSync(auditLogsPath);
-      for (const file of files) {
-        const sourceFile = path.join(auditLogsPath, file);
-        const destFile = path.join(destPath, file);
-        
-        if (fs.statSync(sourceFile).isFile()) {
-          fs.copyFileSync(sourceFile, destFile);
-        }
-      }
-
-      console.log(`✅ Audit logs restored`);
-    } catch (error) {
-      console.warn(`⚠️ Audit logs restore failed:`, error.message);
-      // Don't fail restore if audit logs restore fails
-    }
+  async restoreAuditLogs(_auditLogsPath) {
+    console.log('ℹ️ Audit logs are stored in MongoDB only; skipping file restore.');
   }
 
   /**
@@ -440,7 +427,11 @@ class RestoreService {
         let metadata = null;
         const metadataPath = path.join(tempExtractPath, 'metadata.json');
         if (fs.existsSync(metadataPath)) {
-          metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+          try {
+            metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+          } catch (parseErr) {
+            console.warn('⚠️ Invalid metadata.json in backup:', parseErr.message);
+          }
         }
 
         // List collections in dump

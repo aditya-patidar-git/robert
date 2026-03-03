@@ -1,6 +1,7 @@
 import Allowlist from "../models/Allowlist.js";
 import User from "../models/User.js";
 import { createAuditLog } from "./auditLogController.js";
+import { escapeRegex } from "../utils/regexUtils.js";
 
 /**
  * Get allowlist entries with pagination and filters
@@ -16,7 +17,7 @@ export const getAllowlist = async (req, res) => {
         }
 
         if (search) {
-            filter.value = { $regex: search, $options: 'i' };
+            filter.value = { $regex: escapeRegex(search), $options: 'i' };
         }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);

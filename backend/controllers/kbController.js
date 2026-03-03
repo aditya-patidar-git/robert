@@ -2,6 +2,7 @@ import KnowledgeBase from "../models/KnowledgeBase.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { escapeRegex } from "../utils/regexUtils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,10 +26,11 @@ export const getAllArticles = async (req, res) => {
     }
     
     if (search) {
+      const escapedSearch = escapeRegex(search);
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { content: { $regex: search, $options: 'i' } },
-        { tags: { $in: [new RegExp(search, 'i')] } }
+        { title: { $regex: escapedSearch, $options: 'i' } },
+        { content: { $regex: escapedSearch, $options: 'i' } },
+        { tags: { $in: [new RegExp(escapedSearch, 'i')] } }
       ];
     }
 
@@ -242,14 +244,15 @@ export const searchArticles = async (req, res) => {
       });
     }
 
+    const escapedQ = escapeRegex(q);
     const articles = await KnowledgeBase.find({
       $and: [
         { status: 'Active' },
         {
           $or: [
-            { title: { $regex: q, $options: 'i' } },
-            { content: { $regex: q, $options: 'i' } },
-            { tags: { $in: [new RegExp(q, 'i')] } }
+            { title: { $regex: escapedQ, $options: 'i' } },
+            { content: { $regex: escapedQ, $options: 'i' } },
+            { tags: { $in: [new RegExp(escapedQ, 'i')] } }
           ]
         }
       ]

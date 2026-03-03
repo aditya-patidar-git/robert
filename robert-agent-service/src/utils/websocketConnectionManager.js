@@ -1,3 +1,5 @@
+import { WebSocket } from 'ws';
+
 /**
  * WebSocket Connection Manager
  * Provides robust WebSocket connection management with:

@@ -5,6 +5,7 @@
 
 import { trace } from '@opentelemetry/api';
 import CallRecord from '../models/CallRecord.js';
+import { escapeRegex } from '../utils/regexUtils.js';
 
 const tracer = trace.getTracer('trace-aggregation-service', '1.0.0');
 
@@ -418,12 +419,13 @@ class TraceAggregationService {
     const skip = Math.max(0, (page - 1) * limit);
 
     try {
+      const escapedSearchTerm = escapeRegex(searchTerm);
       const query = {
         $or: [
-          { callSid: { $regex: searchTerm, $options: 'i' } },
-          { from: { $regex: searchTerm, $options: 'i' } },
-          { to: { $regex: searchTerm, $options: 'i' } },
-          { summary: { $regex: searchTerm, $options: 'i' } }
+          { callSid: { $regex: escapedSearchTerm, $options: 'i' } },
+          { from: { $regex: escapedSearchTerm, $options: 'i' } },
+          { to: { $regex: escapedSearchTerm, $options: 'i' } },
+          { summary: { $regex: escapedSearchTerm, $options: 'i' } }
         ]
       };
 

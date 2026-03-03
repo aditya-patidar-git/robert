@@ -5,6 +5,10 @@ import { createAuditLog } from "./auditLogController.js";
 
 const OWNER_PROTECTION_MESSAGE = "Only owners can modify or manage other owner accounts.";
 
+function isValidUserId(id) {
+  return typeof id === 'string' && /^[a-fA-F0-9]{24}$/.test(id);
+}
+
 function cannotActOnOwner(actorRole, targetUser) {
     return actorRole !== "owner" && targetUser?.role === "owner";
 }
@@ -58,6 +62,9 @@ export const createUser = async (req, res) => {
 // PATCH /admin/users/:id/approve
 export const approveUser = async (req, res) => {
     try {
+        if (!isValidUserId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid user ID" });
+        }
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
         if (cannotActOnOwner(req.user.role, user)) {
@@ -88,6 +95,9 @@ export const approveUser = async (req, res) => {
 // PATCH /admin/users/:id/block
 export const blockUser = async (req, res) => {
     try {
+        if (!isValidUserId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid user ID" });
+        }
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
         if (cannotActOnOwner(req.user.role, user)) {
@@ -121,6 +131,9 @@ export const blockUser = async (req, res) => {
 // PATCH /admin/users/:id/exclude
 export const excludeUser = async (req, res) => {
     try {
+        if (!isValidUserId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid user ID" });
+        }
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
         if (cannotActOnOwner(req.user.role, user)) {
@@ -154,6 +167,9 @@ export const excludeUser = async (req, res) => {
 // PUT /admin/users/:id
 export const updateUser = async (req, res) => {
     try {
+        if (!isValidUserId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid user ID" });
+        }
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -238,6 +254,9 @@ export const updateUser = async (req, res) => {
 // DELETE /admin/users/:id
 export const deleteUser = async (req, res) => {
     try {
+        if (!isValidUserId(req.params.id)) {
+            return res.status(400).json({ message: "Invalid user ID" });
+        }
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ message: "User not found" });
 

@@ -50,7 +50,9 @@ const dsarRequestSchema = new mongoose.Schema({
         default: Date.now 
     },
     completedAt: Date,
-    exportUrl: String, // S3 or secure download link
+    exportUrl: String, // Download path (e.g. /api/gdpr/dsar/:id/export/:filename)
+    exportFileName: String, // Filename for Content-Disposition
+    exportContent: String, // Export payload stored in DB (JSON string); cleared when expired
     exportExpiresAt: Date,
     notes: String,
     processedBy: { 

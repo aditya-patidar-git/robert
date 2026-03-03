@@ -1,6 +1,16 @@
 // Load .env first so process.env is set before any module (e.g. tools) is evaluated
 import './loadEnv.js';
 
+// Log unhandled promise rejections to avoid silent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
 import express from 'express';
 import { createServer } from 'http';
 import WebSocket, { WebSocketServer } from 'ws';

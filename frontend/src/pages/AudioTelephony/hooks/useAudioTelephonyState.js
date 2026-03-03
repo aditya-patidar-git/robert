@@ -341,50 +341,49 @@ export const useAudioTelephonyState = () => {
       console.log('🔵 [VOICE_PREVIEW] Is array:', Array.isArray(data));
       console.log('🔵 [VOICE_PREVIEW] Data keys:', data ? Object.keys(data) : 'null/undefined');
       
-      // Try multiple possible response structures
+      // Try multiple possible response structures (prefer inline audioData for Option A)
       let audioUrl = null;
+      let audioData = null;
       let preview = null;
-      
-      // Structure 1: { data: { preview: { audioUrl } } }
+
       if (data?.data?.preview) {
         preview = data.data.preview;
+        audioData = preview.audioData;
         audioUrl = preview.audioUrl || preview.url;
-        console.log('🔵 [VOICE_PREVIEW] Found structure: data.data.preview');
-      }
-      // Structure 2: { preview: { audioUrl } }
-      else if (data?.preview) {
+      } else if (data?.preview) {
         preview = data.preview;
+        audioData = preview.audioData;
         audioUrl = preview.audioUrl || preview.url;
-        console.log('🔵 [VOICE_PREVIEW] Found structure: data.preview');
-      }
-      // Structure 3: Direct preview object { audioUrl, ... }
-      else if (data?.audioUrl || data?.url) {
+      } else if (data?.audioData || data?.audioUrl || data?.url) {
         preview = data;
+        audioData = data.audioData;
         audioUrl = data.audioUrl || data.url;
-        console.log('🔵 [VOICE_PREVIEW] Found structure: direct preview object');
-      }
-      // Structure 4: Normalized response { success: true, data: { preview: { audioUrl } } }
-      else if (data?.success && data?.data) {
+      } else if (data?.success && data?.data) {
         preview = data.data.preview || data.data;
+        audioData = preview?.audioData;
         audioUrl = preview?.audioUrl || preview?.url || data.data.audioUrl || data.data.url;
-        console.log('🔵 [VOICE_PREVIEW] Found structure: normalized success response');
       }
-      
-      console.log('🔵 [VOICE_PREVIEW] Extracted preview object:', preview);
-      console.log('🔵 [VOICE_PREVIEW] Extracted audio URL:', audioUrl);
-      console.log('🔵 [VOICE_PREVIEW] Audio URL type:', typeof audioUrl);
-      console.log('🔵 [VOICE_PREVIEW] Audio URL length:', audioUrl?.length);
-      
-      if (audioUrl && typeof audioUrl === 'string' && audioUrl.trim().length > 0) {
-        console.log('✅ [VOICE_PREVIEW] Valid audio URL found, setting in state');
+
+      // Prefer inline audioData (Option A): create blob URL so playback uses one response, no second request
+      if (audioData && typeof audioData === 'string' && audioData.length > 0) {
+        try {
+          const binary = atob(audioData);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'audio/mpeg' });
+          const blobUrl = URL.createObjectURL(blob);
+          setPreviewAudioUrl(blobUrl);
+          showSuccess('Voice preview generated. Audio will play automatically.');
+        } catch (e) {
+          console.error('🔴 [VOICE_PREVIEW] Failed to create blob from audioData:', e);
+          showError('Failed to decode preview audio.');
+        }
+      } else if (audioUrl && typeof audioUrl === 'string' && audioUrl.trim().length > 0) {
         setPreviewAudioUrl(audioUrl);
-        console.log('✅ [VOICE_PREVIEW] Audio URL set successfully:', audioUrl);
         showSuccess('Voice preview generated. Audio will play automatically.');
       } else {
-        console.warn('⚠️ [VOICE_PREVIEW] No valid audio URL found');
-        console.warn('⚠️ [VOICE_PREVIEW] Full data structure:', JSON.stringify(data, null, 2));
-        console.warn('⚠️ [VOICE_PREVIEW] Preview object:', preview);
-        showError('Preview generated but audio URL not found in response. Check console for details.');
+        console.warn('⚠️ [VOICE_PREVIEW] No audioData or audioUrl in response');
+        showError('Preview generated but audio not found in response.');
       }
       console.log('🔵 [VOICE_PREVIEW] ========== SUCCESS HANDLER COMPLETE ==========');
     },
