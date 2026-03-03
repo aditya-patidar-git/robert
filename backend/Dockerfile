@@ -1,4 +1,4 @@
-# Use Node.js 20-slim as base image
+# Use Node.js 20-slim as Base image
 FROM node:20-slim
 
 # Install system dependencies
