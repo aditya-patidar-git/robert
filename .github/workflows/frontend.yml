@@ -34,14 +34,14 @@ jobs:
             # Fetch secrets from AWS Secrets Manager and create .env file
             aws secretsmanager get-secret-value --secret-id robert-frontend-secrets --region us-east-1 --query SecretString --output text | jq -r 'to_entries|map("\(.key)=\(.value)")|.[]' > .env
            
-            docker build -t robert-frontend .
-            docker stop robert-frontend || true
-            docker rm robert-frontend || true
+            docker build --no-cache -t fe.universalmct.ai:latest .
+            docker stop fe.universalmct.ai || true
+            docker rm fe.universalmct.ai || true
             docker run -d \
-              --name robert-frontend \
+              --name fe.universalmct.ai \
               --restart always \
               -p 80:80 \
               --env-file .env \
-              robert-frontend
+              fe.universalmct.ai:latest
  
  
