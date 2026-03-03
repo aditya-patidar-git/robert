@@ -39,8 +39,8 @@ jobs:
               --output text | jq -r 'to_entries | map("BACKEND_\(.key)=\(.value)") | .[]' > .env
 
             docker build -t api.universalmct.ai:latest .
-            docker stop api.universalmct.ai || true
-            docker rm api.universalmct.ai || true
+            docker stop backend-container || true
+            docker rm backend-container || true
             docker run -d \
               --name api.universalmct.ai \
               --restart always \
