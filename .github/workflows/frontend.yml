@@ -1,18 +1,18 @@
 name: Deploy Frontend
- 
+
 on:
   push:
     branches: [ main, master ]
     paths:
       - 'frontend/**'
- 
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
- 
+
       - name: Copy Frontend code to EC2
         uses: appleboy/scp-action@master
         with:
@@ -20,8 +20,8 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.FRONTEND_SSH_KEY }}
           source: "frontend/"
-          target: "/var/www/fe.universalmct.ai/"
- 
+          target: "/var/www/robert-main-old/"
+
       - name: Deploy to Frontend EC2
         uses: appleboy/ssh-action@master
         with:
@@ -29,23 +29,27 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.FRONTEND_SSH_KEY }}
           script: |
-            cd /var/www/fe.universalmct.ai/frontend || exit
+            cd /var/www/robert-main-old/frontend || exit
            
-            # Fetch secrets from AWS Secrets Manager and create .env file
+            # Fetch secrets from AWS Secrets Manager and create sanitized .env with FRONTEND_ prefix
             aws secretsmanager get-secret-value \
               --secret-id robert-main-secret \
               --region eu-north-1 \
               --query SecretString \
-              --output text | jq -r 'to_entries | map("FRONTEND_\(.key)=\(.value)") | .[]' > .env
+              --output text | \
+              jq -r 'to_entries | map("FRONTEND_\(.key | gsub("[^A-Za-z0-9_]"; "_"))=\(.value)") | .[]' > .env
            
+            # Build Docker image
             docker build --no-cache -t fe.universalmct.ai:latest .
+           
+            # Stop and remove old container if exists
             docker stop fe.universalmct.ai || true
             docker rm fe.universalmct.ai || true
+           
+            # Run new container with sanitized .env
             docker run -d \
               --name fe.universalmct.ai \
               --restart always \
               -p 80:80 \
               --env-file .env \
               fe.universalmct.ai:latest
- 
- 
