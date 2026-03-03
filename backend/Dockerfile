@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 # Set Working Directory
 WORKDIR /app
 
-# Copy package files
+# Copy Package files
 COPY package*.json ./
 
 # Install Dependencies
