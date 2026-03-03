@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.BACKEND_SSH_KEY }}
           source: "backend/"
-          target: "/var/www/api.universalmct.ai/"
+          target: "/var/www/robert-main-old/"
 
       - name: Deploy to Backend EC2
         uses: appleboy/ssh-action@master
@@ -29,7 +29,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.BACKEND_SSH_KEY }}
           script: |
-            cd /var/www/api.universalmct.ai/backend || exit
+            cd /var/www/robert-main-old/backend || exit
 
             # Fetch secrets from AWS Secrets Manager and create sanitized .env with BACKEND_ prefix
             aws secretsmanager get-secret-value \
