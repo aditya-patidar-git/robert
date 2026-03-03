@@ -50,6 +50,6 @@ jobs:
             docker run -d \
               --name fe.universalmct.ai \
               --restart always \
-              -p 80:80 \
+              -p 3000:80 \
               --env-file .env \
               fe.universalmct.ai:latest
