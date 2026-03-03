@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.FRONTEND_SSH_KEY }}
           source: "frontend/"
-          target: "/var/www/robert/"
+          target: "/var/www/fe.universalmct.ai/"
  
       - name: Deploy to Frontend EC2
         uses: appleboy/ssh-action@master
@@ -29,7 +29,7 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.FRONTEND_SSH_KEY }}
           script: |
-            cd /var/www/robert/frontend || exit
+            cd /var/www/fe.universalmct.ai/frontend || exit
            
             # Fetch secrets from AWS Secrets Manager and create .env file
             aws secretsmanager get-secret-value --secret-id robert-frontend-secrets --region us-east-1 --query SecretString --output text | jq -r 'to_entries|map("\(.key)=\(.value)")|.[]' > .env
