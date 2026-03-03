@@ -1,7 +1,7 @@
 # Use Node.js 20-slim as Base image
 FROM node:20-slim
 
-# Install all system dependencies
+# Install All system dependencies
 RUN apt-get update && apt-get install -y \
     libgbm-dev \
     libnss3 \
