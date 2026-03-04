@@ -45,9 +45,9 @@ jobs:
               --output text)
  
             echo "Creating .env file..."
-            echo "VITE_API_BASE=$(echo $SECRET | jq -r .VITE_API_BASE)" >> .env
-            echo "VITE_BACKEND_URL=$(echo $SECRET | jq -r .VITE_BACKEND_URL)" >> .env
-            echo "REACT_APP_BACKEND_URL=$(echo $SECRET | jq -r .REACT_APP_BACKEND_URL)" >> .env
+            echo "VITE_API_BASE=$(jq -r '.VITE_API_BASE' <<< "$SECRET")" >> .env
+            echo "VITE_BACKEND_URL=$(jq -r '.VITE_BACKEND_URL' <<< "$SECRET")" >> .env
+            echo "REACT_APP_BACKEND_URL=$(jq -r '.REACT_APP_BACKEND_URL' <<< "$SECRET")" >> .env
  
             echo "Building Docker image..."
             docker build --no-cache -t fe.universalmct.ai:latest .
