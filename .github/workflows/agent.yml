@@ -121,22 +121,22 @@ jobs:
             echo "AGENT_SERVICE_API_KEY=$(aws secretsmanager get-secret-value --secret-id robert-main-secret --region eu-north-1 --query SecretString --output text | jq -r .AGENT_AGENT_SERVICE_API_KEY)" >> .env
 
             echo "Building Docker image with tag: $IMAGE_TAG..."
-            docker build --no-cache -t robert-agent-service:$IMAGE_TAG .
+            docker build --no-cache -t agent.universalmct.ai:$IMAGE_TAG .
 
             echo "Stopping old container (if exists)..."
-            docker stop robert-agent || true
-            docker rm robert-agent || true
+            docker stop agent.universalmct.ai || true
+            docker rm agent.universalmct.ai || true
 
             echo "Starting new container..."
             docker run -d \
-              --name robert-agent \
+              --name agent.universalmct.ai \
               --restart always \
               -p 3002:3002 \
               --env-file .env \
-              robert-agent-service:$IMAGE_TAG
+              agent.universalmct.ai:$IMAGE_TAG
 
             echo "Cleaning old Docker images (keep latest 2)..."
-            docker images robert-agent-service --format "{{.ID}}" | tail -n +3 | xargs -r docker rmi -f
+            docker images agent.universalmct.ai --format "{{.ID}}" | tail -n +3 | xargs -r docker rmi -f
 
             echo "Removing dangling images..."
             docker image prune -f
