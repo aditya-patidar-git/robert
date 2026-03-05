@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Button } from '@mui/material';
 import { Save } from '@mui/icons-material';
 import { useForm } from 'react-hook-form';
@@ -9,6 +9,8 @@ import useConnectionTest from '../../../../hooks/useConnectionTest';
 import SIPBasicSettings from './SIPBasicSettings';
 import SIPCredentialsForm from './SIPCredentialsForm';
 import SIPConnectionStatus from './SIPConnectionStatus';
+import ConfirmSaveDialog from '../../../../components/common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../../../constants/agentAffectingWarnings';
 
 /**
  * SIPConfigurationTab Component
@@ -17,6 +19,8 @@ import SIPConnectionStatus from './SIPConnectionStatus';
 const SIPConfigurationTab = () => {
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingSipData, setPendingSipData] = useState(null);
 
   // Fetch current SIP config
   const { data: sipConfigData, isLoading } = useQuery({
@@ -97,6 +101,21 @@ const SIPConfigurationTab = () => {
     }
   };
 
+  const handleSaveClick = (data) => {
+    if (data) {
+      setPendingSipData(data);
+      setConfirmOpen(true);
+    }
+  };
+
+  const handleConfirmSave = async () => {
+    if (pendingSipData) {
+      await updateMutation.mutateAsync(pendingSipData);
+      setConfirmOpen(false);
+      setPendingSipData(null);
+    }
+  };
+
   const handleTestConnection = async () => {
     const formValues = watch();
     await testConnection(formValues.sipSettings);
@@ -128,13 +147,23 @@ const SIPConfigurationTab = () => {
           variant="contained"
           size="large"
           startIcon={<Save />}
-          onClick={handleSubmit(onSubmit)}
+          onClick={handleSubmit(handleSaveClick)}
           disabled={updateMutation.isLoading}
           sx={{ minWidth: 150 }}
         >
           {updateMutation.isLoading ? 'Saving...' : 'Save SIP Configuration'}
         </Button>
       </Box>
+
+      <ConfirmSaveDialog
+        open={confirmOpen}
+        onClose={() => { setConfirmOpen(false); setPendingSipData(null); }}
+        onConfirm={handleConfirmSave}
+        title={AGENT_AFFECTING_WARNINGS.SIP_CONFIG.title}
+        message={AGENT_AFFECTING_WARNINGS.SIP_CONFIG.message}
+        effects={AGENT_AFFECTING_WARNINGS.SIP_CONFIG.effects}
+        confirmLabel="Save"
+      />
     </Box>
   );
 };

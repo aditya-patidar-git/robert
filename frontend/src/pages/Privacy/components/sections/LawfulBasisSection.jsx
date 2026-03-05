@@ -12,6 +12,8 @@ import {
   Alert
 } from '@mui/material';
 import { Save } from '@mui/icons-material';
+import ConfirmSaveDialog from '../../../../components/common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../../../constants/agentAffectingWarnings';
 
 /**
  * Lawful Basis & Privacy Notice Section Component
@@ -19,13 +21,19 @@ import { Save } from '@mui/icons-material';
 export function LawfulBasisSection({ config, onUpdate, loading }) {
   const [lawfulBasis, setLawfulBasis] = useState(config?.lawfulBasis || 'consent');
   const [privacyNotice, setPrivacyNotice] = useState(config?.privacyNotice || '');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const handleSave = async () => {
+  const handleSave = () => {
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmSave = async () => {
     try {
       await onUpdate({
         lawfulBasis,
         privacyNotice
       });
+      setConfirmOpen(false);
     } catch (error) {
       console.error('Failed to save lawful basis settings:', error);
     }
@@ -72,6 +80,16 @@ export function LawfulBasisSection({ config, onUpdate, loading }) {
           Save Settings
         </Button>
       </Box>
+
+      <ConfirmSaveDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleConfirmSave}
+        title={AGENT_AFFECTING_WARNINGS.PRIVACY_CONSENT.title}
+        message={AGENT_AFFECTING_WARNINGS.PRIVACY_CONSENT.message}
+        effects={AGENT_AFFECTING_WARNINGS.PRIVACY_CONSENT.effects}
+        confirmLabel="Save"
+      />
     </Paper>
   );
 }

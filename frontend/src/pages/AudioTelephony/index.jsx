@@ -24,6 +24,8 @@ import SIPConfigurationTab from './tabs/SIPConfigurationTab';
 import PhoneNumberForm from './components/PhoneNumberForm';
 import TransferNumberForm from './components/TransferNumberForm';
 import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
+import ConfirmSaveDialog from '../../components/common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../constants/agentAffectingWarnings';
 import configService from '../../services/configService';
 import voiceService from '../../services/voiceService';
 import { useQueryClient } from '@tanstack/react-query';
@@ -31,6 +33,12 @@ import { DEFAULT_VOICE_PREVIEW_TEXT } from '../../constants/voicePreview';
 
 const AudioTelephonyPage = () => {
   const [activeTab, setActiveTab] = useState(0);
+  const [confirmMainSaveOpen, setConfirmMainSaveOpen] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState(null);
+  const [confirmPhoneNumberOpen, setConfirmPhoneNumberOpen] = useState(false);
+  const [pendingPhoneAction, setPendingPhoneAction] = useState(null);
+  const [confirmTransferNumberOpen, setConfirmTransferNumberOpen] = useState(false);
+  const [pendingTransferAction, setPendingTransferAction] = useState(null);
   const queryClient = useQueryClient();
   
   // Get all state and functions from the hook
@@ -178,8 +186,17 @@ const AudioTelephonyPage = () => {
 
   // Handlers
   const onSubmit = useCallback((data) => {
-    saveConfigMutation.mutate(data);
-  }, [saveConfigMutation]);
+    setPendingFormData(data);
+    setConfirmMainSaveOpen(true);
+  }, []);
+
+  const handleConfirmMainSave = useCallback(() => {
+    if (pendingFormData) {
+      saveConfigMutation.mutate(pendingFormData);
+      setConfirmMainSaveOpen(false);
+      setPendingFormData(null);
+    }
+  }, [pendingFormData, saveConfigMutation]);
 
   const handleVoicePreview = useCallback((voice) => {
     console.log('🔵 [VOICE_PREVIEW] handleVoicePreview called with voice:', voice);
@@ -384,16 +401,36 @@ const AudioTelephonyPage = () => {
   }, [voicePreviewDialog, setIsPlaying, setPreviewAudioElement, setPreviewAudioUrl]);
 
   const handleAddNumber = useCallback((numberData) => {
-    addPhoneNumberMutation.mutate(numberData);
-  }, [addPhoneNumberMutation]);
+    setPendingPhoneAction({ type: 'add', data: numberData });
+    setConfirmPhoneNumberOpen(true);
+  }, []);
 
   const handleEditNumber = useCallback((number, numberData) => {
-    updatePhoneNumberMutation.mutate({ number, data: numberData });
-  }, [updatePhoneNumberMutation]);
+    setPendingPhoneAction({ type: 'edit', number, data: numberData });
+    setConfirmPhoneNumberOpen(true);
+  }, []);
 
   const handleDeleteNumber = useCallback((number) => {
     removePhoneNumberMutation.mutate(number);
   }, [removePhoneNumberMutation]);
+
+  const handleConfirmPhoneNumber = useCallback(() => {
+    if (!pendingPhoneAction) return;
+    if (pendingPhoneAction.type === 'add') {
+      addPhoneNumberMutation.mutate(pendingPhoneAction.data);
+      setAddNumberDialog(false);
+    } else if (pendingPhoneAction.type === 'edit') {
+      updatePhoneNumberMutation.mutate({ number: pendingPhoneAction.number, data: pendingPhoneAction.data });
+      setEditNumberDialog(false);
+      setNumberToEdit(null);
+    } else if (pendingPhoneAction.type === 'delete') {
+      removePhoneNumberMutation.mutate(pendingPhoneAction.number);
+      setDeleteNumberDialog(false);
+      setNumberToDelete(null);
+    }
+    setConfirmPhoneNumberOpen(false);
+    setPendingPhoneAction(null);
+  }, [pendingPhoneAction, addPhoneNumberMutation, updatePhoneNumberMutation, removePhoneNumberMutation, setAddNumberDialog, setEditNumberDialog, setNumberToEdit, setDeleteNumberDialog, setNumberToDelete]);
 
   const handleOpenEditNumber = useCallback((number) => {
     setNumberToEdit(number);
@@ -408,30 +445,42 @@ const AudioTelephonyPage = () => {
   const handleAddTransferNumber = useCallback((transferNumberData) => {
     const transferNumbers = watch('transferNumbers') || [];
     const updated = [...transferNumbers, transferNumberData];
-    // Update form state immediately for UI feedback
-    setValue('transferNumbers', updated, { shouldDirty: true });
-    // Pass the updated array directly to avoid timing issues with setValue
-    addTransferNumberMutation.mutate(updated);
-  }, [watch, setValue, addTransferNumberMutation]);
+    setPendingTransferAction({ type: 'add', updated });
+    setConfirmTransferNumberOpen(true);
+  }, [watch]);
 
   const handleEditTransferNumber = useCallback((index, transferNumberData) => {
     const transferNumbers = watch('transferNumbers') || [];
     const updated = [...transferNumbers];
     updated[index] = transferNumberData;
-    // Update form state immediately for UI feedback
-    setValue('transferNumbers', updated, { shouldDirty: true });
-    // Pass the updated array directly to avoid timing issues with setValue
-    updateTransferNumberMutation.mutate(updated);
-  }, [watch, setValue, updateTransferNumberMutation]);
+    setPendingTransferAction({ type: 'edit', updated });
+    setConfirmTransferNumberOpen(true);
+  }, [watch]);
 
   const handleDeleteTransferNumber = useCallback((index) => {
     const transferNumbers = watch('transferNumbers') || [];
     const updated = transferNumbers.filter((_, i) => i !== index);
-    // Update form state immediately for UI feedback
+    setPendingTransferAction({ type: 'delete', updated });
+    setConfirmTransferNumberOpen(true);
+  }, [watch]);
+
+  const handleConfirmTransferNumber = useCallback(() => {
+    if (!pendingTransferAction) return;
+    const { updated } = pendingTransferAction;
     setValue('transferNumbers', updated, { shouldDirty: true });
-    // Pass the updated array directly to avoid timing issues with setValue
-    updateTransferNumberMutation.mutate(updated);
-  }, [watch, setValue, updateTransferNumberMutation]);
+    if (pendingTransferAction.type === 'add') {
+      addTransferNumberMutation.mutate(updated);
+      setAddTransferNumberDialog(false);
+    } else if (pendingTransferAction.type === 'edit') {
+      updateTransferNumberMutation.mutate(updated);
+      setEditTransferNumberDialog(false);
+      setTransferNumberToEdit(null);
+    } else {
+      updateTransferNumberMutation.mutate(updated);
+    }
+    setConfirmTransferNumberOpen(false);
+    setPendingTransferAction(null);
+  }, [pendingTransferAction, setValue, addTransferNumberMutation, updateTransferNumberMutation, setAddTransferNumberDialog, setEditTransferNumberDialog, setTransferNumberToEdit]);
 
   const handleOpenEditTransferNumber = useCallback((index) => {
     const transferNumbers = watch('transferNumbers') || [];
@@ -720,13 +769,47 @@ const AudioTelephonyPage = () => {
           <Button
             variant="contained"
             color="error"
-            onClick={() => handleDeleteNumber(numberToDelete?.number)}
+            onClick={() => {
+              setPendingPhoneAction({ type: 'delete', number: numberToDelete?.number });
+              setConfirmPhoneNumberOpen(true);
+              setDeleteNumberDialog(false);
+              setNumberToDelete(null);
+            }}
             disabled={removePhoneNumberMutation.isLoading}
           >
             {removePhoneNumberMutation.isLoading ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Agent-affecting confirmation dialogs */}
+      <ConfirmSaveDialog
+        open={confirmMainSaveOpen}
+        onClose={() => { setConfirmMainSaveOpen(false); setPendingFormData(null); }}
+        onConfirm={() => { handleConfirmMainSave(); }}
+        title={AGENT_AFFECTING_WARNINGS.AUDIO_TELEPHONY.title}
+        message={AGENT_AFFECTING_WARNINGS.AUDIO_TELEPHONY.message}
+        effects={AGENT_AFFECTING_WARNINGS.AUDIO_TELEPHONY.effects}
+        confirmLabel="Save"
+      />
+      <ConfirmSaveDialog
+        open={confirmPhoneNumberOpen}
+        onClose={() => { setConfirmPhoneNumberOpen(false); setPendingPhoneAction(null); }}
+        onConfirm={handleConfirmPhoneNumber}
+        title={AGENT_AFFECTING_WARNINGS.PHONE_NUMBER.title}
+        message={AGENT_AFFECTING_WARNINGS.PHONE_NUMBER.message}
+        effects={AGENT_AFFECTING_WARNINGS.PHONE_NUMBER.effects}
+        confirmLabel="Continue"
+      />
+      <ConfirmSaveDialog
+        open={confirmTransferNumberOpen}
+        onClose={() => { setConfirmTransferNumberOpen(false); setPendingTransferAction(null); }}
+        onConfirm={handleConfirmTransferNumber}
+        title={AGENT_AFFECTING_WARNINGS.PHONE_NUMBER.title}
+        message={AGENT_AFFECTING_WARNINGS.PHONE_NUMBER.message}
+        effects={AGENT_AFFECTING_WARNINGS.PHONE_NUMBER.effects}
+        confirmLabel="Continue"
+      />
 
       {/* Add Transfer Number Dialog */}
       <Dialog 

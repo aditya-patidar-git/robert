@@ -636,7 +636,7 @@ const GeneralSettingsTab = ({
         </DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
-            Restoring a backup will overwrite current configurations. A safety backup will be created automatically before restoration.
+            Restoring a backup will overwrite current configurations. A safety backup will be created automatically before restoration. This will replace current configurations and can change how the agent and telephony behave.
           </Alert>
           {selectedBackup && (
             <Box sx={{ mb: 2 }}>

@@ -21,12 +21,15 @@ import {
   Delete,
   Info
 } from '@mui/icons-material';
+import ConfirmSaveDialog from '../common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../constants/agentAffectingWarnings';
 
 const ConversationBehaviorSettings = ({ 
   config,
   onUpdate,
   isLoading = false
 }) => {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [localConfig, setLocalConfig] = useState(config || {
     progressIndicators: {
       enabled: true,
@@ -145,7 +148,13 @@ const ConversationBehaviorSettings = ({
 
   const handleSave = () => {
     if (onUpdate) {
-      onUpdate(localConfig);
+      setConfirmOpen(true);
+    }
+  };
+
+  const handleConfirmSave = () => {
+    if (onUpdate) {
+      return onUpdate(localConfig);
     }
   };
 
@@ -919,6 +928,16 @@ const ConversationBehaviorSettings = ({
           Save Configuration
         </Button>
       </Box>
+
+      <ConfirmSaveDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleConfirmSave}
+        title={AGENT_AFFECTING_WARNINGS.CONVERSATION_BEHAVIOR.title}
+        message={AGENT_AFFECTING_WARNINGS.CONVERSATION_BEHAVIOR.message}
+        effects={AGENT_AFFECTING_WARNINGS.CONVERSATION_BEHAVIOR.effects}
+        confirmLabel="Save"
+      />
     </Box>
   );
 };

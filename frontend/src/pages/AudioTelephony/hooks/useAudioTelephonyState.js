@@ -88,7 +88,6 @@ export const useAudioTelephonyState = () => {
   const [numberProfileDialog, setNumberProfileDialog] = useState(false);
   const [callQualityTimeRange, setCallQualityTimeRange] = useState('24h');
   const [callQualityFilter, setCallQualityFilter] = useState('');
-  const selectedModelId = watch('selectedModelId');
 
   // Use custom hooks
   const { isLoading: audioLoading } = useAudioConfig({ setValue, watch, reset, getValues });

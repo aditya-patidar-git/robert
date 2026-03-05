@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  
   Typography,
   Box,
   Paper,
@@ -19,6 +18,8 @@ import CRMTasksTab from './tabs/CRMTasksTab';
 import GeneralSettingsTab from './tabs/GeneralSettingsTab';
 import ConversationBehaviorTab from './tabs/ConversationBehaviorTab';
 import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
+import ConfirmSaveDialog from '../../components/common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../constants/agentAffectingWarnings';
 
 const SystemConfigPage = () => {
   const {
@@ -36,6 +37,19 @@ const SystemConfigPage = () => {
     saveCRMTasksConfigMutation,
     onSubmit
   } = useSystemPageState();
+
+  const [confirmGeneralOpen, setConfirmGeneralOpen] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState(null);
+  const [confirmCrmOpen, setConfirmCrmOpen] = useState(false);
+
+  const handleFormSubmitWithConfirm = (data) => {
+    setPendingFormData(data);
+    setConfirmGeneralOpen(true);
+  };
+
+  const handleSaveCrmTasksConfigWithConfirm = () => {
+    setConfirmCrmOpen(true);
+  };
 
   return (
     <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
@@ -90,7 +104,7 @@ const SystemConfigPage = () => {
         </Tabs>
       </Paper>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form onSubmit={handleSubmit(handleFormSubmitWithConfirm)}>
         {/* Tab A: MCP Tools */}
         {currentTab === 0 && (
           <MCPToolsTab control={control} watch={watch} currentTab={currentTab} />
@@ -102,7 +116,7 @@ const SystemConfigPage = () => {
             crmTasksConfig={crmTasksConfig}
             handleCrmTaskToggle={handleCrmTaskToggle}
             handleCrmGeneralToggle={handleCrmGeneralToggle}
-            handleSaveCrmTasksConfig={handleSaveCrmTasksConfig}
+            handleSaveCrmTasksConfig={handleSaveCrmTasksConfigWithConfirm}
             isSaving={saveCRMTasksConfigMutation?.isLoading}
           />
         )}
@@ -122,6 +136,28 @@ const SystemConfigPage = () => {
       {currentTab === 3 && (
         <ConversationBehaviorTab />
       )}
+
+      {/* General Settings save confirmation */}
+      <ConfirmSaveDialog
+        open={confirmGeneralOpen}
+        onClose={() => { setConfirmGeneralOpen(false); setPendingFormData(null); }}
+        onConfirm={() => pendingFormData && saveConfigMutation.mutate(pendingFormData)}
+        title={AGENT_AFFECTING_WARNINGS.GENERAL_SYSTEM.title}
+        message={AGENT_AFFECTING_WARNINGS.GENERAL_SYSTEM.message}
+        effects={AGENT_AFFECTING_WARNINGS.GENERAL_SYSTEM.effects}
+        confirmLabel="Save"
+      />
+
+      {/* CRM Tasks save confirmation */}
+      <ConfirmSaveDialog
+        open={confirmCrmOpen}
+        onClose={() => setConfirmCrmOpen(false)}
+        onConfirm={() => handleSaveCrmTasksConfig()}
+        title={AGENT_AFFECTING_WARNINGS.CRM_TASKS.title}
+        message={AGENT_AFFECTING_WARNINGS.CRM_TASKS.message}
+        effects={AGENT_AFFECTING_WARNINGS.CRM_TASKS.effects}
+        confirmLabel="Save"
+      />
     </Box>
   );
 };
