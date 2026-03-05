@@ -48,12 +48,14 @@ const Dashboard = () => {
 
   // Fetch dashboard data from API
   useEffect(() => {
+    let cancelled = false;
     const fetchDashboardData = async () => {
       try {
-        setLoading({ metrics: true, calls: true, alerts: false });
+        if (!cancelled) setLoading({ metrics: true, calls: true, alerts: false });
 
         const dashboardData = await dashboardService.getDashboardAnalytics();
 
+        if (cancelled) return;
         if (dashboardData.success && dashboardData.data) {
           const data = dashboardData.data;
           // Update metrics
@@ -84,6 +86,7 @@ const Dashboard = () => {
           showError('Failed to load dashboard data');
         }
       } catch (error) {
+        if (cancelled) return;
         console.error('❌ Error fetching dashboard data:', error);
         showError('Failed to load dashboard data');
 
@@ -99,11 +102,12 @@ const Dashboard = () => {
         setSystemStatus(null);
         setMetricChanges(null);
       } finally {
-        setLoading({ metrics: false, calls: false, alerts: false });
+        if (!cancelled) setLoading({ metrics: false, calls: false, alerts: false });
       }
     };
 
     fetchDashboardData();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -88,6 +88,7 @@ export const useAudioTelephonyState = () => {
   const [numberProfileDialog, setNumberProfileDialog] = useState(false);
   const [callQualityTimeRange, setCallQualityTimeRange] = useState('24h');
   const [callQualityFilter, setCallQualityFilter] = useState('');
+  const selectedModelId = watch('selectedModelId');
 
   // Use custom hooks
   const { isLoading: audioLoading } = useAudioConfig({ setValue, watch, reset, getValues });
@@ -219,13 +220,12 @@ export const useAudioTelephonyState = () => {
   }, [setValue, setFallbackChain]);
 
   useEffect(() => {
-    const modelId = watch('selectedModelId');
-    if (modelId) {
-      loadModelRanges(modelId);
+    if (selectedModelId) {
+      loadModelRanges(selectedModelId);
     } else {
       setModelRanges(null);
     }
-  }, [watch('selectedModelId')]);
+  }, [selectedModelId]);
 
   // Mutations
   const saveConfigMutation = useMutation({

@@ -54,6 +54,24 @@ class BackupService {
   }
 
   /**
+   * Validate backupId to prevent path traversal. Throws if invalid.
+   * @param {string} backupId - Backup ID from request
+   */
+  _validateBackupId(backupId) {
+    if (typeof backupId !== 'string' || !backupId.trim()) {
+      throw new Error('Invalid backup ID');
+    }
+    if (backupId.includes('..') || backupId.includes('/') || backupId.includes('\\')) {
+      throw new Error('Invalid backup ID');
+    }
+    const resolved = path.resolve(this.backupDirectory, `${backupId}.tar.gz`);
+    const backupDirResolved = path.resolve(this.backupDirectory);
+    if (!resolved.startsWith(backupDirResolved)) {
+      throw new Error('Invalid backup ID');
+    }
+  }
+
+  /**
    * Create system backup using Mongoose queries
    * @param {Object} options - Backup options
    * @param {string[]} options.collections - Array of collection keys to backup (null = default set)
@@ -477,6 +495,7 @@ class BackupService {
    */
   async getBackupDetails(backupId) {
     try {
+      this._validateBackupId(backupId);
       const backupFile = path.join(this.backupDirectory, `${backupId}.tar.gz`);
 
       if (!fs.existsSync(backupFile)) {
@@ -520,6 +539,7 @@ class BackupService {
    * @returns {Promise<Object>} Backup data (metadata + data)
    */
   async extractBackupData(backupId) {
+    this._validateBackupId(backupId);
     const backupFile = path.join(this.backupDirectory, `${backupId}.tar.gz`);
     const extractPath = path.join(this.backupDirectory, `_temp_${backupId}`);
 
@@ -543,7 +563,15 @@ class BackupService {
         throw new Error('Backup data file not found in archive');
       }
 
-      const backupData = JSON.parse(fs.readFileSync(dataFilePath, 'utf8'));
+      let backupData;
+      try {
+        backupData = JSON.parse(fs.readFileSync(dataFilePath, 'utf8'));
+      } catch (parseErr) {
+        if (parseErr instanceof SyntaxError) {
+          throw new Error('Invalid backup data JSON in archive');
+        }
+        throw parseErr;
+      }
 
       // Cleanup
       fs.rmSync(extractPath, { recursive: true, force: true });
@@ -566,6 +594,7 @@ class BackupService {
    */
   async getRestorePreview(backupId, collections = null) {
     try {
+      this._validateBackupId(backupId);
       const backupData = await this.extractBackupData(backupId);
       const preview = {
         backupId,
@@ -635,6 +664,7 @@ class BackupService {
    * @returns {Promise<Object>} Restore result
    */
   async restoreBackup(backupId, options = {}) {
+    this._validateBackupId(backupId);
     const {
       collections = null,
       mode = 'overwrite' // 'overwrite' or 'merge'
@@ -857,6 +887,7 @@ class BackupService {
    */
   async deleteBackup(backupId) {
     try {
+      this._validateBackupId(backupId);
       const backupFile = path.join(this.backupDirectory, `${backupId}.tar.gz`);
 
       if (!fs.existsSync(backupFile)) {
@@ -880,6 +911,7 @@ class BackupService {
    */
   async validateBackup(backupId) {
     try {
+      this._validateBackupId(backupId);
       const backupFile = path.join(this.backupDirectory, `${backupId}.tar.gz`);
 
       if (!fs.existsSync(backupFile)) {
