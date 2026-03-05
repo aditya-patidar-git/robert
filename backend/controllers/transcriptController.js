@@ -11,6 +11,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function isValidTranscriptId(id) {
+  return typeof id === 'string' && /^[a-fA-F0-9]{24}$/.test(id);
+}
+
 // Get all transcripts with filtering and pagination
 export const getAllTranscripts = async (req, res) => {
   try {
@@ -126,6 +130,9 @@ export const getAllTranscripts = async (req, res) => {
 export const getTranscript = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isValidTranscriptId(id)) {
+      return res.status(400).json({ error: 'Invalid transcript ID' });
+    }
 
     const transcript = await CallRecord.findById(id);
     if (!transcript) {
@@ -243,6 +250,9 @@ export const exportTranscripts = async (req, res) => {
 export const deleteTranscript = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isValidTranscriptId(id)) {
+      return res.status(400).json({ error: 'Invalid transcript ID' });
+    }
     const { redact = false } = req.body;
 
     const transcript = await CallRecord.findById(id);

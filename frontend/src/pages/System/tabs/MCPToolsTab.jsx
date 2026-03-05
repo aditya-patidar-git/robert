@@ -6,6 +6,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../../components/common/ToastProvider';
 import MCPToolsConfig from '../../../components/config/MCPToolsConfig';
 import systemService from '../../../services/systemService';
+import ConfirmSaveDialog from '../../../components/common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../../constants/agentAffectingWarnings';
 
 const MCPToolsTab = ({ control, watch, currentTab }) => {
   const queryClient = useQueryClient();
@@ -13,6 +15,7 @@ const MCPToolsTab = ({ control, watch, currentTab }) => {
   const mcpToolsConfigRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Load configs when tab is opened
   useEffect(() => {
@@ -28,7 +31,7 @@ const MCPToolsTab = ({ control, watch, currentTab }) => {
     }
   }, [currentTab, queryClient]);
 
-  // Save all configurations
+  // Save all configurations (called after user confirms)
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
@@ -152,11 +155,21 @@ const MCPToolsTab = ({ control, watch, currentTab }) => {
           startIcon={<Save />}
           disabled={isSaving || isLoading}
           sx={{ minWidth: 150 }}
-          onClick={handleSaveAll}
+          onClick={() => setConfirmOpen(true)}
         >
           {isSaving ? 'Saving...' : 'Save Configuration'}
         </Button>
       </Box>
+
+      <ConfirmSaveDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => handleSaveAll()}
+        title={AGENT_AFFECTING_WARNINGS.MCP_SYSTEM.title}
+        message={AGENT_AFFECTING_WARNINGS.MCP_SYSTEM.message}
+        effects={AGENT_AFFECTING_WARNINGS.MCP_SYSTEM.effects}
+        confirmLabel="Save"
+      />
     </Box>
   );
 };

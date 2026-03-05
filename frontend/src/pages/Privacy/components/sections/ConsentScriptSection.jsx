@@ -8,6 +8,8 @@ import {
   Alert
 } from '@mui/material';
 import { Edit, Save, Cancel } from '@mui/icons-material';
+import ConfirmSaveDialog from '../../../../components/common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../../../constants/agentAffectingWarnings';
 
 /**
  * Consent Script Section Component
@@ -16,11 +18,17 @@ import { Edit, Save, Cancel } from '@mui/icons-material';
 export function ConsentScriptSection({ script, onUpdate, loading }) {
   const [editing, setEditing] = useState(false);
   const [editedScript, setEditedScript] = useState(script || '');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const handleSave = async () => {
+  const handleSave = () => {
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmSave = async () => {
     try {
       await onUpdate(editedScript);
       setEditing(false);
+      setConfirmOpen(false);
     } catch (error) {
       console.error('Failed to save consent script:', error);
     }
@@ -97,6 +105,16 @@ export function ConsentScriptSection({ script, onUpdate, loading }) {
           )}
         </Box>
       )}
+
+      <ConfirmSaveDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleConfirmSave}
+        title={AGENT_AFFECTING_WARNINGS.PRIVACY_CONSENT.title}
+        message={AGENT_AFFECTING_WARNINGS.PRIVACY_CONSENT.message}
+        effects={AGENT_AFFECTING_WARNINGS.PRIVACY_CONSENT.effects}
+        confirmLabel="Save"
+      />
     </Paper>
   );
 }

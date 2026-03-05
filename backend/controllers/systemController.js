@@ -320,6 +320,9 @@ export const getBackupDetails = async (req, res) => {
     });
   } catch (err) {
     console.error("Error getting backup details:", err);
+    if (err.message === 'Invalid backup ID') {
+      return res.status(400).json({ success: false, error: 'Invalid backup ID' });
+    }
     res.status(500).json({ 
       success: false, 
       error: err.message || "Internal server error" 
@@ -340,6 +343,9 @@ export const deleteBackup = async (req, res) => {
     });
   } catch (err) {
     console.error("Error deleting backup:", err);
+    if (err.message === 'Invalid backup ID') {
+      return res.status(400).json({ success: false, error: 'Invalid backup ID' });
+    }
     res.status(500).json({ 
       success: false, 
       error: err.message || "Internal server error" 
@@ -380,6 +386,9 @@ export const restoreBackup = async (req, res) => {
     });
   } catch (err) {
     console.error("Error restoring backup:", err);
+    if (err.message === 'Invalid backup ID') {
+      return res.status(400).json({ success: false, error: 'Invalid backup ID' });
+    }
     res.status(500).json({ 
       success: false, 
       error: err.message || "Internal server error" 
@@ -406,6 +415,9 @@ export const getRestorePreview = async (req, res) => {
     });
   } catch (err) {
     console.error("Error getting restore preview:", err);
+    if (err.message === 'Invalid backup ID') {
+      return res.status(400).json({ success: false, error: 'Invalid backup ID' });
+    }
     res.status(500).json({ 
       success: false, 
       error: err.message || "Internal server error" 
@@ -445,6 +457,9 @@ export const validateBackup = async (req, res) => {
     });
   } catch (err) {
     console.error("Error validating backup:", err);
+    if (err.message === 'Invalid backup ID') {
+      return res.status(400).json({ success: false, error: 'Invalid backup ID' });
+    }
     res.status(500).json({ 
       success: false, 
       error: err.message || "Internal server error" 

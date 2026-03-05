@@ -14,12 +14,15 @@ import {
   Alert
 } from '@mui/material';
 import { Save } from '@mui/icons-material';
+import ConfirmSaveDialog from '../../../../components/common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../../../constants/agentAffectingWarnings';
 
 /**
  * Data Retention Section Component
  * Manages data retention settings
  */
 export function DataRetentionSection({ retention, onUpdate, loading }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [settings, setSettings] = useState({
     enabled: retention?.enabled ?? true,
     defaultRetentionDays: retention?.defaultRetentionDays ?? 365,
@@ -33,9 +36,14 @@ export function DataRetentionSection({ retention, onUpdate, loading }) {
     setSettings(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmSave = async () => {
     try {
       await onUpdate(settings);
+      setConfirmOpen(false);
     } catch (error) {
       console.error('Failed to save retention settings:', error);
     }
@@ -110,6 +118,16 @@ export function DataRetentionSection({ retention, onUpdate, loading }) {
           Save Settings
         </Button>
       </Box>
+
+      <ConfirmSaveDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={handleConfirmSave}
+        title={AGENT_AFFECTING_WARNINGS.PRIVACY_RETENTION.title}
+        message={AGENT_AFFECTING_WARNINGS.PRIVACY_RETENTION.message}
+        effects={AGENT_AFFECTING_WARNINGS.PRIVACY_RETENTION.effects}
+        confirmLabel="Save"
+      />
     </Paper>
   );
 }

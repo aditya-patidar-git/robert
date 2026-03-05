@@ -21,6 +21,8 @@ import SystemOperationsTab from './tabs/SystemOperationsTab';
 import AnalyticsMonitoringTab from './tabs/AnalyticsMonitoringTab';
 import UnansweredQuestionsTab from './tabs/UnansweredQuestionsTab';
 import ConfigSyncStatus from '../../components/common/ConfigSyncStatus';
+import ConfirmSaveDialog from '../../components/common/ConfirmSaveDialog';
+import { AGENT_AFFECTING_WARNINGS } from '../../constants/agentAffectingWarnings';
 import kbService from '../../services/kbService';
 import aiService from '../../services/aiService';
 import promptVersionService from '../../services/promptVersionService';
@@ -32,6 +34,13 @@ const KB_TAB_INDEX = { knowledgeBase: 0, aiConfig: 1, systemOps: 2, analytics: 3
 const AIKnowledgePage = () => {
   const [currentTab, setCurrentTab] = useState(0);
   const [initialQAPairForKB, setInitialQAPairForKB] = useState({ question: '', answer: '' });
+  const [confirmAiConfigOpen, setConfirmAiConfigOpen] = useState(false);
+  const [pendingSaveData, setPendingSaveData] = useState(null);
+  const [confirmActivateVersionOpen, setConfirmActivateVersionOpen] = useState(false);
+  const [versionToActivate, setVersionToActivate] = useState(null);
+  const [confirmClearVersionsOpen, setConfirmClearVersionsOpen] = useState(false);
+  const [confirmFlowOverrideOpen, setConfirmFlowOverrideOpen] = useState(false);
+  const [pendingFlowOverride, setPendingFlowOverride] = useState(null);
 
   const state = useKBPageState();
   const {
@@ -154,6 +163,11 @@ const AIKnowledgePage = () => {
       }
     });
   }, [fileSearchQuery, fileSearchMutation, showError, setIsSearching]);
+
+  const handleSavePromptClick = useCallback((data) => {
+    setPendingSaveData(data);
+    setConfirmAiConfigOpen(true);
+  }, []);
 
   const handleSavePrompt = useCallback(async (data) => {
     let finalFallbackChain = [...fallbackChain];
@@ -368,6 +382,11 @@ const AIKnowledgePage = () => {
     setCompareDialogOpen(true);
   }, [setSelectedVersions, setCompareDialogOpen]);
 
+  const handleEditVersionClick = useCallback((version) => {
+    setVersionToActivate(version);
+    setConfirmActivateVersionOpen(true);
+  }, []);
+
   const handleEditVersion = useCallback(async (version) => {
     try {
       const result = await promptVersionService.activateVersion(version._id);
@@ -431,6 +450,10 @@ const AIKnowledgePage = () => {
     }
   }, [rollbackVersion, rollbackReason, setValue, showSuccess, showError, queryClient, refetchVersions, setRollbackDialogOpen, setRollbackVersion, setRollbackReason]);
 
+  const handleClearAllVersionsClick = useCallback(() => {
+    setConfirmClearVersionsOpen(true);
+  }, []);
+
   const handleClearAllVersions = useCallback(async () => {
     try {
       const result = await promptVersionService.clearInactiveVersions('global');
@@ -446,6 +469,11 @@ const AIKnowledgePage = () => {
       showError('Failed to clear inactive versions');
     }
   }, [showSuccess, showError, queryClient, refetchVersions]);
+
+  const handleSaveFlowOverrideClick = useCallback((flowType, overrideData) => {
+    setPendingFlowOverride({ flowType, overrideData });
+    setConfirmFlowOverrideOpen(true);
+  }, []);
 
   const handleSaveFlowOverride = useCallback(async (flowType, overrideData) => {
     try {
@@ -492,15 +520,17 @@ const AIKnowledgePage = () => {
     handleOpenEditTags,
     handleReingestFile,
     handleDetectDrift,
-    handleSavePrompt,
+    handleSavePrompt: handleSavePromptClick,
     handleCancelConfig,
     handleViewVersion,
     handleCompareVersions,
-    handleEditVersion,
+    handleEditVersion: handleEditVersionClick,
     handleRollbackClick,
     handleRollbackConfirm,
+    handleClearAllVersionsClick,
     handleClearAllVersions,
-    handleSaveFlowOverride,
+    handleSaveFlowOverride: handleSaveFlowOverrideClick,
+    handleSaveFlowOverrideActual: handleSaveFlowOverride,
     handleTestFlowDetection
   };
 
@@ -664,7 +694,7 @@ const AIKnowledgePage = () => {
           {rollbackVersion && (
             <>
               <Alert severity="warning" sx={{ mb: 2 }}>
-                This will create a new version with the content from version {rollbackVersion.version}. The current active version will remain unchanged until you save.
+                This will create a new version with the content from version {rollbackVersion.version}. The current active version will remain unchanged until you save. This will change how Robert behaves on live calls.
               </Alert>
               <Box sx={{ mb: 2 }}>
                 <Typography variant="subtitle2" gutterBottom>
@@ -702,6 +732,44 @@ const AIKnowledgePage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Agent-affecting confirmation dialogs */}
+      <ConfirmSaveDialog
+        open={confirmAiConfigOpen}
+        onClose={() => { setConfirmAiConfigOpen(false); setPendingSaveData(null); }}
+        onConfirm={() => pendingSaveData && handleSavePrompt(pendingSaveData)}
+        title={AGENT_AFFECTING_WARNINGS.AI_CONFIG.title}
+        message={AGENT_AFFECTING_WARNINGS.AI_CONFIG.message}
+        effects={AGENT_AFFECTING_WARNINGS.AI_CONFIG.effects}
+        confirmLabel="Save"
+      />
+      <ConfirmSaveDialog
+        open={confirmActivateVersionOpen}
+        onClose={() => { setConfirmActivateVersionOpen(false); setVersionToActivate(null); }}
+        onConfirm={() => versionToActivate && handleEditVersion(versionToActivate)}
+        title={AGENT_AFFECTING_WARNINGS.PROMPT_ACTIVATE_VERSION.title}
+        message={AGENT_AFFECTING_WARNINGS.PROMPT_ACTIVATE_VERSION.message}
+        effects={AGENT_AFFECTING_WARNINGS.PROMPT_ACTIVATE_VERSION.effects}
+        confirmLabel="Activate"
+      />
+      <ConfirmSaveDialog
+        open={confirmClearVersionsOpen}
+        onClose={() => setConfirmClearVersionsOpen(false)}
+        onConfirm={() => handleClearAllVersions()}
+        title={AGENT_AFFECTING_WARNINGS.PROMPT_CLEAR_VERSIONS.title}
+        message={AGENT_AFFECTING_WARNINGS.PROMPT_CLEAR_VERSIONS.message}
+        effects={AGENT_AFFECTING_WARNINGS.PROMPT_CLEAR_VERSIONS.effects}
+        confirmLabel="Clear versions"
+      />
+      <ConfirmSaveDialog
+        open={confirmFlowOverrideOpen}
+        onClose={() => { setConfirmFlowOverrideOpen(false); setPendingFlowOverride(null); }}
+        onConfirm={() => pendingFlowOverride && handleSaveFlowOverride(pendingFlowOverride.flowType, pendingFlowOverride.overrideData)}
+        title={AGENT_AFFECTING_WARNINGS.FLOW_OVERRIDE.title}
+        message={AGENT_AFFECTING_WARNINGS.FLOW_OVERRIDE.message}
+        effects={AGENT_AFFECTING_WARNINGS.FLOW_OVERRIDE.effects}
+        confirmLabel="Save"
+      />
 
       {/* View File Modal */}
       <Dialog

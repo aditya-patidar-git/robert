@@ -219,13 +219,12 @@ export const useAudioTelephonyState = () => {
   }, [setValue, setFallbackChain]);
 
   useEffect(() => {
-    const modelId = watch('selectedModelId');
-    if (modelId) {
-      loadModelRanges(modelId);
+    if (selectedModelId) {
+      loadModelRanges(selectedModelId);
     } else {
       setModelRanges(null);
     }
-  }, [watch('selectedModelId')]);
+  }, [selectedModelId]);
 
   // Mutations
   const saveConfigMutation = useMutation({

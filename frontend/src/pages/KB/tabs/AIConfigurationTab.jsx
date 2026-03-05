@@ -11,7 +11,6 @@ import { useQueryClient } from '@tanstack/react-query';
 
 const AIConfigurationTab = ({ state, handlers }) => {
   const queryClient = useQueryClient();
-  const [clearAllDialogOpen, setClearAllDialogOpen] = useState(false);
   const {
     control,
     handleSubmit,
@@ -41,7 +40,7 @@ const AIConfigurationTab = ({ state, handlers }) => {
     handleCompareVersions,
     handleEditVersion,
     handleRollbackClick,
-    handleClearAllVersions,
+    handleClearAllVersionsClick,
     handleSaveFlowOverride,
     handleTestFlowDetection
   } = handlers;
@@ -99,7 +98,7 @@ const AIConfigurationTab = ({ state, handlers }) => {
                 variant="outlined"
                 size="small"
                 startIcon={<DeleteSweep />}
-                onClick={() => setClearAllDialogOpen(true)}
+                onClick={() => handleClearAllVersionsClick?.()}
                 disabled={versionsLoading || promptVersions.filter(v => !v.isActive).length === 0}
               >
                 Clear All
@@ -359,47 +358,6 @@ const AIConfigurationTab = ({ state, handlers }) => {
           </Button>
         </Box>
       </Box>
-
-      {/* Clear All Versions Confirmation Dialog */}
-      <Dialog
-        open={clearAllDialogOpen}
-        onClose={() => setClearAllDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: { borderRadius: 2 }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Clear All Inactive Versions
-          </Typography>
-        </DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <Typography sx={{ fontSize: '0.9375rem', color: 'text.secondary' }}>
-            Are you sure you want to clear all inactive versions? This action cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3 }}>
-          <Button 
-            onClick={() => setClearAllDialogOpen(false)}
-            variant="outlined"
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={() => {
-              handleClearAllVersions();
-              setClearAllDialogOpen(false);
-            }}
-            color="error" 
-            variant="contained"
-            autoFocus
-          >
-            Clear All
-          </Button>
-        </DialogActions>
-      </Dialog>
     </form>
   );
 };
