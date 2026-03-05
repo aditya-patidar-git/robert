@@ -164,8 +164,16 @@ export const handleMediaStreamConnection = (ws, req) => {
             toolCoordinator = new ToolCoordinator(stateManager, null, ws); // openaiWs will be set after setup
             
             console.log(`[PICKUP_LATENCY] [${callSid}] T1 setup_openai_start ${latency()}ms`);
-            // Setup OpenAI connection
-            const setupResult = await openaiIntegration.setupOpenAI();
+            // Setup OpenAI connection (best-effort: try fallback model from AIConfig.model.fallbackChain on first failure)
+            let setupResult = await openaiIntegration.setupOpenAI();
+            if (setupResult?.error) {
+                const configManager = (await import('../../agent/configManager.js')).default;
+                const fallbackChain = configManager.getModelFallbackChain();
+                if (fallbackChain.length > 0) {
+                    console.log(`🔄 [${callSid}] Trying fallback model from chain (${fallbackChain.length} entries)`);
+                    setupResult = await openaiIntegration.setupOpenAI({ modelId: fallbackChain[0].modelId, voiceId: fallbackChain[0].voiceId });
+                }
+            }
             if (setupResult?.error) {
                 const errorType = setupResult.retryable ? 'retryable' : 'non-retryable';
                 console.error(`❌ [${callSid}] Failed to setup OpenAI (${errorType}): ${setupResult.error}${setupResult.details ? ` - ${setupResult.details}` : ''}`);

@@ -99,8 +99,12 @@ export class ToolCoordinator {
       workflowContext,
       bookingSession
     });
-    console.log(`🔍 [INTENT] [${callSid}] detectIntent result: shouldUpdateTools=${intentResult?.shouldUpdateTools}, newWorkflowContext=${intentResult?.newWorkflowContext}, phase=${intentResult?.phase}`);
+    console.log(`🔍 [INTENT] [${callSid}] detectIntent result: shouldUpdateTools=${intentResult?.shouldUpdateTools}, newWorkflowContext=${intentResult?.newWorkflowContext}, phase=${intentResult?.phase}, resetWorkflow=${intentResult?.resetWorkflow}`);
     if (!intentResult.shouldUpdateTools || !intentResult.newWorkflowContext) return false;
+    if (intentResult.resetWorkflow && sessionStateManager.getSession(callSid)) {
+      sessionStateManager.clearSession(callSid);
+      console.log(`🔄 [${callSid}] Workflow reset: cleared booking session so caller can start over from the beginning`);
+    }
     if (!conversations[callSid]) conversations[callSid] = { prematureResponses: {} };
     conversations[callSid].workflowContext = intentResult.newWorkflowContext;
     console.log(`🎯 [${callSid}] Intent detected: "${transcriptText.trim()}" - updating tools and workflow phase to ${intentResult.phase}`);

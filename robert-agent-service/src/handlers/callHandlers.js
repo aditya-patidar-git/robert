@@ -194,6 +194,17 @@ export const handleIncomingCall = async (req, res) => {
         const telephonyConfig = configManager.getTelephonyConfig();
         const baseUrl = process.env.TUNNEL_DOMAIN ? `https://${process.env.TUNNEL_DOMAIN}` : process.env.BASE_URL || 'http://localhost:3002';
 
+        // When routing is disabled in admin, do not route inbound calls to the agent
+        if (telephonyConfig?.routingEnabled === false) {
+            span.setAttribute('call.blocked', true);
+            span.setAttribute('call.block_reason', 'routing_disabled');
+            span.setStatus({ code: SpanStatusCode.OK, message: 'Routing disabled' });
+            console.log(`🚫 [${CallSid}] Call not routed: routing is disabled in Telephony config`);
+            const twiml = generateBlockedCallTwiML('Sorry, we are not accepting calls at the moment. Please try again later.');
+            span.end();
+            return res.type("text/xml").send(twiml);
+        }
+
         if (telephonyConfig?.afterHoursPolicy && isAfterHours(telephonyConfig.afterHoursPolicy)) {
             const action = telephonyConfig.afterHoursPolicy.action || 'voicemail';
             span.setAttribute('call.after_hours', true);

@@ -3,6 +3,7 @@ import { TaskExecutor } from './taskExecutor.js';
 // DEPRECATED: CourseBookingRouter removed - create_booking task is blocked
 import { takeScreenshot, saveAuditLog, extractPriceFromBooking } from '../commonBookingSteps/utils.js';
 import urlValidation from '../../utils/urlValidation.js';
+import configManager from '../../agent/configManager.js';
 import { clearRecaptchaStorage } from '../../utils/stealthUtils.js';
 
 /**
@@ -146,6 +147,9 @@ class BrowserAgentService {
   }
 
   async saveAuditLog(auditId, action, result) {
+    if (configManager.getCRMTasksConfig()?.generalSettings?.auditLogging === false) {
+      return;
+    }
     return await saveAuditLog(auditId, action, result, this.auditDir, this.screenshotsDir);
   }
 

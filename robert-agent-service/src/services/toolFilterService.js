@@ -278,6 +278,9 @@ export function getPhaseForIntent(intent) {
     'change_language': 'language_selection',
     'language': 'language_selection',
 
+    // Restart workflow (start over from beginning)
+    'restart_workflow': 'booking_start',
+
     // Booking intents
     'book': 'booking_start',
     'book_course': 'booking_start',

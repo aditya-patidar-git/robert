@@ -422,13 +422,17 @@ class ProgressIndicatorService {
     const messages = config.progressIndicators.updateMessages || [
       "Please bear with me for a moment"
     ];
+    // First (acknowledgment) message set: use acknowledgmentMessages from config when present, else updateMessages
+    const firstMessages = (config?.progressIndicators?.acknowledgmentMessages?.length)
+      ? config.progressIndicators.acknowledgmentMessages
+      : messages;
 
-    // First periodic update fires earlier (6s default) so at least one is sent before tool often ends
-    const firstIntervalMs = Math.min(updateInterval, this.FIRST_PERIODIC_INTERVAL_MS);
+    // First periodic update delay: use acknowledgmentThresholdMs from config when present, else cap updateInterval by FIRST_PERIODIC
+    const firstIntervalMs = config?.progressIndicators?.acknowledgmentThresholdMs ?? Math.min(updateInterval, this.FIRST_PERIODIC_INTERVAL_MS);
 
     // Use setTimeout instead of setInterval to send only ONE update
     execution.updateTimeout = setTimeout(() => {
-      this.trySendOnePeriodicUpdate(callSid, openaiWs, config, 0, null, updateInterval, messages);
+      this.trySendOnePeriodicUpdate(callSid, openaiWs, config, 0, null, updateInterval, firstMessages);
     }, firstIntervalMs);
   }
 
@@ -549,7 +553,9 @@ class ProgressIndicatorService {
         }
         if (execution.periodicUpdateCount < execution.maxPeriodicUpdates) {
         if (isFirst) {
-          this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, updateCompletionTime, updateInterval, messages);
+          // Subsequent updates use updateMessages only (not acknowledgmentMessages)
+          const nextMessages = config?.progressIndicators?.updateMessages || ["Please bear with me for a moment"];
+          this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, updateCompletionTime, updateInterval, nextMessages);
         } else {
           this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, updateCompletionTime, scheduleNextArgs.updateGapMs, scheduleNextArgs.messages);
         }

@@ -432,6 +432,18 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         console.log(`🎯 [${callId}] Step tool parameter/validation error - instructing to resolve and retry, not transfer`);
       }
 
+      // Step execution failure (timeout or retriable): offer to retry or restart workflow
+      const isStepExecutionFailure = toolName && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_')) &&
+        toolResult && toolResult.success === false &&
+        (toolResult.canRetry === true || /timeout|exceeded|failed/i.test(toolResult.error || ''));
+      if (isStepExecutionFailure) {
+        const failureInstruction = `CRITICAL: This step failed (e.g. timeout or temporary error). Briefly acknowledge what happened (e.g. "That step took too long" or "Something didn't complete in time"). Then offer the caller two options: (1) "I can try that step again" — if they agree, call the same step again with the same parameters. (2) "Or we can start over from the beginning" — if they say start over, restart, or from the beginning, the system will reset and you can begin the booking/cancellation flow again. Do not transfer to a human unless the caller explicitly asks for it or both retry and start-over fail.`;
+        responseInstructions = responseInstructions
+          ? `${failureInstruction}\n\n${responseInstructions}`
+          : failureInstruction;
+        console.log(`🎯 [${callId}] Step execution failure (timeout/retriable) - instructing to offer retry or start over`);
+      }
+
       // Unknown tool recovery (booking): any non-existent or wrong booking_step_* — tally correct next step from session and auto-run (like cancellation)
       const isUnknownBookingStepTool = toolName && toolName.startsWith('booking_step_') &&
         toolResult && toolResult.success === false &&

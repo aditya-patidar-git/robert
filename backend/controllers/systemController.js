@@ -4,6 +4,7 @@ import PrivacyConfig from "../models/PrivacyConfig.js";
 import AIConfig from "../models/AIConfig.js";
 import ConversationBehaviorConfig from "../models/ConversationBehaviorConfig.js";
 import { createAuditLog } from "./auditLogController.js";
+import configSyncService from "../services/configSyncService.js";
 
 // GET /api/system/config
 export const getSystemConfig = async (req, res) => {
@@ -96,6 +97,9 @@ export const updateSystemConfig = async (req, res) => {
       }
       
       await aiConfig.save();
+      configSyncService.notifyConfigChange('ai', null, {
+        changedBy: req.user?.id || req.user?.username || 'admin'
+      });
       console.log("✅ MCP settings saved to AIConfig:", aiConfig.mcpSettings);
     }
 
@@ -125,6 +129,9 @@ export const updateSystemConfig = async (req, res) => {
         telephonyConfig.logLevel = configData.logLevel;
       }
       await telephonyConfig.save();
+      configSyncService.notifyConfigChange('telephony', null, {
+        changedBy: req.user?.id || req.user?.username || 'admin'
+      });
     }
 
     // Update Audio Config
@@ -148,6 +155,9 @@ export const updateSystemConfig = async (req, res) => {
       if (configData.energyThreshold !== undefined) audioConfig.energyThreshold = configData.energyThreshold;
       if (configData.energyThresholdAutoCalibrate !== undefined) audioConfig.energyThresholdAutoCalibrate = configData.energyThresholdAutoCalibrate;
       await audioConfig.save();
+      configSyncService.notifyConfigChange('audio', null, {
+        changedBy: req.user?.id || req.user?.username || 'admin'
+      });
     }
 
     // Update Privacy Config
@@ -170,6 +180,9 @@ export const updateSystemConfig = async (req, res) => {
         privacyConfig.retentionSettings.metadataRetention = configData.metadataRetention;
       }
       await privacyConfig.save();
+      configSyncService.notifyConfigChange('privacy', null, {
+        changedBy: req.user?.id || req.user?.username || 'admin'
+      });
     }
 
     const diff = {};

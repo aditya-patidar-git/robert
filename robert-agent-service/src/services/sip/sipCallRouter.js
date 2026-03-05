@@ -1,6 +1,8 @@
 /**
  * SIP Call Router
- * Handles SIP call routing with retry logic and fallback to Media Streams
+ * Handles SIP call routing with retry logic and fallback to Media Streams.
+ * Uses TelephonyConfig.sipSettings.primaryPath for initial path; fallbackPath is used when primary fails (fallback is always Media Streams today).
+ * TelephonyConfig.sipSettings also exposes codec and region for future use when the SIP client API accepts them (e.g. Twilio trunk/call level).
  */
 
 import sipService from '../sipService.js';
@@ -259,12 +261,12 @@ class SipCallRouter {
     let call = null;
     let method = 'Media Streams';
     
-    // Log which method is being used and why
-    const envVarSet = process.env.SIP_ENABLED !== undefined;
+    // Log which method is being used and why (fallbackPath from config used when primary fails)
     const dbPath = telephonyConfig?.sipSettings?.primaryPath || 'not_set';
+    const dbFallbackPath = telephonyConfig?.sipSettings?.fallbackPath || 'media_streams';
     const sipServiceEnabled = sipService.isSipEnabled();
     
-    console.log(`🔀 [ROUTING] Decision: SIP_ENABLED=${process.env.SIP_ENABLED || 'not_set'}, DB primaryPath=${dbPath}, sipService.enabled=${sipServiceEnabled}, willUseSip=${useSip}`);
+    console.log(`🔀 [ROUTING] Decision: primaryPath=${dbPath}, fallbackPath=${dbFallbackPath}, sipService.enabled=${sipServiceEnabled}, willUseSip=${useSip}`);
 
     if (useSip) {
       // Attempt SIP routing with retry

@@ -1,5 +1,6 @@
 import CRMTasksConfig from "../models/CRMTasksConfig.js";
 import observabilityService from "../services/observabilityService.js";
+import configSyncService from "../services/configSyncService.js";
 
 // Get current CRM tasks configuration
 export const getCRMTasksConfig = async (req, res) => {
@@ -106,6 +107,9 @@ export const updateCRMTasksConfig = async (req, res) => {
     config.createdBy = req.user?.id || "admin";
     await config.save();
 
+    configSyncService.notifyConfigChange('crm-tasks', null, {
+      changedBy: req.user?.id || req.user?.username || 'admin'
+    });
     observabilityService.info('CRM tasks config updated', { updatedBy: req.user?.id });
     res.json({
       success: true,

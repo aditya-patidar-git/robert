@@ -1,4 +1,5 @@
 import AudioConfig from "../../models/AudioConfig.js";
+import configSyncService from "../../services/configSyncService.js";
 
 // Validate model parameters against capability registry
 const validateModelParameters = async (modelId, temperature, topP, maxTokens) => {
@@ -202,6 +203,10 @@ export const deleteNumberProfile = async (req, res) => {
     }
     
     await config.save();
+
+    configSyncService.notifyConfigChange('audio', null, {
+      changedBy: req.user?.id || req.user?.username || 'admin'
+    });
 
     res.json({
       status: "success",

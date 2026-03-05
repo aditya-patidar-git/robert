@@ -721,8 +721,9 @@ class ToolExecutionService {
       // Store conversation state
       this.storeConversationState(callSid || callId, toolName, executionResult);
 
-      // Save tool usage to CallRecord (async, don't wait)
-      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, true)
+      const toolSucceeded = executionResult.success !== false;
+      // Save tool usage to CallRecord with actual success/failure (async, don't wait)
+      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, toolSucceeded)
         .catch(err => {
           console.warn(`⚠️ [${callSid || callId}] Failed to save tool usage to CallRecord:`, err.message);
         });
@@ -746,7 +747,11 @@ class ToolExecutionService {
         turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
       }
 
-      console.log(`✅ [${callSid || callId}] Tool ${toolName} completed successfully`);
+      if (toolSucceeded) {
+        console.log(`✅ [${callSid || callId}] Tool ${toolName} completed successfully`);
+      } else {
+        console.log(`⚠️ [${callSid || callId}] Tool ${toolName} completed with failure (result submitted to agent)`);
+      }
 
       // Return execution result as-is (already has success flag and result)
       return executionResult;

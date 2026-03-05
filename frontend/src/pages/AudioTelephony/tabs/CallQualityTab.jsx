@@ -25,7 +25,7 @@ const CallQualityTab = ({ state }) => {
   } = state;
 
   return (
-    <Paper sx={{ p: 3, mb: 3 }}>
+    <Paper sx={{ p: 3, mb: 3, width: '100%' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
           <Typography variant="h5" component="h2" gutterBottom fontWeight="bold">
@@ -83,8 +83,8 @@ const CallQualityTab = ({ state }) => {
               Last updated: {new Date(audioMetrics.metrics.lastUpdated).toLocaleString()}
             </Typography>
           )}
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={3}>
+          <Grid container spacing={3} sx={{ width: '100%' }}>
+            <Grid size={{ xs: 12, md: 3 }}>
               <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="h4" color="primary">
@@ -101,7 +101,7 @@ const CallQualityTab = ({ state }) => {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid size={{ xs: 12, md: 3 }}>
               <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="h4" color="success.main">
@@ -125,7 +125,7 @@ const CallQualityTab = ({ state }) => {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid size={{ xs: 12, md: 3 }}>
               <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="h4" color="warning.main">
@@ -142,7 +142,7 @@ const CallQualityTab = ({ state }) => {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid size={{ xs: 12, md: 3 }}>
               <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                   <Typography variant="h4" color="info.main">
@@ -160,7 +160,7 @@ const CallQualityTab = ({ state }) => {
               </Card>
             </Grid>
             {audioMetrics.metrics.totalCalls > 0 && (
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <Card>
                   <CardContent>
                     <Typography variant="h6" gutterBottom>
@@ -190,8 +190,8 @@ const CallQualityTab = ({ state }) => {
 
           {/* Historical Trend Charts */}
           {historicalMetrics?.data && historicalMetrics.data.length > 0 && (
-            <Grid container spacing={3} sx={{ mt: 2 }}>
-              <Grid item xs={12} md={6}>
+            <Grid container spacing={3} sx={{ mt: 2, width: '100%' }}>
+              <Grid size={{ xs: 12, md: 3 }}>
                 <Card>
                   <CardContent>
                     <Typography variant="h6" gutterBottom>
@@ -223,7 +223,7 @@ const CallQualityTab = ({ state }) => {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 12, md: 3 }}>
                 <Card>
                   <CardContent>
                     <Typography variant="h6" gutterBottom>
@@ -255,7 +255,7 @@ const CallQualityTab = ({ state }) => {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 12, md: 3 }}>
                 <Card>
                   <CardContent>
                     <Typography variant="h6" gutterBottom>
@@ -287,7 +287,7 @@ const CallQualityTab = ({ state }) => {
                   </CardContent>
                 </Card>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid size={{ xs: 12, md: 3 }}>
                 <Card>
                   <CardContent>
                     <Typography variant="h6" gutterBottom>

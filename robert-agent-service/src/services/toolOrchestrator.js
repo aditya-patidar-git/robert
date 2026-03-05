@@ -88,7 +88,8 @@ class ToolOrchestrator {
         {
           model: responsesApiConfig.model, // Use configured model
           temperature: aiConfig?.parameters?.temperature ?? 0.4,
-          maxTokens: aiConfig?.parameters?.maxTokens ?? 1000
+          maxTokens: aiConfig?.parameters?.maxTokens ?? 1000,
+          top_p: aiConfig?.parameters?.topP
         }
       );
 
@@ -254,7 +255,8 @@ class ToolOrchestrator {
         {
           model: responsesApiConfig.model, // Use configured model
           temperature: aiConfig?.parameters?.temperature ?? 0.4,
-          maxTokens: 500
+          maxTokens: aiConfig?.parameters?.maxTokens ?? 500,
+          top_p: aiConfig?.parameters?.topP
         }
       );
 

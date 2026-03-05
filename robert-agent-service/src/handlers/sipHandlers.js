@@ -26,7 +26,7 @@ import { generateSipRoutingTwiML, generateMinimalTwiML } from "../utils/twimlGen
 import abusePreventionService from "../services/abusePreventionService.js";
 import { isAfterHours } from "../utils/afterHoursUtils.js";
 import { incrementActiveCalls, decrementActiveCalls } from "../services/metricsService.js";
-import { setDefaultRecordingConsent } from "../services/callRecordPersistenceService.js";
+import { setDefaultRecordingConsent, getEffectiveRecordingConsentSettings } from "../services/callRecordPersistenceService.js";
 import consentInstructionBuilder from "../services/consentInstructionBuilder.js";
 import { ConsentHandler } from "./mediaStream/events/index.js";
 import silenceDetectionService from "../services/silenceDetectionService.js";
@@ -303,6 +303,16 @@ export const handleCallAccept = async (req, res) => {
     }
 
     const telephonyConfig = configManager.getTelephonyConfig();
+    if (telephonyConfig?.routingEnabled === false) {
+      console.log(`🚫 [SIP] Call rejected: routing is disabled in Telephony config`);
+      await rejectCallViaOpenAI(call_id);
+      await CallRecord.findOneAndUpdate(
+        { callSid: call_id },
+        { callSid: call_id, callType: 'SIP', callStatus: 'rejected', rejectReason: 'routing_disabled', from, to, startTime: new Date() },
+        { upsert: true }
+      ).catch(() => {});
+      return res.status(200).json({ received: true, call_id, rejected: true, reason: 'routing_disabled' });
+    }
     if (telephonyConfig?.afterHoursPolicy && isAfterHours(telephonyConfig.afterHoursPolicy)) {
       console.log(`🚫 [SIP] Call rejected: after hours`);
       await rejectCallViaOpenAI(call_id);
@@ -411,10 +421,10 @@ export const handleCallAccept = async (req, res) => {
       try {
         abusePreventionService.recordCall(from, call_id, { direction: 'inbound', timestamp: new Date() });
 
+        const telephonyConfig = configManager.getTelephonyConfig();
         const PrivacyConfig = (await import("../database/models/PrivacyConfig.js")).default;
         const privacySettings = await PrivacyConfig?.findOne({ isActive: true }).lean().catch(() => null) ?? null;
-        const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
-        const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
+        const { consentRequired: requireExplicitConsent, consentMessage: consentNotice } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
         const consentQuestion = "Do you consent to this call being recorded?";
         const existingConsent = conversations[call_id]?.recordingConsent;
         const consentAlreadySet = existingConsent?.given === true;
