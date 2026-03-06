@@ -355,19 +355,32 @@ export const testSipConnection = async (req, res) => {
   }
 };
 
-// Get SIP connection status
+// Get SIP connection status (return 200 with defaults when no config so tab loads)
 export const getSipStatus = async (req, res) => {
   try {
     const config = await TelephonyConfig.findOne({ isActive: true });
     
     if (!config || !config.sipSettings) {
-      return res.status(404).json({
-        status: "error",
-        message: "SIP configuration not found"
+      return res.json({
+        status: "success",
+        sipSettings: {
+          openaiSipEnabled: false,
+          primaryPath: "sip",
+          fallbackPath: "media_streams",
+          codec: "opus",
+          region: "europe",
+          openaiSipEndpoint: "",
+          openaiSipWebhookUrl: "",
+          twilioSipTrunkSid: "",
+          twilioSipUsername: "",
+          twilioSipPassword: ""
+        }
       });
     }
 
-    const sipSettings = config.sipSettings.toObject();
+    const sipSettings = typeof config.sipSettings.toObject === "function"
+      ? config.sipSettings.toObject()
+      : config.sipSettings;
     
     // Mask password for display
     const displayConfig = sipConfigService.prepareForDisplay(sipSettings);
@@ -461,9 +474,13 @@ export const updateSipSettings = async (req, res) => {
     // Prepare for storage (encrypt sensitive fields)
     const preparedSettings = sipConfigService.prepareForStorage(sipSettings);
 
-    // Merge with existing settings
+    // Merge with existing settings (safe when config is new or sipSettings missing)
+    const existingSip =
+      config.sipSettings && typeof config.sipSettings.toObject === "function"
+        ? config.sipSettings.toObject()
+        : (config.sipSettings || {});
     config.sipSettings = {
-      ...config.sipSettings.toObject(),
+      ...existingSip,
       ...preparedSettings
     };
 

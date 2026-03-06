@@ -727,13 +727,13 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         }
       }
 
-      // process_payment returned requiresPaymentMethod: agent must use booking_step_send_payment_request next, not process_payment again
+      // process_payment returned requiresPaymentMethod: agent MUST ask the question in THIS response (do not say "let me proceed" and then wait)
       if (toolName === 'booking_step_process_payment' && toolResult?.requiresPaymentMethod === true) {
-        const instruction = toolResult.instruction || `CRITICAL: Do NOT call booking_step_process_payment again. Ask the caller: "Would you like to receive the payment request via email or SMS?" When they answer, call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms" (and courseType, workflowType, and clientEmail or clientMobile as needed).`;
+        const instruction = toolResult.instruction || `CRITICAL: Do NOT call booking_step_process_payment again. In THIS response you MUST ask the caller exactly: "Would you like to receive the payment request via email or SMS?" Do NOT say "I'll call the correct step" or "Let me proceed" and then wait—ask the question now. When they answer (email or SMS), call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms", plus courseType, workflowType, and clientEmail or clientMobile as needed.`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
-        console.log(`🎯 [${callId}] process_payment requiresPaymentMethod - instructing to call booking_step_send_payment_request next`);
+        console.log(`🎯 [${callId}] process_payment requiresPaymentMethod - instructing to ask email/SMS question in this response, then call send_payment_request`);
       }
 
       // send_payment_request returned requiresClientEmail: agent must ask caller for email, then call again with clientEmail
@@ -772,15 +772,40 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         console.log(`🎯 [${callId}] send_sms requiresClientMobile - instructing to ask caller for mobile then call again with customerMobile`);
       }
 
-      // send_payment_request returned payment completed / booking finalized: agent MUST call send_confirmation, send_terms, send_sms in order (do not wait for caller)
+      // send_payment_request returned payment completed / booking finalized: run send_confirmation → send_terms → send_sms automatically via chained tools (no waiting for user)
       const isBookingFinalized = toolName === 'booking_step_send_payment_request' && toolResult?.success === true &&
         (toolResult?.paymentCompleted === true || toolResult?.bookingFinalized === true);
       if (isBookingFinalized) {
-        const instruction = `CRITICAL: Booking is finalized. In this turn you MUST call **booking_step_send_confirmation**, then **booking_step_send_terms**, then **booking_step_send_sms** (in that order). Do not wait for the caller to ask—proceed automatically. Say a brief confirmation to the caller (e.g. "Your booking is complete. I'm sending your confirmation and details now.") then invoke these three tools in sequence.`;
+        const instruction = `CRITICAL: Booking is finalized. Say ONLY a brief confirmation to the caller (e.g. "Your booking is complete. I'm sending your confirmation and details now."). Do NOT wait for the caller to respond. The system will automatically send the confirmation email, terms, and SMS. Do not call any tools in this response.`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
-        console.log(`🎯 [${callId}] send_payment_request booking finalized - instructing to call send_confirmation, send_terms, send_sms in order`);
+        console.log(`🎯 [${callId}] send_payment_request booking finalized - setting chained tools: send_confirmation → send_terms → send_sms`);
+        if (callSid && this.stateManager && (courseType || sessionStateManager.getSession(callSid)?.courseType)) {
+          const chainArgs = { courseType: courseType || sessionStateManager.getSession(callSid)?.courseType, workflowType: workflowType || sessionStateManager.getSession(callSid)?.workflowType || 'existing' };
+          // Pass customerMobile for booking_step_send_sms when available (recipient email is from booking context for send_confirmation/send_terms)
+          const customerMobile = toolResult?.phoneNumber || conversations[callSid]?.clientDetails?.telephoneNumber;
+          if (customerMobile) chainArgs.customerMobile = customerMobile;
+          if (!conversations[callSid]) conversations[callSid] = {};
+          conversations[callSid].postBookingFinalizedChain = ['booking_step_send_terms', 'booking_step_send_sms'];
+          conversations[callSid].postBookingFinalizedChainArgs = chainArgs;
+          this.stateManager.pendingChainedToolCall = { toolName: 'booking_step_send_confirmation', args: chainArgs };
+        }
+      }
+
+      // After send_confirmation or send_terms completes, set next in post-booking chain so it runs automatically (no user input)
+      const isPostBookingChainedStep = (toolName === 'booking_step_send_confirmation' || toolName === 'booking_step_send_terms') &&
+        callSid && conversations[callSid]?.postBookingFinalizedChain?.length > 0 && this.stateManager;
+      if (isPostBookingChainedStep) {
+        const chain = conversations[callSid].postBookingFinalizedChain;
+        const chainArgs = conversations[callSid].postBookingFinalizedChainArgs || { courseType: courseType || sessionStateManager.getSession(callSid)?.courseType, workflowType: workflowType || sessionStateManager.getSession(callSid)?.workflowType || 'existing' };
+        const nextTool = chain.shift();
+        conversations[callSid].postBookingFinalizedChain = chain.length ? chain : undefined;
+        if (!chain.length) {
+          delete conversations[callSid].postBookingFinalizedChainArgs;
+        }
+        this.stateManager.pendingChainedToolCall = { toolName: nextTool, args: chainArgs };
+        console.log(`🎯 [${callId}] Post-booking chain: next automatic step ${nextTool}`);
       }
 
       if (toolName === 'transfer_call' && toolResult?.allTransferNumbersFailed === true && toolResult?.messageForCaller) {

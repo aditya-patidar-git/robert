@@ -7,7 +7,7 @@ import { BaseService } from './baseService';
  */
 class TelephonyService extends BaseService {
   constructor() {
-    super('/api/audio-telephony', {
+    super('/api/admin/audio-telephony', {
       dataPath: null,
       normalizeResponse: true
     });
