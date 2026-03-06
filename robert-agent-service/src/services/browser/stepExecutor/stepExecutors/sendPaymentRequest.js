@@ -4,6 +4,8 @@
  * Preserves all Playwright timing and state checks
  */
 
+import { conversations } from '../../../../shared/state.js';
+
 /**
  * Execute sendPaymentRequest step
  * @param {Object} page - Playwright page object
@@ -97,9 +99,20 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     console.log('🔍 [SEND_PAYMENT_REQUEST] Confirmation step: treating terms as accepted (proceeding to send payment link)');
   }
 
+  // CRITICAL: Break confirmation loop — if we already returned requiresConfirmation once and the tool is invoked again with same email/phone and terms accepted, treat as confirmed (model often omits confirmed: true).
+  const callSid = args.callSid || null;
+  let effectiveConfirmed = confirmed;
+  if (!effectiveConfirmed && callSid && termsAcceptedBeforeSend && (clientEmail || clientMobile)) {
+    if (conversations[callSid]?.paymentRequestConfirmationRequested) {
+      effectiveConfirmed = true;
+      delete conversations[callSid].paymentRequestConfirmationRequested;
+      console.log('🔍 [SEND_PAYMENT_REQUEST] Re-invocation after requiresConfirmation: treating as confirmed (breaking loop)');
+    }
+  }
+
   // Debug logging to trace parameter passing
   console.log(`🔍 [SEND_PAYMENT_REQUEST] All args keys:`, Object.keys(args));
-  console.log(`🔍 [SEND_PAYMENT_REQUEST] Confirmed parameter: confirmed=${args.confirmed}, confirmedByClient=${args.confirmedByClient}, confirmationReceived=${args.confirmationReceived}, evaluated as: ${confirmed}`);
+  console.log(`🔍 [SEND_PAYMENT_REQUEST] Confirmed parameter: confirmed=${args.confirmed}, confirmedByClient=${args.confirmedByClient}, confirmationReceived=${args.confirmationReceived}, evaluated as: ${confirmed}, effectiveConfirmed: ${effectiveConfirmed}`);
   console.log(`🔍 [SEND_PAYMENT_REQUEST] TermsAcceptedBeforeSend parameter: ${args.termsAcceptedBeforeSend} (type: ${typeof args.termsAcceptedBeforeSend}), evaluated as: ${termsAcceptedBeforeSend}`);
   
   const result = await sendPaymentRequest(
@@ -108,10 +121,15 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     deliveryMethod,
     clientEmail,
     clientMobile,
-    confirmed,
+    effectiveConfirmed,
     termsAcceptedBeforeSend,
     progressCallback
   );
+
+  if (result.requiresConfirmation && callSid) {
+    if (!conversations[callSid]) conversations[callSid] = {};
+    conversations[callSid].paymentRequestConfirmationRequested = true;
+  }
   
   // CRITICAL: Handle terms-related results FIRST (before any other processing)
   // Terms check is MANDATORY and must be handled before email/mobile confirmation

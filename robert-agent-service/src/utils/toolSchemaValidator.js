@@ -251,13 +251,13 @@ const bookingStepProcessPaymentSchema = z.object({
 const bookingStepSendConfirmationSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
-  customerEmail: z.string().email()
+  customerEmail: z.string().email().optional()
 });
 
 const bookingStepSendTermsSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
-  customerEmail: z.string().email()
+  customerEmail: z.string().email().optional()
 });
 
 const bookingStepSendSMSSchema = z.object({

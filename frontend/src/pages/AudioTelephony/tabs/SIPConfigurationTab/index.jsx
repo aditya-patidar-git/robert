@@ -62,19 +62,19 @@ const SIPConfigurationTab = () => {
     }
   }, [sipConfigData, reset]);
 
-  // Connection test hook
+  // Connection test hook (normalize so hook uses actual test result, not just HTTP success)
   const { testConnection, status, loading: testLoading, error, lastAttempt } = useConnectionTest(
     async (config) => {
-      // Get current form values
       const formValues = watch();
-      const testConfig = {
-        ...formValues.sipSettings,
-        ...config
-      };
-      
-      // Update config first, then test
+      const testConfig = { ...formValues.sipSettings, ...config };
       await telephonyService.updateSipConfig(testConfig);
-      return await telephonyService.testSipConnection();
+      const response = await telephonyService.testSipConnection();
+      const testResult = response?.data?.testResult ?? response?.testResult;
+      const actualSuccess = testResult?.success ?? response?.success;
+      if (actualSuccess) {
+        return { success: true, message: testResult?.message || 'Connection test successful', data: testResult?.data };
+      }
+      return { success: false, message: testResult?.message || 'Connection test failed', error: testResult?.error || testResult?.message };
     }
   );
 

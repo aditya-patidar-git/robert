@@ -16,12 +16,23 @@ class ProgressIndicatorService {
     this.DEFAULT_UPDATE_INTERVAL_MS = 14000;
     /** Retry delay when response lock is unavailable (ms). */
     this.PERIODIC_UPDATE_RETRY_DELAY_MS = 3000;
-    /** Max retries (total attempts = 1 + this value). */
-    this.MAX_PERIODIC_UPDATE_RETRIES = 4;
+    /** Max retries (total attempts = 1 + this value). Increased so lookup_contact etc. can acquire lock. */
+    this.MAX_PERIODIC_UPDATE_RETRIES = 7;
     /** Min gap between queue-driven progress updates (ms). */
     this.QUEUED_UPDATE_MIN_GAP_MS = 5000;
   }
 
+  /**
+   * Build a strict instruction so the model says ONLY the given holding phrase during periodic/queue updates.
+   * Used for every step (diaries, booking options, lookup_contact, contact details, post-booking) to avoid any wrong or invalid information.
+   * @param {string} escapedMessage - The exact phrase to say (already escaped for embedding in JSON string)
+   * @param {string} toolName - Current tool name (e.g. booking_step_select_session) for context
+   * @returns {string} Instruction string for response.create
+   */
+  buildStrictHoldingInstruction(escapedMessage, toolName) {
+    const step = toolName || 'current step';
+    return `CRITICAL — SYSTEM HOLDING MESSAGE. While ${step} is running, you MUST output ONLY the exact phrase below. No other words. No summary of the booking. No confirmation. No apology. No rephrasing. Do NOT mention: course name, date, time, location, session, payment, bike type, transfer, confirmation, "you're all set", contact details, full name, email, phone, or next steps. Do not ask any questions. Do not call any tools. If you cannot say only this phrase, say nothing. The ONLY phrase you are allowed to say is: "${escapedMessage}". Say that phrase and nothing else.`;
+  }
 
   /**
    * Check if periodic updates should be enabled for a tool
@@ -94,22 +105,25 @@ class ProgressIndicatorService {
     // Step-based tools will use longer thresholds to avoid redundant messages for quick steps
     const allowsPeriodicUpdates = this.shouldEnablePeriodicUpdates(toolName);
     // Tools that get 3 periodic updates:
-    // - booking_step_select_booking_options (after user preferences), booking_step_lookup_contact, booking_step_search_client, booking_step_select_session (diaries), cancellation_step_search_client
+    // - booking_step_lookup_contact, booking_step_search_client, booking_step_select_session (diaries), cancellation_step_search_client
     // Tools that get 2 periodic updates:
-    // - booking_step_create_new_contact, booking_step_fill_contact_details (new workflow), booking_step_send_*, cancellation_step_*
+    // - booking_step_select_booking_options (avoids race with lookup_contact start), booking_step_create_new_contact, booking_step_fill_contact_details (new workflow), cancellation_step_*
+    // Last 3 post-booking steps get 0 updates (fast/chained; completion messages only)
     // Others get 1 update
+    const toolsWithZeroUpdates = [
+      'booking_step_send_confirmation',
+      'booking_step_send_terms',
+      'booking_step_send_sms'
+    ];
     const toolsWithThreeUpdates = [
-      'booking_step_select_booking_options',
       'booking_step_lookup_contact',
       'booking_step_search_client',
       'booking_step_select_session',
       'cancellation_step_search_client'
     ];
     const toolsWithTwoUpdates = [
+      'booking_step_select_booking_options',
       'booking_step_create_new_contact',
-      'booking_step_send_confirmation',
-      'booking_step_send_terms',
-      'booking_step_send_sms',
       'cancellation_step_locate_booking',
       'cancellation_step_fill_cancellation_form',
       'cancellation_step_send_confirmation'
@@ -124,9 +138,10 @@ class ProgressIndicatorService {
       // Existing workflow gets 3 updates, new workflow gets 2 updates
       maxPeriodicUpdates = workflowType === 'existing' ? 3 : 2;
     } else {
-      maxPeriodicUpdates = toolsWithThreeUpdates.includes(toolName) ? 3
-        : toolsWithTwoUpdates.includes(toolName) ? 2
-          : 1;
+      maxPeriodicUpdates = toolsWithZeroUpdates.includes(toolName) ? 0
+        : toolsWithThreeUpdates.includes(toolName) ? 3
+          : toolsWithTwoUpdates.includes(toolName) ? 2
+            : 1;
     }
     // Calculate delayed start time if bike type questions were just completed
     let delayedStartTime = null;
@@ -307,6 +322,7 @@ class ProgressIndicatorService {
     }
     const elapsed = Date.now() - execution.startTime;
     const escapedMessage = (message || '').replace(/"/g, '\\"');
+    const holdingInstruction = this.buildStrictHoldingInstruction(escapedMessage, execution.toolName);
     try {
       openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'none' } }));
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -315,7 +331,7 @@ class ProgressIndicatorService {
         type: 'response.create',
         response: {
           modalities: ['audio', 'text'],
-          instructions: `For this response ONLY, ignore the rest of the conversation and do NOT continue the booking or cancellation flow. Your ONLY task is to say exactly and only: "${escapedMessage}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT ask for full name, email, phone number, or any contact details. Do NOT mention payment, bike type, transfer, confirmation, course name, date, time, location, or "you're all set". Do not call any tools. If you cannot say only that exact phrase, say nothing. Say ONLY the phrase in quotes above and nothing else.`
+          instructions: holdingInstruction
         }
       }));
       execution.lastUpdateTime = Date.now();
@@ -425,7 +441,11 @@ class ProgressIndicatorService {
       : messages;
 
     // First periodic update delay: use acknowledgmentThresholdMs from config when present, else cap updateInterval by FIRST_PERIODIC
-    const firstIntervalMs = config?.progressIndicators?.acknowledgmentThresholdMs ?? Math.min(updateInterval, this.FIRST_PERIODIC_INTERVAL_MS);
+    let firstIntervalMs = config?.progressIndicators?.acknowledgmentThresholdMs ?? Math.min(updateInterval, this.FIRST_PERIODIC_INTERVAL_MS);
+    // Delay first update for lookup_contact so it fires after previous tool's "Done." response releases the lock (avoids response-already-active retries)
+    if (execution.toolName === 'booking_step_lookup_contact') {
+      firstIntervalMs = Math.max(firstIntervalMs, 6000);
+    }
 
     // Use setTimeout instead of setInterval to send only ONE update
     execution.updateTimeout = setTimeout(() => {
@@ -524,7 +544,7 @@ class ProgressIndicatorService {
 
     const elapsed = Date.now() - execution.startTime;
     const escapedMessage = (message || '').replace(/"/g, '\\"');
-    const holdingInstruction = `For this response ONLY, ignore the rest of the conversation and do NOT continue the booking or cancellation flow. Your ONLY task is to say exactly and only: "${escapedMessage}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT ask for full name, email, phone number, or any contact details. Do NOT mention payment, bike type, transfer, confirmation, course name, date, time, location, or "you're all set". Do not call any tools. If you cannot say only that exact phrase, say nothing. Say ONLY the phrase in quotes above and nothing else.`;
+    const holdingInstruction = this.buildStrictHoldingInstruction(escapedMessage, execution.toolName);
     try {
       openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'none' } }));
         await new Promise(resolve => setTimeout(resolve, 100));

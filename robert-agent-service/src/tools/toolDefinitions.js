@@ -426,10 +426,10 @@ CRITICAL WORKFLOW:
           },
           customerEmail: {
             type: 'string',
-            description: 'Customer email address'
+            description: 'Customer email address (optional; recipient is taken from booking context)'
           }
         },
-        required: ['courseType', 'workflowType', 'customerEmail']
+        required: ['courseType', 'workflowType']
       }
     },
     {
@@ -451,10 +451,10 @@ CRITICAL WORKFLOW:
           },
           customerEmail: {
             type: 'string',
-            description: 'Customer email address'
+            description: 'Customer email address (optional; recipient is taken from booking context)'
           }
         },
-        required: ['courseType', 'workflowType', 'customerEmail']
+        required: ['courseType', 'workflowType']
       }
     },
     {

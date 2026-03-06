@@ -12,6 +12,8 @@ import transferCallTool from '../../tools/transferCall.js';
 import sessionStateManager from '../../services/browser/sessionStateManager.js';
 import { AFTER_LOGIN_MESSAGE } from '../../config/cancellationPhrases.js';
 import toolExecutionService from '../../services/toolExecutionService.js';
+import progressIndicatorService from '../../services/progressIndicatorService.js';
+import configManager from '../../agent/configManager.js';
 
 /**
  * Tool Coordinator
@@ -187,6 +189,17 @@ export class ToolCoordinator {
         type: 'conversation.item.create',
         item: { type: 'function_call', call_id: callId, name: toolName, arguments: argsStr }
       }));
+      // Register with progress indicator so periodic updates (e.g. for booking_step_lookup_contact) are scheduled and heard
+      const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+      const getWsRef = () => (this.state.isClosed ? null : this.openaiWs);
+      progressIndicatorService.scheduleAcknowledgmentAndPeriodicUpdates(
+        callSid,
+        toolName,
+        this.openaiWs,
+        conversationBehaviorConfig,
+        this.state,
+        getWsRef
+      );
       const executionResult = await toolExecutionService.executeTool({
         callId,
         callSid,
@@ -199,6 +212,7 @@ export class ToolCoordinator {
       });
       if (executionResult?.callEnded === true) {
         this.state.pendingChainedToolCall = null;
+        progressIndicatorService.endToolExecution(callSid);
         return;
       }
       await this.toolCallHandler.resultSubmitter.submitResult(callSid, callId, executionResult);
@@ -212,10 +226,12 @@ export class ToolCoordinator {
         toolName,
         toolResult: result
       });
+      progressIndicatorService.endToolExecution(callSid);
       console.log(`✅ [${callSid}] Chained tool ${toolName} executed and response triggered`);
     } catch (err) {
       console.error(`❌ [${callSid}] Chained tool ${toolName} failed:`, err);
       this.state.pendingChainedToolCall = null;
+      progressIndicatorService.endToolExecution(callSid);
       throw err;
     }
   }
