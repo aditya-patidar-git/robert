@@ -10,8 +10,10 @@ class ProgressIndicatorService {
     this.activeExecutions = new Map(); // callSid -> { toolName, startTime, lastUpdateTime, updateTimeout, periodicUpdateCount, maxPeriodicUpdates, stateManager, allowsPeriodicUpdates, delayedStartTime, expectHoldingResponse }
     this.holdingResponseIds = new Map(); // callSid -> Set of responseId (periodic updates; do not set waitingForUser when these complete)
     this.expectNonWaitingResponseCallSids = new Set(); // callSids for which the next response.created should be registered as non-waiting (e.g. "Your booking options are successfully selected")
-    /** First periodic update fires after this (ms) so at least one fires before tool often ends. */
+    /** First periodic update fires after this (ms) when config is not available. Default: 6s. */
     this.FIRST_PERIODIC_INTERVAL_MS = 6000;
+    /** Default gap (ms) between next periodic updates when config.progressIndicators.updateIntervalMs is not available. 14s. */
+    this.DEFAULT_UPDATE_INTERVAL_MS = 14000;
     /** Retry delay when response lock is unavailable (ms). */
     this.PERIODIC_UPDATE_RETRY_DELAY_MS = 3000;
     /** Max retries (total attempts = 1 + this value). */
@@ -36,6 +38,7 @@ class ProgressIndicatorService {
     // 3. booking_step_lookup_contact - looks up existing client contact (existing workflow only)
     // 4. booking_step_create_new_contact - creates new client contact (new workflow only)
     // 5. booking_step_fill_contact_details - fills contact details form and checks for missing fields sequentially
+    // 5b. booking_step_process_payment - processes payment (1 update)
     // 6. booking_step_send_confirmation - sends booking confirmation email
     // 7. booking_step_send_terms - sends terms and conditions email
     // 8. booking_step_send_sms - sends SMS confirmation
@@ -50,6 +53,7 @@ class ProgressIndicatorService {
       || toolName === 'booking_step_lookup_contact'
       || toolName === 'booking_step_create_new_contact'
       || toolName === 'booking_step_fill_contact_details'
+      || toolName === 'booking_step_process_payment'
       || toolName === 'booking_step_send_confirmation'
       || toolName === 'booking_step_send_terms'
       || toolName === 'booking_step_send_sms'
@@ -89,27 +93,20 @@ class ProgressIndicatorService {
     // Enable progress tracking for all tools, including step-based tools
     // Step-based tools will use longer thresholds to avoid redundant messages for quick steps
     const allowsPeriodicUpdates = this.shouldEnablePeriodicUpdates(toolName);
-    // Tools that get 3 periodic updates (after bike type questions until client details page):
-    // - booking_step_lookup_contact (existing workflow only - 3 updates)
-    // - booking_step_fill_contact_details (existing workflow only - 3 updates)
-    // - booking_step_search_client (find and verify client - 3 updates)
-    // - cancellation_step_search_client (find and verify client - cancellation, 3 updates)
+    // Tools that get 3 periodic updates:
+    // - booking_step_select_booking_options (after user preferences), booking_step_lookup_contact, booking_step_search_client, booking_step_select_session (diaries), cancellation_step_search_client
     // Tools that get 2 periodic updates:
-    // - booking_step_create_new_contact (new workflow only - 2 updates)
-    // - booking_step_fill_contact_details (new workflow only - 2 updates)
-    // Booking: booking_step_select_session, booking_step_send_confirmation, booking_step_send_terms, booking_step_send_sms
-    // Cancellation: cancellation_step_locate_booking, cancellation_step_fill_cancellation_form,
-    //               cancellation_step_send_confirmation
+    // - booking_step_create_new_contact, booking_step_fill_contact_details (new workflow), booking_step_send_*, cancellation_step_*
     // Others get 1 update
     const toolsWithThreeUpdates = [
+      'booking_step_select_booking_options',
       'booking_step_lookup_contact',
       'booking_step_search_client',
+      'booking_step_select_session',
       'cancellation_step_search_client'
     ];
     const toolsWithTwoUpdates = [
       'booking_step_create_new_contact',
-      'booking_step_select_session',
-      'booking_step_select_booking_options',
       'booking_step_send_confirmation',
       'booking_step_send_terms',
       'booking_step_send_sms',
@@ -318,7 +315,7 @@ class ProgressIndicatorService {
         type: 'response.create',
         response: {
           modalities: ['audio', 'text'],
-          instructions: `CRITICAL: You MUST say EXACTLY and ONLY: "${escapedMessage}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT mention contact details, payment, bike type, transfer, updating phone number, or any step of the booking or cancellation flow. Do NOT output any booking confirmation, course name, date, time, location, or "you're all set". Do not call any tools. This is a generic holding message only—say ONLY the exact phrase above and nothing else.`
+          instructions: `For this response ONLY, ignore the rest of the conversation and do NOT continue the booking or cancellation flow. Your ONLY task is to say exactly and only: "${escapedMessage}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT ask for full name, email, phone number, or any contact details. Do NOT mention payment, bike type, transfer, confirmation, course name, date, time, location, or "you're all set". Do not call any tools. If you cannot say only that exact phrase, say nothing. Say ONLY the phrase in quotes above and nothing else.`
         }
       }));
       execution.lastUpdateTime = Date.now();
@@ -418,7 +415,7 @@ class ProgressIndicatorService {
       clearInterval(execution.updateInterval);
     }
 
-    const updateInterval = config.progressIndicators.updateIntervalMs || 12000;
+    const updateInterval = config.progressIndicators.updateIntervalMs || this.DEFAULT_UPDATE_INTERVAL_MS;
     const messages = config.progressIndicators.updateMessages || [
       "Please bear with me for a moment"
     ];
@@ -527,6 +524,7 @@ class ProgressIndicatorService {
 
     const elapsed = Date.now() - execution.startTime;
     const escapedMessage = (message || '').replace(/"/g, '\\"');
+    const holdingInstruction = `For this response ONLY, ignore the rest of the conversation and do NOT continue the booking or cancellation flow. Your ONLY task is to say exactly and only: "${escapedMessage}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT ask for full name, email, phone number, or any contact details. Do NOT mention payment, bike type, transfer, confirmation, course name, date, time, location, or "you're all set". Do not call any tools. If you cannot say only that exact phrase, say nothing. Say ONLY the phrase in quotes above and nothing else.`;
     try {
       openaiWs.send(JSON.stringify({ type: 'session.update', session: { tool_choice: 'none' } }));
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -535,12 +533,12 @@ class ProgressIndicatorService {
           type: 'response.create',
           response: {
             modalities: ['audio', 'text'],
-          instructions: `CRITICAL: You MUST say EXACTLY and ONLY: "${escapedMessage}". Do NOT add or rephrase. Do NOT ask any questions. Do NOT mention contact details, payment, bike type, transfer, updating phone number, or any step of the booking or cancellation flow. Do NOT offer to transfer or to update details. Do NOT output any booking confirmation, course name, date, time, location, or "you're all set". Do not call any tools. This is a generic holding message only—say ONLY the exact phrase above and nothing else.`
+            instructions: holdingInstruction
           }
         }));
         execution.lastUpdateTime = Date.now();
         execution.periodicUpdateCount++;
-        console.log(`📊 [${callSid}] Sent periodic update ${execution.periodicUpdateCount}/${execution.maxPeriodicUpdates} after ${elapsed}ms: "${message}"`);
+        console.log(`📊 [${callSid}] Sent periodic update ${execution.periodicUpdateCount}/${execution.maxPeriodicUpdates} after ${elapsed}ms: "${message}" (instruction length: ${holdingInstruction.length})`);
         const estimatedAudioDuration = this.estimateAudioDuration(message);
       const updateCompletionTime = Date.now() + estimatedAudioDuration;
       if (!execution.toolName.startsWith('cancellation_step_')) {

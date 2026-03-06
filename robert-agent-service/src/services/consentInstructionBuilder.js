@@ -7,7 +7,7 @@
  * Flow sequence:
  * 1. Language preference question (greeting) - FIRST
  * 2. Consent question - AFTER language is selected
- * 3. "What would you like to do today?" (main follow-up) - AFTER consent is given
+ * 3. "What would you like to do today?" (main follow-up) - AFTER consent is given OR declined
  */
 
 class ConsentInstructionBuilder {
@@ -18,6 +18,7 @@ class ConsentInstructionBuilder {
    * @param {string} params.consentQuestion - Consent question text
    * @param {boolean} params.languageSelected - Whether language has been selected
    * @param {boolean} params.consentGiven - Whether consent has been given
+   * @param {boolean} params.consentResponded - Whether caller has answered the consent question (yes or no); if true, flow proceeds either way
    * @param {boolean} params.requireExplicitConsent - Whether explicit consent is required
    * @param {string} params.baseInstructions - Base instructions to append
    * @returns {string|null} Complete instruction string or null if not needed
@@ -27,11 +28,12 @@ class ConsentInstructionBuilder {
     consentQuestion,
     languageSelected = false,
     consentGiven = false,
+    consentResponded = false,
     requireExplicitConsent = true,
     baseInstructions = ''
   }) {
-    if (!requireExplicitConsent || consentGiven) {
-      // Consent not required or already given - return null to use default flow
+    if (!requireExplicitConsent || consentResponded) {
+      // Consent not required or caller has already responded (given or declined) - return null to use default flow
       return null;
     }
 
@@ -52,8 +54,8 @@ CRITICAL RULES:
 - The language preference question is MANDATORY - it cannot be skipped
 
 ${baseInstructions}`;
-    } else if (!consentGiven) {
-      // Phase 2: Consent question - AFTER language is selected
+    } else {
+      // Phase 2: Consent question - AFTER language is selected, waiting for caller to respond (yes or no)
       return `IMPORTANT: You must now ask the consent question. Follow this exact sequence:
 
 1. First, say: "${consentNotice}"
@@ -64,7 +66,7 @@ ${baseInstructions}`;
 CRITICAL RULES:
 - You MUST ask the consent question NOW before proceeding with any other conversation
 - Say exactly and only "${consentQuestion}" - no greeting, no repetition in the same turn
-- You MUST NOT ask "What would you like to do today?" until consent is given
+- You MUST NOT ask "What would you like to do today?" until the caller has responded to the consent question (yes or no). If they decline recording, acknowledge briefly and continue the call with "What would you like to do today?"
 - If you cannot clearly understand the caller's response, repeat the question once using the exact phrase above
 - Do not assume or guess the answer - always wait for a clear response
 
@@ -102,12 +104,12 @@ ${baseInstructions}`;
    - WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
    - If the caller's response is unclear, repeat the question once only, saying exactly: "${consentQuestion}"
 
-5. ONLY AFTER consent is given, you may proceed to: "What would you like to do today?"
+5. AFTER the caller responds to the consent question (yes or no), you may proceed to: "What would you like to do today?" If they decline recording, acknowledge briefly (e.g. that the call will not be recorded) and then continue with "What would you like to do today?"
 
 CRITICAL RULES:
 - You MUST ask the language preference question FIRST before any other conversation
 - You MUST ask the consent question IMMEDIATELY after language preference is confirmed
-- You MUST NOT ask "What would you like to do today?" until both language preference AND consent are confirmed
+- You MUST NOT ask "What would you like to do today?" until the caller has responded to the consent question (yes or no). If they decline, acknowledge and continue the call as usual
 - If you cannot clearly understand the caller's response (due to noise, barge-in, or unclear speech), you MUST repeat the question
 - Do not assume or guess the answer - always wait for a clear response
 - Both the language preference question and consent question are MANDATORY - they cannot be skipped

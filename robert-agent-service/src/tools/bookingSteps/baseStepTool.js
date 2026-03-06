@@ -10,7 +10,7 @@ import { getStepNumber, getStepName, getNextStepName, STEP_NAMES } from '../../s
 import { validatePreferences, generatePreferenceErrorMessage } from '../../services/browser/preferenceValidator.js';
 import { BrowserManager } from '../../services/browser/browserManager.js';
 import configManager from '../../agent/configManager.js';
-import { conversations } from '../../shared/state.js';
+import { conversations, updateConversation } from '../../shared/state.js';
 import { storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from '../../services/commonBookingSteps/slotStorageUtils.js';
 
 const bookingToolNameMap = {
@@ -148,6 +148,9 @@ export class BaseStepTool {
     const { courseType, workflowType, ...stepArgs } = parameters;
 
     try {
+      if (callContext.callAbortSignal?.aborted) {
+        return { success: false, error: 'Call ended', callEnded: true };
+      }
       console.log(`🔧 [${this.getStepName()}] Executing step for ${callSid}`);
 
       // Validate required parameters
@@ -256,6 +259,9 @@ export class BaseStepTool {
         callSid // Include callSid for steps that need it (e.g., searchClient)
       };
 
+      if (callContext.callAbortSignal?.aborted) {
+        return { success: false, error: 'Call ended', callEnded: true };
+      }
       // Execute step (pass progressCallback for path-based voice acknowledgments)
       const result = await this.stepExecutor.executeStep(
         stepName,
@@ -747,14 +753,21 @@ export class BaseStepTool {
       }
     }
 
-    // Step 1 (check_availability): require preference questions before opening the availability table
+    // Step 1 (check_availability): Agent MUST ask date, location, and instructor preferences first; answers may all be "no preference".
+    // First call with no preferences → return requiresPreferences and set flag so agent asks, then calls again. Second call with no preferences → allow.
     const hasAnyPreference = !!(stepArgs.preferredDate || stepArgs.preferredTime || stepArgs.location || stepArgs.instructor);
     if (stepNumber === 1 && !hasAnyPreference) {
-      return {
-        valid: false,
-        requiresPreferences: true,
-        message: 'Before checking availability, ask the caller: "Do you have a preferred date or time?" and "Any location preference?" (e.g. Alperton, Croydon, Edgware). If they have none, say so and you will suggest some options. Then call this tool again with their preferences, or with no preferences if they said they have none.'
-      };
+      const promptSent = conversations[callSid]?.checkAvailabilityPreferencePromptSent;
+      if (!promptSent) {
+        if (!conversations[callSid]) conversations[callSid] = {};
+        conversations[callSid].checkAvailabilityPreferencePromptSent = true;
+        updateConversation(callSid, { checkAvailabilityPreferencePromptSent: true }).catch(() => {});
+        return {
+          valid: false,
+          requiresPreferences: true,
+          message: 'You MUST ask the caller these three questions before checking availability: (1) Do you have any preference for date or time? (2) Do you have any location preference? (e.g. Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon) (3) Do you have any instructor preference? They may answer "no preference" to any or all. After you have asked and received their answers, call this tool again with courseType and their preferences (or omit/null for no preference).'
+        };
+      }
     }
 
     // CRITICAL FIX: For selectBookingOptions, defer preference validation until AFTER navigation

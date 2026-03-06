@@ -671,17 +671,24 @@ async function cleanupAllActiveConnections() {
 
   for (const callSid of callSids) {
     const client = realtimeClients[callSid];
-    if (client?.connectionManager) {
-      client.connectionManager.cleanup();
+    try {
+      const mgr = client?.connectionManager;
+      if (mgr && typeof mgr.cleanup === 'function') {
+        mgr.cleanup();
+      } else if (mgr && typeof mgr.stopKeepAlive === 'function') {
+        mgr.stopKeepAlive();
+      }
+    } catch (err) {
+      console.warn(`⚠️ Error cleaning up connection manager for ${callSid}:`, err?.message || err);
     }
     if (client?.openaiWs) {
       if (client.openaiWs.readyState === WebSocket.OPEN) {
-        client.openaiWs.close(1000, 'Server shutting down');
+        try { client.openaiWs.close(1000, 'Server shutting down'); } catch (_) { /* ignore */ }
       }
     }
     if (client?.twilioWs) {
       if (client.twilioWs.readyState === WebSocket.OPEN) {
-        client.twilioWs.close(1000, 'Server shutting down');
+        try { client.twilioWs.close(1000, 'Server shutting down'); } catch (_) { /* ignore */ }
       }
     }
   }

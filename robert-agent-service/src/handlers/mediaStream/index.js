@@ -1,5 +1,6 @@
 import { WebSocket } from "ws";
 import { conversations, realtimeClients } from "../../shared/state.js";
+import { register as registerCallAbort, abortAndRemove as abortCallAndRemove } from "../../shared/callAbortRegistry.js";
 import testClientRegistry from "../../services/testClientRegistry.js";
 import { ConnectionManager } from "./connection/index.js";
 import { CallStateManager } from "./state/index.js";
@@ -107,6 +108,9 @@ export const handleMediaStreamConnection = (ws, req) => {
 
             // Reserve slot immediately to prevent race with second connection before setupOpenAI completes
             realtimeClients[callSidFromStartEvent] = { twilioWs: ws, pending: true };
+
+            // Register per-call AbortController so in-flight tool execution can be aborted on disconnect
+            registerCallAbort(callSidFromStartEvent);
             
             // Initialize state with call information
             // Use start event callSid for state management (Twilio's canonical ID)
@@ -332,6 +336,11 @@ export const handleMediaStreamConnection = (ws, req) => {
             stateManager.accepting = false;
             
             console.log(`🧹 Cleaning up call ${stateManager.callSid} - reason: ${reason}`);
+
+            // Abort in-flight tool execution first so steps exit quickly
+            if (stateManager.callSid) {
+                abortCallAndRemove(stateManager.callSid);
+            }
             
             // Cleanup OpenAI connection
             if (openaiIntegration) {
@@ -491,8 +500,13 @@ export const handleMediaStreamConnection = (ws, req) => {
                         updateData,
                         { upsert: true }
                     );
-                    if (stateManager.callSid && conversations[stateManager.callSid]) {
-                        delete conversations[stateManager.callSid];
+                    if (stateManager.callSid) {
+                        if (conversations[stateManager.callSid]) {
+                            delete conversations[stateManager.callSid];
+                        }
+                        sessionManagementService.deleteSession(stateManager.callSid);
+                        const sessionStateManager = (await import('../../services/browser/sessionStateManager.js')).default;
+                        sessionStateManager.clearSession(stateManager.callSid);
                     }
                 } catch (dbError) {
                     console.error(`❌ [${stateManager.callSid}] Error updating CallRecord:`, dbError);

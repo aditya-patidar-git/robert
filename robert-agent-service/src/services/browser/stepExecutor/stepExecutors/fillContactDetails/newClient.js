@@ -16,8 +16,9 @@ import * as commonSteps from '../../../../commonBookingSteps/index.js';
  * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
  * @returns {Promise<Object>} Step execution result
  */
-const REQUIRED_PARAM_NAMES = ['customerEmail', 'customerMobile', 'postcode', 'houseNumber', 'licenceHeld', 'nationalInsurance', 'drivingLicenceNumber'];
+const REQUIRED_PARAM_NAMES = ['customerName', 'customerEmail', 'customerMobile', 'postcode', 'houseNumber', 'licenceHeld', 'nationalInsurance', 'drivingLicenceNumber'];
 const FIELD_LABELS_SHORT = {
+  customerName: 'full name',
   customerEmail: 'email address',
   customerMobile: 'mobile number',
   postcode: 'postcode',
@@ -29,6 +30,7 @@ const FIELD_LABELS_SHORT = {
 
 function getArgValue(args, paramName) {
   const map = {
+    customerName: () => args.customerName || args.name,
     customerEmail: () => args.customerEmail,
     customerMobile: () => args.customerMobile || args.customerPhone,
     postcode: () => args.postcode,
@@ -76,7 +78,7 @@ export async function executeNewClientFlow(page, args, sessionState, screenshots
   if (skipNextClick) {
     const labelsList = missingFromArgs.map(p => FIELD_LABELS_SHORT[p] || p).join(', ');
     const message = `I need your ${labelsList}; could you please provide them?`;
-    const instruction = `Collect ONLY these missing details from the caller. For each detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Do NOT move to the next question until the current one has been repeated and verified. Do NOT read back or repeat the caller's personal details on the call (GDPR). When you have confirmed values for all of: ${missingFromArgs.join(', ')}, call booking_step_fill_contact_details ONCE with those parameters.`;
+    const instruction = `Collect ONLY these missing details from the caller. For each detail: (1) ask for the detail and note it down; (2) your NEXT turn MUST be to ask the caller to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). If the repeat MATCHES what you noted, use it and proceed to the next detail. If the repeat does NOT match, ask once more for that detail only (e.g. "Could you tell me that one more time?") and take that answer as the final value—do not ask for a second repeat; then proceed to the next detail. Do NOT move to the next question until the current one is either verified (match) or finalised (one re-ask). STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself. When you have confirmed or finalised values for all of: ${missingFromArgs.join(', ')}, call booking_step_fill_contact_details ONCE with ALL those parameters.`;
     console.log(`⚠️ [STEP 7] Missing required fields from args (${missingFromArgs.length}): ${missingFromArgs.join(', ')} — did not click Next`);
     return {
       success: true,

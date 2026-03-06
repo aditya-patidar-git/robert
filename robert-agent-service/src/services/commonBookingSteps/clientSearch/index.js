@@ -38,7 +38,17 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     
     // Handle mobile search retry logic
     if (searchType === 'mobile') {
-      // Validate UK mobile format
+      // Reject +44 format: require 07 + 11 digits (UK format) so we don't auto-convert
+      const cleanedForFormat = (searchValue || '').replace(/[\s\-\(\)]/g, '');
+      if (cleanedForFormat.startsWith('+44')) {
+        return {
+          found: false,
+          requiresVerification: false,
+          error: 'Please provide your mobile number in UK format: 07 followed by 9 digits (11 digits total). For example 07123456789.',
+          retryPrompt: 'Please say your mobile number starting with 07, then the remaining 9 digits—for example 07 123 456 789.'
+        };
+      }
+      // Validate UK mobile format (07 + 9 digits = 11 digits)
       if (!validateUKMobile(searchValue)) {
         return {
           found: false,

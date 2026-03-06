@@ -206,12 +206,12 @@ export class TranscriptionHandler {
     
     const isAudioPlaying = isAgentAudioPlaying(this.state);
     const flowState = getConversationFlowState(this.state.callSid, this.state);
-    const inConsentOrLanguagePhase = flowState.waitingForLanguage || (flowState.languageSelected && !flowState.consentGiven);
-    const consentJustGiven =
-      flowState.consentGiven &&
+    const inConsentOrLanguagePhase = flowState.waitingForLanguage || (flowState.languageSelected && !flowState.consentResponded);
+    const consentJustResponded =
+      flowState.consentResponded &&
       this.state.agentFinishedSpeakingTime > 0 &&
       Date.now() - this.state.agentFinishedSpeakingTime < 5000;
-    const useRelaxedBlocking = inConsentOrLanguagePhase || consentJustGiven;
+    const useRelaxedBlocking = inConsentOrLanguagePhase || consentJustResponded;
     const isAudioPlayingForBlocking = useRelaxedBlocking
       ? isAgentAudioPlaying(this.state, { consentPhaseRelaxed: true })
       : isAudioPlaying;

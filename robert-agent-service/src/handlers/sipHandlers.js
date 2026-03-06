@@ -601,14 +601,13 @@ export const handleCallStatus = async (req, res) => {
     const sessionManagementService = (await import('../services/sessionManagementService.js')).default;
     if (['completed', 'failed', 'busy', 'no-answer', 'ended'].includes(status)) {
       console.log(`🧹 [SIP] Cleaning up resources for call ${call_id}`);
-      
-      // Close WebSocket if open
+      const { abortAndRemove: abortCallAndRemove } = await import('../shared/callAbortRegistry.js');
+      abortCallAndRemove(call_id);
       closeSipCallWebSocket(call_id);
-      
-      // Clean up tool execution state
       toolExecutionService.cleanup(call_id);
-      
       sessionManagementService.deleteSession(call_id);
+      const sessionStateManager = (await import('../services/browser/sessionStateManager.js')).default;
+      sessionStateManager.clearSession(call_id);
       sipService.deleteSession(call_id);
     }
 

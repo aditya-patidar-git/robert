@@ -69,7 +69,7 @@ export class WebSocketConnectionManager {
 
     // Handle pong responses
     this.ws.on('pong', () => {
-      if (isProcessShuttingDown || this.pingInterval === null) return;
+      if (isProcessShuttingDown || this.isPermanentlyClosed || this.pingInterval === null) return;
       if (this.pongTimeout) {
         clearTimeout(this.pongTimeout);
         this.pongTimeout = null;
@@ -88,6 +88,7 @@ export class WebSocketConnectionManager {
 
     // Start ping interval
     this.pingInterval = setInterval(() => {
+      if (isProcessShuttingDown || this.isPermanentlyClosed || this.pingInterval === null) return;
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.lastPingTime = Date.now();
         try {
@@ -97,7 +98,7 @@ export class WebSocketConnectionManager {
             this.pongTimeout = null;
           }
           this.pongTimeout = setTimeout(() => {
-            if (this.pingInterval === null) return;
+            if (this.pingInterval === null || this.isPermanentlyClosed) return;
             this.connectionQuality.consecutivePongMisses++;
             console.warn(`⚠️ [${this.callSid}] Pong timeout - missed ${this.connectionQuality.consecutivePongMisses} consecutive pongs`);
             if (this.connectionQuality.consecutivePongMisses >= this.config.unhealthyThreshold) {
@@ -244,7 +245,7 @@ export class WebSocketConnectionManager {
   cleanup() {
     this.isPermanentlyClosed = true;
     this.messageQueue = [];
-    this.stopKeepAlive();
+    this.stopKeepAlive(); // clear interval and timeout first so no more pong logs
     this.warningLogged = false;
     this.connectionQuality = {
       latency: [],

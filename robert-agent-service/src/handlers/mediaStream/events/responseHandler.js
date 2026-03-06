@@ -104,7 +104,7 @@ export class ResponseHandler {
       const userSpokeBeforeResponse = this.state.userSpeechStartedTime > 0 && this.state.userSpeechStartedTime < this.state.responseStartTime;
 
       const flowState = getConversationFlowState(this.state.callSid, this.state);
-      const consentRequired = flowState.consentRequested && !flowState.consentGiven && flowState.languageSelected;
+      const consentRequired = flowState.consentRequested && !flowState.consentResponded && flowState.languageSelected;
 
       const isInterrupted = this.state.isInterrupted;
       const isRespondingToDifferentResponse = this.state.isResponding && this.state.activeResponseId !== event.response?.id;

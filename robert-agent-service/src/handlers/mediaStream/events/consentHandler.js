@@ -181,7 +181,10 @@ export class ConsentHandler {
       conv.recordingConsent.optOutReason = transcript;
       if (conv.recordingConsent.unclearCount) conv.recordingConsent.unclearCount = 0;
       conv.recordingConsent.needsRepeat = false;
+      this.state.waitingForLanguage = false;
+      if (conv) conv.waitingForLanguage = false;
       console.log(`❌ [${this.state.callSid}] Recording consent DECLINED by user: "${transcript}"`);
+      console.log(`✅ [${this.state.callSid}] Consent declined - proceeding to main follow-up (call continues without recording)`);
     } else if (isUnclearResponse) {
       if (!conv.recordingConsent.unclearCount) conv.recordingConsent.unclearCount = 0;
       conv.recordingConsent.unclearCount++;

@@ -277,8 +277,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
                   success: true,
                   requiresAddressConfirmation: true,
                   autoPopulatedAddress: autoPopulatedAddress,
-                  message: `I believe that I now have the first line of your address, is it ${autoPopulatedAddress}?`,
-                  instruction: 'Read the auto-populated address to the client and ask if it\'s correct. If yes, proceed. If no, ask for corrected address and call tool again with correctedAddress parameter.'
+                  message: 'Can you confirm the first line of your address is correct?',
+                  instruction: 'Ask the caller to confirm the first line of their address is correct. Do NOT say or read the address aloud (GDPR). If they say yes, call booking_step_fill_contact_details again with addressConfirmed: true. If no, ask them to tell you the correct first line, then call the tool again with correctedAddress set to what they said.'
                 };
               }
             }
@@ -396,7 +396,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         const paramNames = missingFields.map(f => f.paramName);
         const labelsList = missingFields.map(f => f.labelShort).join(', ');
         const message = `I need your ${labelsList}; could you please provide them?`;
-        const instruction = `Collect ONLY these missing details from the caller. For each detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Do NOT move to the next question until the current one has been repeated and verified. Do NOT read back or repeat the caller's personal details on the call (GDPR). When you have confirmed values for all of: ${paramNames.join(', ')}, call booking_step_fill_contact_details ONCE with those parameters.`;
+        const instruction = `Collect ONLY these missing details from the caller. For each detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Do NOT move to the next question until the current one has been repeated and verified. STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself. When you have confirmed values for all of: ${paramNames.join(', ')}, call booking_step_fill_contact_details ONCE with those parameters.`;
         console.log(`⚠️ [STEP 8] Missing required fields (${missingFields.length}): ${paramNames.join(', ')}`);
         return {
           success: true,

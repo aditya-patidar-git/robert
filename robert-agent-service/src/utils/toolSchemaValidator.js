@@ -191,7 +191,8 @@ const bookingStepSearchClientSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing']),
   customerMobile: z.string().optional(),
-  customerEmail: z.string().email().optional()
+  customerEmail: z.string().email().optional(),
+  customerName: z.string().optional()
 });
 
 const bookingStepSelectSessionSchema = z.object({

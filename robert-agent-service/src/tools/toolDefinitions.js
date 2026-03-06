@@ -20,19 +20,15 @@ function getStepBookingToolDefinitions() {
 
 STRICT: Do NOT mention any specific dates, times, locations, or slot options until this tool has RETURNED. Before the tool returns, say ONLY that you are checking (e.g. "Let me check availability for you" or "Checking now."). Never invent or list slots—only present what the tool result contains.
 
-1. BEFORE calling this tool: Ask the caller about their preferences:
-   - "Do you have any preference for date or time?"
-   - "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon)
-   - "Do you have any instructor preference?"
-   If the caller gives their area, town, or home location (e.g. "I'm in Sutton") instead of a centre name, determine the nearest training centre from the list above, tell them which one, and pass that centre name as the location parameter.
-
-2. Call this tool with preferences (or omit if no preferences). The tool will use preferences to filter and prioritize slots when opening the availability table.
+1. BEFORE calling: Ask preferences in order. Each "no preference" (or "show latest slots") is a valid answer—then call with what was collected (or omit nulls).
+   - Date/time: "Do you have any preference for date or time?" If they say "I want to see the latest available slots", "show me the latest slots", or "no preference", treat as valid: we use the earliest date (topmost in table). Then ask location.
+   - Location: "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon). If no preference, we show all slots on the earliest date; if they give a location, we narrow down. If the caller gives their area/town (e.g. "I'm in Sutton"), use the nearest centre from the list and pass that name.
+   - Instructor: "Do you have any instructor preference?" If no preference, no filter; if they give one, we narrow down further.
+2. Call this tool with courseType and any preferences they gave; omit or pass null for "no preference". With no preferences the tool uses the earliest date and returns all slots on that date; with location or instructor it narrows options.
 
 3. AFTER this tool returns: Present ONLY the slot(s) from the tool result message. Do not add or substitute any other slots.
 
-4. WHEN caller selects a slot: Extract the slot details (date, time, location) from their response and call the NEXT step (booking_step_authenticate) with agreedSlot parameter containing the selected slot object matching one of the returned slots.
-
-The tool will use preferences to filter and prioritize slots, but will return all available slots for the caller to choose from.`,
+4. WHEN caller selects a slot: Extract the slot details (date, time, location) from their response and call the NEXT step (booking_step_authenticate) with agreedSlot containing the selected slot object.`,
       parameters: {
         type: 'object',
         properties: {
@@ -114,7 +110,7 @@ CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot paramet
     {
       type: 'function',
       name: 'booking_step_search_client',
-      description: `Step 5 (Existing workflow only): Search for existing client in Contacts tab by mobile number or email. This happens BEFORE client verification. After this step completes, client verification is required. Use this ONLY for existing client workflow after navigate_contacts. DO NOT confuse this with booking_step_lookup_contact (Step 8) which happens later in the booking form. When the caller gives a phone number, pass it as customerMobile (11 digits, UK format, no spaces).`,
+      description: `Step 5 (Existing workflow only): Search for existing client in Contacts tab. This happens BEFORE client verification. Use this ONLY for existing client workflow after navigate_contacts. DO NOT confuse this with booking_step_lookup_contact (Step 8) which happens later in the booking form. Your FIRST question must be to ask for their mobile number (UK format: 07 and 11 digits). Do NOT ask for "phone number and email" or offer both options; ask only for mobile number first. When the caller gives a phone number, pass it as customerMobile (11 digits, UK format, no spaces). Only if the tool returns a retryPrompt (e.g. ask for email or full name) should you then ask for that and call again with customerEmail or customerName.`,
       parameters: {
         type: 'object',
         properties: {
@@ -274,13 +270,13 @@ CRITICAL WORKFLOW:
     {
       type: 'function',
       name: 'booking_step_fill_contact_details',
-      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form. 
+      description: `Step 8 (Existing) / Step 7 (New): Fill contact details form.
 
 CRITICAL WORKFLOW:
 1. ONLY call this tool AFTER you have reached the contact details page (Step 8 for existing, Step 7 for new).
-2. DO NOT ask the customer for their Name, Email, Phone, Postcode, etc. until you have called this tool at least once to identify exactly what is missing on the actual CRM page.
-3. This tool returns missingFields for required details only. Gather ONLY those specific missing details from the caller; do not ask for anything else.
-4. After gathering the missing required info, call this tool again with those parameters to fill and proceed.`,
+2. DO NOT ask for Name, Email, Phone, Postcode, or any contact detail until you have called this tool at least once. The first call returns missingFields—only then ask for those specific missing fields, in one sequence, with double confirmation (ask → repeat to verify; if no match, ask once more and take that as final).
+3. Collect each missing field once: do not re-ask for a field already confirmed. When you have a value for every missing field, call this tool ONCE with ALL required parameters (postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber, customerEmail, customerMobile, customerName as needed)—do not call with only a subset or the form will not be fully filled.
+4. After the tool fills successfully, the flow proceeds to payment.`,
 
       parameters: {
         type: 'object',
