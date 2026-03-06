@@ -202,6 +202,15 @@ class ConfigManager {
     return this.cache.ai || {};
   }
 
+  /**
+   * Get model fallback chain for best-effort reconnection (Realtime API has no native failover).
+   * @returns {Array<{ modelId: string, voiceId: string }>} Fallback models to try on unrecoverable session failure
+   */
+  getModelFallbackChain() {
+    const chain = this.cache.ai?.model?.fallbackChain;
+    return Array.isArray(chain) ? chain.filter(e => e?.modelId && e?.voiceId) : [];
+  }
+
   getAudioConfig() {
     return this.cache.audio || {};
   }

@@ -4,10 +4,25 @@ import configManager from "../../../agent/configManager.js";
 import toolExecutor from "../../../tools/index.js";
 import { WebSocketConnectionManager } from "../../../utils/websocketConnectionManager.js";
 import consentInstructionBuilder from "../../../services/consentInstructionBuilder.js";
+import { getEffectiveRecordingConsentSettings } from "../../../services/callRecordPersistenceService.js";
+
+/**
+ * Map internal workflow phase to FlowParameterOverride flowType for flow-specific temperature/model.
+ */
+function mapPhaseToFlowType(phase) {
+  if (!phase || typeof phase !== 'string') return 'default';
+  const p = phase.toLowerCase();
+  if (p.startsWith('booking')) return 'booking';
+  if (p.includes('complaint')) return 'complaint';
+  if (p.includes('transfer') || p === 'human_transfer') return 'human_transfer';
+  if (p === 'general_inquiry' || p === 'information') return 'information';
+  return 'default';
+}
 
 /**
  * OpenAI Integration
  * Handles OpenAI WebSocket connection setup, session configuration, and event routing
+ * Note: Realtime API session does not support top_p, max_tokens, or speech_rate; only temperature (and model) are applied from config.
  */
 export class OpenAIIntegration {
   constructor(stateManager, ws, audioProcessor, onEvent) {
@@ -262,11 +277,11 @@ export class OpenAIIntegration {
   }
 
   /**
-   * Setup OpenAI WebSocket connection and session
+   * Setup OpenAI WebSocket connection and session.
+   * Optional fallbackOverride: { modelId, voiceId } from AIConfig.model.fallbackChain for best-effort reconnection (Realtime API has no native failover).
    */
-  async setupOpenAI() {
+  async setupOpenAI(fallbackOverride = null) {
     if (this.state.setupComplete || this.state.isClosed) return;
-    this.state.markSetupComplete();
     const latency = () => this.state.pickupLatencyMs();
     try {
       console.log(`[PICKUP_LATENCY] [${this.state.callSid}] setup_openai_enter ${latency() ?? 0}ms`);
@@ -286,14 +301,15 @@ export class OpenAIIntegration {
       
       // Get dynamic config for this phone number (with current language)
       const currentLanguage = conversations[this.state.callSid]?.language || 'en';
-      const config = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
+      let config = configManager.getConfigForNumber(this.state.phoneNumber, currentLanguage);
+      if (fallbackOverride?.modelId && fallbackOverride?.voiceId) {
+        config = { ...config, model: { ...config.model, id: fallbackOverride.modelId }, voice: { ...config.voice, id: fallbackOverride.voiceId } };
+        console.log(`🔄 [${this.state.callSid}] Using fallback model from chain: model=${fallbackOverride.modelId}, voice=${fallbackOverride.voiceId}`);
+      }
       const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
       
-      // OPTIMIZATION: Defer flow detection - it's not needed for initial setup
-      // Flow detection can happen after the greeting is sent
-      let flowType = 'default';
-      
-      // Get effective parameters (flow-specific or global)
+      // Flow-specific temperature/model from FlowParameterOverride (e.g. booking vs default)
+      const flowType = mapPhaseToFlowType(this.currentWorkflowPhase);
       const aiConfig = configManager.getAIConfig();
       const effectiveParams = configManager.getEffectiveParameters(flowType, aiConfig);
       
@@ -306,6 +322,9 @@ export class OpenAIIntegration {
         confidence: config.confidenceThreshold,
         flowType: flowType
       });
+
+      // Apply conversation behavior: user speaking window from config (admin-editable)
+      this.state.userSpeakingWindowMs = conversationBehaviorConfig?.conversationFlow?.userSpeakingWindowMs ?? 6000;
       
       // Initialize conversation state with recording consent tracking
       const sessionManagementService = (await import('../../../services/sessionManagementService.js')).default;
@@ -363,7 +382,8 @@ export class OpenAIIntegration {
       const { ensureCallRecordCallerIdentity } = await import('../../../services/callRecordPersistenceService.js');
       await ensureCallRecordCallerIdentity(this.state.callSid, { from: this.state.phoneNumber, to: this.state.phoneNumber });
 
-      // Add recording consent notice and question to instructions
+      // Add recording consent notice and question to instructions (TelephonyConfig.recordingSettings preferred, else PrivacyConfig)
+      const telephonyConfig = configManager.getTelephonyConfig();
       const privacyConfig = await import('../../../database/models/PrivacyConfig.js').then(m => m.default).catch(() => null);
       let privacySettings = null;
       if (privacyConfig) {
@@ -371,9 +391,7 @@ export class OpenAIIntegration {
         // OPTIMIZATION: Cache privacy settings in conversation for reuse
         if (privacySettings && conv) conv._cachedPrivacySettings = privacySettings;
       }
-      
-      const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
-      const consentNotice = privacySettings?.consentScript || "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
+      const { consentRequired: requireExplicitConsent, consentMessage: consentNotice } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
       const consentQuestion = "Do you consent to this call being recorded?";
       
       // CRITICAL FIX: Check if consent was already set by handleIncomingCall (conv already ensured above)
@@ -570,7 +588,7 @@ export class OpenAIIntegration {
             console.warn(`⚠️ [${this.state.callSid}] Could not clear audio buffer at start:`, err.message);
           }
           
-          // Get audio config for calibration check
+          // Get audio config for calibration check (noise_reduction not sent - session.audio rejected by API)
           const audioConfig = configManager.getAudioConfig();
           const initialThreshold = config.vadThreshold / 1000;
           const sessionUpdateMessage = {
@@ -621,6 +639,7 @@ export class OpenAIIntegration {
         }
       }
       
+      this.state.markSetupComplete();
       return { success: true, openaiWs };
     } catch (err) {
       const isRetryable = this.isRetryableError(err);
@@ -731,16 +750,19 @@ export class OpenAIIntegration {
           console.warn(`⚠️ [${this.state.callSid}] Could not clear audio buffer at start:`, err.message);
         }
         
-        // Get audio config for calibration check
+        // Get audio config and flow-specific params (same as main setup path; noise_reduction not sent - session.audio rejected by API)
         const audioConfig = configManager.getAudioConfig();
         const initialThreshold = config.vadThreshold / 1000;
+        const flowTypeOpen = mapPhaseToFlowType(this.currentWorkflowPhase);
+        const effectiveParamsOpen = configManager.getEffectiveParameters(flowTypeOpen, configManager.getAIConfig());
+        const effectiveTemperatureOpen = effectiveParamsOpen.temperature ?? config.temperature;
         const sessionUpdateMessage = {
           type: 'session.update',
           session: {
             modalities: ['audio', 'text'],
             instructions: modifiedInstructions || config.instructions,
             voice: config.voice.id,
-            temperature: Math.max(0.6, config.temperature), // Minimum is 0.6 for Realtime API
+            temperature: Math.max(0.6, effectiveTemperatureOpen),
             input_audio_format: 'g711_ulaw',
             output_audio_format: 'g711_ulaw',  // Direct format - no conversion needed
             turn_detection: {
@@ -764,7 +786,7 @@ export class OpenAIIntegration {
         console.log(`   - input_audio_format: g711_ulaw`);
         console.log(`   - output_audio_format: g711_ulaw (direct format - no conversion needed)`);
         console.log(`   - voice: ${config.voice.id}`);
-        console.log(`   - temperature: ${Math.max(0.6, config.temperature)}`);
+        console.log(`   - temperature: ${Math.max(0.6, effectiveTemperatureOpen)} (flow: ${flowTypeOpen})`);
         console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
         console.log(`   - turn_detection: server_vad`);
         console.log(`   - barge_in_policy: ${audioConfig?.bargeInPolicy ?? 'pause'}, interrupt_response: ${audioConfig?.bargeInPolicy === 'stop'}`);

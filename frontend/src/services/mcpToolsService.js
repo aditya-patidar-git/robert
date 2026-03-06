@@ -14,7 +14,27 @@ class MCPToolsService extends BaseService {
   }
 
   /**
-   * Get all MCP tools
+   * Get MCP tools with pagination (for infinite scroll).
+   * @param {Object} params - Pagination params
+   * @param {number} [params.offset=0] - Offset
+   * @param {number} [params.limit=25] - Page size (max 100)
+   * @returns {Promise<{ tools: Array<Object>, total: number }>}
+   */
+  async getToolsPaginated({ offset = 0, limit = 25 } = {}) {
+    try {
+      const response = await this.get('', { offset, limit }, { normalizeResponse: false });
+      return {
+        tools: response?.tools ?? [],
+        total: response?.total ?? 0
+      };
+    } catch (error) {
+      console.error('Error in getToolsPaginated:', error);
+      return { tools: [], total: 0 };
+    }
+  }
+
+  /**
+   * Get all MCP tools (no pagination; use getToolsPaginated for large lists)
    * @returns {Promise<Array<Object>>} Array of tool objects
    */
   async getAllTools() {

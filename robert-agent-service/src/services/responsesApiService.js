@@ -37,6 +37,7 @@ class ResponsesApiService {
       const model = options.model || this.defaultModel;
       const temperature = options.temperature ?? this.temperature;
       const maxTokens = options.maxTokens || this.maxTokens;
+      const topP = options.top_p ?? options.topP;
 
       const requestPayload = {
         model,
@@ -45,6 +46,9 @@ class ResponsesApiService {
         max_tokens: maxTokens,
         stream: false
       };
+      if (topP !== undefined && topP !== null) {
+        requestPayload.top_p = topP;
+      }
 
       // Add tools if provided
       if (tools && Array.isArray(tools) && tools.length > 0) {

@@ -12,6 +12,7 @@ import kbaService from '../services/kbaService.js';
 import progressIndicatorService from '../services/progressIndicatorService.js';
 import turnTakingStateMachine, { STATES } from '../services/turnTakingStateMachine.js';
 import { conversations } from '../shared/state.js';
+import { getSignal as getCallAbortSignal, register as registerCallAbort } from '../shared/callAbortRegistry.js';
 import uncertaintyGateService from './uncertaintyGateService.js';
 import unansweredQuestionService from './unansweredQuestionService.js';
 import errorRecoveryService from './errorRecoveryService.js';
@@ -317,13 +318,18 @@ class ToolExecutionService {
     let executionStartTime = Date.now();
     let executionTime = 0;
 
-    // Prepare call context
-    const conversation = conversations[callSid || callId] || {};
+    // Prepare call context (include call abort signal so steps can exit when call disconnects)
+    const cid = callSid || callId;
+    if (cid && !getCallAbortSignal(cid)) {
+      registerCallAbort(cid);
+    }
+    const conversation = conversations[cid] || {};
     const callContext = {
-      callSid: callSid || callId,
+      callSid: cid,
       phoneNumber: phoneNumber,
       clientDetails: conversation.clientDetails,
-      clientVerified: conversation.clientVerified || false
+      clientVerified: conversation.clientVerified || false,
+      callAbortSignal: getCallAbortSignal(cid)
     };
 
     // Execute tool
@@ -340,10 +346,23 @@ class ToolExecutionService {
         conversations[callSid || callId].selectBookingOptionsInvoked = true;
       }
     } catch (error) {
-      console.error(`❌ [${callSid || callId}] Tool ${toolName} execution error:`, error);
+      const isCallEnded = error?.name === 'AbortError' || (error?.message && /aborted|call ended/i.test(String(error.message)));
+      if (isCallEnded) {
+        console.log(`🛑 [${callSid || callId}] Tool ${toolName} aborted (call ended)`);
+        executionResult = {
+          success: false,
+          error: 'Call ended',
+          callEnded: true,
+          executionTime: Date.now() - executionStartTime
+        };
+      }
+      if (!isCallEnded) {
+        console.error(`❌ [${callSid || callId}] Tool ${toolName} execution error:`, error);
+      }
       let lastError = error;
       let recovery;
       for (;;) {
+        if (isCallEnded) break;
         const config = configManager.getConversationBehaviorConfig();
         recovery = errorRecoveryService.handleToolError(callSid || callId, toolName, lastError, config);
         if (!recovery.shouldRetry || recovery.delay == null) break;
@@ -358,6 +377,10 @@ class ToolExecutionService {
           lastError = null;
           break;
         } catch (e) {
+          if (e?.name === 'AbortError' || (e?.message && /aborted|call ended/i.test(String(e.message)))) {
+            executionResult = { success: false, error: 'Call ended', callEnded: true };
+            break;
+          }
           lastError = e;
           console.error(`❌ [${callSid || callId}] Tool ${toolName} retry execution error:`, e);
         }
@@ -392,6 +415,17 @@ class ToolExecutionService {
           alternatives: recovery.alternatives
         };
       }
+    }
+
+    // Call ended during execution: cleanup and return without submitting to agent
+    if (executionResult?.callEnded === true) {
+      progressIndicatorService.stopPeriodicUpdates(callSid || callId);
+      progressIndicatorService.endToolExecution(callSid || callId);
+      if (stateManager) {
+        stateManager.activeToolExecutions.delete(toolName);
+        turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
+      }
+      return executionResult;
     }
 
     // Success path (executionResult set from try or from retry)
@@ -721,8 +755,9 @@ class ToolExecutionService {
       // Store conversation state
       this.storeConversationState(callSid || callId, toolName, executionResult);
 
-      // Save tool usage to CallRecord (async, don't wait)
-      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, true)
+      const toolSucceeded = executionResult.success !== false;
+      // Save tool usage to CallRecord with actual success/failure (async, don't wait)
+      this.saveToolUsageToCallRecord(callSid || callId, toolName, executionTime, toolSucceeded)
         .catch(err => {
           console.warn(`⚠️ [${callSid || callId}] Failed to save tool usage to CallRecord:`, err.message);
         });
@@ -746,7 +781,11 @@ class ToolExecutionService {
         turnTakingStateMachine.transition(callSid || callId, STATES.LISTENING);
       }
 
-      console.log(`✅ [${callSid || callId}] Tool ${toolName} completed successfully`);
+      if (toolSucceeded) {
+        console.log(`✅ [${callSid || callId}] Tool ${toolName} completed successfully`);
+      } else {
+        console.log(`⚠️ [${callSid || callId}] Tool ${toolName} completed with failure (result submitted to agent)`);
+      }
 
       // Return execution result as-is (already has success flag and result)
       return executionResult;

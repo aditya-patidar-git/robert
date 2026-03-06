@@ -1,4 +1,5 @@
 import ConversationBehaviorConfig from "../models/ConversationBehaviorConfig.js";
+import configSyncService from "../services/configSyncService.js";
 
 // GET /api/conversation-behavior/config
 export const getConfig = async (req, res) => {
@@ -114,6 +115,10 @@ export const updateConfig = async (req, res) => {
     }
 
     await config.save();
+
+    configSyncService.notifyConfigChange('conversation-behavior', null, {
+      changedBy: req.user?.id || req.user?.username || 'admin'
+    });
 
     res.json({
       success: true,

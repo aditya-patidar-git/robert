@@ -25,14 +25,17 @@ export function getLanguagePreferenceState(callSid, stateManager = null) {
  * Get consent state for a call
  * @param {string} callSid - Call SID
  * @param {Object} stateManager - State manager instance (optional, for fallback)
- * @returns {Object} { consentRequested, consentGiven }
+ * @returns {Object} { consentRequested, consentGiven, consentResponded }
  */
 export function getConsentState(callSid, stateManager = null) {
   const conversation = conversations[callSid];
+  const given = conversation?.recordingConsent?.given ?? stateManager?.recordingConsentState?.given ?? null;
   const consentRequested = conversation?.recordingConsent?.requested || stateManager?.recordingConsentState?.requested || false;
-  const consentGiven = conversation?.recordingConsent?.given === true || stateManager?.recordingConsentState?.given === true;
+  const consentGiven = given === true;
+  // consentResponded: caller has answered the consent question (yes or no) — flow can proceed either way
+  const consentResponded = given === true || given === false;
   
-  return { consentRequested, consentGiven };
+  return { consentRequested, consentGiven, consentResponded };
 }
 
 /**

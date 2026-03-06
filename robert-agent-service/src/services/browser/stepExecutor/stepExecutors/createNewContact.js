@@ -24,6 +24,6 @@ export async function executeCreateNewContact(page, args, sessionState, screensh
     success: true,
     newContactCreated: true,
     nextTool: 'booking_step_fill_contact_details',
-    instruction: 'Successfully navigated to the contact details page. You MUST now call booking_step_fill_contact_details with the customer name, email address, and mobile number to save these details to the new contact profile.'
+    instruction: 'Successfully navigated to the contact details page. In this same response call booking_step_fill_contact_details immediately with only courseType and workflowType (no contact parameters). Do NOT say you will check which details are needed; call the tool first. Do NOT ask for name, email, or phone before calling. The tool will return missingFields; then collect ONLY those missing fields (including name, email, phone if listed), each with double confirmation (ask → repeat to verify; if no match, ask once more and take as final). Then call booking_step_fill_contact_details ONCE with ALL parameters.'
   };
 }

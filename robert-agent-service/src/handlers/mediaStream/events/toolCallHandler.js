@@ -105,6 +105,13 @@ export class ToolCallHandler {
       stateManager: this.state,
       progressCallback: progressCallback
     });
+
+    // Call ended during execution: do not submit or trigger response
+    if (executionResult?.callEnded === true) {
+      progressIndicatorService.endToolExecution(this.state.callSid);
+      this.state.pendingToolCalls.delete(call_id);
+      return;
+    }
     
     // Handle result submission
     // executionResult format: {success: true/false, result: {...}, error: '...'}

@@ -44,11 +44,19 @@ export class ToolCoordinator {
     // and optional snapshot callback for workflow resume after barge-in
     const onBargeInSnapshot = (callSid) => {
       const conv = conversations[callSid];
+      let phase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? null;
+      // If phase is wrong (booking_start) but we are in payment steps, use booking_payment so restore gives correct instructions (e.g. call with confirmed: true)
+      if (phase === 'booking_start') {
+        const step = conv?.bookingSession?.currentStep;
+        if (step === 9 || step === 10) {
+          phase = 'booking_payment';
+        }
+      }
       return {
         bookingSession: conv?.bookingSession ?? null,
         workflowContext: conv?.workflowContext ?? null,
         lastAvailabilityCheck: conv?.lastAvailabilityCheck ?? null,
-        phase: this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? null
+        phase
       };
     };
     this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler, onBargeInSnapshot);
@@ -62,6 +70,12 @@ export class ToolCoordinator {
         if (lastUser?.text?.trim()) this.applyIntentFromTranscript(lastUser.text);
         // Keep payment phase when process_payment fails so next response (e.g. after user says "read them out") stays in payment context
         if (context?.toolName === 'booking_step_process_payment' && context?.toolResult?.success === false && this.openaiIntegration) {
+          this.openaiIntegration.setCurrentWorkflowPhase('booking_payment');
+        }
+        // Keep payment phase when send_payment_request returns requiresConfirmation or requiresTermsBeforeSend so barge-in snapshot and next response get correct phase
+        if (context?.toolName === 'booking_step_send_payment_request' &&
+            (context?.toolResult?.requiresConfirmation === true || context?.toolResult?.requiresTermsBeforeSend === true) &&
+            this.openaiIntegration) {
           this.openaiIntegration.setCurrentWorkflowPhase('booking_payment');
         }
       },
@@ -99,8 +113,12 @@ export class ToolCoordinator {
       workflowContext,
       bookingSession
     });
-    console.log(`🔍 [INTENT] [${callSid}] detectIntent result: shouldUpdateTools=${intentResult?.shouldUpdateTools}, newWorkflowContext=${intentResult?.newWorkflowContext}, phase=${intentResult?.phase}`);
+    console.log(`🔍 [INTENT] [${callSid}] detectIntent result: shouldUpdateTools=${intentResult?.shouldUpdateTools}, newWorkflowContext=${intentResult?.newWorkflowContext}, phase=${intentResult?.phase}, resetWorkflow=${intentResult?.resetWorkflow}`);
     if (!intentResult.shouldUpdateTools || !intentResult.newWorkflowContext) return false;
+    if (intentResult.resetWorkflow && sessionStateManager.getSession(callSid)) {
+      sessionStateManager.clearSession(callSid);
+      console.log(`🔄 [${callSid}] Workflow reset: cleared booking session so caller can start over from the beginning`);
+    }
     if (!conversations[callSid]) conversations[callSid] = { prematureResponses: {} };
     conversations[callSid].workflowContext = intentResult.newWorkflowContext;
     console.log(`🎯 [${callSid}] Intent detected: "${transcriptText.trim()}" - updating tools and workflow phase to ${intentResult.phase}`);
@@ -179,6 +197,10 @@ export class ToolCoordinator {
         stateManager: this.state,
         progressCallback: null
       });
+      if (executionResult?.callEnded === true) {
+        this.state.pendingChainedToolCall = null;
+        return;
+      }
       await this.toolCallHandler.resultSubmitter.submitResult(callSid, callId, executionResult);
       const result = executionResult.result || executionResult;
       // Always trigger response so the caller hears the bike-type question once when requiresPreferences.
@@ -609,14 +631,14 @@ export class ToolCoordinator {
           }
           
           const flowState = getConversationFlowState(this.state.callSid, this.state);
-          const consentJustGiven =
-            flowState.consentGiven &&
+          const consentJustResponded =
+            flowState.consentResponded &&
             this.state.agentFinishedSpeakingTime > 0 &&
             Date.now() - this.state.agentFinishedSpeakingTime < 5000;
           const inConsentOrLanguagePhase =
             flowState.waitingForLanguage ||
-            (flowState.languageSelected && !flowState.consentGiven) ||
-            consentJustGiven;
+            (flowState.languageSelected && !flowState.consentResponded) ||
+            consentJustResponded;
           const stateSnapshot = {
             waitingForUser: this.state.waitingForUser,
             isResponding: this.state.isResponding,

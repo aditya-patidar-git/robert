@@ -332,6 +332,29 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
           console.log('⚠️ [STEP 8] Not on Contact Details page anymore - skipping address confirmation');
           // Continue with the flow without confirmation
         } else if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
+          // Fill Licence held, NI, Driving licence BEFORE returning for address confirmation so form has all data; Next will be clicked on follow-up when addressConfirmed is true
+          if (contactDetails.licenceHeld) {
+            console.log(`📝 [STEP 7] Filling Licence held (before address confirmation): ${contactDetails.licenceHeld}`);
+            await selectDropdownOption(eventBookingIframe, page, 'Licence held', 'xid_29019', contactDetails.licenceHeld);
+          }
+          if (contactDetails.nationalInsuranceNumber) {
+            console.log(`📝 [STEP 7] Filling National Insurance number (before address confirmation): ${contactDetails.nationalInsuranceNumber}`);
+            await fillTextField(eventBookingIframe, 'National Insurance number', 'cnt_NI_number', contactDetails.nationalInsuranceNumber);
+          }
+          if (contactDetails.drivingLicenceNumber) {
+            console.log(`📝 [STEP 7] Filling Driving licence number (before address confirmation): ${contactDetails.drivingLicenceNumber}`);
+            if (contactDetails.licenceFormat === 'NI') {
+              let gbButton = eventBookingIframe.getByRole('button', { name: 'GB' }).first();
+              if (await gbButton.count() === 0) {
+                gbButton = eventBookingIframe.locator('#cnt_driving_licence_no button[aria-label="GB"]').first();
+              }
+              if (await gbButton.count() > 0) {
+                await gbButton.click();
+                await page.waitForTimeout(500);
+              }
+            }
+            await fillTextField(eventBookingIframe, 'Driving licence number', 'cnt_driving_licence_no', contactDetails.drivingLicenceNumber);
+          }
           // Only return requiresAddressConfirmation if we're on the correct page
           return {
             success: true,

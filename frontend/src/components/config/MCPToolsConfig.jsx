@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Box,
   Paper,
@@ -25,54 +25,104 @@ import { useToast } from '../common/ToastProvider';
 import { formatDateTime } from '../../utils/formatters';
 import mcpToolsService from '../../services/mcpToolsService';
 
+const PAGE_SIZE = 25;
+
 const MCPToolsConfig = forwardRef(({ 
   showSystemControls = true, // Show MCP System Controls section
   readOnly = false // If true, disable all editing
 }, ref) => {
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
+  const sentinelRef = useRef(null);
   
+  const [toolsList, setToolsList] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [editingDomains, setEditingDomains] = useState({});
   const [newDomainInputs, setNewDomainInputs] = useState({});
   const [rateLimitValues, setRateLimitValues] = useState({});
   const [maxTimeValues, setMaxTimeValues] = useState({});
   const [enabledValues, setEnabledValues] = useState({});
 
-  // Fetch MCP tools
-  const { data: fetchedMcpTools = [], isLoading: mcpLoading, refetch: refetchMcpTools } = useQuery({
-    queryKey: ['mcp-tools'],
-    queryFn: () => mcpToolsService.getAllTools()
-  });
+  const hasMore = toolsList.length < totalCount;
 
-  // Filter out booking step tools (not relevant for MCP Tools section)
-  const filteredMcpTools = React.useMemo(() => {
-    const toolsArray = Array.isArray(fetchedMcpTools) 
-      ? fetchedMcpTools 
-      : (fetchedMcpTools.tools || fetchedMcpTools.data || []);
-    
-    // Filter out booking_step_* tools
-    return toolsArray.filter(tool => !tool.name?.startsWith('booking_step_'));
-  }, [fetchedMcpTools]);
-
-  // Update local state when MCP tools are fetched
-  useEffect(() => {
-    if (filteredMcpTools && filteredMcpTools.length > 0) {
-      const domainsState = {};
-      const rateLimitState = {};
-      const maxTimeState = {};
-      const enabledState = {};
-      filteredMcpTools.forEach(tool => {
-        domainsState[tool.name] = [...(tool.domains || [])];
-        rateLimitState[tool.name] = tool.rateLimit?.limit || 100;
-        maxTimeState[tool.name] = tool.maxTime || null;
-        enabledState[tool.name] = tool.enabled ?? true;
-      });
-      setEditingDomains(domainsState);
-      setRateLimitValues(rateLimitState);
-      setMaxTimeValues(maxTimeState);
-      setEnabledValues(enabledState);
+  const loadFirstPage = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { tools, total } = await mcpToolsService.getToolsPaginated({ offset: 0, limit: PAGE_SIZE });
+      setToolsList(tools);
+      setTotalCount(total);
+    } catch (e) {
+      setToolsList([]);
+      setTotalCount(0);
+    } finally {
+      setLoading(false);
     }
-  }, [filteredMcpTools]);
+  }, []);
+
+  const loadNextPage = useCallback(async () => {
+    if (!hasMore || loadingMore || loading) return;
+    setLoadingMore(true);
+    try {
+      const { tools } = await mcpToolsService.getToolsPaginated({ offset: toolsList.length, limit: PAGE_SIZE });
+      setToolsList(prev => [...prev, ...tools]);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, loading, toolsList.length]);
+
+  useEffect(() => {
+    loadFirstPage();
+  }, [loadFirstPage]);
+
+  // Intersection Observer: load next page when sentinel is visible
+  useEffect(() => {
+    if (!hasMore || loading) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadNextPage();
+      },
+      { root: null, rootMargin: '100px', threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadNextPage]);
+
+  // Merge new tools into per-tool state when toolsList changes
+  useEffect(() => {
+    if (toolsList.length === 0) return;
+    setEditingDomains(prev => {
+      const next = { ...prev };
+      toolsList.forEach(tool => {
+        if (next[tool.name] === undefined) next[tool.name] = [...(tool.domains || [])];
+      });
+      return next;
+    });
+    setRateLimitValues(prev => {
+      const next = { ...prev };
+      toolsList.forEach(tool => {
+        if (next[tool.name] === undefined) next[tool.name] = tool.rateLimit?.limit || 100;
+      });
+      return next;
+    });
+    setMaxTimeValues(prev => {
+      const next = { ...prev };
+      toolsList.forEach(tool => {
+        if (next[tool.name] === undefined) next[tool.name] = tool.maxTime ?? null;
+      });
+      return next;
+    });
+    setEnabledValues(prev => {
+      const next = { ...prev };
+      toolsList.forEach(tool => {
+        if (next[tool.name] === undefined) next[tool.name] = tool.enabled ?? true;
+      });
+      return next;
+    });
+  }, [toolsList]);
 
   // MCP Tools Handlers - All changes are local until Save is clicked
   const handleToggleTool = (toolName, enabled) => {
@@ -131,13 +181,12 @@ const MCPToolsConfig = forwardRef(({
     });
   }, [readOnly]);
 
-  // Expose saveAll method to parent component
+  // Expose saveAll method to parent component (saves only currently loaded tools)
   useImperativeHandle(ref, () => ({
     saveAll: async () => {
       if (readOnly) return { success: false, error: 'Read-only mode' };
       
-      // Use filtered tools (excludes booking_step_* tools)
-      const toolsArray = filteredMcpTools;
+      const toolsArray = toolsList;
       
       const savePromises = [];
       const errors = [];
@@ -225,40 +274,42 @@ const MCPToolsConfig = forwardRef(({
       <Paper>
         <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6" gutterBottom>
-            Available MCP Tools ({filteredMcpTools.length})
+            Available MCP Tools ({toolsList.length}{totalCount > toolsList.length ? ` of ${totalCount}` : ''})
           </Typography>
           <Button
             variant="outlined"
             size="small"
             startIcon={<Refresh />}
-            onClick={() => refetchMcpTools()}
-            disabled={mcpLoading}
+            onClick={() => {
+              queryClient.invalidateQueries(['mcp-tools']);
+              loadFirstPage();
+            }}
+            disabled={loading}
           >
             Refresh
           </Button>
         </Box>
-        {mcpLoading ? (
+        {loading ? (
           <LinearProgress sx={{ mb: 2 }} />
         ) : (() => {
-          // Use filtered tools (excludes booking_step_* tools)
-          const toolsArray = filteredMcpTools;
+          const toolsArray = toolsList;
           
           return toolsArray.length === 0 ? (
             <Alert severity="info" sx={{ m: 2 }}>
               No MCP tools found. Tools will be discovered on system startup.
             </Alert>
           ) : (
-            <TableContainer>
-              <Table sx={{ tableLayout: 'fixed' }}>
+            <TableContainer sx={{ maxHeight: '60vh', overflow: 'auto' }}>
+              <Table sx={{ tableLayout: 'fixed' }} stickyHeader>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ width: '12%' }}><strong>Tool</strong></TableCell>
-                    <TableCell sx={{ width: '20%' }}><strong>Description</strong></TableCell>
-                    <TableCell align="center" sx={{ width: '8%' }}><strong>Enabled</strong></TableCell>
-                    <TableCell sx={{ width: '12%' }}><strong>Rate Limit</strong></TableCell>
-                    <TableCell sx={{ width: '10%' }}><strong>Max Time</strong></TableCell>
-                    <TableCell sx={{ width: '23%' }}><strong>Domain Allowlist</strong></TableCell>
-                    <TableCell sx={{ width: '15%' }}><strong>Usage Stats</strong></TableCell>
+                    <TableCell sx={{ width: '12%', position: 'sticky', top: 0, backgroundColor: 'background.paper', zIndex: 1 }}><strong>Tool</strong></TableCell>
+                    <TableCell sx={{ width: '20%', position: 'sticky', top: 0, backgroundColor: 'background.paper', zIndex: 1 }}><strong>Description</strong></TableCell>
+                    <TableCell align="center" sx={{ width: '8%', position: 'sticky', top: 0, backgroundColor: 'background.paper', zIndex: 1 }}><strong>Enabled</strong></TableCell>
+                    <TableCell sx={{ width: '12%', position: 'sticky', top: 0, backgroundColor: 'background.paper', zIndex: 1 }}><strong>Rate Limit</strong></TableCell>
+                    <TableCell sx={{ width: '10%', position: 'sticky', top: 0, backgroundColor: 'background.paper', zIndex: 1 }}><strong>Max Time</strong></TableCell>
+                    <TableCell sx={{ width: '23%', position: 'sticky', top: 0, backgroundColor: 'background.paper', zIndex: 1 }}><strong>Domain Allowlist</strong></TableCell>
+                    <TableCell sx={{ width: '15%', position: 'sticky', top: 0, backgroundColor: 'background.paper', zIndex: 1 }}><strong>Usage Stats</strong></TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -455,6 +506,23 @@ const MCPToolsConfig = forwardRef(({
                     </TableRow>
                   );
                   })}
+                  {hasMore && (
+                    <TableRow sx={{ height: 4 }}>
+                      <TableCell colSpan={7} sx={{ p: 0, border: 'none', verticalAlign: 'middle' }}>
+                        <Box ref={sentinelRef} sx={{ height: 1, width: 1 }} aria-hidden />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {loadingMore && (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center" sx={{ py: 2 }}>
+                        <LinearProgress sx={{ maxWidth: 200, mx: 'auto' }} />
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                          Loading more tools...
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>

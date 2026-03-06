@@ -1,5 +1,6 @@
 import flowParameterService from "../services/flowParameterService.js";
 import flowDetectionService from "../services/flowDetectionService.js";
+import configSyncService from "../services/configSyncService.js";
 
 // Get all flow parameter overrides
 export const getAllFlowParameters = async (req, res) => {
@@ -70,7 +71,11 @@ export const createOrUpdateFlowParameter = async (req, res) => {
     }
 
     const override = await flowParameterService.updateFlowOverride(flowType, overrideData);
-    
+
+    configSyncService.notifyConfigChange('flow-parameter', null, {
+      changedBy: req.user?.id || req.user?.username || 'admin'
+    });
+
     res.json({
       status: "success",
       message: `Flow parameter override for ${flowType} ${override._id ? 'updated' : 'created'} successfully`,
@@ -98,6 +103,10 @@ export const deleteFlowParameter = async (req, res) => {
         message: `Flow parameter override for ${flowType} not found`
       });
     }
+
+    configSyncService.notifyConfigChange('flow-parameter', null, {
+      changedBy: req.user?.id || req.user?.username || 'admin'
+    });
 
     res.json({
       status: "success",

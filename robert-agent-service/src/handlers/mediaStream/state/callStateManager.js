@@ -340,6 +340,20 @@ export class CallStateManager {
   }
 
   /**
+   * Force-release response lock and clear active response (e.g. when tool completes while holding message is playing).
+   * Use when tool result must be spoken and a periodic holding response is still holding the lock.
+   */
+  forceReleaseResponseLock() {
+    this.isResponding = false;
+    this.activeResponseId = null;
+    this.explicitResponseRequested = false;
+    if (this.responseLockTimer) {
+      clearTimeout(this.responseLockTimer);
+      this.responseLockTimer = null;
+    }
+  }
+
+  /**
    * Clear tool execution completing flag
    * Used to reset state after tool completion response is created or on error
    */

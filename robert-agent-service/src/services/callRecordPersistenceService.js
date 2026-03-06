@@ -3,6 +3,27 @@ import twilioClient from "../utils/twilioClient.js";
 import { conversations } from "../shared/state.js";
 import { isRetryableError } from "../utils/isRetryableError.js";
 
+const DEFAULT_CONSENT_MESSAGE = "For training and quality, this call may be recorded and handled in line with our Privacy Policy.";
+
+/**
+ * Effective recording consent settings: prefer TelephonyConfig.recordingSettings when present, else PrivacyConfig.
+ * Used so both admin configs are respected without duplication.
+ * @param {Object} [telephonyConfig] - from configManager.getTelephonyConfig()
+ * @param {Object} [privacySettings] - from PrivacyConfig.findOne({ isActive: true })
+ * @returns {{ enabled: boolean, consentRequired: boolean, consentMessage: string }}
+ */
+export function getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings) {
+  const recording = telephonyConfig?.recordingSettings;
+  const useTelephony = recording && typeof recording.enabled === 'boolean';
+  return {
+    enabled: useTelephony ? recording.enabled : true,
+    consentRequired: useTelephony && typeof recording.consentRequired === 'boolean'
+      ? recording.consentRequired
+      : (privacySettings?.recording?.requireExplicitConsent !== false),
+    consentMessage: (useTelephony && recording.consentMessage) || privacySettings?.consentScript || DEFAULT_CONSENT_MESSAGE
+  };
+}
+
 /**
  * Build caller identity update object with only truthy from/to.
  * Prevents overwriting existing values with undefined.
@@ -129,15 +150,17 @@ export async function saveConsentToCallRecord(callSid, consentData) {
 }
 
 /**
- * Set default recording consent for a call from PrivacyConfig; persist to CallRecord.
+ * Set default recording consent for a call. Uses TelephonyConfig.recordingSettings when present, else PrivacyConfig.
  * Caller must ensure conversations[callSid] exists. Shared by callHandlers and sipHandlers.
  */
 export async function setDefaultRecordingConsent(callSid, callType = 'Twilio') {
   if (!conversations[callSid]) return;
   try {
+    const configManager = (await import('../agent/configManager.js')).default;
     const PrivacyConfig = (await import('../database/models/PrivacyConfig.js')).default;
+    const telephonyConfig = configManager.getTelephonyConfig();
     const privacySettings = await PrivacyConfig.findOne({ isActive: true }).lean().catch(() => null);
-    const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
+    const { consentRequired: requireExplicitConsent } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
     if (!requireExplicitConsent) {
       if (!conversations[callSid].recordingConsent) {
         conversations[callSid].recordingConsent = {

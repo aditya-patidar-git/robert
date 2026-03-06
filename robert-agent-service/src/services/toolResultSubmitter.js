@@ -305,10 +305,9 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
     // No longer waiting for acknowledgments - they have been removed
 
-    // Retry configuration
-    const MAX_RETRIES = 5;
-    const RETRY_DELAY_MS = 150; // Wait 150ms between retries
-    const MAX_WAIT_TIME_MS = 1000; // Maximum total wait time: 5 retries * 150ms = 750ms (within 1s limit)
+    // Retry configuration: allow time for periodic holding response to finish so tool result can be spoken
+    const MAX_RETRIES = 10;
+    const RETRY_DELAY_MS = 400; // Wait 400ms between retries (holding message may still be playing)
 
     let retryCount = 0;
     let lockAcquired = false;
@@ -344,7 +343,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       console.warn(`⚠️ [${callId}] Force-releasing stuck lock to ensure tool result is spoken. Tool: ${options?.toolName || 'unknown'}`);
 
       if (this.stateManager) {
-        this.stateManager.releaseResponseLock();
+        this.stateManager.forceReleaseResponseLock();
         lockAcquired = this.stateManager.tryAcquireResponseLock();
 
         if (!lockAcquired) {
@@ -352,6 +351,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           this.stateManager.clearToolExecutionCompleting();
           return;
         }
+        console.log(`✅ [${callId}] Force-release succeeded - proceeding with tool result response`);
       } else {
         return;
       }
@@ -432,6 +432,18 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         console.log(`🎯 [${callId}] Step tool parameter/validation error - instructing to resolve and retry, not transfer`);
       }
 
+      // Step execution failure (timeout or retriable): offer to retry or restart workflow
+      const isStepExecutionFailure = toolName && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_')) &&
+        toolResult && toolResult.success === false &&
+        (toolResult.canRetry === true || /timeout|exceeded|failed/i.test(toolResult.error || ''));
+      if (isStepExecutionFailure) {
+        const failureInstruction = `CRITICAL: This step failed (e.g. timeout or temporary error). Briefly acknowledge what happened (e.g. "That step took too long" or "Something didn't complete in time"). Then offer the caller two options: (1) "I can try that step again" — if they agree, call the same step again with the same parameters. (2) "Or we can start over from the beginning" — if they say start over, restart, or from the beginning, the system will reset and you can begin the booking/cancellation flow again. Do not transfer to a human unless the caller explicitly asks for it or both retry and start-over fail.`;
+        responseInstructions = responseInstructions
+          ? `${failureInstruction}\n\n${responseInstructions}`
+          : failureInstruction;
+        console.log(`🎯 [${callId}] Step execution failure (timeout/retriable) - instructing to offer retry or start over`);
+      }
+
       // Unknown tool recovery (booking): any non-existent or wrong booking_step_* — tally correct next step from session and auto-run (like cancellation)
       const isUnknownBookingStepTool = toolName && toolName.startsWith('booking_step_') &&
         toolResult && toolResult.success === false &&
@@ -480,7 +492,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       if (isClientVerification) {
         // Mismatch (wrong value for fullName, postcode, or telephoneNumber): say ONLY the mismatch message; do NOT repeat generic verification prompt
         if (toolResult && Array.isArray(toolResult.mismatches) && toolResult.mismatches.length > 0) {
-          const mismatchInstruction = `CRITICAL: The caller gave a value that does NOT match our records (mismatched field(s): ${toolResult.mismatches.join(', ')}). You MUST NOT say "Thanks for this; I believe that I have found your profile" or "please confirm your full name" or "please confirm your postcode" or "please confirm your telephone number". Say ONLY the following exact message, then ask the caller to provide the correct value again: "${toolResult.message}". Then call client_verification again with the field(s) when the caller provides the correct value (use fullName/postcode from previous tool result if already verified; add ONLY the new value the caller spoke). Do NOT pass postcode or telephoneNumber from stored clientDetails—only use what the caller actually says.`;
+          const mismatchInstruction = `CRITICAL: The caller gave a value that does NOT match our records (mismatched field(s): ${toolResult.mismatches.join(', ')}). You MUST NOT say "Thanks for this; I believe that I have found your profile" or "please confirm your full name" or "please confirm your postcode" or "please confirm your telephone number". Say ONLY the following exact message, then ask the caller to provide the correct value again: "${toolResult.message}". Do not add any other verification or confirmation sentence after the mismatch message. Then call client_verification again with the field(s) when the caller provides the correct value (use fullName/postcode from previous tool result if already verified; add ONLY the new value the caller spoke). Do NOT pass postcode or telephoneNumber from stored clientDetails—only use what the caller actually says.`;
           responseInstructions = responseInstructions
             ? `${mismatchInstruction}\n\n${responseInstructions}`
             : mismatchInstruction;
@@ -673,7 +685,7 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
 
       // Phase 5: After create_new_contact, call fill_contact_details next
       if (toolName === 'booking_step_create_new_contact' && toolResult?.success === true) {
-        const instruction = `CRITICAL: booking_step_create_new_contact completed. Do not call it again. Call booking_step_fill_contact_details next. Collect all required contact details from the caller, then call the tool once with all parameters.`;
+        const instruction = `CRITICAL: booking_step_create_new_contact completed. Do not call it again. In this same response call booking_step_fill_contact_details FIRST with only courseType and workflowType (no contact parameters). Do NOT say you will check which details are needed; call the tool first. Do NOT ask for name, email, or phone before that call. After it returns missingFields, collect ONLY those missing fields—each with double confirmation (ask → repeat to verify; if no match, ask once more and take as final)—then call booking_step_fill_contact_details ONCE with ALL parameters.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Create new contact completed - instructing to call booking_step_fill_contact_details next`);
       }
@@ -684,7 +696,7 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         toolResult.missingFields.length > 0;
       if (isFillContactDetailsMissing) {
         const msg = toolResult.message || `I need your ${(toolResult.missingFields || []).join(', ')}; could you please provide them?`;
-        let instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". For each required detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Do NOT move to the next question until the current one has been repeated and verified. Do NOT read back or repeat the caller's personal details on the call (GDPR). Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
+        let instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". For each required detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Do NOT move to the next question until the current one has been repeated and verified. STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself. Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
         if (toolResult.missingFields?.includes('licenceHeld')) {
           const optionsList = getLicenceHeldOptionsForPrompt();
           instruction += ` For licence type (licenceHeld): list these exact options and ask the caller to choose one: ${optionsList}. Pass the exact option text they choose as licenceHeld—do not guess from vague terms like "motorcycle".`;

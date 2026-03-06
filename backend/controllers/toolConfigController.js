@@ -1,6 +1,7 @@
 import ToolConfig from '../models/ToolConfig.js';
 import axios from 'axios';
 import observabilityService from '../services/observabilityService.js';
+import configSyncService from '../services/configSyncService.js';
 
 // Get agent service URL from environment
 const AGENT_SERVICE_URL = process.env.AGENT_SERVICE_URL || 'http://localhost:3002';
@@ -35,7 +36,7 @@ export const getAllTools = async (req, res) => {
     
     if (toolConfigs.length === 0) {
       console.warn('⚠️ No tool configs found in database!');
-      return res.json({ success: true, tools: [] });
+      return res.json({ success: true, tools: [], total: 0 });
     }
     
     // Create a map of tool configs by toolName
@@ -100,8 +101,18 @@ export const getAllTools = async (req, res) => {
       }
     });
 
-    console.log(`✅ Returning ${tools.length} tools to frontend`);
-    res.json({ success: true, tools });
+    // Filter out booking_step_* tools (not shown in MCP Tools UI)
+    const filteredTools = tools.filter(t => !t.name?.startsWith('booking_step_'));
+    const total = filteredTools.length;
+
+    // Pagination when offset or limit query params are present
+    const hasPagination = req.query.offset !== undefined || req.query.limit !== undefined;
+    const offset = hasPagination ? Math.max(0, parseInt(req.query.offset, 10) || 0) : 0;
+    const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25)) : total;
+    const paginatedTools = hasPagination ? filteredTools.slice(offset, offset + limit) : filteredTools;
+
+    console.log(`✅ Returning ${paginatedTools.length} tools${hasPagination ? ` (offset=${offset}, limit=${limit}, total=${total})` : ''}`);
+    res.json({ success: true, tools: paginatedTools, total });
   } catch (error) {
     console.error('❌ Error fetching tools:', error);
     console.error('❌ Error stack:', error.stack);
@@ -164,6 +175,9 @@ export const updateToolConfig = async (req, res) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
+    configSyncService.notifyConfigChange('tools', null, {
+      changedBy: req.user?.id || req.user?.email || 'admin'
+    });
     observabilityService.info('Tool config updated', { toolName, updates: updateData });
     res.json({ success: true, tool: config });
   } catch (error) {
@@ -183,7 +197,10 @@ export const enableTool = async (req, res) => {
       { enabled: true, updatedBy: req.user?.id || req.user?.email || 'admin' },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    
+
+    configSyncService.notifyConfigChange('tools', null, {
+      changedBy: req.user?.id || req.user?.email || 'admin'
+    });
     observabilityService.info('Tool enabled', { toolName });
     res.json({ success: true, message: `Tool ${toolName} enabled`, tool: config });
   } catch (error) {
@@ -203,7 +220,10 @@ export const disableTool = async (req, res) => {
       { enabled: false, updatedBy: req.user?.id || req.user?.email || 'admin' },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    
+
+    configSyncService.notifyConfigChange('tools', null, {
+      changedBy: req.user?.id || req.user?.email || 'admin'
+    });
     observabilityService.info('Tool disabled', { toolName });
     res.json({ success: true, message: `Tool ${toolName} disabled`, tool: config });
   } catch (error) {
@@ -232,7 +252,10 @@ export const updateRateLimit = async (req, res) => {
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    
+
+    configSyncService.notifyConfigChange('tools', null, {
+      changedBy: req.user?.id || req.user?.email || 'admin'
+    });
     observabilityService.info('Tool rate limit updated', { toolName, newLimit });
     res.json({ success: true, message: `Rate limit updated for ${toolName}`, tool: config });
   } catch (error) {
@@ -261,7 +284,10 @@ export const updateDomainAllowlist = async (req, res) => {
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    
+
+    configSyncService.notifyConfigChange('tools', null, {
+      changedBy: req.user?.id || req.user?.email || 'admin'
+    });
     observabilityService.info('Tool domain allowlist updated', { toolName, domains });
     res.json({ success: true, message: `Domain allowlist updated for ${toolName}`, tool: config });
   } catch (error) {
@@ -308,6 +334,9 @@ export const getToolMetrics = async (req, res) => {
 export const initializeDefaults = async (req, res) => {
   try {
     await ToolConfig.initializeDefaults();
+    configSyncService.notifyConfigChange('tools', null, {
+      changedBy: req.user?.id || req.user?.email || 'admin'
+    });
     res.json({ success: true, message: 'Default tool configs initialized' });
   } catch (error) {
     observabilityService.error('Initialize tool configs error', { error: error.message });

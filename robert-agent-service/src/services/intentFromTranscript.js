@@ -52,6 +52,21 @@ const TRANSFER_TO_HUMAN_PHRASES = [
   'live person'
 ];
 
+/** Restart workflow: caller wants to start over from the beginning. Always treated as strong intent. */
+const RESTART_WORKFLOW_PHRASES = [
+  'start over',
+  'start again',
+  'begin again',
+  'restart',
+  'from the beginning',
+  'from the start',
+  'go back to the start',
+  'can we start over',
+  'let\'s start over',
+  'i want to start over',
+  'i\'d like to start over'
+];
+
 export function isTransferToHumanRequest(transcriptText) {
   if (!transcriptText || typeof transcriptText !== 'string') return false;
   const normalized = transcriptText.trim().toLowerCase();
@@ -69,6 +84,12 @@ export function getIntentFromTranscript(transcriptText) {
   if (!normalized) return empty;
 
   if (isTransferToHumanRequest(transcriptText)) return { intent: 'transfer_to_human', isStrongStartIntent: true };
+
+  for (const phrase of RESTART_WORKFLOW_PHRASES) {
+    if (normalized.includes(phrase)) {
+      return { intent: 'restart_workflow', isStrongStartIntent: true };
+    }
+  }
 
   for (const { phrase, strong } of CANCELLATION_PHRASES) {
     if (normalized.includes(phrase)) {

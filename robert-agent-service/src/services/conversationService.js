@@ -10,6 +10,8 @@ import promptService from './promptService.js';
 import consentInstructionBuilder from './consentInstructionBuilder.js';
 import { getConversationFlowState } from '../handlers/mediaStream/utils/conversationStateHelpers.js';
 import { isAgentAudioPlaying } from '../handlers/mediaStream/utils/audioPlayingState.js';
+import configManager from '../agent/configManager.js';
+import { getEffectiveRecordingConsentSettings } from './callRecordPersistenceService.js';
 
 export class ConversationService {
   constructor(options = {}) {
@@ -27,14 +29,25 @@ export class ConversationService {
   detectIntent(transcript, context = {}) {
     const { currentPhase = null, workflowContext = null, bookingSession = null } = context;
     if (!transcript || typeof transcript !== 'string' || !transcript.trim()) {
-      return { intent: null, phase: null, shouldUpdateTools: false, newWorkflowContext: null };
+      return { intent: null, phase: null, shouldUpdateTools: false, newWorkflowContext: null, resetWorkflow: false };
     }
 
     const { intent, isStrongStartIntent } = getIntentFromTranscript(transcript);
     const phase = intent ? getPhaseForIntent(intent) : null;
 
+    // Restart workflow: caller said "start over" / "restart" etc. Reset session and go to booking_start.
+    if (intent === 'restart_workflow') {
+      return {
+        intent,
+        phase: 'booking_start',
+        shouldUpdateTools: true,
+        newWorkflowContext: 'booking',
+        resetWorkflow: true
+      };
+    }
+
     if (!phase) {
-      return { intent, phase: null, shouldUpdateTools: false, newWorkflowContext: null };
+      return { intent, phase: null, shouldUpdateTools: false, newWorkflowContext: null, resetWorkflow: false };
     }
 
     const inMidWorkflow = (workflowContext === 'cancellation' && (bookingSession?.cancellationCurrentStep ?? 0) >= 1) ||
@@ -42,7 +55,7 @@ export class ConversationService {
     const wouldSwitchWorkflow = (workflowContext === 'cancellation' && phase === 'booking_start') ||
       (workflowContext === 'booking' && phase === 'cancellation');
     if (inMidWorkflow && wouldSwitchWorkflow && !isStrongStartIntent) {
-      return { intent, phase, shouldUpdateTools: false, newWorkflowContext: null };
+      return { intent, phase, shouldUpdateTools: false, newWorkflowContext: null, resetWorkflow: false };
     }
 
     if (phase === 'cancellation' && currentPhase !== 'cancellation' && workflowContext !== 'cancellation') {
@@ -50,7 +63,8 @@ export class ConversationService {
         intent,
         phase: 'cancellation',
         shouldUpdateTools: true,
-        newWorkflowContext: 'cancellation'
+        newWorkflowContext: 'cancellation',
+        resetWorkflow: false
       };
     }
 
@@ -59,11 +73,12 @@ export class ConversationService {
         intent,
         phase: 'booking_start',
         shouldUpdateTools: true,
-        newWorkflowContext: 'booking'
+        newWorkflowContext: 'booking',
+        resetWorkflow: false
       };
     }
 
-    return { intent, phase, shouldUpdateTools: false, newWorkflowContext: null };
+    return { intent, phase, shouldUpdateTools: false, newWorkflowContext: null, resetWorkflow: false };
   }
 
   /**
@@ -150,7 +165,7 @@ export class ConversationService {
 
     if (isInitialGreeting) {
       const flowState = getConversationFlowState(callSid, state);
-      const { waitingForLanguage, languageSelected, consentGiven } = flowState;
+      const { waitingForLanguage, languageSelected, consentGiven, consentResponded } = flowState;
 
       let privacySettings = conversation?._cachedPrivacySettings ?? null;
       if (!privacySettings) {
@@ -164,19 +179,17 @@ export class ConversationService {
           privacySettings = null;
         }
       }
-
-      const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
-      const consentNotice =
-        privacySettings?.consentScript ||
-        'For training and quality, this call may be recorded and handled in line with our Privacy Policy.';
+      const telephonyConfig = configManager.getTelephonyConfig();
+      const { consentRequired: requireExplicitConsent, consentMessage: consentNotice } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
       const consentQuestion = 'Do you consent to this call being recorded?';
 
-      if (requireExplicitConsent && !consentGiven) {
+      if (requireExplicitConsent && !consentResponded) {
         const consentInstructions = consentInstructionBuilder.buildConsentFlowInstructions({
           consentNotice,
           consentQuestion,
           languageSelected,
           consentGiven,
+          consentResponded,
           requireExplicitConsent,
           baseInstructions: ''
         });
@@ -211,7 +224,7 @@ export class ConversationService {
     }
 
     const flowState = getConversationFlowState(callSid, state);
-    const { waitingForLanguage, languageSelected, consentRequested, consentGiven } = flowState;
+    const { waitingForLanguage, languageSelected, consentRequested, consentGiven, consentResponded } = flowState;
 
     let privacySettings = conversation?._cachedPrivacySettings ?? null;
     if (!privacySettings) {
@@ -225,18 +238,17 @@ export class ConversationService {
         privacySettings = null;
       }
     }
-    const requireExplicitConsent = privacySettings?.recording?.requireExplicitConsent !== false;
-    const consentNotice =
-      privacySettings?.consentScript ||
-      'For training and quality, this call may be recorded and handled in line with our Privacy Policy.';
+    const telephonyConfig = configManager.getTelephonyConfig();
+    const { consentRequired: requireExplicitConsent, consentMessage: consentNotice } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
     const consentQuestion = 'Do you consent to this call being recorded?';
 
-    if (requireExplicitConsent && !consentGiven && languageSelected) {
+    if (requireExplicitConsent && !consentResponded && languageSelected) {
       const consentInstructions = this.consentInstructionBuilder.buildConsentFlowInstructions({
         consentNotice,
         consentQuestion,
         languageSelected: true,
-        consentGiven: false,
+        consentGiven,
+        consentResponded,
         requireExplicitConsent: true,
         baseInstructions: ''
       });
@@ -255,6 +267,12 @@ export class ConversationService {
       waitingForLanguage: waitingForLanguage && !languageSelected,
       languageSelected
     });
+
+    // When caller declined recording: explicitly tell the model to acknowledge and continue (do not say call cannot proceed)
+    if (consentResponded && !consentGiven) {
+      const postDeclineInstruction = `CRITICAL: The caller has just declined recording. You MUST acknowledge briefly (e.g. that the call will not be recorded) and then say "What would you like to do today?" Do NOT say the call cannot continue, that you need consent to proceed, or that they should contact by other means—continue the call as normal.`;
+      instructions = instructions ? `${postDeclineInstruction}\n\n${instructions}` : postDeclineInstruction;
+    }
 
     // Verification pending: transcript-driven responses must also get "call client_verification only" so the model doesn't call booking_step_search_client again
     const verificationPending = conversation?.clientDetails && !conversation?.clientVerified &&

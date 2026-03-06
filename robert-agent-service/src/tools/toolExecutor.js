@@ -274,6 +274,16 @@ class ToolExecutor {
       }
       delete normalized.contact;
     }
+    // Same tools: model sometimes sends "phone" or "mobile" instead of customerMobile
+    if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
+        (normalized.phone != null || normalized.mobile != null) && (normalized.customerMobile == null || normalized.customerMobile === '')) {
+      const raw = String(normalized.phone ?? normalized.mobile ?? '').trim();
+      if (raw) {
+        normalized.customerMobile = raw.replace(/\D/g, '') || raw;
+      }
+      if (normalized.phone != null) delete normalized.phone;
+      if (normalized.mobile != null) delete normalized.mobile;
+    }
     // booking_step_fill_contact_details: model often sends name/email/mobile; schema expects customerName/customerEmail/customerMobile
     if (toolName === 'booking_step_fill_contact_details') {
       if (normalized.name != null && (normalized.customerName == null || normalized.customerName === '')) {
@@ -524,6 +534,7 @@ class ToolExecutor {
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Timeout: ${timeout}ms`);
       console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Call Context:`, { callSid, phoneNumber });
 
+      let timeoutId;
       try {
         // ========== ABORT CONTROLLER FOR TIMEOUT ==========
         // Priority: Create an AbortController so we can signal background operations to stop on timeout
@@ -548,7 +559,6 @@ class ToolExecutor {
           executionPromise = tool.execute(validatedParameters, callContextWithAbort);
         }
 
-        let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
           timeoutId = setTimeout(() => {
             // SIGNAL ABORTION: Background operations using the signal will stop
@@ -557,7 +567,25 @@ class ToolExecutor {
           }, timeout);
         });
 
-        const result = await Promise.race([executionPromise, timeoutPromise]);
+        // Race with call-level abort (when call disconnects)
+        const abortError = () => {
+          const e = new Error('Aborted');
+          e.name = 'AbortError';
+          return e;
+        };
+        const callAbortPromise = callContext.callAbortSignal
+          ? new Promise((_, reject) => {
+              if (callContext.callAbortSignal.aborted) {
+                reject(abortError());
+                return;
+              }
+              callContext.callAbortSignal.addEventListener('abort', () => reject(abortError()));
+            })
+          : null;
+
+        const racePromises = [executionPromise, timeoutPromise];
+        if (callAbortPromise) racePromises.push(callAbortPromise);
+        const result = await Promise.race(racePromises);
         clearTimeout(timeoutId);
 
         const executionTime = Date.now() - startTime;
@@ -593,11 +621,7 @@ class ToolExecutor {
         }
         return successReturn;
       } catch (error) {
-        // CLEANUP: Ensure timeout is cleared if execution failed before timeout
-        // In the try block above, timeoutId is defined before Promise.race
-        // but we need to ensure we don't leak it here.
-        // Actually, we need to declare let timeoutId before the race.
-
+        if (timeoutId) clearTimeout(timeoutId);
         const executionTime = Date.now() - startTime;
         const executionTimeSeconds = executionTime / 1000;
         span.setAttribute('tool.execution_time_ms', executionTime);

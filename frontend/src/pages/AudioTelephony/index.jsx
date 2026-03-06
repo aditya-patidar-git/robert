@@ -502,7 +502,7 @@ const AudioTelephonyPage = () => {
   };
 
   return (
-    <Box sx={{ maxWidth: '1400px', margin: '0 auto' }}>
+    <Box sx={{ width: '100%', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Page Header */}
       <Box sx={{ mb: 4 }}>
         <Typography 

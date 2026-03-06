@@ -3,6 +3,10 @@ node_modules/
 prompt-docs/
 robert_prod_envs/
 
+RoberAI.pem
+global-bundle-1.pem
+global-bundle.pem
+
 # Logs
 logs
 .cursor
