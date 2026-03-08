@@ -216,34 +216,12 @@ class SipCallRouter {
    * @returns {boolean} - True if SIP should be used
    */
   shouldUseSip(telephonyConfig) {
-    // PRIORITY 1: SIP_ENABLED env var (for testing/override)
-    // If explicitly set in .env, it takes full control
-    if (process.env.SIP_ENABLED !== undefined) {
-      const envValue = process.env.SIP_ENABLED === 'true';
-      console.log(`🔀 [ROUTING] SIP_ENABLED=${process.env.SIP_ENABLED} - Using env var override`);
-      
-      if (envValue) {
-        // SIP_ENABLED=true - check if SIP service is properly configured
-        if (!sipService.isSipEnabled()) {
-          console.log(`⚠️ [ROUTING] SIP_ENABLED=true but SIP service not configured (missing OPENAI_SIP_ENDPOINT?)`);
-          return false;
-        }
-        return true;
-      } else {
-        // SIP_ENABLED=false - force Media Streams
-        console.log(`📞 [ROUTING] SIP_ENABLED=false - Forcing Media Streams`);
-        return false;
-      }
-    }
-    
-    // PRIORITY 2: Database config (for production when env var not set)
     const dbPrimaryPath = telephonyConfig?.sipSettings?.primaryPath;
     const dbSipEnabled = dbPrimaryPath === 'sip';
     const sipServiceEnabled = sipService.isSipEnabled();
-    
-    console.log(`🔀 [ROUTING] SIP_ENABLED not set - Using database config: primaryPath=${dbPrimaryPath}, sipService.enabled=${sipServiceEnabled}`);
-    
-    // Use SIP if database says 'sip' AND SIP service is configured
+
+    console.log(`🔀 [ROUTING] Using database config: primaryPath=${dbPrimaryPath}, sipService.enabled=${sipServiceEnabled}`);
+
     return dbSipEnabled && sipServiceEnabled;
   }
 

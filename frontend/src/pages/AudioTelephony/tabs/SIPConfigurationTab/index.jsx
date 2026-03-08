@@ -5,12 +5,20 @@ import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../../../components/common/ToastProvider';
 import telephonyService from '../../../../services/telephonyService';
-import useConnectionTest from '../../../../hooks/useConnectionTest';
 import SIPBasicSettings from './SIPBasicSettings';
 import SIPCredentialsForm from './SIPCredentialsForm';
-import SIPConnectionStatus from './SIPConnectionStatus';
 import ConfirmSaveDialog from '../../../../components/common/ConfirmSaveDialog';
 import { AGENT_AFFECTING_WARNINGS } from '../../../../constants/agentAffectingWarnings';
+
+// Allow sip:user@host or sips:user@host with optional ;params and ?headers (RFC-style, no // required)
+const SIP_URI_PATTERN = /^sips?:[^@]+@[^;?]+(?:;.+)?(?:\?.+)?$/i;
+const URL_PATTERN = /^https?:\/\/.+/i;
+
+function isValidSipEndpoint(value) {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return SIP_URI_PATTERN.test(trimmed) || URL_PATTERN.test(trimmed);
+}
 
 /**
  * SIPConfigurationTab Component
@@ -27,24 +35,18 @@ const SIPConfigurationTab = () => {
     queryKey: ['sip-config'],
     queryFn: async () => {
       const response = await telephonyService.getSipConfig();
-      return response.sipSettings || {};
+      return response?.data?.sipSettings ?? response?.sipSettings ?? {};
     }
   });
 
-  // Form setup
-  const { control, handleSubmit, watch, reset, formState: { errors } } = useForm({
+  // Form setup (only fields shown in UI; reset merges full API response)
+  const { control, handleSubmit, watch, reset } = useForm({
     defaultValues: {
       sipSettings: {
         openaiSipEnabled: false,
         primaryPath: 'sip',
         fallbackPath: 'media_streams',
-        codec: 'opus',
-        region: 'europe',
-        openaiSipEndpoint: '',
-        openaiSipWebhookUrl: '',
-        twilioSipTrunkSid: '',
-        twilioSipUsername: '',
-        twilioSipPassword: ''
+        openaiSipEndpoint: ''
       }
     }
   });
@@ -55,28 +57,11 @@ const SIPConfigurationTab = () => {
       reset({
         sipSettings: {
           ...sipConfigData,
-          // Don't reset password if it's masked
           twilioSipPassword: sipConfigData.twilioSipPassword || ''
         }
       });
     }
   }, [sipConfigData, reset]);
-
-  // Connection test hook (normalize so hook uses actual test result, not just HTTP success)
-  const { testConnection, status, loading: testLoading, error, lastAttempt } = useConnectionTest(
-    async (config) => {
-      const formValues = watch();
-      const testConfig = { ...formValues.sipSettings, ...config };
-      await telephonyService.updateSipConfig(testConfig);
-      const response = await telephonyService.testSipConnection();
-      const testResult = response?.data?.testResult ?? response?.testResult;
-      const actualSuccess = testResult?.success ?? response?.success;
-      if (actualSuccess) {
-        return { success: true, message: testResult?.message || 'Connection test successful', data: testResult?.data };
-      }
-      return { success: false, message: testResult?.message || 'Connection test failed', error: testResult?.error || testResult?.message };
-    }
-  );
 
   // Update mutation
   const updateMutation = useMutation({
@@ -102,10 +87,24 @@ const SIPConfigurationTab = () => {
   };
 
   const handleSaveClick = (data) => {
-    if (data) {
-      setPendingSipData(data);
-      setConfirmOpen(true);
+    if (!data) return;
+    const { openaiSipEnabled, primaryPath, fallbackPath, openaiSipEndpoint } = data.sipSettings || {};
+    if (openaiSipEnabled) {
+      if (primaryPath && fallbackPath && primaryPath === fallbackPath) {
+        showError('Primary and fallback path cannot be the same.');
+        return;
+      }
+      if (!openaiSipEndpoint || !openaiSipEndpoint.trim()) {
+        showError('OpenAI SIP endpoint is required when SIP is enabled.');
+        return;
+      }
+      if (!isValidSipEndpoint(openaiSipEndpoint)) {
+        showError('Invalid SIP endpoint format. Use a valid SIP URI (sip:user@host or sip://...) or HTTPS URL.');
+        return;
+      }
     }
+    setPendingSipData(data);
+    setConfirmOpen(true);
   };
 
   const handleConfirmSave = async () => {
@@ -116,13 +115,6 @@ const SIPConfigurationTab = () => {
     }
   };
 
-  const handleTestConnection = async () => {
-    const formValues = watch();
-    await testConnection(formValues.sipSettings);
-  };
-
-  const sipEnabled = watch('sipSettings.openaiSipEnabled');
-
   if (isLoading) {
     return <Box>Loading...</Box>;
   }
@@ -131,16 +123,7 @@ const SIPConfigurationTab = () => {
     <Box>
       <SIPBasicSettings control={control} watch={watch} />
       <SIPCredentialsForm control={control} watch={watch} />
-      
-      <SIPConnectionStatus
-        status={status}
-        lastAttempt={lastAttempt}
-        error={error}
-        onTest={handleTestConnection}
-        loading={testLoading}
-        disabled={!sipEnabled}
-      />
-      
+
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 3 }}>
         <Button
           type="button"

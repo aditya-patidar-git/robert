@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, FormControl, InputLabel, Select, MenuItem, FormControlLabel, Switch, Typography, Paper } from '@mui/material';
+import { Box, FormControl, FormHelperText, InputLabel, Select, MenuItem, FormControlLabel, Switch, Typography, Paper } from '@mui/material';
 import { Controller } from 'react-hook-form';
 
 /**
@@ -8,6 +8,8 @@ import { Controller } from 'react-hook-form';
  */
 const SIPBasicSettings = ({ control, watch }) => {
   const sipEnabled = watch('sipSettings.openaiSipEnabled');
+  const primaryPath = watch('sipSettings.primaryPath');
+  const fallbackPath = watch('sipSettings.fallbackPath');
 
   return (
     <Paper sx={{ p: 3, mb: 3 }}>
@@ -38,19 +40,28 @@ const SIPBasicSettings = ({ control, watch }) => {
               display: 'flex',
               flexDirection: 'row',
               gap: 2,
-              flexWrap: { xs: 'wrap', md: 'nowrap' }
+              flexWrap: { xs: 'wrap', md: 'nowrap' },
+              width: '50%'
             }}
           >
             <Controller
               name="sipSettings.primaryPath"
               control={control}
-              render={({ field }) => (
-                <FormControl sx={{ flex: 1, minWidth: 150 }}>
+              rules={{
+                required: sipEnabled ? 'Primary path is required' : false,
+                validate: (value) =>
+                  sipEnabled && value && fallbackPath && value === fallbackPath
+                    ? 'Primary and fallback path cannot be the same'
+                    : true
+              }}
+              render={({ field, fieldState: { error } }) => (
+                <FormControl sx={{ flex: 1, minWidth: 150 }} error={!!error}>
                   <InputLabel>Primary Path</InputLabel>
                   <Select {...field} label="Primary Path">
                     <MenuItem value="sip">SIP</MenuItem>
                     <MenuItem value="media_streams">Media Streams</MenuItem>
                   </Select>
+                  {error?.message && <FormHelperText error>{error.message}</FormHelperText>}
                 </FormControl>
               )}
             />
@@ -58,44 +69,21 @@ const SIPBasicSettings = ({ control, watch }) => {
             <Controller
               name="sipSettings.fallbackPath"
               control={control}
-              render={({ field }) => (
-                <FormControl sx={{ flex: 1, minWidth: 150 }}>
+              rules={{
+                required: sipEnabled ? 'Fallback path is required' : false,
+                validate: (value) =>
+                  sipEnabled && value && primaryPath && value === primaryPath
+                    ? 'Primary and fallback path cannot be the same'
+                    : true
+              }}
+              render={({ field, fieldState: { error } }) => (
+                <FormControl sx={{ flex: 1, minWidth: 150 }} error={!!error}>
                   <InputLabel>Fallback Path</InputLabel>
                   <Select {...field} label="Fallback Path">
                     <MenuItem value="sip">SIP</MenuItem>
                     <MenuItem value="media_streams">Media Streams</MenuItem>
                   </Select>
-                </FormControl>
-              )}
-            />
-
-            <Controller
-              name="sipSettings.codec"
-              control={control}
-              render={({ field }) => (
-                <FormControl sx={{ flex: 1, minWidth: 150 }}>
-                  <InputLabel>Codec</InputLabel>
-                  <Select {...field} label="Codec">
-                    <MenuItem value="opus">Opus</MenuItem>
-                    <MenuItem value="pcm">PCM</MenuItem>
-                    <MenuItem value="g722">G.722</MenuItem>
-                  </Select>
-                </FormControl>
-              )}
-            />
-
-            <Controller
-              name="sipSettings.region"
-              control={control}
-              render={({ field }) => (
-                <FormControl sx={{ flex: 1, minWidth: 150 }}>
-                  <InputLabel>Region</InputLabel>
-                  <Select {...field} label="Region">
-                    <MenuItem value="europe">Europe</MenuItem>
-                    <MenuItem value="us-east">US East</MenuItem>
-                    <MenuItem value="us-west">US West</MenuItem>
-                    <MenuItem value="asia-pacific">Asia Pacific</MenuItem>
-                  </Select>
+                  {error?.message && <FormHelperText error>{error.message}</FormHelperText>}
                 </FormControl>
               )}
             />
