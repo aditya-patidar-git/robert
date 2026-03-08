@@ -13,7 +13,7 @@ import configManager from '../agent/configManager.js';
 
 class SipService {
   constructor() {
-    // Note: SIP config values are read live via getters. Prefer DB (TelephonyConfig.sipSettings); env overrides when set.
+    // Note: SIP config values are read live via getters from DB (TelephonyConfig.sipSettings).
     this.retryConfig = {
       maxRetries: 3,
       initialDelay: 1000,
@@ -23,26 +23,26 @@ class SipService {
   }
 
   /**
-   * Get OpenAI SIP endpoint: env OPENAI_SIP_ENDPOINT overrides; else from DB (TelephonyConfig.sipSettings.openaiSipEndpoint)
+   * Get OpenAI SIP endpoint from DB (TelephonyConfig.sipSettings.openaiSipEndpoint).
+   * When SIP is enabled from admin and DB endpoint is missing/empty, falls back to OPENAI_SIP_ENDPOINT env.
    * @returns {string|null} - SIP endpoint URL or null
    */
   get openaiSipEndpoint() {
-    if (process.env.OPENAI_SIP_ENDPOINT) {
-      return process.env.OPENAI_SIP_ENDPOINT;
-    }
     const sipSettings = configManager?.getTelephonyConfig?.()?.sipSettings;
-    const endpoint = sipSettings?.openaiSipEndpoint;
-    return (endpoint && String(endpoint).trim()) ? String(endpoint).trim() : null;
+    const fromDb = sipSettings?.openaiSipEndpoint;
+    const dbEndpoint = (fromDb && String(fromDb).trim()) ? String(fromDb).trim() : null;
+    if (dbEndpoint) return dbEndpoint;
+    const sipEnabledFromAdmin = sipSettings?.openaiSipEnabled === true;
+    const envFallback = (process.env.OPENAI_SIP_ENDPOINT && String(process.env.OPENAI_SIP_ENDPOINT).trim()) || null;
+    if (sipEnabledFromAdmin && envFallback) return envFallback;
+    return null;
   }
 
   /**
-   * Check if SIP is enabled: env SIP_ENABLED overrides; else from DB (TelephonyConfig.sipSettings.openaiSipEnabled)
+   * Check if SIP is enabled from DB (TelephonyConfig.sipSettings.openaiSipEnabled)
    * @returns {boolean} - True if SIP is enabled
    */
   get sipEnabled() {
-    if (process.env.SIP_ENABLED !== undefined && process.env.SIP_ENABLED !== '') {
-      return process.env.SIP_ENABLED === 'true';
-    }
     const sipSettings = configManager?.getTelephonyConfig?.()?.sipSettings;
     return sipSettings?.openaiSipEnabled === true;
   }
@@ -277,7 +277,7 @@ class SipService {
 
     // Check if SIP is enabled
     if (!this.sipEnabled) {
-      result.warnings.push('SIP is not enabled (SIP_ENABLED != true)');
+      result.warnings.push('SIP is not enabled in Telephony config');
       return result;
     }
 
@@ -364,19 +364,19 @@ class SipService {
       };
     }
 
-    // Require endpoint from env or DB when SIP is enabled (DB takes precedence when env not set)
+    // Require endpoint from DB when SIP is enabled
     const hasEndpoint = !!this.openaiSipEndpoint;
     if (this.sipEnabled && !hasEndpoint) {
-      result.errors.push('SIP is enabled but endpoint is not set (set OPENAI_SIP_ENDPOINT in env or openaiSipEndpoint in Telephony config in DB)');
+      result.errors.push('SIP is enabled but endpoint is not set (set openaiSipEndpoint in Telephony config in admin)');
     }
 
-    const optionalVars = ['OPENAI_SIP_ENDPOINT', 'SIP_ENABLED', 'TWILIO_SIP_TRUNK_SID', 'BASE_URL', 'TUNNEL_DOMAIN', 'SIP_AUTH_USERNAME', 'SIP_AUTH_PASSWORD'];
+    const optionalVars = ['TWILIO_SIP_TRUNK_SID', 'BASE_URL', 'TUNNEL_DOMAIN', 'SIP_AUTH_USERNAME', 'SIP_AUTH_PASSWORD'];
     result.details.environment = {
       optional: optionalVars.map(v => ({
         name: v,
         configured: !!process.env[v]
       })),
-      endpointFromDb: !process.env.OPENAI_SIP_ENDPOINT && !!configManager?.getTelephonyConfig?.()?.sipSettings?.openaiSipEndpoint
+      sipFromDb: true
     };
 
     // If we have endpoint and no critical errors, mark as valid

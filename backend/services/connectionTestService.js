@@ -47,8 +47,8 @@ class ConnectionTestService {
         };
       }
 
-      // Validate endpoint format (should be a valid SIP URI or URL)
-      const sipUriPattern = /^sip:\/\/.+@.+$/i;
+      // Validate endpoint format (SIP URI sip:user@host[;params] or sips:..., or HTTPS URL)
+      const sipUriPattern = /^sips?:[^@]+@[^;?]+(?:;.+)?(?:\?.+)?$/i;
       const urlPattern = /^https?:\/\/.+/i;
 
       if (!sipUriPattern.test(openaiSipEndpoint) && !urlPattern.test(openaiSipEndpoint)) {
@@ -56,7 +56,7 @@ class ConnectionTestService {
           success: false,
           status: 'failed',
           message: 'Invalid SIP endpoint format',
-          error: 'Endpoint must be a valid SIP URI (sip://...) or HTTPS URL'
+          error: 'Endpoint must be a valid SIP URI (sip:user@host or sip://...) or HTTPS URL'
         };
       }
 

@@ -22,10 +22,21 @@ class SIPConfigService {
    */
   validateSipConfig(config) {
     const errors = [];
+    const sipUriPattern = /^sips?:[^@]+@[^;?]+(?:;.+)?(?:\?.+)?$/i; // sip:user@host or sips:user@host;params (no // required)
+    const urlPattern = /^https?:\/\/.+/i;
 
     if (config.openaiSipEnabled) {
-      if (!config.openaiSipEndpoint) {
+      if (!config.openaiSipEndpoint || !String(config.openaiSipEndpoint).trim()) {
         errors.push('OpenAI SIP endpoint is required when SIP is enabled');
+      } else {
+        const endpoint = String(config.openaiSipEndpoint).trim();
+        if (!sipUriPattern.test(endpoint) && !urlPattern.test(endpoint)) {
+          errors.push('OpenAI SIP endpoint must be a valid SIP URI (sip:user@host or sip://...) or HTTPS URL');
+        }
+      }
+
+      if (config.primaryPath && config.fallbackPath && config.primaryPath === config.fallbackPath) {
+        errors.push('Primary and fallback path cannot be the same.');
       }
 
       if (config.openaiSipWebhookUrl) {
