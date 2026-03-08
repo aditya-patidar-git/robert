@@ -31,7 +31,7 @@ class ProgressIndicatorService {
    */
   buildStrictHoldingInstruction(escapedMessage, toolName) {
     const step = toolName || 'current step';
-    return `CRITICAL — SYSTEM HOLDING MESSAGE. While ${step} is running, you MUST output ONLY the exact phrase below. No other words. No summary of the booking. No confirmation. No apology. No rephrasing. Do NOT mention: course name, date, time, location, session, payment, bike type, transfer, confirmation, "you're all set", contact details, full name, email, phone, or next steps. Do not ask any questions. Do not call any tools. If you cannot say only this phrase, say nothing. The ONLY phrase you are allowed to say is: "${escapedMessage}". Say that phrase and nothing else.`;
+    return `CRITICAL — SYSTEM HOLDING MESSAGE. While ${step} is running, you MUST output ONLY the exact phrase below. No other words. No summary of the booking. No confirmation. No "booking confirmed". No apology. No rephrasing. Do NOT mention: course name, date, time, location, session, payment, bike type, transfer, confirmation, "you're all set", contact details, full name, email, phone, or next steps. Do not ask any questions. Do not call any tools. If you cannot say only this phrase, say nothing. The ONLY phrase you are allowed to say is: "${escapedMessage}". Say that phrase and nothing else.`;
   }
 
   /**

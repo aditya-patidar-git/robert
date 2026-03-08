@@ -140,7 +140,7 @@ CRITICAL WORKFLOW ORDER:
    - For CBT courses: Ask "Which CBT type?" (Standard CBT, Executive CBT, etc.) and bike type; call booking_step_select_booking_options with cbtType and bikeType as applicable.
    - For other courses: Ask about relevant options and call the tool with the caller's choices.
 
-2. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, booking_step_select_options, or booking_step_confirm_booking. Do NOT say "booking confirmed", "you're all set", or give date/time summary until payment is complete (paymentCompleted: true in a tool result). After the caller gives their choice (e.g. "125cc automatic"), call booking_step_select_booking_options with courseType, workflowType, and bikeType as top-level parameters (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. Then use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.
+2. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, booking_step_select_options, or booking_step_confirm_booking. Do NOT say "booking confirmed", "you're all set", or give date/time summary until the ENTIRE booking flow is complete: payment must be complete (paymentCompleted: true in a tool result) AND the post-booking steps (booking_step_send_confirmation, booking_step_send_terms, booking_step_send_sms) have been run. Until then use only holding phrases (e.g. "Just a moment, please."). After the caller gives their choice (e.g. "125cc automatic"), call booking_step_select_booking_options with courseType, workflowType, and bikeType as top-level parameters (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. Then use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.
 
 3. ONLY AFTER options are set: Proceed to lookup contact (existing) or create new contact (new), then fill contact details.
 
@@ -165,7 +165,7 @@ STEP PROGRESSION: After step 8 (lookup_contact) the next step is always step 9 (
 
 AUTOMATIC CONTINUATION: After booking_step_lookup_contact completes, IMMEDIATELY proceed to booking_step_fill_contact_details. Do NOT wait for prompts.`,
 
-  booking_payment: `Processing payment. CRITICAL: Only say "Booking confirmed" or "you're all set" or give date/time/location summary when paymentCompleted: true appears in tool result. Before that, do NOT say the booking is confirmed or finalized.
+  booking_payment: `Processing payment. CRITICAL: Only say "Booking confirmed" or "you're all set" or give date/time/location summary when paymentCompleted: true AND after the post-booking steps (booking_step_send_confirmation, booking_step_send_terms, booking_step_send_sms) have completed. Before that, do NOT say the booking is confirmed or finalized.
 
 When booking_step_process_payment returns requiresPaymentMethod (asks for email or SMS), do NOT call booking_step_process_payment again. Ask the caller "Would you like to receive the payment request via email or SMS?" then call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms" (and courseType, workflowType, clientEmail/clientMobile as needed).
 
@@ -183,7 +183,7 @@ CRITICAL: Terms check is MANDATORY. When a tool returns requiresTermsBeforeSend 
 
 AUTOMATIC CONTINUATION: After payment tools complete, IMMEDIATELY proceed to next steps (confirmation email, terms, SMS). Do NOT wait for prompts.`,
 
-  booking_completion: `Booking is complete. You MUST invoke these tools in order (do not wait for the caller to ask): **booking_step_send_confirmation**, then **booking_step_send_terms**, then **booking_step_send_sms**. Say a brief confirmation to the caller, then call these three tools in sequence. Be friendly and confirm next steps after the tools complete.
+  booking_completion: `Booking is complete. You MUST invoke these tools in order (do not wait for the caller to ask): **booking_step_send_confirmation**, then **booking_step_send_terms**, then **booking_step_send_sms**. Do NOT say "booking confirmed" or "you're all set" until all three tools have completed. After they complete, say a brief confirmation to the caller and confirm next steps.
 
 AUTOMATIC CONTINUATION: After sending confirmation/terms/SMS via the tools, confirm completion with the caller. Do NOT wait for prompts.`,
 

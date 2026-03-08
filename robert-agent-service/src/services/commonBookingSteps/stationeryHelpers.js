@@ -338,14 +338,17 @@ export async function selectSMSPreset(page, searchContext, presetTemplateName) {
   await presetDropdownRow.click();
   await page.waitForTimeout(2000);
   
-  // Wait for DevExtreme dropdown overlay to appear (last direct child of body)
+  // Wait for DevExtreme dropdown overlay to appear (dropdown and popup are inside the SMS iframe)
   console.log('⏳ [SMS] Waiting for dropdown overlay to appear...');
   await page.waitForTimeout(1000);
   
-  // Find the dropdown overlay (last direct child of body with class dx-dropdownlist-popup-wrapper)
-  const dropdownOverlay = page.locator('body > div.dx-dropdownlist-popup-wrapper').last();
-  const overlayExists = await dropdownOverlay.count() > 0;
-  
+  // Find the dropdown overlay inside the iframe first (searchContext), then fallback to main page
+  let dropdownOverlay = searchContext.locator('div.dx-dropdownlist-popup-wrapper').last();
+  let overlayExists = await dropdownOverlay.count() > 0;
+  if (!overlayExists) {
+    dropdownOverlay = page.locator('body > div.dx-dropdownlist-popup-wrapper').last();
+    overlayExists = await dropdownOverlay.count() > 0;
+  }
   if (!overlayExists) {
     throw new Error('Could not find dropdown overlay');
   }
