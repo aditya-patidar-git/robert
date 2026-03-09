@@ -108,6 +108,10 @@ export async function executeNewClientFlow(page, args, sessionState, screenshots
     nextStep: 'booking_step_process_payment', // Explicitly state next step tool to call
     nextStepNumber: 8, // Explicitly state next step number (for new clients, payment is Step 8)
     doNotRetry: true, // Explicitly prevent retry
-    message: `✅ STEP 7 COMPLETE: booking_step_fill_contact_details has been successfully completed. Contact details form filled successfully. DO NOT RETRY THIS STEP. IMMEDIATELY proceed to STEP 8 by calling booking_step_process_payment tool.`
+    partialFill: fillResult?.partialFill,
+    skippedFields: fillResult?.skippedFields,
+    message: fillResult?.partialFill
+      ? `Contact details step completed; some fields could not be filled (${(fillResult.skippedFields || []).join(', ')}). Proceeding to payment. DO NOT say "booking confirmed" or "you're all set". IMMEDIATELY call booking_step_process_payment.`
+      : `✅ STEP 7 COMPLETE: booking_step_fill_contact_details has been successfully completed. Contact details form filled successfully. DO NOT RETRY THIS STEP. IMMEDIATELY proceed to STEP 8 by calling booking_step_process_payment tool.`
   };
 }
