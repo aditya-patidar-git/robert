@@ -175,7 +175,7 @@ CRITICAL WORKFLOW:
 2. Ask the caller for those options (e.g. for ITM: "125cc automatic, 50cc automatic, 125cc manual").
 3. Call this tool again with chosen options (bikeType, duration, etc.) as TOP-LEVEL parameters.
 4. For Gear Conversion, duration is ALWAYS 2 hours by default - do NOT ask the caller about duration. ONLY ask for bike type.
-5. DO NOT ask for contact details (Name, Email, Phone) yet. Only ask for options appearing on the "1. Price" page.`,
+5. DO NOT ask for contact details (Name, Email, Phone) yet. Only ask for options appearing on the "1. Price" page. Contact details (name, email, phone, postcode, etc.) may ONLY be collected after the contact details page is reached—i.e. after booking_step_fill_contact_details has been called and returned.`,
 
       parameters: {
         type: 'object',

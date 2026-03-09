@@ -107,30 +107,54 @@ export function getLicenceHeldOptionsForPrompt() {
   return LICENCE_HELD_EXACT_OPTIONS.join(', ');
 }
 
+/** Timeout (ms) for Licence held dropdown overlay to become visible (increased to 10s for slow environments). */
+const LICENCE_HELD_OVERLAY_TIMEOUT_MS = 10000;
+
 /**
  * Select option from a DevExtreme dropdown by scoping to the visible overlay.
- * Avoids matching options from other dropdowns (e.g. Riding experience).
+ * Tries iframe first, then page (in case overlay is rendered in top-level document).
  * @returns {Promise<boolean>} true if selection was done via overlay
  */
 async function selectOptionFromOverlay(iframe, page, fieldId, exactLabel) {
   const dropdownInput = iframe.locator(`#${fieldId} .dx-texteditor-input`);
   await dropdownInput.click();
   await page.waitForTimeout(500);
-  const overlay = iframe.locator('.dx-dropdowneditor-overlay .dx-list-items');
-  await overlay.waitFor({ state: 'visible', timeout: 5000 });
-  const optionsContainer = iframe.locator('.dx-dropdowneditor-overlay .dx-list-items');
-  const items = optionsContainer.locator('.dx-item');
-  const count = await items.count();
-  for (let i = 0; i < count; i++) {
-    const item = items.nth(i);
-    const content = item.locator('.dx-item-content');
-    const text = (await content.textContent()).trim();
-    if (text === exactLabel) {
-      await item.waitFor({ state: 'visible', timeout: 5000 });
-      await item.click();
-      return true;
+
+  const overlaySelector = '.dx-overlay-wrapper.dx-dropdowneditor-overlay .dx-list-items';
+
+  async function trySelectFromContainer(container) {
+    const items = container.locator('.dx-item');
+    const count = await items.count();
+    for (let i = 0; i < count; i++) {
+      const item = items.nth(i);
+      const content = item.locator('.dx-item-content');
+      const text = (await content.textContent()).trim();
+      if (text === exactLabel) {
+        await item.waitFor({ state: 'visible', timeout: LICENCE_HELD_OVERLAY_TIMEOUT_MS });
+        await item.click();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Try iframe first (overlay in same iframe)
+  try {
+    const overlay = iframe.locator(overlaySelector);
+    await overlay.waitFor({ state: 'visible', timeout: LICENCE_HELD_OVERLAY_TIMEOUT_MS });
+    const optionsContainer = iframe.locator(overlaySelector);
+    if (await trySelectFromContainer(optionsContainer)) return true;
+  } catch (iframeErr) {
+    // Fallback: overlay may be in top-level document
+    try {
+      const pageOverlay = page.locator(overlaySelector);
+      await pageOverlay.waitFor({ state: 'visible', timeout: LICENCE_HELD_OVERLAY_TIMEOUT_MS });
+      if (await trySelectFromContainer(pageOverlay)) return true;
+    } catch (pageErr) {
+      throw iframeErr; // throw original iframe error for message
     }
   }
+
   return false;
 }
 
@@ -218,6 +242,9 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
     }
     
     const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+
+    /** Fields we could not fill (e.g. Licence held timeout); continue with rest and still click Next. */
+    const skippedFields = [];
     
     // Wait for form to be ready
     await page.waitForTimeout(2000);
@@ -334,8 +361,13 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
         } else if (autoPopulatedAddress && autoPopulatedAddress.trim() !== '') {
           // Fill Licence held, NI, Driving licence BEFORE returning for address confirmation so form has all data; Next will be clicked on follow-up when addressConfirmed is true
           if (contactDetails.licenceHeld) {
-            console.log(`📝 [STEP 7] Filling Licence held (before address confirmation): ${contactDetails.licenceHeld}`);
-            await selectDropdownOption(eventBookingIframe, page, 'Licence held', 'xid_29019', contactDetails.licenceHeld);
+            try {
+              console.log(`📝 [STEP 7] Filling Licence held (before address confirmation): ${contactDetails.licenceHeld}`);
+              await selectDropdownOption(eventBookingIframe, page, 'Licence held', 'xid_29019', contactDetails.licenceHeld);
+            } catch (licenceErr) {
+              console.warn('⚠️ [STEP 7] Could not fill Licence held:', licenceErr.message, '- continuing with next fields');
+              skippedFields.push('licenceHeld');
+            }
           }
           if (contactDetails.nationalInsuranceNumber) {
             console.log(`📝 [STEP 7] Filling National Insurance number (before address confirmation): ${contactDetails.nationalInsuranceNumber}`);
@@ -346,7 +378,7 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
             if (contactDetails.licenceFormat === 'NI') {
               let gbButton = eventBookingIframe.getByRole('button', { name: 'GB' }).first();
               if (await gbButton.count() === 0) {
-                gbButton = eventBookingIframe.locator('#cnt_driving_licence_no button[aria-label="GB"]').first();
+                gbButton = eventBookingIframe.locator('#cnt_driving_licence_no [role="button"][aria-label="GB"]').first();
               }
               if (await gbButton.count() > 0) {
                 await gbButton.click();
@@ -391,10 +423,15 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
       }
     }
     
-    // 9. Licence held
+    // 9. Licence held (lenient: skip on timeout/error and continue)
     if (contactDetails.licenceHeld) {
-      console.log(`📝 [STEP 7] Filling Licence held: ${contactDetails.licenceHeld}`);
-      await selectDropdownOption(eventBookingIframe, page, 'Licence held', 'xid_29019', contactDetails.licenceHeld);
+      try {
+        console.log(`📝 [STEP 7] Filling Licence held: ${contactDetails.licenceHeld}`);
+        await selectDropdownOption(eventBookingIframe, page, 'Licence held', 'xid_29019', contactDetails.licenceHeld);
+      } catch (licenceErr) {
+        console.warn('⚠️ [STEP 7] Could not fill Licence held:', licenceErr.message, '- continuing with next fields');
+        skippedFields.push('licenceHeld');
+      }
     }
     
     // 10. National Insurance number
@@ -411,7 +448,7 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
       if (contactDetails.licenceFormat === 'NI') {
         let gbButton = eventBookingIframe.getByRole('button', { name: 'GB' }).first();
         if (await gbButton.count() === 0) {
-          gbButton = eventBookingIframe.locator('#cnt_driving_licence_no button[aria-label="GB"]').first();
+          gbButton = eventBookingIframe.locator('#cnt_driving_licence_no [role="button"][aria-label="GB"]').first();
         }
         if (await gbButton.count() > 0) {
           await gbButton.click();
@@ -486,6 +523,15 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
     await takeScreenshot(page, 'after-contact-details-next.png', screenshotsDir);
     
     console.log('✅ [STEP 7] Contact details filled and Next button clicked');
+    if (skippedFields.length > 0) {
+      console.log('⚠️ [STEP 7] Some fields were skipped:', skippedFields.join(', '));
+    }
+
+    return {
+      success: true,
+      partialFill: skippedFields.length > 0,
+      skippedFields: skippedFields.length > 0 ? skippedFields : undefined
+    };
     
   } catch (error) {
     console.error('❌ [STEP 7] Error filling contact details:', error);
