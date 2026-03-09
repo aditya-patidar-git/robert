@@ -613,6 +613,91 @@ app.get('/call', async (req, res) => {
   }
 });
 
+// Dev-only: multi-call page for parallel call testing (NODE_ENV=development)
+if (process.env.NODE_ENV === 'development') {
+  app.get('/dev/multi-call', (_req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dev – Multi-call</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 1.25rem; margin-bottom: 16px; }
+    .row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+    input[type="text"] { flex: 1; padding: 8px 12px; font-size: 14px; }
+    button { padding: 8px 14px; font-size: 14px; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    ul { list-style: none; padding: 0; margin: 0 0 16px; }
+    li { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
+    li span { font-family: monospace; font-size: 13px; }
+    .log { background: #f5f5f5; padding: 12px; font-size: 12px; font-family: monospace; white-space: pre-wrap; max-height: 200px; overflow-y: auto; margin-top: 12px; }
+    .log .ok { color: #0a0; }
+    .log .err { color: #c00; }
+  </style>
+</head>
+<body>
+  <h1>Dev – Multi-call (parallel)</h1>
+  <p style="color:#666;font-size:13px;margin-bottom:16px;">Add numbers and start all calls at once. Only available when NODE_ENV=development.</p>
+  <div class="row">
+    <input type="text" id="number" placeholder="e.g. +918120523400" />
+    <button type="button" id="add">Add</button>
+  </div>
+  <div class="row">
+    <button type="button" id="start" disabled>Start all calls</button>
+    <button type="button" id="clear">Clear list</button>
+  </div>
+  <ul id="list"></ul>
+  <div class="log" id="log"></div>
+  <script>
+    const numberInput = document.getElementById('number');
+    const addBtn = document.getElementById('add');
+    const startBtn = document.getElementById('start');
+    const clearBtn = document.getElementById('clear');
+    const listEl = document.getElementById('list');
+    const logEl = document.getElementById('log');
+    const numbers = [];
+    function render() {
+      listEl.innerHTML = numbers.map((n, i) => '<li><span>' + escapeHtml(n) + '</span><button type="button" data-i="' + i + '">Remove</button></li>').join('') || '<li style="color:#999;">No numbers added</li>';
+      startBtn.disabled = numbers.length === 0;
+      listEl.querySelectorAll('[data-i]').forEach(btn => btn.addEventListener('click', () => { numbers.splice(+btn.dataset.i, 1); render(); }));
+    }
+    function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function log(msg, isErr) { const line = document.createElement('div'); line.className = isErr ? 'err' : 'ok'; line.textContent = msg; logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight; }
+    addBtn.addEventListener('click', () => {
+      const n = numberInput.value.trim();
+      if (!n) return;
+      numbers.push(n);
+      numberInput.value = '';
+      render();
+    });
+    numberInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addBtn.click(); });
+    clearBtn.addEventListener('click', () => { numbers.length = 0; render(); logEl.innerHTML = ''; });
+    startBtn.addEventListener('click', async () => {
+      if (numbers.length === 0) return;
+      startBtn.disabled = true;
+      log('Starting ' + numbers.length + ' call(s)...');
+      const results = await Promise.all(numbers.map(async (to) => {
+        try {
+          const r = await fetch('/call?to=' + encodeURIComponent(to));
+          const text = await r.text();
+          return { to, ok: r.ok, text };
+        } catch (e) { return { to, ok: false, text: e.message }; }
+      }));
+      results.forEach(({ to, ok, text }) => log(to + ' → ' + (ok ? text : 'Error: ' + text), !ok));
+      log('Done.');
+      startBtn.disabled = false;
+    });
+    render();
+  </script>
+</body>
+</html>`);
+  });
+}
+
 server.listen(PORT, async () => {
   console.log(`\n🤖 ROBERT VOICE AGENT SERVICE READY`);
   console.log(`📍 Port: ${PORT}`);
@@ -655,6 +740,9 @@ server.listen(PORT, async () => {
 
   const callTo = CALL_TO || '<CALL_TO>';
   console.log(`CALL NOW → http://localhost:${PORT}/call?to=${callTo} (${VERIFIED_CALLER_ID || 'VERIFIED_CALLER_ID'} → ${callTo})\n`);
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`DEV MULTI-CALL → http://localhost:${PORT}/dev/multi-call\n`);
+  }
 });
 
 /**
