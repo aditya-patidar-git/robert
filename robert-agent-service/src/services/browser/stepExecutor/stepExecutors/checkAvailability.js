@@ -61,7 +61,7 @@ export async function executeCheckAvailability(page, args, sessionState, screens
     nextStep: 'booking_step_authenticate',
     nextStepNumber: 2,
     doNotRetry: true,
-    message: `✅ STEP 1 COMPLETE. DO NOT RETRY. Present ONLY these slot(s) to the caller and confirm their selection. Do not read out any other slots. Slots to present: ${slotsSummary}. Once a slot is agreed, call booking_step_authenticate.`,
+    message: `✅ STEP 1 COMPLETE. DO NOT RETRY. Present ONLY these slot(s) to the caller and confirm their selection. Do not read out any other slots. Slots to present: ${slotsSummary}. When the caller confirms (e.g. yes, okay go ahead, proceed), call booking_step_authenticate with agreedSlot set to this slot—do not ask for name or email; Step 2 is CRM login only.`,
     allSlots: result.allSlots,
     selectedSlot: result.selectedSlot,
     slotsToAnnounce,
