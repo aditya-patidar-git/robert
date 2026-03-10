@@ -31,7 +31,7 @@ import {
 import { DatePicker } from '@mui/x-date-pickers';
 import auditLogService from '../../../services/auditLogService';
 import userService from '../../../services/userService';
-import { formatEventTypeLabel, AUDIT_LOG_ACTIONS } from '../../Privacy/utils/auditLogFormatters';
+import { formatEventTypeLabel, formatTargetTypeLabel, formatMetadataForDisplay, formatAuditDetails, AUDIT_LOG_ACTIONS } from '../../Privacy/utils/auditLogFormatters';
 
 const AuditLogViewer = () => {
   const [exporting, setExporting] = useState(false);
@@ -327,16 +327,21 @@ const AuditLogViewer = () => {
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={log.action}
+                          label={formatEventTypeLabel(log.action)}
                           size="small"
                           color={getActionColor(log.action)}
                           sx={{ textTransform: 'none' }}
                         />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">
-                          {log.targetType} {log.targetId ? `(${log.targetId.substring(0, 8)}...)` : ''}
-                        </Typography>
+                        <Tooltip
+                          title={log.targetId ? `Target ID: ${log.targetId}` : ''}
+                          disableHoverListener={!log.targetId}
+                        >
+                          <Typography variant="body2">
+                            {formatTargetTypeLabel(log.targetType)}
+                          </Typography>
+                        </Tooltip>
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
@@ -352,6 +357,19 @@ const AuditLogViewer = () => {
                               Details
                             </Typography>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                              {(() => {
+                                const summaryText = formatAuditDetails(log);
+                                return summaryText && summaryText !== 'No details available' ? (
+                                  <Box>
+                                    <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
+                                      Summary:
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                      {summaryText}
+                                    </Typography>
+                                  </Box>
+                                ) : null;
+                              })()}
                               {log.diff && (
                                 <Box>
                                   <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
@@ -372,13 +390,13 @@ const AuditLogViewer = () => {
                                   </Typography>
                                 </Box>
                               )}
-                              {log.metadata && (
+                              {log.metadata && Object.keys(log.metadata).length > 0 && (
                                 <Box>
                                   <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>
                                     Metadata:
                                   </Typography>
-                                  <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', bgcolor: 'background.paper', p: 1, borderRadius: 1 }}>
-                                    {JSON.stringify(log.metadata, null, 2)}
+                                  <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                                    {formatMetadataForDisplay(log.metadata)}
                                   </Typography>
                                 </Box>
                               )}

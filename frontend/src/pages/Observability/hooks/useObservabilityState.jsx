@@ -104,7 +104,7 @@ export const useObservabilityState = () => {
 
   // Mutations
   const acknowledgeAlertMutation = useMutation({
-    mutationFn: observabilityService.acknowledgeAlert,
+    mutationFn: (alertId) => observabilityService.acknowledgeAlert(alertId),
     onSuccess: () => {
       queryClient.invalidateQueries(['alerts']);
       showSuccess('Alert acknowledged successfully');
@@ -116,7 +116,7 @@ export const useObservabilityState = () => {
   });
 
   const resolveAlertMutation = useMutation({
-    mutationFn: observabilityService.resolveAlert,
+    mutationFn: (alertId) => observabilityService.resolveAlert(alertId),
     onSuccess: () => {
       queryClient.invalidateQueries(['alerts']);
       showSuccess('Alert resolved successfully');
