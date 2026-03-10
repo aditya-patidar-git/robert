@@ -3,6 +3,7 @@ import {
   Box,
   Paper,
   Typography,
+  Grid,
   Slider,
   FormControlLabel,
   Switch,
@@ -188,53 +189,58 @@ const ConversationBehaviorSettings = ({
 
           {localConfig.progressIndicators?.enabled && (
             <>
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Acknowledgment Threshold: {localConfig.progressIndicators.acknowledgmentThresholdMs}ms
-                </Typography>
-                <Slider
-                  value={localConfig.progressIndicators.acknowledgmentThresholdMs || 2000}
-                  onChange={(e, value) => handleChange('progressIndicators.acknowledgmentThresholdMs', value)}
-                  min={0}
-                  max={10000}
-                  step={500}
-                  marks={[
-                    { value: 0, label: '0ms' },
-                    { value: 2000, label: '2s' },
-                    { value: 5000, label: '5s' },
-                    { value: 10000, label: '10s' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Send acknowledgment message after this delay
-                </Typography>
-              </Box>
-
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Update Interval: {localConfig.progressIndicators.updateIntervalMs}ms
-                </Typography>
-                <Slider
-                  value={localConfig.progressIndicators.updateIntervalMs || 5000}
-                  onChange={(e, value) => handleChange('progressIndicators.updateIntervalMs', value)}
-                  min={1000}
-                  max={30000}
-                  step={1000}
-                  marks={[
-                    { value: 1000, label: '1s' },
-                    { value: 5000, label: '5s' },
-                    { value: 10000, label: '10s' },
-                    { value: 30000, label: '30s' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Send periodic updates every N milliseconds
-                </Typography>
-              </Box>
+              <Grid container spacing={12} sx={{ my: 2 }}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Acknowledgment Threshold: {localConfig.progressIndicators.acknowledgmentThresholdMs}ms
+                    </Typography>
+                    <Slider
+                      value={localConfig.progressIndicators.acknowledgmentThresholdMs || 2000}
+                      onChange={(e, value) => handleChange('progressIndicators.acknowledgmentThresholdMs', value)}
+                      min={0}
+                      max={10000}
+                      step={500}
+                      marks={[
+                        { value: 0, label: '0ms' },
+                        { value: 2000, label: '2s' },
+                        { value: 5000, label: '5s' },
+                        { value: 10000, label: '10s' }
+                      ]}
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Send acknowledgment message after this delay
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Update Interval: {localConfig.progressIndicators.updateIntervalMs}ms
+                    </Typography>
+                    <Slider
+                      value={localConfig.progressIndicators.updateIntervalMs || 5000}
+                      onChange={(e, value) => handleChange('progressIndicators.updateIntervalMs', value)}
+                      min={1000}
+                      max={30000}
+                      step={1000}
+                      marks={[
+                        { value: 1000, label: '1s' },
+                        { value: 5000, label: '5s' },
+                        { value: 10000, label: '10s' },
+                        { value: 30000, label: '30s' }
+                      ]}
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Send periodic updates every N milliseconds
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
 
               <Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -330,48 +336,53 @@ const ConversationBehaviorSettings = ({
 
           {localConfig.silenceDetection?.enabled && (
             <>
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Silence Threshold: {localConfig.silenceDetection.silenceThresholdMs}ms
-                </Typography>
-                <Slider
-                  value={localConfig.silenceDetection.silenceThresholdMs || 15000}
-                  onChange={(e, value) => handleChange('silenceDetection.silenceThresholdMs', value)}
-                  min={5000}
-                  max={60000}
-                  step={1000}
-                  marks={[
-                    { value: 5000, label: '5s' },
-                    { value: 15000, label: '15s' },
-                    { value: 30000, label: '30s' },
-                    { value: 60000, label: '60s' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Trigger proactive message after this silence duration
-                </Typography>
-              </Box>
-
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Max Proactive Attempts: {localConfig.silenceDetection.maxProactiveAttempts}
-                </Typography>
-                <Slider
-                  value={localConfig.silenceDetection.maxProactiveAttempts || 2}
-                  onChange={(e, value) => handleChange('silenceDetection.maxProactiveAttempts', value)}
-                  min={0}
-                  max={5}
-                  step={1}
-                  marks
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Maximum proactive messages per call
-                </Typography>
-              </Box>
+              <Grid container spacing={12} sx={{ my: 2 }}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Silence Threshold: {localConfig.silenceDetection.silenceThresholdMs}ms
+                    </Typography>
+                    <Slider
+                      value={localConfig.silenceDetection.silenceThresholdMs || 15000}
+                      onChange={(e, value) => handleChange('silenceDetection.silenceThresholdMs', value)}
+                      min={5000}
+                      max={60000}
+                      step={1000}
+                      marks={[
+                        { value: 5000, label: '5s' },
+                        { value: 15000, label: '15s' },
+                        { value: 30000, label: '30s' },
+                        { value: 60000, label: '60s' }
+                      ]}
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Trigger proactive message after this silence duration
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Max Proactive Attempts: {localConfig.silenceDetection.maxProactiveAttempts}
+                    </Typography>
+                    <Slider
+                      value={localConfig.silenceDetection.maxProactiveAttempts || 2}
+                      onChange={(e, value) => handleChange('silenceDetection.maxProactiveAttempts', value)}
+                      min={0}
+                      max={5}
+                      step={1}
+                      marks
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Maximum proactive messages per call
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
 
               <Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -423,7 +434,7 @@ const ConversationBehaviorSettings = ({
         </Typography>
 
         <Stack spacing={3}>
-          <Box>
+          <Box sx={{ maxWidth: 400 }}>
             <Typography variant="subtitle2" gutterBottom>
               User Speaking Window: {localConfig.conversationFlow?.userSpeakingWindowMs}ms
             </Typography>
@@ -465,120 +476,131 @@ const ConversationBehaviorSettings = ({
                 Adaptive Pacing Settings
               </Typography>
               
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Adaptation Window Size: {localConfig.conversationFlow?.adaptationWindowSize || 5} turns
-                </Typography>
-                <Slider
-                  value={localConfig.conversationFlow?.adaptationWindowSize || 5}
-                  onChange={(e, value) => handleChange('conversationFlow.adaptationWindowSize', value)}
-                  min={3}
-                  max={20}
-                  step={1}
-                  marks={[
-                    { value: 3, label: '3' },
-                    { value: 5, label: '5' },
-                    { value: 10, label: '10' },
-                    { value: 20, label: '20' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Number of conversation turns to analyze for pacing adaptation
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Min Adaptive Window: {localConfig.conversationFlow?.minAdaptiveWindowMs || 3000}ms
-                </Typography>
-                <Slider
-                  value={localConfig.conversationFlow?.minAdaptiveWindowMs || 3000}
-                  onChange={(e, value) => handleChange('conversationFlow.minAdaptiveWindowMs', value)}
-                  min={1000}
-                  max={10000}
-                  step={500}
-                  marks={[
-                    { value: 1000, label: '1s' },
-                    { value: 3000, label: '3s' },
-                    { value: 5000, label: '5s' },
-                    { value: 10000, label: '10s' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Minimum adaptive speaking window duration
-                </Typography>
-              </Box>
-
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Max Adaptive Window: {localConfig.conversationFlow?.maxAdaptiveWindowMs || 15000}ms
-                </Typography>
-                <Slider
-                  value={localConfig.conversationFlow?.maxAdaptiveWindowMs || 15000}
-                  onChange={(e, value) => handleChange('conversationFlow.maxAdaptiveWindowMs', value)}
-                  min={5000}
-                  max={30000}
-                  step={1000}
-                  marks={[
-                    { value: 5000, label: '5s' },
-                    { value: 15000, label: '15s' },
-                    { value: 30000, label: '30s' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Maximum adaptive speaking window duration
-                </Typography>
-              </Box>
+              <Grid container columnSpacing={12} rowSpacing={2} sx={{ my: 2 }}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Adaptation Window Size: {localConfig.conversationFlow?.adaptationWindowSize || 5} turns
+                    </Typography>
+                    <Slider
+                      value={localConfig.conversationFlow?.adaptationWindowSize || 5}
+                      onChange={(e, value) => handleChange('conversationFlow.adaptationWindowSize', value)}
+                      min={3}
+                      max={20}
+                      step={1}
+                      marks={[
+                        { value: 3, label: '3' },
+                        { value: 5, label: '5' },
+                        { value: 10, label: '10' },
+                        { value: 20, label: '20' }
+                      ]}
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Number of conversation turns to analyze for pacing adaptation
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Min Adaptive Window: {localConfig.conversationFlow?.minAdaptiveWindowMs || 3000}ms
+                    </Typography>
+                    <Slider
+                      value={localConfig.conversationFlow?.minAdaptiveWindowMs || 3000}
+                      onChange={(e, value) => handleChange('conversationFlow.minAdaptiveWindowMs', value)}
+                      min={1000}
+                      max={10000}
+                      step={500}
+                      marks={[
+                        { value: 1000, label: '1s' },
+                        { value: 3000, label: '3s' },
+                        { value: 5000, label: '5s' },
+                        { value: 10000, label: '10s' }
+                      ]}
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Minimum adaptive speaking window duration
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Max Adaptive Window: {localConfig.conversationFlow?.maxAdaptiveWindowMs || 15000}ms
+                    </Typography>
+                    <Slider
+                      value={localConfig.conversationFlow?.maxAdaptiveWindowMs || 15000}
+                      onChange={(e, value) => handleChange('conversationFlow.maxAdaptiveWindowMs', value)}
+                      min={5000}
+                      max={30000}
+                      step={1000}
+                      marks={[
+                        { value: 5000, label: '5s' },
+                        { value: 15000, label: '15s' },
+                        { value: 30000, label: '30s' }
+                      ]}
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      Maximum adaptive speaking window duration
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
             </Box>
           )}
 
-          <Box>
-            <Typography variant="subtitle2" gutterBottom>
-              Min Response Delay: {localConfig.conversationFlow?.minResponseDelayMs}ms
-            </Typography>
-            <Slider
-              value={localConfig.conversationFlow?.minResponseDelayMs || 300}
-              onChange={(e, value) => handleChange('conversationFlow.minResponseDelayMs', value)}
-              min={0}
-              max={2000}
-              step={100}
-              marks={[
-                { value: 0, label: '0ms' },
-                { value: 300, label: '300ms' },
-                { value: 1000, label: '1s' },
-                { value: 2000, label: '2s' }
-              ]}
-              valueLabelDisplay="auto"
-              disabled={isLoading}
-            />
-          </Box>
-
-          <Box>
-            <Typography variant="subtitle2" gutterBottom>
-              Max Response Delay: {localConfig.conversationFlow?.maxResponseDelayMs}ms
-            </Typography>
-            <Slider
-              value={localConfig.conversationFlow?.maxResponseDelayMs || 2000}
-              onChange={(e, value) => handleChange('conversationFlow.maxResponseDelayMs', value)}
-              min={500}
-              max={5000}
-              step={100}
-              marks={[
-                { value: 500, label: '500ms' },
-                { value: 2000, label: '2s' },
-                { value: 3500, label: '3.5s' },
-                { value: 5000, label: '5s' }
-              ]}
-              valueLabelDisplay="auto"
-              disabled={isLoading}
-            />
-          </Box>
+          <Grid container spacing={12} sx={{ my: 2 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  Min Response Delay: {localConfig.conversationFlow?.minResponseDelayMs}ms
+                </Typography>
+                <Slider
+                  value={localConfig.conversationFlow?.minResponseDelayMs || 300}
+                  onChange={(e, value) => handleChange('conversationFlow.minResponseDelayMs', value)}
+                  min={0}
+                  max={2000}
+                  step={100}
+                  marks={[
+                    { value: 0, label: '0ms' },
+                    { value: 300, label: '300ms' },
+                    { value: 1000, label: '1s' },
+                    { value: 2000, label: '2s' }
+                  ]}
+                  valueLabelDisplay="auto"
+                  disabled={isLoading}
+                />
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  Max Response Delay: {localConfig.conversationFlow?.maxResponseDelayMs}ms
+                </Typography>
+                <Slider
+                  value={localConfig.conversationFlow?.maxResponseDelayMs || 2000}
+                  onChange={(e, value) => handleChange('conversationFlow.maxResponseDelayMs', value)}
+                  min={500}
+                  max={5000}
+                  step={100}
+                  marks={[
+                    { value: 500, label: '500ms' },
+                    { value: 2000, label: '2s' },
+                    { value: 3500, label: '3.5s' },
+                    { value: 5000, label: '5s' }
+                  ]}
+                  valueLabelDisplay="auto"
+                  disabled={isLoading}
+                />
+              </Box>
+            </Grid>
+          </Grid>
 
           <Divider sx={{ my: 2 }} />
 
@@ -609,72 +631,78 @@ const ConversationBehaviorSettings = ({
 
             {localConfig.conversationFlow?.speechContinuation?.enabled && (
               <Box sx={{ pl: 3, mt: 2, borderLeft: '2px solid', borderColor: 'divider' }}>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Grace Period: {localConfig.conversationFlow?.speechContinuation?.gracePeriodMs || 1500}ms
-                  </Typography>
-                  <Slider
-                    value={localConfig.conversationFlow?.speechContinuation?.gracePeriodMs || 1500}
-                    onChange={(e, value) => handleChange('conversationFlow.speechContinuation.gracePeriodMs', value)}
-                    min={500}
-                    max={5000}
-                    step={100}
-                    marks={[
-                      { value: 500, label: '500ms' },
-                      { value: 1500, label: '1.5s' },
-                      { value: 3000, label: '3s' },
-                      { value: 5000, label: '5s' }
-                    ]}
-                    valueLabelDisplay="auto"
-                    disabled={isLoading}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    Time to wait for user to continue speaking after a pause
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Pause Detection: {localConfig.conversationFlow?.speechContinuation?.pauseDetectionMs || 800}ms
-                  </Typography>
-                  <Slider
-                    value={localConfig.conversationFlow?.speechContinuation?.pauseDetectionMs || 800}
-                    onChange={(e, value) => handleChange('conversationFlow.speechContinuation.pauseDetectionMs', value)}
-                    min={300}
-                    max={2000}
-                    step={100}
-                    marks={[
-                      { value: 300, label: '300ms' },
-                      { value: 800, label: '800ms' },
-                      { value: 1500, label: '1.5s' },
-                      { value: 2000, label: '2s' }
-                    ]}
-                    valueLabelDisplay="auto"
-                    disabled={isLoading}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    Silence duration to consider as a pause (vs. finished speaking)
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <Typography variant="subtitle2" gutterBottom>
-                    Max Grace Extensions: {localConfig.conversationFlow?.speechContinuation?.maxGracePeriodExtensions || 2}
-                  </Typography>
-                  <Slider
-                    value={localConfig.conversationFlow?.speechContinuation?.maxGracePeriodExtensions || 2}
-                    onChange={(e, value) => handleChange('conversationFlow.speechContinuation.maxGracePeriodExtensions', value)}
-                    min={0}
-                    max={5}
-                    step={1}
-                    marks
-                    valueLabelDisplay="auto"
-                    disabled={isLoading}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    Maximum number of times to extend grace period for continued speech
-                  </Typography>
-                </Box>
+                <Grid container columnSpacing={12} rowSpacing={2} sx={{ my: 2 }}>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Grace Period: {localConfig.conversationFlow?.speechContinuation?.gracePeriodMs || 1500}ms
+                      </Typography>
+                      <Slider
+                        value={localConfig.conversationFlow?.speechContinuation?.gracePeriodMs || 1500}
+                        onChange={(e, value) => handleChange('conversationFlow.speechContinuation.gracePeriodMs', value)}
+                        min={500}
+                        max={5000}
+                        step={100}
+                        marks={[
+                          { value: 500, label: '500ms' },
+                          { value: 1500, label: '1.5s' },
+                          { value: 3000, label: '3s' },
+                          { value: 5000, label: '5s' }
+                        ]}
+                        valueLabelDisplay="auto"
+                        disabled={isLoading}
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        Time to wait for user to continue speaking after a pause
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Pause Detection: {localConfig.conversationFlow?.speechContinuation?.pauseDetectionMs || 800}ms
+                      </Typography>
+                      <Slider
+                        value={localConfig.conversationFlow?.speechContinuation?.pauseDetectionMs || 800}
+                        onChange={(e, value) => handleChange('conversationFlow.speechContinuation.pauseDetectionMs', value)}
+                        min={300}
+                        max={2000}
+                        step={100}
+                        marks={[
+                          { value: 300, label: '300ms' },
+                          { value: 800, label: '800ms' },
+                          { value: 1500, label: '1.5s' },
+                          { value: 2000, label: '2s' }
+                        ]}
+                        valueLabelDisplay="auto"
+                        disabled={isLoading}
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        Silence duration to consider as a pause (vs. finished speaking)
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Box sx={{ maxWidth: 320 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Max Grace Extensions: {localConfig.conversationFlow?.speechContinuation?.maxGracePeriodExtensions || 2}
+                      </Typography>
+                      <Slider
+                        value={localConfig.conversationFlow?.speechContinuation?.maxGracePeriodExtensions || 2}
+                        onChange={(e, value) => handleChange('conversationFlow.speechContinuation.maxGracePeriodExtensions', value)}
+                        min={0}
+                        max={5}
+                        step={1}
+                        marks
+                        valueLabelDisplay="auto"
+                        disabled={isLoading}
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        Maximum number of times to extend grace period for continued speech
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
               </Box>
             )}
           </Box>
@@ -709,30 +737,6 @@ const ConversationBehaviorSettings = ({
 
           {localConfig.proactiveAssistance?.enabled && (
             <>
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Hesitation Threshold: {localConfig.proactiveAssistance?.hesitationThresholdMs || 3000}ms
-                </Typography>
-                <Slider
-                  value={localConfig.proactiveAssistance?.hesitationThresholdMs || 3000}
-                  onChange={(e, value) => handleChange('proactiveAssistance.hesitationThresholdMs', value)}
-                  min={1000}
-                  max={10000}
-                  step={500}
-                  marks={[
-                    { value: 1000, label: '1s' },
-                    { value: 3000, label: '3s' },
-                    { value: 5000, label: '5s' },
-                    { value: 10000, label: '10s' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Duration of hesitation before offering proactive assistance
-                </Typography>
-              </Box>
-
               <FormControlLabel
                 control={
                   <Switch
@@ -744,29 +748,52 @@ const ConversationBehaviorSettings = ({
                 label="Enable Follow-Up Suggestions"
               />
 
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Suggestion Delay: {localConfig.proactiveAssistance?.suggestionDelayMs || 2000}ms
-                </Typography>
-                <Slider
-                  value={localConfig.proactiveAssistance?.suggestionDelayMs || 2000}
-                  onChange={(e, value) => handleChange('proactiveAssistance.suggestionDelayMs', value)}
-                  min={500}
-                  max={5000}
-                  step={250}
-                  marks={[
-                    { value: 500, label: '500ms' },
-                    { value: 2000, label: '2s' },
-                    { value: 3500, label: '3.5s' },
-                    { value: 5000, label: '5s' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Delay before offering follow-up suggestions based on context
-                </Typography>
-              </Box>
+              <Grid container columnSpacing={12} rowSpacing={2} sx={{ my: 2 }}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Hesitation Threshold: {localConfig.proactiveAssistance?.hesitationThresholdMs || 3000}ms
+                    </Typography>
+                    <Slider
+                      value={localConfig.proactiveAssistance?.hesitationThresholdMs || 3000}
+                      onChange={(e, value) => handleChange('proactiveAssistance.hesitationThresholdMs', value)}
+                      min={1000}
+                      max={10000}
+                      step={500}
+                      marks={[
+                        { value: 1000, label: '1s' },
+                        { value: 3000, label: '3s' },
+                        { value: 5000, label: '5s' },
+                        { value: 10000, label: '10s' }
+                      ]}
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>
+                      Suggestion Delay: {localConfig.proactiveAssistance?.suggestionDelayMs || 2000}ms
+                    </Typography>
+                    <Slider
+                      value={localConfig.proactiveAssistance?.suggestionDelayMs || 2000}
+                      onChange={(e, value) => handleChange('proactiveAssistance.suggestionDelayMs', value)}
+                      min={500}
+                      max={5000}
+                      step={250}
+                      marks={[
+                        { value: 500, label: '500ms' },
+                        { value: 2000, label: '2s' },
+                        { value: 3500, label: '3.5s' },
+                        { value: 5000, label: '5s' }
+                      ]}
+                      valueLabelDisplay="auto"
+                      disabled={isLoading}
+                    />
+                  </Box>
+                </Grid>
+              </Grid>
             </>
           )}
         </Stack>
@@ -799,44 +826,47 @@ const ConversationBehaviorSettings = ({
           />
 
           {localConfig.errorHandling?.retryEnabled && (
-            <>
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Max Retries: {localConfig.errorHandling.maxRetries}
-                </Typography>
-                <Slider
-                  value={localConfig.errorHandling.maxRetries || 2}
-                  onChange={(e, value) => handleChange('errorHandling.maxRetries', value)}
-                  min={0}
-                  max={5}
-                  step={1}
-                  marks
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-              </Box>
-
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Retry Backoff: {localConfig.errorHandling.retryBackoffMs}ms
-                </Typography>
-                <Slider
-                  value={localConfig.errorHandling.retryBackoffMs || 1000}
-                  onChange={(e, value) => handleChange('errorHandling.retryBackoffMs', value)}
-                  min={100}
-                  max={10000}
-                  step={100}
-                  marks={[
-                    { value: 100, label: '100ms' },
-                    { value: 1000, label: '1s' },
-                    { value: 5000, label: '5s' },
-                    { value: 10000, label: '10s' }
-                  ]}
-                  valueLabelDisplay="auto"
-                  disabled={isLoading}
-                />
-              </Box>
-            </>
+            <Grid container spacing={12} sx={{ my: 2 }}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Box>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Max Retries: {localConfig.errorHandling.maxRetries}
+                  </Typography>
+                  <Slider
+                    value={localConfig.errorHandling.maxRetries || 2}
+                    onChange={(e, value) => handleChange('errorHandling.maxRetries', value)}
+                    min={0}
+                    max={5}
+                    step={1}
+                    marks
+                    valueLabelDisplay="auto"
+                    disabled={isLoading}
+                  />
+                </Box>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Box>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Retry Backoff: {localConfig.errorHandling.retryBackoffMs}ms
+                  </Typography>
+                  <Slider
+                    value={localConfig.errorHandling.retryBackoffMs || 1000}
+                    onChange={(e, value) => handleChange('errorHandling.retryBackoffMs', value)}
+                    min={100}
+                    max={10000}
+                    step={100}
+                    marks={[
+                      { value: 100, label: '100ms' },
+                      { value: 1000, label: '1s' },
+                      { value: 5000, label: '5s' },
+                      { value: 10000, label: '10s' }
+                    ]}
+                    valueLabelDisplay="auto"
+                    disabled={isLoading}
+                  />
+                </Box>
+              </Grid>
+            </Grid>
           )}
 
           <FormControlLabel

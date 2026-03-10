@@ -259,13 +259,27 @@ export const acknowledgeAlert = async (req, res) => {
   try {
     const { alertId } = req.params;
     const userId = req.user?.id || 'system';
-    const alert = observabilityService.acknowledgeAlert(alertId, userId);
-    
-    if (!alert) {
+
+    // Try database first
+    let alert = await Alert.findById(alertId);
+
+    if (alert) {
+      alert.status = 'acknowledged';
+      alert.acknowledgedAt = new Date();
+      alert.acknowledgedBy = userId;
+      await alert.save();
+
+      return res.json({ success: true, data: alert });
+    }
+
+    // Fallback to in-memory alert
+    const inMemoryAlert = observabilityService.acknowledgeAlert(alertId, userId);
+
+    if (!inMemoryAlert) {
       return res.status(404).json({ success: false, error: 'Alert not found' });
     }
-    
-    res.json({ success: true, data: alert });
+
+    res.json({ success: true, data: inMemoryAlert });
   } catch (error) {
     observabilityService.error('Acknowledge alert error', { alertId: req.params.alertId, error: error.message });
     res.status(500).json({ success: false, error: error.message });

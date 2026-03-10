@@ -48,6 +48,57 @@ export const formatEventTypeLabel = (eventType) => {
   return labels[eventType] || eventType?.replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Unknown';
 };
 
+/**
+ * Format target type into human-readable label
+ * @param {string} targetType - The target type (e.g. 'user', 'compliance')
+ * @returns {string} Human-readable label
+ */
+export const formatTargetTypeLabel = (targetType) => {
+  if (!targetType) return '—';
+  const labels = {
+    user: 'User',
+    config: 'Configuration',
+    call: 'Call',
+    kb: 'Knowledge Base',
+    allowlist: 'Allowlist',
+    audit: 'Audit',
+    consent: 'Consent',
+    dsar: 'DSAR Request',
+    gdpr: 'Privacy',
+    retention: 'Retention',
+    compliance: 'Compliance',
+    breach: 'Data Breach',
+    pia: 'Privacy Impact Assessment'
+  };
+  return labels[targetType.toLowerCase()] || targetType.replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+/**
+ * Format metadata object into human-readable key-value pairs (for non-technical users)
+ * @param {Object} metadata - Raw metadata object (e.g. { source, filelogId })
+ * @returns {string} Human-readable summary
+ */
+export const formatMetadataForDisplay = (metadata) => {
+  if (!metadata || typeof metadata !== 'object') return '';
+  const keyLabels = {
+    source: 'Source',
+    filelogId: 'Log ID',
+    fileLogId: 'Log ID',
+    requestId: 'Request ID',
+    exportId: 'Export ID',
+    period: 'Period',
+    component: 'Component'
+  };
+  const parts = Object.entries(metadata)
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => {
+      const label = keyLabels[k] || k.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).trim();
+      const value = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      return `${label}: ${value}`;
+    });
+  return parts.join(' · ');
+};
+
 /** Ordered list of audit log action values for filter dropdowns */
 export const AUDIT_LOG_ACTIONS = [
   'auth.login',

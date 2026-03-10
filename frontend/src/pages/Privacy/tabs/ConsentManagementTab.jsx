@@ -24,7 +24,11 @@ import {
   Button,
   IconButton,
   Tooltip,
-  InputAdornment
+  InputAdornment,
+  List,
+  ListItem,
+  ListItemText,
+  Divider
 } from '@mui/material';
 import {
   Visibility,
@@ -33,6 +37,26 @@ import {
   Search
 } from '@mui/icons-material';
 import { formatDateTime } from '../../../utils/formatters';
+
+/** Safely parse summary JSON (may be stringified). Returns null if invalid. */
+function parseSummary(summary) {
+  if (!summary) return null;
+  if (typeof summary === 'object') return summary;
+  try {
+    return JSON.parse(summary);
+  } catch {
+    return null;
+  }
+}
+
+/** Format duration seconds as "Xm Ys". */
+function formatDuration(seconds) {
+  if (seconds == null || isNaN(Number(seconds))) return '—';
+  const s = Number(seconds);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
 
 const CONSENT_TYPES = ['recording', 'processing'];
 
@@ -285,26 +309,89 @@ const ConsentManagementTab = ({ state }) => {
                   </Typography>
                 </Box>
               )}
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Raw Data
-                </Typography>
-                <Paper sx={{ p: 2, bgcolor: 'grey.50', maxHeight: 300, overflow: 'auto' }}>
-                  <Typography
-                    variant="body2"
-                    component="pre"
-                    sx={{
-                      fontFamily: 'monospace',
-                      fontSize: '0.75rem',
-                      margin: 0,
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word'
-                    }}
-                  >
-                    {JSON.stringify(selectedRecord.rawData, null, 2)}
+
+              {/* Human-readable call summary from rawData */}
+              {selectedRecord.rawData && (
+                <>
+                  <Divider sx={{ my: 1 }} />
+                  <Typography variant="subtitle1" fontWeight={600} color="text.primary">
+                    Call Summary
                   </Typography>
-                </Paper>
-              </Box>
+                  {(() => {
+                    const raw = selectedRecord.rawData;
+                    const summary = parseSummary(raw.summary);
+                    return (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {summary && (
+                          <>
+                            {summary.purpose && (
+                              <Box>
+                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                  Purpose
+                                </Typography>
+                                <Typography variant="body2">{summary.purpose}</Typography>
+                              </Box>
+                            )}
+                            {summary.outcome && (
+                              <Box>
+                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                  Outcome
+                                </Typography>
+                                <Chip
+                                  label={String(summary.outcome)}
+                                  size="small"
+                                  color={summary.outcome === 'resolved' ? 'success' : 'default'}
+                                  variant="outlined"
+                                />
+                              </Box>
+                            )}
+                            {Array.isArray(summary.keyFacts) && summary.keyFacts.length > 0 && (
+                              <Box>
+                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                  Key facts
+                                </Typography>
+                                <List dense disablePadding sx={{ listStyleType: 'disc', pl: 2 }}>
+                                  {summary.keyFacts.map((fact, idx) => (
+                                    <ListItem key={idx} disablePadding sx={{ display: 'list-item', listStyleType: 'disc' }}>
+                                      <ListItemText primary={fact} primaryTypographyProps={{ variant: 'body2' }} />
+                                    </ListItem>
+                                  ))}
+                                </List>
+                              </Box>
+                            )}
+                          </>
+                        )}
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                          {raw.duration != null && (
+                            <Box>
+                              <Typography variant="subtitle2" color="text.secondary">Duration</Typography>
+                              <Typography variant="body2">{formatDuration(raw.duration)}</Typography>
+                            </Box>
+                          )}
+                          {raw.from && (
+                            <Box>
+                              <Typography variant="subtitle2" color="text.secondary">From</Typography>
+                              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>{raw.from}</Typography>
+                            </Box>
+                          )}
+                          {raw.to && (
+                            <Box>
+                              <Typography variant="subtitle2" color="text.secondary">To</Typography>
+                              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>{raw.to}</Typography>
+                            </Box>
+                          )}
+                          {raw.result && (
+                            <Box>
+                              <Typography variant="subtitle2" color="text.secondary">Result</Typography>
+                              <Chip label={String(raw.result)} size="small" variant="outlined" />
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
+                    );
+                  })()}
+                </>
+              )}
             </Box>
           )}
         </DialogContent>

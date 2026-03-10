@@ -102,13 +102,13 @@ const MCPToolsTab = ({ control, watch, currentTab }) => {
                 <Slider
                   {...field}
                   min={10}
-                  max={1000}
+                  max={200}
                   step={10}
                   marks={[
                     { value: 10, label: '10' },
+                    { value: 50, label: '50' },
                     { value: 100, label: '100' },
-                    { value: 500, label: '500' },
-                    { value: 1000, label: '1000' }
+                    { value: 200, label: '200' }
                   ]}
                   valueLabelDisplay="auto"
                 />
