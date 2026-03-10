@@ -554,9 +554,9 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       // Phase 0: After check_availability (step 1), present ONLY slots from tool result; do NOT invent slots; IMMEDIATELY call authenticate after slot confirmation
       if (toolName === 'booking_step_check_availability' && toolResult?.success === true) {
         const slotsFromTool = toolResult?.message ? ` Tool result message: "${toolResult.message}"` : '';
-        const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool} 
+        const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool}
 
-MANDATORY WORKFLOW: After the caller confirms a slot (e.g. "yes", "that works", "okay", "proceed"), you MUST IMMEDIATELY call booking_step_authenticate with the agreedSlot parameter containing the slot details from the tool result. Do NOT ask for full name, email, postcode, telephone, or any contact or personal details. Do NOT ask "Could you please tell me your full name?" or any similar questions. ONLY confirm the slot and then IMMEDIATELY call booking_step_authenticate.`;
+MANDATORY WORKFLOW: When the caller confirms the slot (e.g. "yes", "okay go ahead", "proceed"), you MUST call booking_step_authenticate with agreedSlot (slot from tool result) in that same turn. booking_step_authenticate is CRM system login only—it does NOT mean asking the caller for their name or email. Do NOT ask for full name, email, or any contact details. Confirm the slot and call the tool.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Check availability completed - instructing to present ONLY tool result slots (verbatim), then IMMEDIATELY call booking_step_authenticate; no contact questions`);
       }

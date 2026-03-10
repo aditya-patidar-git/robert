@@ -28,7 +28,7 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
 
 3. AFTER this tool returns: Present ONLY the slot(s) from the tool result message. Do not add or substitute any other slots.
 
-4. WHEN caller selects a slot: Extract the slot details (date, time, location) from their response and call the NEXT step (booking_step_authenticate) with agreedSlot containing the selected slot object.`,
+4. WHEN caller confirms a slot (e.g. "yes", "okay go ahead", "proceed", "that works"): IMMEDIATELY call booking_step_authenticate with agreedSlot containing the slot from the tool result (date, time, location). Do NOT ask for full name, email, or any contact details—Step 2 is CRM system login only, not collecting caller information.`,
       parameters: {
         type: 'object',
         properties: {
@@ -60,9 +60,9 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
     {
       type: 'function',
       name: 'booking_step_authenticate',
-      description: `Step 2: Authenticate/login to CRM system. Reuses existing session if available. This step is typically automatic and doesn't require user input.
+      description: `Step 2: Log the system into the CRM (cookie-based browser login). This is NOT asking the caller for their name, email, or any contact details—it is a backend step that runs automatically. Call this tool IMMEDIATELY when the caller confirms a slot (e.g. "yes", "okay go ahead", "proceed"); do NOT ask for name/email before or instead of calling it.
 
-CRITICAL: If the caller has selected a slot from Step 1, pass agreedSlot parameter with the selected slot details (date, time, location, instructor if available). This ensures the slot is stored for later steps.`,
+CRITICAL: If the caller has confirmed a slot from Step 1, pass agreedSlot with the slot details (date, time, location, instructor if available) from the check_availability result. This stores the slot for later steps.`,
       parameters: {
         type: 'object',
         properties: {
