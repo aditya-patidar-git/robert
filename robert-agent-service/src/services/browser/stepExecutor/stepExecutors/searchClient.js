@@ -23,9 +23,9 @@ export async function executeSearchClient(page, args, sessionState, screenshotsD
   let searchValue = null;
   let email = null;
   
-  if (args.customerMobile || args.customerPhone) {
+  if (args.customerMobile || args.customerPhone || args.phoneNumber) {
     searchType = 'mobile';
-    searchValue = args.customerMobile || args.customerPhone;
+    searchValue = args.customerMobile || args.customerPhone || args.phoneNumber;
   } else if (args.customerEmail) {
     searchType = 'email';
     searchValue = args.customerEmail;

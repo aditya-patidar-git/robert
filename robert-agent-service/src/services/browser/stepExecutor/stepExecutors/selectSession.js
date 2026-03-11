@@ -5,8 +5,27 @@
  */
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
+import { matchSlotToAvailableSlots } from '../../../commonBookingSteps/slotStorageUtils.js';
 import sessionStateManager from '../../sessionStateManager.js';
 import { conversations } from '../../../../shared/state.js';
+
+const DDMMYYYY_REGEX = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+
+/**
+ * Returns true if sessionDetails has a date we can use for the Diaries calendar (startDate or date in DD/MM/YYYY).
+ * @param {Object} sd - Session details object
+ * @returns {boolean}
+ */
+function hasValidDateForDiaries(sd) {
+  if (!sd) return false;
+  if (sd.startDate) {
+    const d = new Date(sd.startDate);
+    if (!isNaN(d.getTime())) return true;
+    if (DDMMYYYY_REGEX.test(String(sd.startDate).trim())) return true;
+  }
+  if (sd.date && DDMMYYYY_REGEX.test(String(sd.date).trim())) return true;
+  return false;
+}
 
 /**
  * Execute selectSession step
@@ -21,12 +40,12 @@ export async function executeSelectSession(page, args, sessionState, screenshots
   progressCallback?.({ message: 'Opening the diary.' });
   // CRITICAL FIX: Try multiple sources for sessionDetails
   let sessionDetails = args.sessionDetails || sessionState?.sessionDetails;
-  
+
   // If still not found, try retrieving from sessionStateManager
   if (!sessionDetails && args.callSid) {
     sessionDetails = sessionStateManager.getSessionDetails(args.callSid);
   }
-  
+
   // If still not found, check conversations for lastAvailabilityCheck
   if (!sessionDetails && args.callSid) {
     const conversation = conversations[args.callSid];
@@ -38,15 +57,45 @@ export async function executeSelectSession(page, args, sessionState, screenshots
       console.log(`✅ [selectSession] Retrieved sessionDetails from conversation.lastAvailabilityCheck.selectedSlot`);
     }
   }
-  
+
   if (!sessionDetails) {
     throw new Error('Session details are required to select a session. Please ensure a slot was agreed upon in Step 1 (check_availability) before proceeding to Step 6 (select_session).');
+  }
+
+  // NORMALIZE FOR DIARIES: If agent passed sessionDetails without a machine-usable date (e.g. date: "Thu 12th", no startDate),
+  // prefer stored slot or match from allSlots so the Diaries tab gets startDate or DD/MM/YYYY.
+  if (!hasValidDateForDiaries(sessionDetails) && args.callSid) {
+    const conversation = conversations[args.callSid];
+    const allSlots = conversation?.lastAvailabilityCheck?.allSlots;
+
+    if (allSlots && Array.isArray(allSlots) && allSlots.length > 0) {
+      const matchedSlot = matchSlotToAvailableSlots(sessionDetails, allSlots);
+      if (matchedSlot) {
+        // Keep agent's preferences (time, location) but use matched slot's startDate/date
+        sessionDetails = { ...matchedSlot, ...sessionDetails };
+        sessionDetails.startDate = matchedSlot.startDate || sessionDetails.startDate;
+        if (matchedSlot.date) sessionDetails.date = matchedSlot.date;
+        console.log(`✅ [selectSession] Matched agent slot to allSlots; using startDate/date for Diaries`);
+      }
+    }
+
+    if (!hasValidDateForDiaries(sessionDetails)) {
+      const storedSlot = conversation?.lastAvailabilityCheck?.sessionDetails
+        || conversation?.lastAvailabilityCheck?.selectedSlot
+        || sessionStateManager.getSessionDetails(args.callSid);
+      if (storedSlot && (storedSlot.startDate || (storedSlot.date && DDMMYYYY_REGEX.test(String(storedSlot.date).trim())))) {
+        sessionDetails = { ...storedSlot, ...sessionDetails };
+        if (storedSlot.startDate) sessionDetails.startDate = storedSlot.startDate;
+        if (storedSlot.date && DDMMYYYY_REGEX.test(String(storedSlot.date).trim())) sessionDetails.date = storedSlot.date;
+        console.log(`✅ [selectSession] Merged stored slot date into sessionDetails for Diaries`);
+      }
+    }
   }
 
   // CRITICAL FIX: Ensure course and instructor are included in sessionDetails
   // If they're missing, try to get them from the courseType or sessionState
   const courseType = args.courseType || sessionState?.courseType;
-  
+
   // Map courseType to actual course name for ITM
   if (!sessionDetails.course && courseType) {
     if (courseType === 'Introduction to Motorcycling' || courseType === 'ITM') {
@@ -56,12 +105,12 @@ export async function executeSelectSession(page, args, sessionState, screenshots
       sessionDetails.course = courseType;
     }
   }
-  
+
   // If instructor is missing but was provided in preferences, use it
   if (!sessionDetails.instructor && sessionState?.preferences?.instructor) {
     sessionDetails.instructor = sessionState.preferences.instructor;
   }
-  
+
   // If instructor is still missing, set to empty string (will match any instructor)
   if (!sessionDetails.instructor) {
     sessionDetails.instructor = '';
