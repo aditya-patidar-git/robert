@@ -1,11 +1,39 @@
 import { takeScreenshot } from '../../utils.js';
 
+const DDMMYYYY_REGEX = /(\d{2})\/(\d{2})\/(\d{4})/;
+/** Matches "12th", "12", "Thu 12th", "Thursday 12th" etc. - captures day-of-month */
+const HUMAN_DAY_REGEX = /(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\s*(\d{1,2})(?:st|nd|rd|th)?/i;
+
+/**
+ * Parse human-friendly date strings like "Thu 12th", "Thursday 12th", "12th" to a Date.
+ * Uses current month (or next month if day has passed) as reference.
+ * @param {string} str - Date string
+ * @returns {Date|null} Parsed date or null
+ */
+function parseHumanFriendlyDate(str) {
+  if (!str || typeof str !== 'string') return null;
+  const trimmed = str.trim();
+  const dayMatch = trimmed.match(HUMAN_DAY_REGEX);
+  if (!dayMatch) return null;
+  const dayNum = parseInt(dayMatch[1], 10);
+  if (dayNum < 1 || dayNum > 31) return null;
+  const ref = new Date();
+  const year = ref.getFullYear();
+  const month = ref.getMonth();
+  let d = new Date(year, month, dayNum);
+  if (d.getTime() < ref.getTime()) {
+    d = new Date(year, month + 1, dayNum);
+  }
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
 /**
  * Selects a date from the calendar date picker.
  * @param {import('playwright').Page} page - Playwright page object.
  * @param {Object} sessionDetails - Session details containing date information.
  * @param {string} sessionDetails.startDate - Start date in ISO format or DD/MM/YYYY format.
- * @param {string} sessionDetails.date - Alternative date field (DD/MM/YYYY format).
+ * @param {string} sessionDetails.date - Alternative date field (DD/MM/YYYY or human e.g. "Thu 12th").
  * @param {string} screenshotsDir - Directory to save screenshots.
  * @returns {Promise<void>}
  * @throws {Error} If the date format is invalid or date selection fails.
@@ -13,16 +41,16 @@ import { takeScreenshot } from '../../utils.js';
 export async function selectDate(page, sessionDetails, screenshotsDir) {
   // Select date using the precise calendar interaction pattern
   console.log(`📅 Selecting date from startDate="${sessionDetails.startDate}", date="${sessionDetails.date}"...`);
-  
+
   // Parse the startDate (format: "2026-02-18T00:00:00" or "2026-02-18" or "17/12/2025")
   let dateObj = null;
-  
+
   if (sessionDetails.startDate) {
     // Try ISO format first
     dateObj = new Date(sessionDetails.startDate);
     if (isNaN(dateObj.getTime())) {
       // If ISO format fails, try DD/MM/YYYY format
-      const ddmmyyyyMatch = sessionDetails.startDate.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      const ddmmyyyyMatch = sessionDetails.startDate.match(DDMMYYYY_REGEX);
       if (ddmmyyyyMatch) {
         const [, day, month, year] = ddmmyyyyMatch;
         dateObj = new Date(`${year}-${month}-${day}`);
@@ -30,18 +58,25 @@ export async function selectDate(page, sessionDetails, screenshotsDir) {
       }
     }
   } else if (sessionDetails.date) {
-    // Fallback: try to parse from date field
-    const ddmmyyyyMatch = sessionDetails.date.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    // Try DD/MM/YYYY first
+    const ddmmyyyyMatch = sessionDetails.date.match(DDMMYYYY_REGEX);
     if (ddmmyyyyMatch) {
       const [, day, month, year] = ddmmyyyyMatch;
       dateObj = new Date(`${year}-${month}-${day}`);
       console.log(`📅 Parsed DD/MM/YYYY format from date field: ${day}/${month}/${year} -> ${year}-${month}-${day}`);
     } else {
-      // Try other date formats
+      // Try native Date parse
       dateObj = new Date(sessionDetails.date);
+      if (isNaN(dateObj.getTime())) {
+        // Fallback: human-friendly e.g. "Thu 12th"
+        dateObj = parseHumanFriendlyDate(sessionDetails.date);
+        if (dateObj) {
+          console.log(`📅 Parsed human-friendly date "${sessionDetails.date}" -> ${dateObj.toISOString().split('T')[0]}`);
+        }
+      }
     }
   }
-  
+
   // Validate date before using
   if (!dateObj || isNaN(dateObj.getTime())) {
     const errorMsg = `Invalid date format: startDate="${sessionDetails.startDate}", date="${sessionDetails.date}". Cannot proceed with date selection.`;
