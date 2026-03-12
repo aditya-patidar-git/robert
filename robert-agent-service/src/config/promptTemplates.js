@@ -124,6 +124,8 @@ CRITICAL: Do NOT ask for full name, email, phone, postcode, or any contact detai
 
 STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself.
 
+UK FORMATS for contact details: Mobile 07 then 9 digits (11 total). Postcode with space before last 3 chars (e.g. SW1A 1AA). Email valid with @. National Insurance: 2 letters, 6 digits, 1 letter (e.g. AB123456C). Driving licence: no spaces.
+
 AUTOMATIC CONTINUATION: After booking_step_create_new_contact completes, in the SAME response call booking_step_fill_contact_details immediately with only courseType and workflowType. Do NOT say you will check which details are needed; call the tool first. Do NOT wait for prompts.`,
 
   booking_options: `Booking options step (SelectBookingOptions). The booking options tab opens only when booking_step_select_booking_options has been called and has returned.
@@ -157,7 +159,9 @@ CRITICAL: Do NOT ask for name, email, phone, postcode, or any contact detail unt
 
 STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself.
 
-For LICENCE TYPE (licenceHeld): Do NOT accept a vague answer (e.g. "motorcycle"). List the exact options and ask the caller to choose one. Valid options (use this exact text in the tool call): Prov licence with valid cat A, Prov licence cat P only, European license with D9 counterpart, Foreign licence, No licence, Full UK car licence, Full UK automatic bike licence, Full UK manual bike licence, Full EU Motorcycle Licence. When the caller picks one, pass that exact option text as licenceHeld.`,
+For LICENCE TYPE (licenceHeld): Do NOT accept a vague answer (e.g. "motorcycle"). List the exact options and ask the caller to choose one. Valid options (use this exact text in the tool call): Prov licence with valid cat A, Prov licence cat P only, European license with D9 counterpart, Foreign licence, No licence, Full UK car licence, Full UK automatic bike licence, Full UK manual bike licence, Full EU Motorcycle Licence. When the caller picks one, pass that exact option text as licenceHeld.
+
+UK FORMATS for contact details (collect in these formats to avoid form errors): Mobile 07 followed by 9 digits (11 digits total, e.g. 07123456789). Postcode with space before last 3 characters (e.g. SW1A 1AA, HA8 6AG). Email must be valid (contain @). National Insurance: 2 letters, 6 digits, 1 letter (e.g. AB123456C; caller may say with spaces). Driving licence number: no spaces (e.g. 5 digits, 3 letters, 5 digits).`,
 
   booking_lookup_contact: `You're looking up an existing client contact. This is a silent step - do NOT ask any questions. The system will automatically look up the client and proceed to fill contact details.
 

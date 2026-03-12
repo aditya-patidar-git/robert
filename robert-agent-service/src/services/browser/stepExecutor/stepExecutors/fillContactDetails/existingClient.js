@@ -2,10 +2,14 @@
  * Existing Client Flow
  * Handles filling contact details for existing clients
  * Preserves all Playwright timing and state checks
+ * Applies UK format normalization for postcode, mobile, email, NI number, and driving licence when filling.
  */
 
 import * as commonSteps from '../../../../commonBookingSteps/index.js';
+import { cleanEmail } from '../../../../commonBookingSteps/utils.js';
+import { normalizeUKMobile } from '../../../../mobileSearchService.js';
 import { validateEmail } from './validators.js';
+import { formatPostcode, formatNationalInsurance, formatDrivingLicenceNumber } from '../../../../../utils/britishFormatting.js';
 
 /**
  * Get client email from various sources
@@ -194,52 +198,62 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       ];
 
       // Fill all provided args first (so one tool call with all params fills everything, then we re-scan)
+      // Apply UK normalization so the form receives valid values (same as new client flow).
 
-      // Fill email if provided
+      // Fill email if provided (normalized)
       if (args.customerEmail) {
-        const emailField = eventBookingIframe.getByLabel('Contact e-mail');
-        if (await emailField.count() > 0) {
-          const currentEmail = await emailField.inputValue().catch(() => '');
-          if (!currentEmail || currentEmail.trim() === '') {
-            console.log(`📝 [STEP 8] Filling Contact e-mail: ${args.customerEmail}`);
-            await emailField.fill(args.customerEmail);
-            await page.waitForTimeout(500);
-          }
-        }
-      }
-
-      // Fill mobile number if provided
-      if (args.customerMobile) {
-        const mobileField = eventBookingIframe.getByLabel('Contact mobile number');
-        if (await mobileField.count() === 0) {
-          const mobileFieldAlt = eventBookingIframe.locator('#cnt_mobile_number .dx-texteditor-input');
-          if (await mobileFieldAlt.count() > 0) {
-            const currentMobile = await mobileFieldAlt.inputValue().catch(() => '');
-            if (!currentMobile || currentMobile.trim() === '') {
-              console.log(`📝 [STEP 8] Filling Contact mobile number: ${args.customerMobile}`);
-              await mobileFieldAlt.fill(args.customerMobile);
+        const emailFormatted = cleanEmail(args.customerEmail) || String(args.customerEmail).trim();
+        if (emailFormatted) {
+          const emailField = eventBookingIframe.getByLabel('Contact e-mail');
+          if (await emailField.count() > 0) {
+            const currentEmail = await emailField.inputValue().catch(() => '');
+            if (!currentEmail || currentEmail.trim() === '') {
+              console.log(`📝 [STEP 8] Filling Contact e-mail: ${emailFormatted}`);
+              await emailField.fill(emailFormatted);
               await page.waitForTimeout(500);
             }
           }
-        } else {
-          const currentMobile = await mobileField.inputValue().catch(() => '');
-          if (!currentMobile || currentMobile.trim() === '') {
-            console.log(`📝 [STEP 8] Filling Contact mobile number: ${args.customerMobile}`);
-            await mobileField.fill(args.customerMobile);
-            await page.waitForTimeout(500);
+        }
+      }
+
+      // Fill mobile number if provided (UK format: 07 + 9 digits)
+      if (args.customerMobile) {
+        const mobileFormatted = normalizeUKMobile(args.customerMobile) || String(args.customerMobile).trim();
+        if (mobileFormatted) {
+          const mobileField = eventBookingIframe.getByLabel('Contact mobile number');
+          if (await mobileField.count() === 0) {
+            const mobileFieldAlt = eventBookingIframe.locator('#cnt_mobile_number .dx-texteditor-input');
+            if (await mobileFieldAlt.count() > 0) {
+              const currentMobile = await mobileFieldAlt.inputValue().catch(() => '');
+              if (!currentMobile || currentMobile.trim() === '') {
+                console.log(`📝 [STEP 8] Filling Contact mobile number: ${mobileFormatted}`);
+                await mobileFieldAlt.fill(mobileFormatted);
+                await page.waitForTimeout(500);
+              }
+            }
+          } else {
+            const currentMobile = await mobileField.inputValue().catch(() => '');
+            if (!currentMobile || currentMobile.trim() === '') {
+              console.log(`📝 [STEP 8] Filling Contact mobile number: ${mobileFormatted}`);
+              await mobileField.fill(mobileFormatted);
+              await page.waitForTimeout(500);
+            }
           }
         }
       }
 
-      // Fill postcode if provided
+      // Fill postcode if provided (UK format: space before last 3 chars)
       if (args.postcode) {
-        const postcodeField = eventBookingIframe.getByLabel('Post Code');
-        if (await postcodeField.count() > 0) {
-          const currentPostcode = await postcodeField.inputValue().catch(() => '');
-          if (!currentPostcode || currentPostcode.trim() === '') {
-            console.log(`📝 [STEP 8] Filling Post Code: ${args.postcode}`);
-            await postcodeField.fill(args.postcode);
-            await page.waitForTimeout(500);
+        const postcodeFormatted = formatPostcode(args.postcode);
+        if (postcodeFormatted) {
+          const postcodeField = eventBookingIframe.getByLabel('Post Code');
+          if (await postcodeField.count() > 0) {
+            const currentPostcode = await postcodeField.inputValue().catch(() => '');
+            if (!currentPostcode || currentPostcode.trim() === '') {
+              console.log(`📝 [STEP 8] Filling Post Code: ${postcodeFormatted}`);
+              await postcodeField.fill(postcodeFormatted);
+              await page.waitForTimeout(500);
+            }
           }
         }
       }
@@ -286,31 +300,33 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         }
       }
 
-      // Fill National Insurance if provided (optional; never asked as missing)
+      // Fill National Insurance if provided (optional; never asked as missing). UK format: 2 letters, 6 digits, 1 letter.
       if (args.nationalInsurance) {
+        const niFormatted = formatNationalInsurance(args.nationalInsurance);
         let niField = eventBookingIframe.getByLabel('National Insurance number');
         if (await niField.count() === 0) niField = eventBookingIframe.locator('#cnt_NI_number .dx-texteditor-input');
         if (await niField.count() === 0) niField = eventBookingIframe.locator('#cnt_NI_number');
         if (await niField.count() > 0) {
           const currentNI = await niField.inputValue().catch(() => '');
           if (!currentNI || currentNI.trim() === '') {
-            console.log(`📝 [STEP 8] Filling National Insurance number: ${args.nationalInsurance}`);
-            await niField.fill(args.nationalInsurance);
+            console.log(`📝 [STEP 8] Filling National Insurance number: ${niFormatted}`);
+            await niField.fill(niFormatted);
             await page.waitForTimeout(500);
           }
         }
       }
 
-      // Fill Driving Licence Number if provided (optional; never asked as missing)
+      // Fill Driving Licence Number if provided (optional; never asked as missing). UK format: no spaces.
       if (args.drivingLicenceNumber) {
+        const dlFormatted = formatDrivingLicenceNumber(args.drivingLicenceNumber);
         let dlField = eventBookingIframe.getByLabel('Driving licence number');
         if (await dlField.count() === 0) dlField = eventBookingIframe.locator('#cnt_driving_licence_no .dx-texteditor-input');
         if (await dlField.count() === 0) dlField = eventBookingIframe.locator('#cnt_driving_licence_no');
         if (await dlField.count() > 0) {
           const currentDL = await dlField.inputValue().catch(() => '');
           if (!currentDL || currentDL.trim() === '') {
-            console.log(`📝 [STEP 8] Filling Driving licence number: ${args.drivingLicenceNumber}`);
-            await dlField.fill(args.drivingLicenceNumber);
+            console.log(`📝 [STEP 8] Filling Driving licence number: ${dlFormatted}`);
+            await dlField.fill(dlFormatted);
             await page.waitForTimeout(500);
           }
         }
