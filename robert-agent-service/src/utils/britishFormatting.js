@@ -95,11 +95,49 @@ export function formatPhoneNumber(phoneNumber) {
   return cleaned;
 }
 
+/**
+ * Format UK National Insurance number (2 letters, 6 digits, 1 letter, e.g. AB123456C).
+ * Removes spaces and dashes; returns uppercase 9-character string if pattern matches.
+ * @param {string} value - NI number as spoken or entered (spaces optional)
+ * @returns {string} Formatted NI number or original trimmed value if pattern doesn't match
+ */
+export function formatNationalInsurance(value) {
+  if (!value || typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const cleaned = trimmed.replace(/[\s\-]/g, '').toUpperCase();
+  // UK NI: 2 letters, 6 digits, 1 letter
+  const match = cleaned.match(/^([A-Z]{2})(\d{6})([A-Z])$/);
+  if (match) {
+    return match[1] + match[2] + match[3];
+  }
+  return trimmed;
+}
+
+/**
+ * Format UK driving licence number for form input (no spaces).
+ * Removes spaces and dashes, uppercases letters. Many forms expect no spaces.
+ * @param {string} value - Driving licence number as spoken or entered
+ * @returns {string} Formatted licence number (no spaces)
+ */
+export function formatDrivingLicenceNumber(value) {
+  if (!value || typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/[\s\-]/g, '').toUpperCase();
+}
+
 export default {
   formatDate,
   formatTime,
   formatCurrency,
   formatPostcode,
-  formatPhoneNumber
+  formatPhoneNumber,
+  formatNationalInsurance,
+  formatDrivingLicenceNumber
 };
 

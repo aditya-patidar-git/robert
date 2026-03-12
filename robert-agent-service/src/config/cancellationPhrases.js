@@ -16,6 +16,8 @@ export const PROCEED_DECLINED_MESSAGE = 'Ok, thank you. Is there anything else t
 
 export const BEAR_WITH_ME = 'Please bear with me a moment.';
 export const AFTER_LOGIN_MESSAGE = "I'll now login to the system to find your profile. Please bear with me a moment.";
+/** After Step 3 (determine_workflow): say then auto-run navigate_contacts (no yes/no wait). */
+export const AFTER_DETERMINE_WORKFLOW_MESSAGE = "I'll now search for your profile in our system. Please bear with me a moment.";
 export const AFTER_CONFIRM_CANCEL_MESSAGE = "I'll now cancel your booking. Please bear with me a moment.";
 export const AFTER_FORM_OPENED_MESSAGE = "I've opened the cancellation form. I'm submitting it now; please bear with me.";
 export const AFTER_FORM_SUBMITTED_MESSAGE = "I'm sending the cancellation confirmation email to you now; please bear with me.";

@@ -144,21 +144,20 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
       // For now, leave as is and let form validation handle it
     }
     
-    // 6a. Click "Cancel now" (green button #btnBack) to submit the cancellation
+    // 6. Click "Cancel now" (green button #btnBack) to submit the cancellation
     console.log(`✅ [FILL_CANCELLATION_FORM] Clicking Cancel now...`);
     const cancelNowButton = page.locator('#btnBack[aria-label="Cancel now"]');
     await cancelNowButton.waitFor({ state: 'visible', timeout: 30000 });
     await cancelNowButton.click();
-    await page.waitForTimeout(2000);
 
-    // 6b. Click "Back to previous screen" (#btnCancel) - in main page #mainArea / #bottomToolbar, not in iframe
-    console.log(`✅ [FILL_CANCELLATION_FORM] Clicking Back to previous screen...`);
-    const backButton = page.locator('#btnCancel[aria-label="Back to previous screen"]');
-    await backButton.waitFor({ state: 'visible', timeout: 30000 });
-    await backButton.click();
+    // Wait for app to redirect after cancel (e.g. back to contactEdit_iframe or communications tab)
+    try {
+      await page.waitForSelector('#contactEdit_iframe', { state: 'attached', timeout: 20000 });
+      await page.waitForTimeout(2000);
+    } catch (e) {
+      await page.waitForTimeout(5000);
+    }
 
-    await page.waitForTimeout(3000);
-    
     // Verify cancellation was successful
     // Check if we're back on the profile page (contactEdit_iframe)
     console.log(`🔍 [FILL_CANCELLATION_FORM] Verifying cancellation success...`);

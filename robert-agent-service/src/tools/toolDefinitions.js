@@ -293,11 +293,11 @@ CRITICAL WORKFLOW:
           },
           customerEmail: {
             type: 'string',
-            description: 'Customer email address'
+            description: 'Customer email address (valid format, e.g. name@domain.co.uk)'
           },
           customerMobile: {
             type: 'string',
-            description: 'Customer mobile number (11 digits, UK format)'
+            description: 'Customer mobile number (UK format: 11 digits starting with 07, e.g. 07123456789)'
           },
           customerName: {
             type: 'string',
@@ -305,7 +305,7 @@ CRITICAL WORKFLOW:
           },
           postcode: {
             type: 'string',
-            description: 'Customer postcode'
+            description: 'Customer postcode (UK format, e.g. SW1A 1AA or HA8 6AG; space before last 3 characters)'
           },
           houseNumber: {
             type: 'string',
@@ -313,11 +313,11 @@ CRITICAL WORKFLOW:
           },
           nationalInsurance: {
             type: 'string',
-            description: 'National Insurance number (optional)'
+            description: 'National Insurance number (UK format: 2 letters, 6 digits, 1 letter, e.g. AB123456C; spaces optional when spoken)'
           },
           drivingLicenceNumber: {
             type: 'string',
-            description: 'Driving licence number (optional)'
+            description: 'UK driving licence number (no spaces; current format is 5 digits, 3 letters, 5 digits)'
           },
           licenceHeld: {
             type: 'string',

@@ -112,15 +112,17 @@ const LICENCE_HELD_OVERLAY_TIMEOUT_MS = 10000;
 
 /**
  * Select option from a DevExtreme dropdown by scoping to the visible overlay.
+ * The overlay is shared by all dropdowns on the page and its content updates per dropdown;
+ * we wait for it to show Licence held options (option with exactLabel) before selecting.
  * Tries iframe first, then page (in case overlay is rendered in top-level document).
  * @returns {Promise<boolean>} true if selection was done via overlay
  */
 async function selectOptionFromOverlay(iframe, page, fieldId, exactLabel) {
   const dropdownInput = iframe.locator(`#${fieldId} .dx-texteditor-input`);
   await dropdownInput.click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(700);
 
-  const overlaySelector = '.dx-overlay-wrapper.dx-dropdowneditor-overlay .dx-list-items';
+  const overlayListSelector = '.dx-overlay-wrapper.dx-dropdowneditor-overlay .dx-list-items';
 
   async function trySelectFromContainer(container) {
     const items = container.locator('.dx-item');
@@ -138,20 +140,22 @@ async function selectOptionFromOverlay(iframe, page, fieldId, exactLabel) {
     return false;
   }
 
-  // Try iframe first (overlay in same iframe)
+  // Wait for the shared overlay to show Licence held options (option with exactLabel), then select.
+  // This avoids acting on another dropdown's options when the overlay content updates per dropdown.
+  async function waitForLicenceHeldContentAndSelect(context) {
+    const optionLocator = context.locator(`${overlayListSelector} .dx-item`).filter({ hasText: exactLabel }).first();
+    await optionLocator.waitFor({ state: 'visible', timeout: LICENCE_HELD_OVERLAY_TIMEOUT_MS });
+    const optionsContainer = context.locator(overlayListSelector);
+    return trySelectFromContainer(optionsContainer);
+  }
+
   try {
-    const overlay = iframe.locator(overlaySelector);
-    await overlay.waitFor({ state: 'visible', timeout: LICENCE_HELD_OVERLAY_TIMEOUT_MS });
-    const optionsContainer = iframe.locator(overlaySelector);
-    if (await trySelectFromContainer(optionsContainer)) return true;
+    if (await waitForLicenceHeldContentAndSelect(iframe)) return true;
   } catch (iframeErr) {
-    // Fallback: overlay may be in top-level document
     try {
-      const pageOverlay = page.locator(overlaySelector);
-      await pageOverlay.waitFor({ state: 'visible', timeout: LICENCE_HELD_OVERLAY_TIMEOUT_MS });
-      if (await trySelectFromContainer(pageOverlay)) return true;
+      if (await waitForLicenceHeldContentAndSelect(page)) return true;
     } catch (pageErr) {
-      throw iframeErr; // throw original iframe error for message
+      throw iframeErr;
     }
   }
 
@@ -387,13 +391,16 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
             }
             await fillTextField(eventBookingIframe, 'Driving licence number', 'cnt_driving_licence_no', contactDetails.drivingLicenceNumber);
           }
-          // Only return requiresAddressConfirmation if we're on the correct page
+          // Only return requiresAddressConfirmation if we're on the correct page.
+          // Include partialFill/skippedFields when any field failed so coordinator can proceed without waiting.
           return {
             success: true,
             requiresAddressConfirmation: true,
             autoPopulatedAddress: autoPopulatedAddress,
             townCity: townCity,
-            message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`
+            message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`,
+            partialFill: skippedFields.length > 0,
+            skippedFields: skippedFields.length > 0 ? [...skippedFields] : undefined
           };
         }
       } catch (error) {

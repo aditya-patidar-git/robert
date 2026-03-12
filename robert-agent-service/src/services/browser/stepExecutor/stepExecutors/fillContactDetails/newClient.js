@@ -3,9 +3,13 @@
  * Handles filling contact details for new clients
  * Preserves all Playwright timing and state checks
  * Uses same required-fields check as existing client (only ask for configured must-details).
+ * Applies UK format normalization for postcode, mobile, email, NI number, and driving licence before form fill.
  */
 
 import * as commonSteps from '../../../../commonBookingSteps/index.js';
+import { cleanEmail } from '../../../../commonBookingSteps/utils.js';
+import { normalizeUKMobile } from '../../../../mobileSearchService.js';
+import { formatPostcode, formatNationalInsurance, formatDrivingLicenceNumber } from '../../../../../utils/britishFormatting.js';
 
 /**
  * Execute new client fill contact details flow
@@ -52,18 +56,27 @@ export async function executeNewClientFlow(page, args, sessionState, screenshots
   const missingFromArgs = REQUIRED_PARAM_NAMES.filter(p => !getArgValue(args, p));
   const skipNextClick = missingFromArgs.length > 0;
 
+  // Apply UK format normalization so the form receives valid values and avoids validation errors
+  const rawMobile = args.customerMobile || args.customerPhone;
+  const mobileNumber = rawMobile ? (normalizeUKMobile(rawMobile) || String(rawMobile).trim()) : undefined;
+  const rawEmail = args.customerEmail;
+  const email = rawEmail ? (cleanEmail(rawEmail) || String(rawEmail).trim()) : undefined;
+  const postcode = args.postcode ? formatPostcode(args.postcode) : undefined;
+  const nationalInsuranceNumber = args.nationalInsurance ? formatNationalInsurance(args.nationalInsurance) : undefined;
+  const drivingLicenceNumber = args.drivingLicenceNumber ? formatDrivingLicenceNumber(args.drivingLicenceNumber) : undefined;
+
   const contactDetails = {
     title: args.title,
     firstNames: args.firstNames || args.customerName?.split(' ')[0],
     surname: args.surname || args.customerName?.split(' ').slice(1).join(' '),
-    mobileNumber: args.customerMobile || args.customerPhone,
-    email: args.customerEmail,
+    mobileNumber,
+    email,
     dateOfBirth: args.dateOfBirth,
-    postcode: args.postcode,
+    postcode,
     houseNumberOrName: args.houseNumber,
     licenceHeld: args.licenceHeld,
-    nationalInsuranceNumber: args.nationalInsurance,
-    drivingLicenceNumber: args.drivingLicenceNumber,
+    nationalInsuranceNumber,
+    drivingLicenceNumber,
     licenceFormat: args.licenceFormat || 'GB',
     hearAboutUs: args.hearAboutUs,
     ridingExperience: args.ridingExperience,
@@ -89,14 +102,17 @@ export async function executeNewClientFlow(page, args, sessionState, screenshots
     };
   }
 
-  // Check if address confirmation is required (fillResult from common step)
+  // Check if address confirmation is required (fillResult from common step).
+  // Pass through partialFill/skippedFields so coordinator can proceed without waiting when a field failed.
   if (fillResult && fillResult.requiresAddressConfirmation) {
     return {
       success: true,
       requiresAddressConfirmation: true,
       autoPopulatedAddress: fillResult.autoPopulatedAddress,
       townCity: fillResult.townCity,
-      message: fillResult.message
+      message: fillResult.message,
+      partialFill: fillResult?.partialFill,
+      skippedFields: fillResult?.skippedFields
     };
   }
 

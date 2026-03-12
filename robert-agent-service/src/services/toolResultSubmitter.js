@@ -6,7 +6,7 @@
 
 import promptService from './promptService.js';
 import { conversations } from '../shared/state.js';
-import { AFTER_LOGIN_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
+import { AFTER_LOGIN_MESSAGE, AFTER_DETERMINE_WORKFLOW_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
 import sessionStateManager from './browser/sessionStateManager.js';
 import progressIndicatorService from './progressIndicatorService.js';
 import { getNextStepName } from './browser/stepConfiguration.js';
@@ -683,11 +683,21 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         }
       }
 
-      // Phase 5: After create_new_contact, call fill_contact_details next
+      // Phase 5: After create_new_contact, call fill_contact_details next (set chained tool so we don't go to waiting state if model doesn't call it in same turn)
       if (toolName === 'booking_step_create_new_contact' && toolResult?.success === true) {
         const instruction = `CRITICAL: booking_step_create_new_contact completed. Do not call it again. In this same response call booking_step_fill_contact_details FIRST with only courseType and workflowType (no contact parameters). Do NOT say you will check which details are needed; call the tool first. Do NOT ask for name, email, or phone before that call. After it returns missingFields, collect ONLY those missing fields—each with double confirmation (ask → repeat to verify; if no match, ask once more and take as final)—then call booking_step_fill_contact_details ONCE with ALL parameters.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
-        console.log(`🎯 [${callId}] Create new contact completed - instructing to call booking_step_fill_contact_details next`);
+        const reqCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        if (this.stateManager && reqCourseType) {
+          this.stateManager.pendingChainedToolCall = {
+            toolName: 'booking_step_fill_contact_details',
+            args: { courseType: reqCourseType, workflowType: 'new' }
+          };
+          console.log(`🎯 [${callId}] Create new contact completed - instructing to call booking_step_fill_contact_details next`);
+          console.log(`🎯 [${callId}] Pending recovery tool set (after create_new_contact) - will auto-run booking_step_fill_contact_details if model does not call it`);
+        } else {
+          console.log(`🎯 [${callId}] Create new contact completed - instructing to call booking_step_fill_contact_details next`);
+        }
       }
 
       const isFillContactDetailsMissing = toolName === 'booking_step_fill_contact_details' &&
@@ -883,6 +893,23 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         }
       }
 
+      const isDetermineWorkflowProceed = !forceNextToolChoice && toolName === 'cancellation_step_determine_workflow' &&
+        toolResult?.success === true &&
+        toolResult?.nextStep === 'cancellation_step_navigate_contacts';
+      if (isDetermineWorkflowProceed) {
+        const navCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const validCourseType = navCourseType && navCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for chained cancellation_step_navigate_contacts - skipping`);
+        } else {
+          responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${AFTER_DETERMINE_WORKFLOW_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_navigate_contacts', args: { courseType: navCourseType, workflowType: 'existing' } };
+          }
+          console.log(`🎯 [${callId}] Cancellation Step 3 done - say-only then inject cancellation_step_navigate_contacts (courseType: ${navCourseType})`);
+        }
+      }
+
       const isConfirmCancellationProceed = !forceNextToolChoice && toolName === 'cancellation_step_confirm_cancellation' &&
         toolResult?.success === true &&
         toolResult?.confirmed === true &&
@@ -959,6 +986,23 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         }
       }
 
+      const isSelectTemplateProceed = !forceNextToolChoice && toolName === 'cancellation_step_select_template' &&
+        toolResult?.success === true &&
+        (toolResult?.templateSelected === true || toolResult?.templateSelected === undefined);
+      if (isSelectTemplateProceed) {
+        const sendCourseType = courseType || sessionStateManager.getSession(callSid)?.courseType;
+        const validCourseType = sendCourseType && sendCourseType !== 'TBD';
+        if (!validCourseType) {
+          console.error(`❌ [${callId}] courseType not available or TBD for chained cancellation_step_send_confirmation - skipping`);
+        } else {
+          responseInstructions = `CRITICAL: Say exactly this out loud and then stop. Do not call any tools: "${AFTER_FORM_SUBMITTED_MESSAGE}"`;
+          if (this.stateManager) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'cancellation_step_send_confirmation', args: { courseType: sendCourseType, workflowType: 'existing' } };
+          }
+          console.log(`🎯 [${callId}] Template selected - say-only then inject cancellation_step_send_confirmation (courseType: ${sendCourseType})`);
+        }
+      }
+
       if (retryCount > 0) {
         console.log(`✅ [${callId}] Successfully acquired response lock after ${retryCount} retry attempt(s)`);
       }
@@ -1006,7 +1050,7 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
       // PHASE 1: Include contextual instructions to ensure automatic continuation
       if (responseInstructions) {
         responseCreatePayload.response.instructions = responseInstructions;
-        const chained = isVerifyBookingIntentProceed || isConfirmCancellationProceed || isInitiateCancellationProceed || isFillCancellationFormProceed || isNavigateCommunicationProceed;
+        const chained = isVerifyBookingIntentProceed || isConfirmCancellationProceed || isInitiateCancellationProceed || isFillCancellationFormProceed || isNavigateCommunicationProceed || isSelectTemplateProceed;
         console.log(`📋 [${callId}] Including contextual instructions in response.create after tool completion (phase: ${workflowPhase}${isClientVerification ? ', client_verification' : ''}${isRequiresToolRedirect ? ', force requiresTool redirect' : ''}${chained ? ', say-only then chained tool' : ''})`);
       }
 
