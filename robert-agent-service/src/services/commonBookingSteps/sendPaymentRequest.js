@@ -1,4 +1,4 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from './utils.js';
 import { getTermsText, validateTermsAcceptance } from './termsUtils.js';
 
 /**
@@ -79,11 +79,18 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     const stillOnPaymentPage = await page.locator('#eventNewBooking2_iframe').count() > 0;
     if (stillOnPaymentPage) {
       console.log('⚠️ [PAYMENT_REQUEST] Still on PaymentPage - waiting for transition to payment request link page...');
-      await page.waitForTimeout(3000);
+      try {
+        await waitForThenOptionalDelay(page, '#contactSend3DSecureRequest_iframe', { state: 'attached', timeout: 8000, delayMs: CRM_STABILITY_DELAY_MS });
+      } catch (_) {
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+      }
+    } else {
+      try {
+        await waitForThenOptionalDelay(page, '#contactSend3DSecureRequest_iframe', { state: 'attached', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
+      } catch (_) {
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+      }
     }
-    
-    // Give time for the new iframe to appear after selecting "Send a payment request"
-    await page.waitForTimeout(3000); // Reduced from 5000 since selectPaymentOption already waited
     
     // CRITICAL FIX: Check for contactSend3DSecureRequest_iframe first (payment request page)
     // This iframe appears AFTER clicking "Send a payment request"
@@ -105,12 +112,12 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           break;
         } catch (iframeError) {
           console.log(`⚠️ [PAYMENT_REQUEST] Payment request iframe detected but not loaded yet, retrying (${i + 1}/10)...`);
-          if (i < 9) await page.waitForTimeout(2000);
+          if (i < 9) await page.waitForTimeout(500);
         }
       } else {
         if (i < 9) {
           console.log(`⏳ [PAYMENT_REQUEST] Payment request iframe not found, retrying (${i + 1}/10)...`);
-          await page.waitForTimeout(2000);
+          await page.waitForTimeout(500);
         }
       }
     }
@@ -137,14 +144,14 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
             searchContext = iframe;
             break;
           } catch (iframeError) {
-            if (i < 2) await page.waitForTimeout(2000);
+            if (i < 2) await page.waitForTimeout(500);
           }
         } else {
-          if (i < 2) await page.waitForTimeout(2000);
+          if (i < 2) await page.waitForTimeout(500);
         }
       }
     }
-    
+
     // Final fallback: Use main page
     if (!searchContext) {
       console.log('⚠️ [PAYMENT_REQUEST] No iframe found, using main page context');
@@ -210,12 +217,12 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
         
         if (attempt < 4) {
           console.log(`⚠️ [PAYMENT_REQUEST] Payment request page not loaded yet, retrying (${attempt + 1}/5)...`);
-          await page.waitForTimeout(3000);
+          await page.waitForTimeout(500);
         }
       } catch (error) {
         if (attempt < 4) {
           console.log(`⚠️ [PAYMENT_REQUEST] Error checking for payment request page, retrying (${attempt + 1}/5)...`);
-          await page.waitForTimeout(3000);
+          await page.waitForTimeout(500);
         } else {
           throw error;
         }
@@ -253,7 +260,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
         console.log(`📧 [PAYMENT_REQUEST] Email field already has value: ${emailAddress}`);
       } else if (clientEmail?.trim()) {
         await emailInput.fill(clientEmail.trim());
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
         emailAddress = clientEmail.trim();
         console.log(`📧 [PAYMENT_REQUEST] Filled email from stored client email: ${emailAddress}`);
       } else {
@@ -277,7 +284,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
         console.log(`📱 [PAYMENT_REQUEST] Mobile field already has value: ${phoneNumber}`);
       } else if (clientMobile?.trim()) {
         await mobileInput.fill(clientMobile.trim());
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
         phoneNumber = clientMobile.trim();
         console.log(`📱 [PAYMENT_REQUEST] Filled mobile from stored client mobile: ${phoneNumber}`);
       } else {
@@ -489,46 +496,27 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           await makeBookingButton.click({ timeout: 5000 });
           console.log('✅ [PAYMENT_REQUEST] "Make booking" button clicked successfully');
           
-          // Wait a moment for the click to register
-          await page.waitForTimeout(500);
-          
-          // Wait for payment processing/confirmation (up to 30 seconds)
+          await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
           console.log('⏳ [PAYMENT_REQUEST] Waiting for payment processing/confirmation...');
-          await page.waitForTimeout(3000); // Initial wait
-          
-          // Try to detect confirmation indicators
           const confirmationIndicators = [
             'text=/booking.confirmed/i',
             'text=/payment.successful/i',
             'text=/confirmed/i',
             'text=/successful/i',
             'text=/Booking confirmed/i',
-            'text=/Payment successful/i'
+            'text=/Payment successful/i',
+            '#afterBookingMenu'
           ];
-          
-          let confirmationFound = false;
-          for (const indicator of confirmationIndicators) {
-            try {
-              const confirmElement = page.locator(indicator).first();
-              if (await confirmElement.count() > 0) {
-                const isVisible = await confirmElement.isVisible().catch(() => false);
-                if (isVisible) {
-                  console.log(`✅ [PAYMENT_REQUEST] Found confirmation indicator: "${indicator}"`);
-                  confirmationFound = true;
-                  break;
-                }
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-          
-          // Wait additional time for payment processing if confirmation not immediately visible
-          if (!confirmationFound) {
-            console.log('⏳ [PAYMENT_REQUEST] Confirmation not immediately visible, waiting for payment processing...');
-            await page.waitForTimeout(10000); // Additional 10 seconds
-          }
-          
+          const CONFIRMATION_WAIT_MS = 15000;
+          const raceResult = await Promise.race(
+            confirmationIndicators.map((ind) =>
+              page.locator(ind).first().waitFor({ state: 'visible', timeout: CONFIRMATION_WAIT_MS }).then(() => ind)
+            )
+          ).catch(() => null);
+          if (raceResult) console.log(`✅ [PAYMENT_REQUEST] Found confirmation indicator: "${raceResult}"`);
+          else await page.waitForTimeout(1000);
+
           // CRITICAL: Check if we're still on the payment page (button should disappear or be disabled)
           // This ensures we don't get false positives from elements that already exist
           let stillOnPaymentPage = true;
@@ -587,9 +575,9 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           const maxNextPageChecks = 15; // 15 seconds
           
           while (!nextPageFound && nextPageCheckAttempts < maxNextPageChecks) {
-            await page.waitForTimeout(1000);
+            await page.waitForTimeout(500);
             nextPageCheckAttempts++;
-            
+
             // CRITICAL FIX: Check for confirmation page indicators in afterBooking_iframe FIRST
             // The confirmation page appears in afterBooking_iframe after booking completion
             const afterBookingIframeExists = await page.locator('#afterBooking_iframe').count() > 0;
@@ -681,46 +669,25 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
             await makeBookingButton.click({ force: true, timeout: 5000 });
             console.log('✅ [PAYMENT_REQUEST] "Make booking" button clicked with force');
             
-            // Wait a moment for the click to register
-            await page.waitForTimeout(500);
-            
-            // Wait for payment processing/confirmation (up to 30 seconds)
+            await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
             console.log('⏳ [PAYMENT_REQUEST] Waiting for payment processing/confirmation...');
-            await page.waitForTimeout(3000); // Initial wait
-            
-            // Try to detect confirmation indicators
-            const confirmationIndicators = [
+            const confirmationIndicatorsForce = [
               'text=/booking.confirmed/i',
               'text=/payment.successful/i',
               'text=/confirmed/i',
               'text=/successful/i',
               'text=/Booking confirmed/i',
-              'text=/Payment successful/i'
+              'text=/Payment successful/i',
+              '#afterBookingMenu'
             ];
-            
-            let confirmationFound = false;
-            for (const indicator of confirmationIndicators) {
-              try {
-                const confirmElement = page.locator(indicator).first();
-                if (await confirmElement.count() > 0) {
-                  const isVisible = await confirmElement.isVisible().catch(() => false);
-                  if (isVisible) {
-                    console.log(`✅ [PAYMENT_REQUEST] Found confirmation indicator: "${indicator}"`);
-                    confirmationFound = true;
-                    break;
-                  }
-                }
-              } catch (e) {
-                continue;
-              }
-            }
-            
-            // Wait additional time for payment processing if confirmation not immediately visible
-            if (!confirmationFound) {
-              console.log('⏳ [PAYMENT_REQUEST] Confirmation not immediately visible, waiting for payment processing...');
-              await page.waitForTimeout(10000); // Additional 10 seconds
-            }
-            
+            const CONFIRMATION_WAIT_MS_FC = 15000;
+            await Promise.race(
+              confirmationIndicatorsForce.map((ind) =>
+                page.locator(ind).first().waitFor({ state: 'visible', timeout: CONFIRMATION_WAIT_MS_FC })
+              )
+            ).catch(() => null);
+
             // CRITICAL: Check if we're still on the payment page (button should disappear or be disabled)
             let stillOnPaymentPage = true;
             let paymentPageCheckAttempts = 0;
@@ -730,9 +697,9 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
             let searchContextForCheck = searchContext || page;
             
             while (stillOnPaymentPage && paymentPageCheckAttempts < maxPaymentPageChecks) {
-              await page.waitForTimeout(1000);
+              await page.waitForTimeout(500);
               paymentPageCheckAttempts++;
-              
+
               try {
                 const buttonStillExists = await searchContextForCheck.locator('#diaryNewCourseBookingWiz_OKBtn').count() > 0;
                 if (buttonStillExists) {
@@ -773,9 +740,9 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
             const maxNextPageChecks = 15; // 15 seconds
             
             while (!nextPageFound && nextPageCheckAttempts < maxNextPageChecks) {
-              await page.waitForTimeout(1000);
+              await page.waitForTimeout(500);
               nextPageCheckAttempts++;
-              
+
               for (const indicator of nextPageIndicators) {
                 try {
                   const element = page.locator(indicator).first();

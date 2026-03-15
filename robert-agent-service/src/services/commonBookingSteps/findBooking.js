@@ -1,4 +1,4 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from './utils.js';
 
 /**
  * Find existing bookings for a customer by navigating to their profile
@@ -22,7 +22,7 @@ export async function findBooking(page, iframe, screenshotsDir, bookingReference
     if (hasBookingsTab) {
       console.log('✅ [FIND BOOKING] Found Bookings tab, clicking...');
       await bookingsTab.click();
-      await page.waitForTimeout(3000);
+      await waitForThenOptionalDelay(page, iframe.locator('table, .bookings-list, .booking-history, [class*="booking"]').first(), { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS }).catch(() => {});
       await takeScreenshot(page, 'bookings-tab-opened.png', screenshotsDir);
     } else {
       console.log('⚠️ [FIND BOOKING] No Bookings tab found, checking for inline bookings list...');
@@ -41,8 +41,7 @@ export async function findBooking(page, iframe, screenshotsDir, bookingReference
       };
     }
     
-    // Wait for bookings to load
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     await takeScreenshot(page, 'bookings-section-loaded.png', screenshotsDir);
     
     // Extract bookings from the table/list

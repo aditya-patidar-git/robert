@@ -1,4 +1,4 @@
-import { takeScreenshot } from '../utils.js';
+import { takeScreenshot, CRM_STABILITY_DELAY_MS } from '../utils.js';
 
 /**
  * Search Client
@@ -23,18 +23,11 @@ export async function selectSmartSearch(iframe, page, screenshotsDir) {
     
     console.log('✅ [SEARCH] Found search dropdown, clicking to open options...');
     
-    // Click on the dropdown to open the menu
     await searchDropdown.click();
-    
-    // WAIT FOR DROPDOWN MENU TO APPEAR - 2 seconds
-    console.log('⏳ [SEARCH] Waiting for dropdown menu to appear...');
-    await page.waitForTimeout(2000);
-
-
-    // Look for "Smart search" option and scroll up to make it clickable
-    console.log('🔍 [SEARCH] Looking for Smart search option in menu...');
-    
     const smartSearchOption = iframe.locator('text=Smart search').first();
+    await smartSearchOption.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+
+    console.log('🔍 [SEARCH] Looking for Smart search option in menu...');
     
     // Check if it's visible, if not, scroll up
     const isSmartSearchVisible = await smartSearchOption.isVisible();
@@ -45,26 +38,19 @@ export async function selectSmartSearch(iframe, page, screenshotsDir) {
       
       // Scroll up in the dropdown menu to make Smart search visible
       await page.keyboard.press('Home');
-      await page.waitForTimeout(1000);
-      
-      // Alternative: try to scroll the dropdown container
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       const dropdownMenu = iframe.locator('[role="listbox"], .dx-dropdownlist, .dx-list').first();
       if (await dropdownMenu.count() > 0) {
         await dropdownMenu.evaluate(el => el.scrollTop = 0);
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       }
     }
     
-    // Now try to find and click Smart search
     await smartSearchOption.waitFor({ state: 'visible', timeout: 5000 });
     console.log('✅ [SEARCH] Smart search option is now visible, clicking...');
     await smartSearchOption.click();
-    
-    // WAIT FOR SMART SEARCH TO BE APPLIED - 2 seconds
-    console.log('⏳ [SEARCH] Waiting for Smart search selection...');
-    await page.waitForTimeout(2000);
+    await iframe.locator('input[placeholder*="search"], input[placeholder*="Search"], input[type="search"]').first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
 
-    
     return true;
   } catch (error) {
     console.error('❌ [SEARCH] Error selecting Smart search:', error);
@@ -93,21 +79,26 @@ export async function executeSearch(iframe, page, searchValue, screenshotsDir) {
     // Try multiple approaches to trigger the search
     console.log('🔍 [SEARCH] Triggering search...');
     
-    // Approach 1: Press Enter to trigger search
+    const dataGridRowSelector = 'table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]';
     await searchField.press('Enter');
-    await page.waitForTimeout(2000);
-    
-    // Approach 2: Look for and click search icon/button
+    await iframe.locator(dataGridRowSelector).first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {
+      return iframe.locator('table tbody tr, .dx-datagrid-rowsview tr').first().waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+    });
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
+    // Approach 2: Look for and click search icon/button (if Enter did not trigger)
     console.log('🔍 [SEARCH] Looking for search icon/button...');
     const searchButton = iframe.locator('button[type="submit"], .search-button, [aria-label*="search"], [title*="search"], .fa-search, .search-icon').first();
-    
+
     if (await searchButton.count() > 0) {
       console.log('✅ [SEARCH] Found search button, clicking...');
       await searchButton.click();
-      await page.waitForTimeout(2000);
+      await iframe.locator(dataGridRowSelector).first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {
+        return iframe.locator('table tbody tr, .dx-datagrid-rowsview tr').first().waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+      });
     } else {
       console.log('❌ [SEARCH] No search button found, trying alternative...');
-      
+
       // Approach 3: Safer approach - Use JavaScript to blur the input field directly
       console.log('🔍 [SEARCH] Blurring search input field to trigger search...');
       try {
@@ -132,23 +123,16 @@ export async function executeSearch(iframe, page, searchValue, screenshotsDir) {
           await safeContainer.click({ position: { x: 10, y: 10 }, force: true });
           console.log('✅ [SEARCH] Clicked on safe container');
         } else {
-          // Last resort: Click on body at top-left corner (less likely to hit interactive elements)
           await iframe.locator('body').click({ position: { x: 10, y: 10 }, force: true });
           console.log('⚠️ [SEARCH] Clicked on body as last resort');
         }
       }
-      await page.waitForTimeout(2000);
-      
-      // Approach 4: Use Tab to move focus away
-      console.log('🔍 [SEARCH] Using Tab to move focus...');
-      await searchField.press('Tab');
-      await page.waitForTimeout(2000);
+      await iframe.locator(dataGridRowSelector).first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {
+        return iframe.locator('table tbody tr, .dx-datagrid-rowsview tr').first().waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+      });
     }
-    
-    // WAIT FOR SEARCH RESULTS - 5 seconds
-    console.log('⏳ [SEARCH] Waiting for search results...');
-    await page.waitForTimeout(5000);
-    
+
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     return true;
   } catch (error) {
     console.error('❌ [SEARCH] Error executing search:', error);
@@ -175,10 +159,24 @@ export async function findMatchingClientRow(iframe, searchType, searchValue, ema
       finalSearchType = 'email';
       console.log(`🔍 [SEARCH] Smart search selected - using email: ${email}`);
     }
-    
-    // Wait for search results to appear
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
+
+    // Wait for at least one row containing the search value (avoids "no client found" when grid populates after our first read)
+    const MATCHING_ROW_TIMEOUT_MS = 15000;
+    const dataGridRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
+    const searchTextForWait = finalSearchType === 'mobile'
+      ? finalSearchValue.replace(/[\s\-\(\)]/g, '').replace(/^\+/, '').replace(/^\+44/, '0')
+      : finalSearchType === 'email'
+        ? finalSearchValue.toLowerCase().trim()
+        : finalSearchValue.toLowerCase().trim().replace(/\s+/g, ' ');
+    try {
+      await dataGridRows.filter({ hasText: searchTextForWait }).first().waitFor({ state: 'visible', timeout: MATCHING_ROW_TIMEOUT_MS });
+      console.log(`🔍 [SEARCH] Row containing search value appeared within ${MATCHING_ROW_TIMEOUT_MS}ms`);
+    } catch (e) {
+      console.log(`⚠️ [SEARCH] No row containing search value appeared within ${MATCHING_ROW_TIMEOUT_MS}ms, continuing with current grid state`);
+    }
+
+    await iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"], table tbody tr').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+
     // Look for DevExtreme DataGrid table rows
     const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
     const rowCount = await resultRows.count();
@@ -426,8 +424,15 @@ export async function clickClientRow(iframe, page, rowIndex) {
           }
         }
       }, rowIndex);
-      
-      await page.waitForTimeout(2000); // Wait for navigation
+
+      // Wait for navigation to client details (contactEdit iframe) instead of fixed delay
+      const navTimeoutMs = 12000;
+      try {
+        await page.waitForSelector('#contactEdit_iframe', { state: 'attached', timeout: navTimeoutMs });
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+      } catch (e) {
+        console.log(`⚠️ [SEARCH] contactEdit_iframe not attached within ${navTimeoutMs}ms after click: ${e.message}`);
+      }
       console.log(`✅ [SEARCH] Successfully clicked row ${rowIndex + 1}`);
       return true;
     } catch (jsErr) {

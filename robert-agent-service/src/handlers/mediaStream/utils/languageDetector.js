@@ -93,8 +93,43 @@ export class LanguageDetector {
     // If waiting for language preference, handle it even before initial greeting is completed
     if (waitingForLanguage && !languageSelected) {
       const normalizedTranscript = transcript.toLowerCase().trim();
-      
-      // Check for explicit language names in transcript
+
+      // Recognised but unsupported languages: agent will say "not available" and continue in English
+      const unsupportedLanguagePhrases = {
+        'sinhala': 'Sinhala',
+        'sinhalese': 'Sinhala',
+        'tamil': 'Tamil',
+        'hindi': 'Hindi',
+        'bengali': 'Bengali',
+        'urdu': 'Urdu',
+        'punjabi': 'Punjabi',
+        'gujarati': 'Gujarati',
+        'marathi': 'Marathi'
+      };
+      for (const [phrase, displayName] of Object.entries(unsupportedLanguagePhrases)) {
+        if (normalizedTranscript.includes(phrase)) {
+          console.log(`🌐 [${this.state.callSid}] Unsupported language requested: ${displayName} - will respond that it is not available and continue in English`);
+          const { conversations } = await import('../../../shared/state.js');
+          this.state.languagePreferenceState.selected = true;
+          this.state.languagePreferenceState.language = 'en';
+          this.state.languagePreferenceState.selectedAt = new Date();
+          this.state.waitingForLanguage = false;
+          this.state.unsupportedLanguageRequested = displayName;
+          if (conversations[this.state.callSid]) {
+            conversations[this.state.callSid].language = 'en';
+            if (!conversations[this.state.callSid].languagePreferenceState) {
+              conversations[this.state.callSid].languagePreferenceState = {};
+            }
+            conversations[this.state.callSid].languagePreferenceState.selected = true;
+            conversations[this.state.callSid].languagePreferenceState.language = 'en';
+            conversations[this.state.callSid].languagePreferenceState.selectedAt = new Date();
+            conversations[this.state.callSid].waitingForLanguage = false;
+          }
+          return;
+        }
+      }
+
+      // Check for explicit language names in transcript (supported languages)
       const languageNameMap = {
         'english': 'en',
         'eng': 'en',
@@ -116,8 +151,7 @@ export class LanguageDetector {
         'polish': 'pl',
         'polski': 'pl'
       };
-      
-      // Check if transcript contains explicit language name
+
       for (const [name, code] of Object.entries(languageNameMap)) {
         if (normalizedTranscript.includes(name)) {
           console.log(`🌐 [${this.state.callSid}] Explicit language preference detected: ${name} (${code}) from transcript: "${transcript.substring(0, 50)}..."`);
@@ -125,7 +159,7 @@ export class LanguageDetector {
           return;
         }
       }
-      
+
       // If no explicit language name, detect from language patterns
       const detectedLanguage = multilingualService.detectLanguage(transcript);
       

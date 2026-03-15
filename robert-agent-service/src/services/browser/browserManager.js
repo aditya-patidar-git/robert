@@ -243,7 +243,7 @@ export class BrowserManager {
       try {
         const testPage = await this.persistentContext.newPage();
         await testPage.goto('chrome://extensions', { waitUntil: 'domcontentloaded', timeout: 5000 });
-        await testPage.waitForTimeout(2000);
+        await testPage.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
         
         // Check extension count
         const extensionCount = await testPage.evaluate(() => {
@@ -473,9 +473,11 @@ export class BrowserManager {
     }
     
     // No valid context exists - try to load from storageState first, then login if needed
+    const getContextColdStart = Date.now();
+    console.log('⏱️ [BrowserManager] getContext cold path starting (no existing context)');
     const authFilePath = './auth.json';
     let shouldLoadFromStorage = false;
-    
+
     // Try to load from auth.json if it exists (for browser restarts)
     if (fs.existsSync(authFilePath)) {
       try {
@@ -533,7 +535,8 @@ export class BrowserManager {
             waitUntil: 'domcontentloaded', 
             timeout: 15000 
           });
-          await testPage.waitForTimeout(2000); // Wait for any redirects
+          await testPage.waitForSelector('body', { timeout: 5000 });
+          await testPage.waitForTimeout(300); // Brief stability for redirect detection
           
           // Check if we're redirected to login page (session expired indicator)
           const currentUrl = testPage.url();
@@ -615,6 +618,7 @@ export class BrowserManager {
     
     // Keep authenticated page open for reuse (session cookies remain active)
     this.browserInitialized = true;
+    console.log(`⏱️ [BrowserManager] getContext cold path completed in ${Date.now() - getContextColdStart}ms`);
     return this.browserContext;
   }
 

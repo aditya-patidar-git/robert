@@ -4,7 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { takeScreenshot } from '../../../commonBookingSteps/utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
 import feeCalculationService from '../../../feeCalculationService.js';
 
 /**
@@ -33,20 +33,13 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
     console.log('🔄 [LOCATE_BOOKING] Switching to contactEdit_iframe context...');
     const clientDetailsIframe = page.frameLocator('#contactEdit_iframe');
     
-    // Wait for iframe to be ready
-    await page.waitForTimeout(2000);
-    
-    // Scroll to "Bookings, credits, and debits" section inside iframe
+    const bookingsTable = clientDetailsIframe.locator('#contactBookingGrid_page table.jqx_quickGridTable');
+    await waitForThenOptionalDelay(page, bookingsTable, { state: 'visible', timeout: 10000, delayMs: CRM_STABILITY_DELAY_MS });
+
     console.log(`📜 [LOCATE_BOOKING] Scrolling to "Bookings, credits, and debits" section...`);
     const bookingsHeading = clientDetailsIframe.locator('h1.jqx_formBoilerPlateText.jqx_formHeading.jqx_underline:has-text("Bookings, credits and debits")');
     await bookingsHeading.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(2000);
-    
-    // Find the bookings table: #contactBookingGrid_page → table.jqx_quickGridTable
-    console.log('🔍 [LOCATE_BOOKING] Finding bookings table...');
-    const bookingsTable = clientDetailsIframe.locator('#contactBookingGrid_page table.jqx_quickGridTable');
-    await bookingsTable.waitFor({ state: 'visible', timeout: 30000 });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     
     // Find all booking rows (excluding cancelled ones)
     // Filter: tr.jqx_quickGridRow:not(.jqx_cancelled_booking)

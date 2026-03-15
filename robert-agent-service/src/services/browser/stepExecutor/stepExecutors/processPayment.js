@@ -5,6 +5,7 @@
  */
 
 import { trackCRMBooking, buildBookingData } from '../../../bookingTrackingClient.js';
+import { waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
 
 /**
  * Execute processPayment step
@@ -37,41 +38,14 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
   }
 
   if (!onPaymentRequestPage) {
-    // CRITICAL: Wait for page to fully transition from contact details to payment page
     progressCallback?.({ message: 'Loading the payment page.' });
-    console.log('⏳ [PAYMENT] Waiting for page transition from contact details to payment page...');
-    await page.waitForTimeout(5000); // Increased wait time for page transition
-
-    // Verify we're on the payment page before proceeding
-    console.log('🔍 [PAYMENT] Verifying payment page is loaded...');
-    const paymentPageIndicators = [
-      page.locator('text=/Confirm and Pay/i').first(),
-      page.locator('text=/4. Pay/i').first(),
-      page.locator('text=/Payment/i').first(),
-      page.locator('#eventNewBooking2_iframe').first()
-    ];
-
-    let pageReady = false;
-    for (let i = 0; i < 5; i++) {
-      for (const indicator of paymentPageIndicators) {
-        const count = await indicator.count();
-        if (count > 0) {
-          pageReady = true;
-          break;
-        }
-      }
-      if (pageReady) break;
-      if (i < 4) {
-        console.log(`⏳ [PAYMENT] Payment page not ready yet, waiting (${i + 1}/5)...`);
-        await page.waitForTimeout(2000);
-      }
-    }
-
-    if (!pageReady) {
-      console.log('⚠️ [PAYMENT] Payment page indicators not found, but continuing...');
-    } else {
-      console.log('✅ [PAYMENT] Payment page is ready');
-    }
+    console.log('🔍 [PAYMENT] Waiting for payment page...');
+    await Promise.race([
+      page.waitForSelector('text=/Confirm and Pay/i', { timeout: 10000 }),
+      page.waitForSelector('text=/4\\. Pay/i', { timeout: 10000 }),
+      page.waitForSelector('#eventNewBooking2_iframe', { state: 'attached', timeout: 10000 })
+    ]).catch(() => {});
+    console.log('✅ [PAYMENT] Payment page ready');
 
     // Step 1: Select "Send a payment request" option (updated strategy)
     progressCallback?.({ message: 'Selecting payment option.' });
@@ -79,35 +53,18 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     await selectPaymentOption(page, screenshotsDir, 'request', progressCallback);
     screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', screenshotsDir));
 
-    // Verify page transition completed before proceeding
-    console.log('🔍 [PAYMENT] Verifying page transition to payment request link page...');
-    for (let i = 0; i < 5; i++) {
-      const exists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
-      if (exists) {
-        try {
-          const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
-          const testLocator = paymentRequestIframe.locator('body').first();
-          await testLocator.waitFor({ state: 'attached', timeout: 2000 });
-          console.log('✅ [PAYMENT] Confirmed: On payment request link page (contactSend3DSecureRequest_iframe)');
-          progressCallback?.({ message: 'Opening the payment request form.' });
-          onPaymentRequestPage = true;
-          break;
-        } catch (iframeError) {
-          // Iframe exists but not loaded yet
-        }
-      }
-      if (i < 4) {
-        await page.waitForTimeout(2000);
-        console.log(`⏳ [PAYMENT] Waiting for payment request page transition (${i + 1}/5)...`);
-      }
+    console.log('🔍 [PAYMENT] Waiting for payment request link page...');
+    try {
+      await page.waitForSelector('#contactSend3DSecureRequest_iframe', { state: 'attached', timeout: 10000 });
+      const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+      await paymentRequestIframe.locator('body').first().waitFor({ state: 'attached', timeout: 5000 });
+      console.log('✅ [PAYMENT] On payment request link page');
+      progressCallback?.({ message: 'Opening the payment request form.' });
+      onPaymentRequestPage = true;
+    } catch (e) {
+      console.warn('⚠️ [PAYMENT] Payment request page not ready - sendPaymentRequest will detect page');
     }
-
-    if (!onPaymentRequestPage) {
-      console.warn('⚠️ [PAYMENT] Page transition verification failed - may still be on payment page');
-      console.warn('⚠️ [PAYMENT] sendPaymentRequest will attempt to detect correct page');
-    }
-
-    await page.waitForTimeout(2000); // Additional wait for page stability
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
   }
 
   // Step 2: Get client email/mobile from args or sessionState

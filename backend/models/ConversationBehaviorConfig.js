@@ -133,6 +133,13 @@ const ConversationBehaviorConfigSchema = new mongoose.Schema({
         default: 2,
         min: 0,
         max: 5
+      },
+      /** Suppress barge-in for this many ms after agent starts speaking (reduces speakerphone echo/self-interruption). 0 = disabled. */
+      bargeInSuppressMs: {
+        type: Number,
+        default: 1000,
+        min: 0,
+        max: 3000
       }
     }
   },

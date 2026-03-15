@@ -127,7 +127,7 @@ export default async function selectBookingOptions(page, bookingArgs = {}, scree
       );
     }
     
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
     
     // Click NEXT button
     await clickNextButton(searchContext, page, bookingIframe);

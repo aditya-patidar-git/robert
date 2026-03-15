@@ -4,7 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { takeScreenshot } from '../../../commonBookingSteps/utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
 
 /**
  * Execute initiateCancellation step
@@ -32,10 +32,8 @@ export async function executeInitiateCancellation(page, args, sessionState, scre
     // Work within contactEdit_iframe (should already be set from Step 6)
     console.log('🔄 [INITIATE_CANCELLATION] Switching to contactEdit_iframe context...');
     const clientDetailsIframe = page.frameLocator('#contactEdit_iframe');
-    
-    // Wait for iframe to be ready
-    await page.waitForTimeout(2000);
-    
+    await waitForThenOptionalDelay(page, clientDetailsIframe.locator('#contactBookingGrid_page table.jqx_quickGridTable'), { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS }).catch(() => {});
+
     // Find booking row using bookingId from Step 7 (preferred method)
     let bookingRow = null;
     
@@ -129,29 +127,18 @@ export async function executeInitiateCancellation(page, args, sessionState, scre
     // Click on booking row to open context menu
     console.log(`👆 [INITIATE_CANCELLATION] Clicking on booking row to open context menu...`);
     await bookingRow.click();
-    await page.waitForTimeout(1000);
-    
-    // Wait for context menu dropdown (rendered in same document as grid, inside iframe)
-    console.log(`⏳ [INITIATE_CANCELLATION] Waiting for context menu dropdown...`);
     const contextMenu = clientDetailsIframe.locator('.dx-overlay-content.dx-inner-overlay.dx-context-menu.dx-menu-base');
-    await contextMenu.waitFor({ state: 'visible', timeout: 30000 });
-    await page.waitForTimeout(500);
-    
+    await waitForThenOptionalDelay(page, contextMenu, { state: 'visible', timeout: 10000, delayMs: CRM_STABILITY_DELAY_MS });
+
     // Find and click "Cancel booking" option
     console.log(`🔍 [INITIATE_CANCELLATION] Looking for "Cancel booking" option...`);
     const cancelBookingOption = contextMenu.locator('.dx-menu-item-text:has-text("Cancel booking")');
     await cancelBookingOption.waitFor({ state: 'visible', timeout: 5000 });
     await cancelBookingOption.click();
-    
-    // Wait for cancellation form iframe to appear
     console.log(`⏳ [INITIATE_CANCELLATION] Waiting for cancellation form iframe...`);
-    await page.waitForTimeout(3000);
-    
-    // Verify cancellation form is open by checking for contactCancelBooking_iframe
+    await waitForThenOptionalDelay(page, '#contactCancelBooking_iframe', { state: 'attached', timeout: 10000, delayMs: CRM_STABILITY_DELAY_MS });
     const cancelBookingIframe = page.locator('#contactCancelBooking_iframe');
-    await cancelBookingIframe.waitFor({ state: 'attached', timeout: 30000 });
-    
-    // Also verify form fields are visible inside the iframe
+
     const cancelBookingIframeLocator = page.frameLocator('#contactCancelBooking_iframe');
     await cancelBookingIframeLocator.locator('#presetReason').waitFor({ state: 'visible', timeout: 30000 });
     

@@ -1,4 +1,4 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from './utils.js';
 
 /**
  * Step 10: Select payment option
@@ -11,56 +11,24 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
   try {
     console.log(`💳 [STEP 10] Selecting payment option (type: ${paymentType})...`);
     
-    // Wait for payment page to load - give more time for page transition
     progressCallback?.({ message: 'Waiting for payment page.' });
-    console.log('⏳ [STEP 10] Waiting for payment page to load...');
-    await page.waitForTimeout(5000); // Increased from 3000 to 5000
-    
-    // Check for "Confirm and Pay" page indicator with retry logic
-    console.log('🔍 [STEP 10] Checking for Confirm and Pay page...');
-    let headerExists = false;
-    for (let i = 0; i < 3; i++) {
-      const confirmPayHeader = page.locator('text=/Confirm and Pay/i, text=/4. Pay/i, text=/Payment/i').first();
-      headerExists = await confirmPayHeader.count() > 0;
-      if (headerExists) break;
-      if (i < 2) {
-        console.log(`⏳ [STEP 10] Payment page header not found, retrying (${i + 1}/3)...`);
-        await page.waitForTimeout(2000);
-      }
-    }
-    
-    if (!headerExists) {
-      console.log('⚠️ [STEP 10] Confirm and Pay page not immediately visible, continuing...');
-    }
-    
-    // Determine if we need to work with iframe or main page (same pattern as location dropdown)
-    // Wait for iframe to be present and loaded
+    await page.waitForSelector('#eventNewBooking2_iframe, text=/Confirm and Pay/i, text=/4\\. Pay/i', { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
     let eventBookingIframeExists = false;
     let paymentDropdown;
     let searchContext;
     
-    // Try to detect iframe with retry logic
-    for (let i = 0; i < 5; i++) {
-      eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
-      if (eventBookingIframeExists) {
-        // Verify iframe is actually loaded
-        try {
-          const iframe = page.frameLocator('#eventNewBooking2_iframe');
-          const testLocator = iframe.locator('body').first();
-          await testLocator.waitFor({ state: 'attached', timeout: 2000 });
-          console.log('🔍 [STEP 10] Working with eventNewBooking2_iframe for payment dropdown...');
-          paymentDropdown = iframe.locator('[data-onchange="jqx_chgPayWhen"]').first();
-          searchContext = iframe;
-          break;
-        } catch (iframeError) {
-          console.log(`⚠️ [STEP 10] Iframe detected but not loaded yet, retrying (${i + 1}/5)...`);
-          if (i < 4) await page.waitForTimeout(2000);
-        }
-      } else {
-        if (i < 4) {
-          console.log(`⏳ [STEP 10] Iframe not found, retrying (${i + 1}/5)...`);
-          await page.waitForTimeout(2000);
-        }
+    eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
+    if (eventBookingIframeExists) {
+      try {
+        const iframe = page.frameLocator('#eventNewBooking2_iframe');
+        await iframe.locator('body').first().waitFor({ state: 'attached', timeout: 5000 });
+        console.log('🔍 [STEP 10] Working with eventNewBooking2_iframe for payment dropdown...');
+        paymentDropdown = iframe.locator('[data-onchange="jqx_chgPayWhen"]').first();
+        searchContext = iframe;
+      } catch (iframeError) {
+        eventBookingIframeExists = false;
       }
     }
     
@@ -82,7 +50,7 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
       } catch (error) {
         if (attempt < 2) {
           console.log(`⚠️ [STEP 10] Payment dropdown not visible yet, retrying (${attempt + 1}/3)...`);
-          await page.waitForTimeout(3000);
+          await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
           // Try refreshing the locator
           if (eventBookingIframeExists) {
             const iframe = page.frameLocator('#eventNewBooking2_iframe');
@@ -112,16 +80,12 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
       await paymentDropdown.click();
     }
     
-    // WAIT FOR DROPDOWN MENU TO APPEAR - 2 seconds (same as Contacts tab pattern)
     progressCallback?.({ message: 'Waiting for payment dropdown.' });
     console.log('⏳ [STEP 10] Waiting for payment dropdown menu to appear...');
-    await page.waitForTimeout(2000);
-    
-    // Take screenshot of opened dropdown
+    await waitForThenOptionalDelay(page, searchContext.locator('div.dx-list-item[role="option"]').first(), { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
+
     await takeScreenshot(page, 'payment-dropdown-opened.png', screenshotsDir);
-    
-    // Find all payment options in the dropdown (same pattern as location dropdown)
-    // Options are in: .dx-list-item[role="option"] with text in .dx-item-content.dx-list-item-content
+
     const paymentOptions = searchContext.locator('div.dx-list-item[role="option"]');
     const optionCount = await paymentOptions.count();
     console.log(`📊 [STEP 10] Found ${optionCount} payment options in dropdown`);
@@ -161,38 +125,31 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
         console.log('🔍 [STEP 10] Matching option not visible, scrolling in dropdown...');
         
         // Scroll up in the dropdown menu to make option visible
-        await page.keyboard.press('Home'); // Go to top of dropdown
-        await page.waitForTimeout(1000);
-        
-        // Alternative: try to scroll the dropdown container
+        await page.keyboard.press('Home');
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
         const dropdownMenu = searchContext.locator('[role="listbox"], .dx-dropdownlist, .dx-list, .dx-list-items').first();
         if (await dropdownMenu.count() > 0) {
           await dropdownMenu.evaluate(el => el.scrollTop = 0);
-          await page.waitForTimeout(1000);
+          await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
         }
       }
-      
-      // Now try to find and click the matching option
+
       await matchingOption.waitFor({ state: 'visible', timeout: 5000 });
       console.log('💳 [STEP 10] Matching payment option is now visible, clicking...');
       await matchingOption.click();
+      if (paymentType === 'now') {
+        await searchContext.locator('[data-onchange="jqx_chgPaymentMethod"]').first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+      }
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       
-      // WAIT FOR PAYMENT OPTION SELECTION TO BE APPLIED - 2 seconds (same as Contacts tab)
-      console.log('⏳ [STEP 10] Waiting for payment option selection...');
-      await page.waitForTimeout(2000);
-      
-      // VERIFY selection was applied - check if payment method dropdown appeared (only for 'now' type)
-      // For 'request' type, payment method dropdown may not appear - that's expected
       if (paymentType === 'now') {
         console.log('🔍 [STEP 10] Verifying payment option selection was applied...');
         const paymentMethodDropdown = searchContext.locator('[data-onchange="jqx_chgPaymentMethod"]').first();
         const isPaymentMethodVisible = await paymentMethodDropdown.isVisible({ timeout: 3000 }).catch(() => false);
         if (!isPaymentMethodVisible) {
-          console.warn('⚠️ [STEP 10] Payment method dropdown not visible after selection - selection may have failed');
-          console.warn('⚠️ [STEP 10] Attempting to click option again...');
-          // Try clicking again
+          console.warn('⚠️ [STEP 10] Payment method dropdown not visible after selection - attempting retry...');
           await matchingOption.click();
-          await page.waitForTimeout(2000);
+          await searchContext.locator('[data-onchange="jqx_chgPaymentMethod"]').first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
           // Check again
           const isPaymentMethodVisibleRetry = await paymentMethodDropdown.isVisible({ timeout: 3000 }).catch(() => false);
           if (!isPaymentMethodVisibleRetry) {
@@ -209,37 +166,14 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
         // CRITICAL FIX: Wait for page transition to paymentRequestLink page
         // After clicking "Send a payment request", the page transitions from PaymentPage 
         // (eventNewBooking2_iframe) to paymentRequestLink page (contactSend3DSecureRequest_iframe)
-        console.log('⏳ [STEP 10] Waiting for page transition to payment request link page...');
-        
-        let transitionComplete = false;
-        for (let i = 0; i < 10; i++) {
-          // Check if contactSend3DSecureRequest_iframe has appeared (payment request link page)
-          const paymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
-          
-          if (paymentRequestIframeExists) {
-            try {
-              const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
-              const testLocator = paymentRequestIframe.locator('body').first();
-              await testLocator.waitFor({ state: 'attached', timeout: 2000 });
-              console.log('✅ [STEP 10] Page transition complete - payment request link page loaded');
-              transitionComplete = true;
-              break;
-            } catch (iframeError) {
-              // Iframe exists but not loaded yet, continue waiting
-            }
-          }
-          
-          if (i < 9) {
-            await page.waitForTimeout(1000);
-            if (i % 2 === 0) {
-              console.log(`⏳ [STEP 10] Waiting for page transition (${i + 1}/10)...`);
-            }
-          }
-        }
-        
-        if (!transitionComplete) {
-          console.warn('⚠️ [STEP 10] Page transition may not have completed - payment request iframe not detected');
-          console.warn('⚠️ [STEP 10] Continuing anyway - sendPaymentRequest will handle retry logic');
+        console.log('⏳ [STEP 10] Waiting for payment request link page...');
+        try {
+          await page.waitForSelector('#contactSend3DSecureRequest_iframe', { state: 'attached', timeout: 10000 });
+          const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+          await paymentRequestIframe.locator('body').first().waitFor({ state: 'attached', timeout: 5000 });
+          console.log('✅ [STEP 10] Payment request link page loaded');
+        } catch (e) {
+          console.warn('⚠️ [STEP 10] Payment request page transition may not have completed');
         }
       }
       
@@ -251,9 +185,9 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
       console.log(`⚠️ [STEP 10] Available options were checked, but none matched. Continuing without payment selection...`);
       // Close dropdown if it's still open (press Escape)
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     }
-    
+
   } catch (error) {
     console.error('Error in selectPaymentOption:', error);
     await takeScreenshot(page, 'payment-selection-error.png', screenshotsDir);

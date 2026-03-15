@@ -1,4 +1,4 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from './utils.js';
 
 /**
  * Step 13: Accept terms and make booking
@@ -13,10 +13,14 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
     console.log('📋 [STEP 13] Accepting terms and making booking...');
     console.log(`📋 [STEP 13] Terms accepted: ${termsAccepted} (defaults to true if not provided)`);
     
-    // Wait for payment page to be ready
+    // Wait for payment page (iframe or key content) to be ready
     console.log('⏳ [STEP 13] Waiting for payment page to be ready...');
-    await page.waitForTimeout(2000);
-    
+    try {
+      await waitForThenOptionalDelay(page, '#eventNewBooking2_iframe', { state: 'attached', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
+    } catch (e) {
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+    }
+
     // Determine if we need to work with iframe or main page (same pattern as other payment steps)
     const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
     let searchContext;
@@ -194,7 +198,7 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
     const isDisabled = await makeBookingButton.getAttribute('disabled').catch(() => null);
     if (isDisabled !== null) {
       console.log('⚠️ [STEP 13] Make Booking button is disabled, waiting for it to be enabled...');
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(500);
     }
     
     // Scroll button into view (important for DevExtreme buttons)
@@ -216,44 +220,29 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
       console.log('✅ [STEP 13] Clicked Make Booking button (force click)');
     }
     
-    // Wait a moment for the click to register
-    await page.waitForTimeout(500);
-    
-    // Wait for payment processing/confirmation (up to 30 seconds)
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
+    // Wait for payment processing/confirmation (single max timeout instead of 3s + 10s)
     console.log('⏳ [STEP 13] Waiting for payment processing/confirmation...');
-    await page.waitForTimeout(3000); // Initial wait
-    
-    // Try to detect confirmation indicators
     const confirmationIndicators = [
       'text=/booking.confirmed/i',
       'text=/payment.successful/i',
       'text=/confirmed/i',
       'text=/successful/i',
       'text=/Booking confirmed/i',
-      'text=/Payment successful/i'
+      'text=/Payment successful/i',
+      '#afterBookingMenu'
     ];
-    
-    let confirmationFound = false;
-    for (const indicator of confirmationIndicators) {
-      try {
-        const confirmElement = page.locator(indicator).first();
-        if (await confirmElement.count() > 0) {
-          const isVisible = await confirmElement.isVisible().catch(() => false);
-          if (isVisible) {
-            console.log(`✅ [STEP 13] Found confirmation indicator: "${indicator}"`);
-            confirmationFound = true;
-            break;
-          }
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-    
-    // Wait additional time for payment processing (total up to 30 seconds)
-    if (!confirmationFound) {
-      console.log('⏳ [STEP 13] Confirmation not immediately visible, waiting for payment processing...');
-      await page.waitForTimeout(10000); // Additional 10 seconds
+    const CONFIRMATION_WAIT_MS = 15000;
+    const raceResult = await Promise.race(
+      confirmationIndicators.map((indicator) =>
+        page.locator(indicator).first().waitFor({ state: 'visible', timeout: CONFIRMATION_WAIT_MS }).then(() => indicator)
+      )
+    ).catch(() => null);
+    if (raceResult) {
+      console.log(`✅ [STEP 13] Found confirmation indicator: "${raceResult}"`);
+    } else {
+      await page.waitForTimeout(1000);
     }
     
     // Take screenshot after clicking
@@ -327,7 +316,7 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
     const maxWaitAttempts = 30; // 30 seconds total (30 * 1000ms)
     
     while (!nextPageLoaded && waitAttempts < maxWaitAttempts) {
-      await page.waitForTimeout(1000); // Wait 1 second between checks
+      await page.waitForTimeout(500);
       waitAttempts++;
       
       // FIRST: Check for #afterBookingMenu (most reliable - definitive payment/booking success indicator)
@@ -411,9 +400,8 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
       await listItemIndicator.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {
         console.log('⚠️ [STEP 13] List items not immediately visible, continuing...');
       });
-      
-      // Additional wait for page to fully load
-      await page.waitForTimeout(2000);
+
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       
       // Determine if we need to work with iframe or main page (same pattern as payment steps)
       const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
@@ -493,10 +481,9 @@ export async function acceptTermsAndMakeBooking(page, screenshotsDir, termsAccep
         await finishButton.waitFor({ state: 'visible', timeout: 5000 });
         await finishButton.click();
         
-        // Wait for action to complete
         console.log('⏳ [STEP 13] Waiting for finish action to complete...');
-        await page.waitForTimeout(2000);
-        
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
         // Take screenshot after clicking
         await takeScreenshot(page, 'finish-and-close-clicked.png', screenshotsDir);
         console.log('✅ [STEP 13] "Finish and close" clicked successfully');

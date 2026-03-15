@@ -49,7 +49,7 @@ export async function loginToCRM(page, credentials, screenshotsDir, progressCall
     if (isAlreadyLoggedIn) {
       if (currentUrl.includes('/Account/Login')) {
         await page.goto('https://takeabyte.co.uk/InContact', { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
-        await page.waitForTimeout(2000);
+        await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
       }
       await takeScreenshot(page, 'step-2-already-logged-in.png', screenshotsDir);
       return true; // Return success status
@@ -139,8 +139,8 @@ export async function loginToCRM(page, credentials, screenshotsDir, progressCall
     console.log('🔐 [STEP 2] Navigating to CRM home URL...');
     await page.goto(crmHomeUrl, { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
     await page.reload({ waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
-    await page.waitForTimeout(2000);
-    
+    await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
+
     // Take screenshot after navigation
     await takeScreenshot(page, 'login-attempted.png', screenshotsDir);
     
@@ -173,9 +173,6 @@ export async function loginToCRM(page, credentials, screenshotsDir, progressCall
     if (finalUrl.includes('bookcbtnow.com') || finalUrl.includes('gateway.aspx')) {
       console.log('🔐 [STEP 2] Page is on availability URL after login, navigating to CRM dashboard...');
       await page.goto(crmHomeUrl, { waitUntil: 'networkidle', timeout: CRM_NAVIGATION_TIMEOUT_MS });
-      await page.waitForTimeout(2000);
-      
-      // Verify we're on the dashboard
       await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
       console.log('✅ [STEP 2] Successfully navigated to CRM dashboard');
       loginSucceeded = true;
@@ -183,7 +180,6 @@ export async function loginToCRM(page, credentials, screenshotsDir, progressCall
       // If we're not on CRM dashboard or still on login page, navigate to dashboard
       console.log('🔐 [STEP 2] Navigating to CRM dashboard...');
       await page.goto(crmHomeUrl, { waitUntil: 'load', timeout: CRM_NAVIGATION_TIMEOUT_MS });
-      await page.waitForTimeout(2000);
       await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
       console.log('✅ [STEP 2] Successfully navigated to CRM dashboard');
       loginSucceeded = true;

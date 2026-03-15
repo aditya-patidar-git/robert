@@ -14,9 +14,12 @@ import * as commonSteps from '../index.js';
 export async function prepareBookingFormContext(page, screenshotsDir) {
   let targetPage = page; // Initialize to current page as default
 
-  // Wait for price page to load
   console.log('⏳ Waiting for price page to load...');
-  await page.waitForTimeout(5000);
+  try {
+    await commonSteps.waitForThenOptionalDelay(page, '#eventNewBooking2_iframe', { state: 'attached', timeout: 8000, delayMs: commonSteps.CRM_STABILITY_DELAY_MS });
+  } catch (_) {
+    await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
+  }
 
   // PERFORMANCE FIX E: Optimized page scanning
   // 1. Check if CURRENT page already has the booking indicators to avoid scanning others
@@ -58,9 +61,7 @@ export async function prepareBookingFormContext(page, screenshotsDir) {
   if (eventBookingIframeExists) {
     bookingIframe = targetPage.frameLocator('#eventNewBooking2_iframe');
     searchContext = bookingIframe;
-
-    // Wait for iframe to load
-    await targetPage.waitForTimeout(2000);
+    await targetPage.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
   }
 
   // Wait for "1. Price" header
@@ -130,7 +131,7 @@ export async function selectOptionByPattern(groupOptions, pattern, page) {
         } else {
           await optionRow.click();
         }
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
         return true;
       }
     }
@@ -160,16 +161,14 @@ export async function clickNextButton(searchContext, page, bookingIframe) {
   await nextButton.waitFor({ state: 'visible', timeout: 5000 });
   await nextButton.click();
 
-  // Wait for next page to load
   console.log('⏳ Waiting for next page to load...');
-  await page.waitForTimeout(3000);
-
   if (bookingIframe) {
-    await page.waitForTimeout(2000);
     const contactLookupIndicators = bookingIframe.locator('text=lookup, text=contact, text=add new contact').first();
-    await contactLookupIndicators.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+    await commonSteps.waitForThenOptionalDelay(page, contactLookupIndicators, { state: 'visible', timeout: 10000, delayMs: commonSteps.CRM_STABILITY_DELAY_MS }).catch(() => {
       console.log('⚠️ Contact lookup page indicators not found, but continuing...');
     });
+  } else {
+    await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
   }
 }
 

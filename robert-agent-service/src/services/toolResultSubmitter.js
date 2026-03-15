@@ -420,8 +420,21 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       const toolResult = options?.toolResult;
       const isClientVerification = toolName === 'client_verification';
 
-      // Step tool parameter/validation failure: instruct to resolve (ask user or use context) and retry, do NOT offer transfer
-      const isStepToolParamError = toolName && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_')) &&
+      // Search client: missing customerMobile/customerEmail/customerName — instruct to call in same turn if caller just gave it, else ask once
+      const isSearchClientRequiredParamError = (toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
+        toolResult && toolResult.success === false &&
+        String(toolResult.error || '').includes('is required for client search');
+      if (isSearchClientRequiredParamError) {
+        const searchToolName = toolName === 'cancellation_step_search_client' ? 'cancellation_step_search_client' : 'booking_step_search_client';
+        const searchClientParamInstruction = `CRITICAL: The caller must provide a search key (mobile, email, or name). If they just said their mobile number, email, or name in this or the previous turn, call **${searchToolName}** in THIS SAME RESPONSE with customerMobile, customerEmail, or customerName set to that value (UK mobile: 11 digits starting with 07). Do NOT say "let me do that" or "I'll enter it now" and then wait—call the tool now. If you do not have the value, ask one short question (e.g. "Could you say your mobile number again?") and then call the tool when they respond.`;
+        responseInstructions = responseInstructions
+          ? `${searchClientParamInstruction}\n\n${responseInstructions}`
+          : searchClientParamInstruction;
+        console.log(`🎯 [${callId}] Search client missing param - instructing to call in same turn if value from caller, else ask once`);
+      }
+
+      // Step tool parameter/validation failure: instruct to resolve (ask user or use context) and retry, do NOT offer transfer (skip when search_client required-param already handled)
+      const isStepToolParamError = !isSearchClientRequiredParamError && toolName && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_')) &&
         toolResult && toolResult.success === false && toolResult.error &&
         /Validation failed|Required|Invalid parameters|missing|courseType/i.test(toolResult.error);
       if (isStepToolParamError) {

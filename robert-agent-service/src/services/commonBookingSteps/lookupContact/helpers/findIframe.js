@@ -13,24 +13,11 @@ import { takeScreenshot } from '../../utils.js';
  * @returns {Promise<{iframe: Object, iframeId: string}>} Iframe locator and ID
  */
 export async function findIframe(page, screenshotsDir) {
-  // WAIT FOR CONTACT PAGE TO LOAD - 3 seconds
-  console.log('⏳ [STEP 9] Waiting for contact page to load...');
-  await page.waitForTimeout(3000);
-  
-  // The contact choice page is inside eventNewBooking2_iframe
-  console.log('🔍 [STEP 9] Checking for contact choice page in iframe...');
-  const eventBookingIframeExistsCheck = await page.locator('#eventNewBooking2_iframe').count() > 0;
-  
-  if (!eventBookingIframeExistsCheck) {
-    throw new Error('eventNewBooking2_iframe not found - contact choice page may not have loaded');
-  }
-  
+  console.log('🔍 [STEP 9] Waiting for contact choice page iframe...');
+  await page.waitForSelector('#eventNewBooking2_iframe', { state: 'attached', timeout: 10000 });
   const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+  await eventBookingIframe.locator('#btnBookExisting, text=Contact choice, text=Choose one of these options').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
   
-  // Wait for iframe to be ready
-  await page.waitForTimeout(2000);
-  
-  // Should see "Contact choice" or "3. Contact" page with two options
   console.log('🔍 [STEP 9] Looking for contact choice page indicators...');
   const contactChoiceIndicators = [
     'text=Contact choice',
@@ -108,15 +95,14 @@ export async function findIframe(page, screenshotsDir) {
     throw clickErr;
   }
   
-  // WAIT FOR LOOKUP PAGE TO LOAD - 8 seconds
-  console.log('⏳ [STEP 9] Waiting for contact lookup page to fully load...');
-  await page.waitForTimeout(8000);
+  console.log('🔍 [STEP 9] Waiting for contact lookup iframe...');
+  try {
+    await page.waitForSelector('#contactSelect_iframe, #contactLookup_iframe', { state: 'attached', timeout: 15000 });
+  } catch (e) {
+    throw new Error('No contact lookup iframe found - contact lookup page may not have loaded');
+  }
   
-  // Take screenshot of contact lookup page
   await takeScreenshot(page, 'contact-lookup-page-loaded.png', screenshotsDir);
-  
-  // DETECT CORRECT IFRAME: Check for contactSelect_iframe first (the actual iframe for contact lookup in booking flow)
-  console.log('🔍 [STEP 9] Looking for contact lookup iframe...');
   
   let iframe;
   let iframeId;
@@ -140,11 +126,6 @@ export async function findIframe(page, screenshotsDir) {
     throw new Error('No contact lookup iframe found - contact lookup page may not have loaded');
   }
   
-  // Wait for the iframe to load completely (same as findAndVerifyClient)
-  console.log('⏳ [STEP 9] Waiting for iframe to load completely...');
-  await page.waitForTimeout(5000);
-  
-  // Wait for the iframe content to be ready
   await page.waitForFunction((id) => {
     const iframe = document.querySelector(id);
     return iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete';

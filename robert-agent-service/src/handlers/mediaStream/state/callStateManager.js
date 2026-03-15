@@ -100,6 +100,8 @@ export class CallStateManager {
       askedAt: null,
       selectedAt: null
     };
+    /** When set (e.g. 'Sinhala'), next response must say that language is not available; then cleared */
+    this.unsupportedLanguageRequested = null;
 
     // Tool execution tracking
     this.pendingToolCalls = new Map(); // call_id -> { name, arguments, startTime }

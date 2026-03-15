@@ -826,10 +826,13 @@ export class BaseStepTool {
     }
 
     // Page not found or invalid - create a new callSid-specific page
+    const getSessionStart = Date.now();
     console.log(`🌐 [${this.getStepName()}] Creating new browser page for callSid ${callSid}`);
     
-    // Get authenticated context
+    // Get authenticated context (major source of delay on first use)
+    const getContextStart = Date.now();
     const context = await this.browserManager.getContext();
+    console.log(`⏱️ [${this.getStepName()}] getContext took ${Date.now() - getContextStart}ms`);
     
     // Always create a new callSid-specific page (don't reuse shared authenticatedPage)
     page = await context.newPage();
@@ -837,7 +840,7 @@ export class BaseStepTool {
       waitUntil: 'domcontentloaded',
       timeout: 30000 
     });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(200); // Brief stability before login check
     
     // Check if redirected to login
     const currentUrl = page.url();
@@ -856,8 +859,6 @@ export class BaseStepTool {
         await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts")', { timeout: 10000 });
         const contactsTab = page.locator('h3.list-menu-item-heading:has-text("Contacts")').first();
         await contactsTab.click();
-        await page.waitForTimeout(8000);
-        await page.waitForLoadState('networkidle');
         await page.waitForSelector('#contactLookup_iframe', { state: 'attached', timeout: 30000 });
         await page.waitForFunction(() => {
           const iframe = document.querySelector('#contactLookup_iframe');
@@ -872,6 +873,7 @@ export class BaseStepTool {
     // Store page reference in session (callSid-specific)
     sessionStateManager.setBrowserSession(callSid, page);
 
+    console.log(`⏱️ [${this.getStepName()}] getBrowserSession total took ${Date.now() - getSessionStart}ms`);
     return page;
   }
 }

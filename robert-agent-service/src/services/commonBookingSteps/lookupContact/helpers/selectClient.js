@@ -4,8 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { cleanEmail } from '../../utils.js';
-import { takeScreenshot } from '../../utils.js';
+import { cleanEmail, takeScreenshot, CRM_STABILITY_DELAY_MS } from '../../utils.js';
 
 /**
  * Select client from search results
@@ -303,7 +302,8 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
               }
             }
           }, rowIndex);
-          await page.waitForTimeout(2000); // Wait 2 seconds for navigation
+          await page.waitForSelector('#eventNewBooking2_iframe, #contactSelect_iframe', { state: 'attached', timeout: 10000 }).catch(() => {});
+          await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
           clientClicked = true;
           console.log(`✅ [STEP 9] Successfully clicked row ${rowIndex + 1} using JavaScript click`);
         } catch (jsErr) {
@@ -360,8 +360,9 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
     // Only wait for navigation if we're not already on the client details page
     if (clientClicked) {
       console.log('⏳ [STEP 9] Waiting for client page to load...');
-      await page.waitForTimeout(4000);
-      await page.waitForLoadState('networkidle');
+      const frame = page.frameLocator(iframeId);
+      await frame.locator('text=First Names, text=Surname, text=Contact e-mail').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(200); // CRM stability
       
       // Take screenshot after clicking client
       await takeScreenshot(page, 'client-selected.png', screenshotsDir);
@@ -405,10 +406,8 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
   // Take screenshot of Contact Details page before clicking Next
   await takeScreenshot(page, 'contact-details-page.png', screenshotsDir);
   
-  // After client selection, the Contact Details form is likely in eventNewBooking2_iframe
-  // Wait a bit more for the form to fully render
-  console.log('⏳ [STEP 9] Waiting for Contact Details form to fully render...');
-  await page.waitForTimeout(3000);
+  await iframe.locator('#diaryNewCourseBookingWiz_nextBtn, text=First Names, .jqx_formSummaryTextLeft').first().waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
   
   return true;
 }

@@ -129,13 +129,26 @@ export const useTranscriptsState = () => {
       showSuccess('Transcripts exported successfully');
       setExportDialog(false);
     },
-    onError: (error, variables) => {
-      // Check if error indicates opt-out scenario
-      const errorMessage = error?.response?.data?.error || error?.message || '';
+    onError: async (error, variables) => {
+      let errorMessage = error?.message || '';
+      const data = error?.response?.data;
+      if (data) {
+        if (typeof data === 'object' && !(data instanceof Blob)) {
+          errorMessage = data.error || data.message || errorMessage;
+        } else if (data instanceof Blob) {
+          try {
+            const text = await data.text();
+            const parsed = text ? JSON.parse(text) : {};
+            errorMessage = parsed.error || parsed.message || errorMessage;
+          } catch {
+            // keep errorMessage from error.message
+          }
+        }
+      }
       if (errorMessage.includes('not available') || errorMessage.includes('opt') || errorMessage.includes('consent')) {
         showError('Transcript not available - customer opted out of recording consent');
       } else {
-        showError('Failed to export transcripts');
+        showError(errorMessage || 'Failed to export transcripts');
       }
       setExportDialog(false);
     }

@@ -4,7 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { takeScreenshot } from '../../../commonBookingSteps/utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
 
 /**
  * Execute sendCancellationConfirmation step
@@ -20,10 +20,8 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
     
     // Work within stationerySender_iframe (should already be set from Step 12)
     const stationerySenderIframe = page.frameLocator('#stationerySender_iframe');
-    
-    // Wait for preview page to be ready
-    await page.waitForTimeout(2000);
-    
+    await waitForThenOptionalDelay(page, stationerySenderIframe.locator('#btnEmail'), { state: 'visible', timeout: 10000, delayMs: CRM_STABILITY_DELAY_MS }).catch(() => {});
+
     // Click Email button (#btnEmail)
     console.log(`📮 [SEND_CANCELLATION_CONFIRMATION] Clicking Email button...`);
     const emailButton = stationerySenderIframe.locator('#btnEmail');
@@ -36,8 +34,8 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
     }
     
     await emailButton.click();
-    await page.waitForTimeout(2000);
-    
+    await waitForThenOptionalDelay(page, stationerySenderIframe.locator('text=/Email has been sent/i, text=/email.*sent/i').first(), { state: 'visible', timeout: 15000, delayMs: CRM_STABILITY_DELAY_MS }).catch(() => {});
+
     // Wait for email sent confirmation
     console.log(`⏳ [SEND_CANCELLATION_CONFIRMATION] Waiting for email sent confirmation...`);
     const confirmationSelectors = [
@@ -83,18 +81,17 @@ export async function executeSendCancellationConfirmation(page, args, sessionSta
     }
     
     await backButton.click();
-    await page.waitForTimeout(2000);
-    
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
     // After clicking Back, we return to contactEdit_iframe (profile page)
     // OK button is in main page: #mainArea > #bottomToolbar > #btnBack (sibling of iframe, not inside it)
     console.log(`✅ [SEND_CANCELLATION_CONFIRMATION] Clicking Ok button...`);
     const okButton = page.locator('#bottomToolbar #btnBack');
     
     // Wait for Ok button to be visible (may take a moment after returning from stationerySender_iframe)
-    await okButton.waitFor({ state: 'visible', timeout: 30000 });
+    await okButton.waitFor({ state: 'visible', timeout: 10000 });
     await okButton.click();
-    
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
 
     await takeScreenshot(page, 'send-cancellation-confirmation-complete.png', screenshotsDir);
     

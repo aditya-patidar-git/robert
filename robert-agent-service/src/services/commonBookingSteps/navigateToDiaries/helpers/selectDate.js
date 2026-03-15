@@ -1,4 +1,4 @@
-import { takeScreenshot } from '../../utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../utils.js';
 
 const DDMMYYYY_REGEX = /(\d{2})\/(\d{2})\/(\d{4})/;
 /** Matches "12th", "12", "Thu 12th", "Thursday 12th" etc. - captures day-of-month */
@@ -103,36 +103,34 @@ export async function selectDate(page, sessionDetails, screenshotsDir) {
     calendarIcon = page.locator('#start_date .dx-dropdowneditor-button, #start_date .dx-dropdowneditor-overlay').first();
   }
   
-  // Click on the calendar icon next to the date input field (id="start_date")
   console.log('📅 Clicking calendar icon to open date picker...');
   await calendarIcon.click();
-  
-  // Wait for calendar popup to appear
-  console.log('⏳ Waiting for calendar popup to appear...');
-  await page.waitForTimeout(2000);
-  
-  // Take screenshot of calendar popup
+
+  const dateInputSelector = '#start_date .dx-texteditor-input';
+  await waitForThenOptionalDelay(
+    page,
+    diariesIframeExists ? page.frameLocator('#newDiaryDefault_iframe').locator(dateInputSelector).first() : page.locator(dateInputSelector).first(),
+    { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS }
+  );
+
   await takeScreenshot(page, 'calendar-popup-opened.png', screenshotsDir);
-  
-  // Click on the date input field to get cursor focus
+
   console.log('📅 Clicking date input field to get cursor focus...');
   let dateInputField;
-  
   if (diariesIframeExists) {
     const iframe = page.frameLocator('#newDiaryDefault_iframe');
     dateInputField = iframe.locator('#start_date .dx-texteditor-input').first();
   } else {
     dateInputField = page.locator('#start_date .dx-texteditor-input').first();
   }
-  
+
   await dateInputField.click();
-  await page.waitForTimeout(500);
-  
-  // Press backspace twice to clear the current date field
+  await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
   console.log('📅 Clearing current date field...');
   await page.keyboard.press('Backspace');
   await page.keyboard.press('Backspace');
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
   
   // Format date as DDMMYYYY (e.g., "18022026" for 18/02/2026)
   const dayStr = day.toString().padStart(2, '0');
@@ -144,16 +142,15 @@ export async function selectDate(page, sessionDetails, screenshotsDir) {
   
   // Type the date digits sequentially
   await dateInputField.type(dateString);
-  await page.waitForTimeout(1000);
-  
-  // Press Enter to confirm the date and close the calendar dialog
+  await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
   console.log('📅 Pressing Enter to confirm date and close calendar dialog...');
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(2000);
-  
-  // Wait for page to update after date selection
-  await page.waitForTimeout(3000);
-  
-  // Take screenshot after date selection
+
+  const gridOrDateSelector = diariesIframeExists
+    ? page.frameLocator('#newDiaryDefault_iframe').locator('.dx-datagrid, #start_date').first()
+    : page.locator('.dx-datagrid, #start_date').first();
+  await waitForThenOptionalDelay(page, gridOrDateSelector, { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
+
   await takeScreenshot(page, 'date-selected.png', screenshotsDir);
 }

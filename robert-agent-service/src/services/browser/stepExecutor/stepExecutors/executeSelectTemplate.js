@@ -4,7 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { takeScreenshot } from '../../../commonBookingSteps/utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
 
 /**
  * Execute selectTemplate step
@@ -18,49 +18,19 @@ export async function executeSelectTemplate(page, args, sessionState, screenshot
   try {
     console.log(`📄 [SELECT_TEMPLATE] Selecting cancellation confirmation template...`);
     
-    // Wait for stationerySender_iframe to appear (after Step 11)
     console.log('⏳ [SELECT_TEMPLATE] Waiting for stationerySender_iframe...');
-    let stationerySenderIframeExists = false;
-    for (let i = 0; i < 10; i++) {
-      stationerySenderIframeExists = await page.locator('#stationerySender_iframe').count() > 0;
-      if (stationerySenderIframeExists) {
-        try {
-          const stationerySenderIframe = page.frameLocator('#stationerySender_iframe');
-          const testLocator = stationerySenderIframe.locator('body').first();
-          await testLocator.waitFor({ state: 'attached', timeout: 3000 });
-          console.log('✅ [SELECT_TEMPLATE] Found stationerySender_iframe');
-          break;
-        } catch (iframeError) {
-          console.log(`⚠️ [SELECT_TEMPLATE] Iframe detected but not loaded yet, retrying (${i + 1}/10)...`);
-          if (i < 9) await page.waitForTimeout(2000);
-        }
-      } else {
-        if (i < 9) {
-          console.log(`⏳ [SELECT_TEMPLATE] StationerySender iframe not found, retrying (${i + 1}/10)...`);
-          await page.waitForTimeout(2000);
-        }
-      }
-    }
-    
-    if (!stationerySenderIframeExists) {
-      throw new Error('Could not find stationerySender_iframe after Step 11');
-    }
-    
+    await waitForThenOptionalDelay(page, '#stationerySender_iframe', { state: 'attached', timeout: 20000, delayMs: 0 });
     const stationerySenderIframe = page.frameLocator('#stationerySender_iframe');
-    
-    // Wait for template list to load
-    await page.waitForTimeout(2000);
-    
-    // Scroll to "Correspondence letters" section (exact text to avoid matching "New Correspondence letter")
+    await stationerySenderIframe.locator('body').first().waitFor({ state: 'attached', timeout: 5000 });
+    console.log('✅ [SELECT_TEMPLATE] Found stationerySender_iframe');
+
+    const gridContainer = stationerySenderIframe.locator('#stationeryGrid_page');
+    await waitForThenOptionalDelay(page, gridContainer, { state: 'visible', timeout: 15000, delayMs: CRM_STABILITY_DELAY_MS });
+
     console.log(`📜 [SELECT_TEMPLATE] Looking for "Correspondence letters" section...`);
     const correspondenceSection = stationerySenderIframe.getByText('Correspondence letters', { exact: true });
     await correspondenceSection.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(2000);
-    
-    // Find template grid
-    console.log(`🔍 [SELECT_TEMPLATE] Finding template grid...`);
-    const gridContainer = stationerySenderIframe.locator('#stationeryGrid_page');
-    await gridContainer.waitFor({ state: 'visible', timeout: 30000 });
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     
     // Find all template rows
     const templateRows = gridContainer.locator('tr.jqx_quickGridRow');
@@ -93,25 +63,18 @@ export async function executeSelectTemplate(page, args, sessionState, screenshot
       throw new Error(`Could not find template: "${templateName}" in stationery grid`);
     }
     
-    // Click on the matching template row
     console.log(`🖱️ [SELECT_TEMPLATE] Clicking template row...`);
     await matchingRow.click();
-    await page.waitForTimeout(2000);
+    await stationerySenderIframe.locator('#btnPreview').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(200);
     
-    // Click Preview button (#btnPreview)
     console.log(`👁️ [SELECT_TEMPLATE] Clicking Preview button...`);
     const previewButton = stationerySenderIframe.locator('#btnPreview');
     await previewButton.waitFor({ state: 'visible', timeout: 10000 });
-    
-    const isVisible = await previewButton.isVisible().catch(() => false);
-    if (!isVisible) {
-      console.log('⚠️ [SELECT_TEMPLATE] Preview button not visible, scrolling into view...');
-      await previewButton.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
-    }
-    
+    await previewButton.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
     await previewButton.click();
-    await page.waitForTimeout(3000);
-    
+    await waitForThenOptionalDelay(page, stationerySenderIframe.locator('#btnEmail'), { state: 'visible', timeout: 15000, delayMs: CRM_STABILITY_DELAY_MS });
+
     // Verify preview is shown (check for Email button #btnEmail)
     console.log(`🔍 [SELECT_TEMPLATE] Verifying preview is shown...`);
     const emailButton = stationerySenderIframe.locator('#btnEmail');

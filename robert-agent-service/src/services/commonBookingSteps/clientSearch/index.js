@@ -1,4 +1,4 @@
-import { takeScreenshot } from '../utils.js';
+import { takeScreenshot, CRM_STABILITY_DELAY_MS } from '../utils.js';
 import { selectSmartSearch, executeSearch, findMatchingClientRow, clickClientRow } from './searchClient.js';
 import { extractClientDetails } from './extractClientDetails.js';
 import { verifyClientMatch } from './verifyClientMatch.js';
@@ -92,19 +92,10 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     const contactsTab = page.locator('h3.list-menu-item-heading:has-text("Contacts")');
     await contactsTab.click();
     
-    // Wait for page to fully load
-    console.log(`[PROGRESS] [findAndVerifyClient] progressCallback: "Loading the contacts page."`);
     progressCallback?.({ message: 'Loading the contacts page.' });
-    console.log('⏳ [CLIENT SEARCH] Waiting for Contacts page to fully load...');
-    await page.waitForTimeout(8000);
-    
-    // Instead of networkidle (which may never occur due to continuous network activity),
-    // wait for the iframe to be present and attached
+    console.log('🔍 [CLIENT SEARCH] Waiting for Contacts iframe...');
     try {
-      await page.locator('#contactLookup_iframe').waitFor({ 
-        state: 'attached', 
-        timeout: 30000 
-      });
+      await page.waitForSelector('#contactLookup_iframe', { state: 'attached', timeout: 30000 });
       console.log('✅ [CLIENT SEARCH] Contacts iframe attached');
     } catch (e) {
       console.log('⚠️ [CLIENT SEARCH] Iframe not found within timeout, but continuing...');
@@ -112,14 +103,7 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     
     await takeScreenshot(page, 'contacts-page-loaded.png', screenshotsDir);
     
-    console.log('🔍 [CLIENT SEARCH] Looking for Contacts iframe...');
-    
-    // Wait for the iframe to be present and loaded
     const iframe = page.frameLocator('#contactLookup_iframe');
-    
-    // Wait for the iframe to load completely
-    console.log('⏳ [CLIENT SEARCH] Waiting for iframe to load completely...');
-    await page.waitForTimeout(5000);
     
     await page.waitForFunction(() => {
       const iframe = document.querySelector('#contactLookup_iframe');
@@ -214,16 +198,9 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
     // NOT in contactLookup_iframe. We need to switch to the correct iframe.
     console.log('🔄 [CLIENT SEARCH] Switching to contactEdit_iframe for client details...');
     
-    // Wait for contactEdit_iframe to appear and load
-    await page.waitForTimeout(3000); // Give time for iframe to load
-    
-    // Check if contactEdit_iframe exists
-    const contactEditIframeExists = await page.locator('#contactEdit_iframe').count();
-    if (contactEditIframeExists === 0) {
-      console.log('⚠️ [CLIENT SEARCH] contactEdit_iframe not found, waiting longer...');
-      await page.waitForTimeout(2000);
-    }
-    
+    await page.waitForSelector('#contactEdit_iframe', { state: 'attached', timeout: 10000 });
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
     // Switch to contactEdit_iframe for extracting client details
     const clientDetailsIframe = page.frameLocator('#contactEdit_iframe');
     
@@ -297,11 +274,6 @@ export async function findAndVerifyClient(page, searchType, searchValue, screens
       console.log(`⚠️ [DEBUG] Error checking iframe after click: ${e.message}`);
     }
     // ========== END DEBUGGING ==========
-    
-    // Wait briefly for page transition, then let extractClientDetails handle element waiting
-    // The extractClientDetails function already has logic to wait and check for elements
-    console.log('⏳ [CLIENT SEARCH] Waiting for client details page to load...');
-    await page.waitForTimeout(2000); // Brief wait for page transition
     
     progressCallback?.({ message: 'Loading your profile.' });
     await takeScreenshot(page, 'client-selected.png', screenshotsDir);

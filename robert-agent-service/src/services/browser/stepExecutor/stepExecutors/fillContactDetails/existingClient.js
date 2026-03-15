@@ -87,7 +87,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       }
       if (await address1Field.count() > 0) {
         await address1Field.fill(correctedAddress);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
       }
     }
 
@@ -98,11 +98,10 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
     // The Contact choice page should be traversed automatically without any questions
     await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, true);
 
-    // CRITICAL FIX: Verify we're actually on the client details page BEFORE checking for missing fields
-    // The Contact choice page should be traversed automatically without any questions
-    await page.waitForTimeout(2000); // Wait for page to stabilize after client selection
-
+    await page.waitForSelector('#eventNewBooking2_iframe', { state: 'attached', timeout: 10000 });
     const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
+    await eventBookingIframe.locator('text=First Names, text=Surname, text=Contact e-mail').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
     const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
 
     // CRITICAL: Verify we're on client details page (not Contact choice page)
@@ -158,8 +157,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           // The Contact choice page should be traversed automatically based on workflowType
           // Just proceed to click Next or continue the flow
           await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false);
-          // After clicking Next, we should be on client details page - check again
-          await page.waitForTimeout(2000);
+          await eventBookingIframe.locator('text=First Names, text=Surname').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+          await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
           // Re-check if we're on client details page now
           isOnClientDetailsPage = false;
           for (const indicator of clientDetailsIndicators) {
@@ -180,10 +179,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       }
     }
 
-    // CRITICAL FIX 4: Only check for missing fields if we're confirmed to be on client details page
     if (isOnClientDetailsPage && eventBookingIframeExists) {
-      await page.waitForTimeout(2000);
-
+      await page.waitForTimeout(200); // CRM stability before field checks
       // Required fields to check and request when missing (no extra fields beyond this list).
       const REQUIRED_PARAM_NAMES = ['customerEmail', 'customerMobile', 'postcode', 'houseNumber', 'licenceHeld', 'nationalInsurance', 'drivingLicenceNumber'];
 
@@ -210,7 +207,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             if (!currentEmail || currentEmail.trim() === '') {
               console.log(`📝 [STEP 8] Filling Contact e-mail: ${emailFormatted}`);
               await emailField.fill(emailFormatted);
-              await page.waitForTimeout(500);
+              await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
             }
           }
         }
@@ -228,7 +225,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
               if (!currentMobile || currentMobile.trim() === '') {
                 console.log(`📝 [STEP 8] Filling Contact mobile number: ${mobileFormatted}`);
                 await mobileFieldAlt.fill(mobileFormatted);
-                await page.waitForTimeout(500);
+                await page.waitForTimeout(200); // CRM input stability
               }
             }
           } else {
@@ -236,7 +233,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             if (!currentMobile || currentMobile.trim() === '') {
               console.log(`📝 [STEP 8] Filling Contact mobile number: ${mobileFormatted}`);
               await mobileField.fill(mobileFormatted);
-              await page.waitForTimeout(500);
+              await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
             }
           }
         }
@@ -252,7 +249,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             if (!currentPostcode || currentPostcode.trim() === '') {
               console.log(`📝 [STEP 8] Filling Post Code: ${postcodeFormatted}`);
               await postcodeField.fill(postcodeFormatted);
-              await page.waitForTimeout(500);
+              await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
             }
           }
         }
@@ -275,7 +272,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
             console.log(`📝 [STEP 8] Filling House number or name: ${houseNumber}`);
             await houseNumberField.fill(houseNumber);
             await houseNumberField.press('Tab');
-            await page.waitForTimeout(2000);
+            await eventBookingIframe.locator('#cmp_address_1 .dx-texteditor-input, [id*="address"]').first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
 
             // Check for auto-populated address
             let address1Field = eventBookingIframe.getByLabel('Address 1');
@@ -311,7 +309,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           if (!currentNI || currentNI.trim() === '') {
             console.log(`📝 [STEP 8] Filling National Insurance number: ${niFormatted}`);
             await niField.fill(niFormatted);
-            await page.waitForTimeout(500);
+            await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
           }
         }
       }
@@ -327,7 +325,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           if (!currentDL || currentDL.trim() === '') {
             console.log(`📝 [STEP 8] Filling Driving licence number: ${dlFormatted}`);
             await dlField.fill(dlFormatted);
-            await page.waitForTimeout(500);
+            await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
           }
         }
       }
@@ -335,35 +333,31 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
       // Fill Licence Held if provided (dropdown)
       if (args.licenceHeld) {
         await commonSteps.fillContactDetails(page, { licenceHeld: args.licenceHeld }, screenshotsDir, true);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
       }
 
-      // Fill Hear about us if provided
       if (args.hearAboutUs) {
         console.log(`📝 [STEP 8] Selecting Hear about us?: ${args.hearAboutUs}`);
         await commonSteps.fillContactDetails(page, { hearAboutUs: args.hearAboutUs }, screenshotsDir, true);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
       }
 
-      // Fill Riding experience if provided
       if (args.ridingExperience) {
         console.log(`📝 [STEP 8] Selecting riding experience: ${args.ridingExperience}`);
         await commonSteps.fillContactDetails(page, { ridingExperience: args.ridingExperience }, screenshotsDir, true);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
       }
 
-      // Fill Marketing consent if provided
       if (args.marketingConsent !== undefined) {
         console.log(`📝 [STEP 8] Selecting Marketing consent: ${args.marketingConsent}`);
         await commonSteps.fillContactDetails(page, { marketingConsent: args.marketingConsent }, screenshotsDir, true);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
       }
 
-      // Fill Data sharing if provided
       if (args.dataSharing !== undefined) {
         console.log(`📝 [STEP 8] Selecting Data sharing: ${args.dataSharing}`);
         await commonSteps.fillContactDetails(page, { dataSharing: args.dataSharing }, screenshotsDir, true);
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
       }
 
       // Build missing list only for must-details (REQUIRED_PARAM_NAMES); never ask for optional fields
@@ -431,8 +425,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
     progressCallback?.({ message: 'Saving your details.' });
     await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false, progressCallback);
 
-    // CRITICAL FIX 5: Detect page transition after Next click
-    await page.waitForTimeout(2000); // Wait for navigation
+    await page.waitForSelector('#contactSend3DSecureRequest_iframe, #eventNewBooking2_iframe', { state: 'attached', timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
 
     // Check if we're on payment page
     const paymentPageIndicators = [

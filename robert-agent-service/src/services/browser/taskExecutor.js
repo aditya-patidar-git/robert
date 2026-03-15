@@ -182,7 +182,7 @@ export class TaskExecutor {
               waitUntil: 'domcontentloaded',
               timeout: 30000 
             });
-            await page.waitForTimeout(2000);
+            await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts"), #contactLookup_iframe', { timeout: 10000 }).catch(() => {});
             
             // Check if redirected to login (session expired indicator)
             const newUrl = page.url();
@@ -207,7 +207,7 @@ export class TaskExecutor {
             waitUntil: 'domcontentloaded',
             timeout: 30000 
           });
-          await page.waitForTimeout(2000);
+          await page.waitForSelector('h3.list-menu-item-heading:has-text("Contacts"), #contactLookup_iframe', { timeout: 10000 }).catch(() => {});
           
           // Check if redirected to login (session expired indicator)
           const currentUrl = page.url();

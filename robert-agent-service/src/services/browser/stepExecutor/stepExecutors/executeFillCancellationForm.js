@@ -4,7 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { takeScreenshot } from '../../../commonBookingSteps/utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
 
 /**
  * Execute fillCancellationForm step
@@ -40,11 +40,8 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     // Switch to contactCancelBooking_iframe
     console.log('🔄 [FILL_CANCELLATION_FORM] Switching to contactCancelBooking_iframe context...');
     const cancelBookingIframe = page.frameLocator('#contactCancelBooking_iframe');
-    
-    // Wait for form to be loaded
-    await page.waitForTimeout(2000);
-    await cancelBookingIframe.locator('#presetReason').waitFor({ state: 'visible', timeout: 30000 });
-    
+    await waitForThenOptionalDelay(page, cancelBookingIframe.locator('#presetReason'), { state: 'visible', timeout: 15000, delayMs: CRM_STABILITY_DELAY_MS });
+
     // 1. Select reason for cancelling dropdown (#presetReason)
     console.log(`📋 [FILL_CANCELLATION_FORM] Selecting cancellation reason...`);
     const reasonDropdown = cancelBookingIframe.locator('#presetReason');
@@ -53,8 +50,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     const reasonDropdownButton = reasonDropdown.locator('.dx-dropdowneditor-button');
     await reasonDropdownButton.waitFor({ state: 'visible', timeout: 30000 });
     await reasonDropdownButton.click();
-    await page.waitForTimeout(500);
-    
+    await page.waitForTimeout(200); // CRM dropdown open
     // Wait for dropdown list to appear and select option
     // The dropdown list appears on the main page (not in iframe)
     const reasonOption = page.locator('.dx-list-item:has-text("No longer needed")').first();
@@ -68,8 +64,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
       await reasonInput.fill('No longer needed');
       await page.keyboard.press('Enter');
     }
-    await page.waitForTimeout(1000);
-    
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     // 2. Add cancellation notes with date and time (#cancellationReason)
     console.log(`📝 [FILL_CANCELLATION_FORM] Adding cancellation notes...`);
     const today = new Date().toLocaleDateString('en-GB');
@@ -79,17 +74,15 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     const notesTextarea = cancelBookingIframe.locator('#cancellationReason textarea.dx-texteditor-input');
     await notesTextarea.waitFor({ state: 'visible', timeout: 10000 });
     await notesTextarea.fill(note);
-    await page.waitForTimeout(1000);
-    
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     // 3. Set charge for cancellation dropdown (#cancellationCharge) to "Yes"
     console.log(`💰 [FILL_CANCELLATION_FORM] Setting charge for cancellation...`);
     const chargeDropdown = cancelBookingIframe.locator('#cancellationCharge');
     const chargeDropdownButton = chargeDropdown.locator('.dx-dropdowneditor-button');
     await chargeDropdownButton.waitFor({ state: 'visible', timeout: 30000 });
     await chargeDropdownButton.click();
-    await page.waitForTimeout(500);
-
     const yesOption = cancelBookingIframe.locator('.dx-list-item:has-text("Yes")').first();
+    await waitForThenOptionalDelay(page, yesOption, { state: 'visible', timeout: 8000, delayMs: CRM_STABILITY_DELAY_MS });
     try {
       await yesOption.waitFor({ state: 'visible', timeout: 8000 });
       await yesOption.click();
@@ -97,7 +90,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
       console.log('⚠️ [FILL_CANCELLATION_FORM] Yes option not found in iframe, trying input field...');
       const chargeInput = chargeDropdown.locator('input.dx-texteditor-input');
       await chargeInput.fill('Yes');
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       const yesOptionPage = page.locator('.dx-list-item:has-text("Yes")').first();
       if (await yesOptionPage.count() > 0) {
         await yesOptionPage.click();
@@ -105,8 +98,8 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
         await page.keyboard.press('Enter');
       }
     }
-    await page.waitForTimeout(1000);
-    
+    await waitForThenOptionalDelay(page, cancelBookingIframe.locator('#chargeAmount input.dx-texteditor-input'), { state: 'visible', timeout: 12000, delayMs: CRM_STABILITY_DELAY_MS });
+
     // 4. Set charge amount (#chargeAmount) - conditional, only visible when charge="Yes"
     console.log(`💷 [FILL_CANCELLATION_FORM] Setting cancellation fee amount...`);
     
@@ -129,8 +122,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     await amountField.waitFor({ state: 'visible', timeout: 12000 });
     await amountField.clear();
     await amountField.fill(finalFeeAmount);
-    await page.waitForTimeout(1000);
-    
+    await page.waitForTimeout(200);
     // 5. Handle financial category (#category_id) - conditional, only visible when charge="Yes"
     // Note: Field is marked as jqx_required, but "No category" (value="0") might be valid
     // For now, leave as default unless validation fails
@@ -150,13 +142,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     await cancelNowButton.waitFor({ state: 'visible', timeout: 30000 });
     await cancelNowButton.click();
 
-    // Wait for app to redirect after cancel (e.g. back to contactEdit_iframe or communications tab)
-    try {
-      await page.waitForSelector('#contactEdit_iframe', { state: 'attached', timeout: 20000 });
-      await page.waitForTimeout(2000);
-    } catch (e) {
-      await page.waitForTimeout(5000);
-    }
+    await waitForThenOptionalDelay(page, '#contactEdit_iframe', { state: 'attached', timeout: 15000, delayMs: CRM_STABILITY_DELAY_MS });
 
     // Verify cancellation was successful
     // Check if we're back on the profile page (contactEdit_iframe)
@@ -182,8 +168,7 @@ export async function executeFillCancellationForm(page, args, sessionState, scre
     }
     
     if (!cancellationSuccessful) {
-      // Wait a bit more and check again
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       try {
         const bookingsHeading = clientDetailsIframe.locator('h1:has-text("Bookings, credits and debits")');
         cancellationSuccessful = await bookingsHeading.count() > 0;
