@@ -1,4 +1,4 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, CRM_STABILITY_DELAY_MS } from './utils.js';
 
 /**
  * Validate client age against course-specific minimum age requirements
@@ -36,9 +36,8 @@ export async function validateAge(page, screenshotsDir, courseType = 'tfl', minA
     
     console.log(`📊 [AGE VALIDATION] Minimum age required: ${minAge}`);
     
-    // Wait for page to be ready
-    await page.waitForTimeout(1000);
-    
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
     // Determine if we need to work with iframe or main page
     const eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
     let searchContext = page;

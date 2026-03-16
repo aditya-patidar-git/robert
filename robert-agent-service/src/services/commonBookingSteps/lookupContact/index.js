@@ -9,6 +9,7 @@
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} [clientPostcode] - Optional postcode for verification when multiple results appear
  * @param {boolean} [skipNextClick] - If true, skip clicking Next button (for address confirmation flow)
+ * @param {boolean} [allowSkipIfAlreadyOnPage=true] - If false, never skip based on "already on page" (run full lookup)
  * @param {Function|null} [progressCallback] - Optional callback({ message }) for path-based voice updates
  */
 
@@ -20,7 +21,7 @@ import { performSearch } from './helpers/performSearch.js';
 import { selectClient } from './helpers/selectClient.js';
 import { clickNext } from './helpers/clickNext.js';
 
-export async function lookupContactAndWait(page, searchValue, searchType, screenshotsDir, clientPostcode = null, skipNextClick = false, progressCallback = null) {
+export async function lookupContactAndWait(page, searchValue, searchType, screenshotsDir, clientPostcode = null, skipNextClick = false, allowSkipIfAlreadyOnPage = true, progressCallback = null) {
   try {
     console.log(`🔍 [STEP 9] Looking up contact (${searchType})...`);
 
@@ -41,9 +42,9 @@ export async function lookupContactAndWait(page, searchValue, searchType, screen
       }
     }
 
-    // CRITICAL: FIRST check if we're already on the client details page
+    // CRITICAL: FIRST check if we're already on the client details page (only when we've already completed this step in this flow)
     const identifierForCheck = searchType === 'email' ? finalSearchValue : '';
-    const alreadyHandled = await checkAlreadyOnPage(page, identifierForCheck, screenshotsDir, skipNextClick);
+    const alreadyHandled = await checkAlreadyOnPage(page, identifierForCheck, screenshotsDir, skipNextClick, allowSkipIfAlreadyOnPage);
     if (alreadyHandled) {
       return;
     }

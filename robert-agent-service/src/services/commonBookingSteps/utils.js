@@ -1,6 +1,38 @@
 import fs from 'fs';
 import path from 'path';
 
+/** Default timeout (ms) for CRM selector waits. Use for waitForSelector/timeout so it can be tuned in one place. */
+export const CRM_SELECTOR_TIMEOUT_MS = 10000;
+
+/** Timeout for slow CRM iframe loads (e.g. contact lookup). */
+export const CRM_IFRAME_TIMEOUT_MS = 15000;
+
+/** Post-wait stability delay (ms). Tune here if CRM needs a longer buffer; use 100 to minimize step length. */
+export const CRM_STABILITY_DELAY_MS = 100;
+
+/** Extra delay (ms) after search results grid is visible so content is fully rendered before we read rows. */
+export const CRM_RESULTS_STABILITY_MS = 350;
+
+/**
+ * Wait for a selector or locator to be ready, then optionally apply a short stability delay.
+ * Use this instead of fixed waitForTimeout after waitForSelector/locator.waitFor to shorten step duration.
+ * @param {import('playwright').Page} page - Playwright page (used for waitForSelector and for delay).
+ * @param {string|import('playwright').Locator} selectorOrLocator - CSS selector string or Locator.
+ * @param {{ state?: 'visible'|'attached', timeout?: number, delayMs?: number }} [options] - state (default 'visible'), timeout (default CRM_SELECTOR_TIMEOUT_MS), delayMs (default CRM_STABILITY_DELAY_MS).
+ * @returns {Promise<void>}
+ */
+export async function waitForThenOptionalDelay(page, selectorOrLocator, options = {}) {
+  const { state = 'visible', timeout = CRM_SELECTOR_TIMEOUT_MS, delayMs = CRM_STABILITY_DELAY_MS } = options;
+  if (typeof selectorOrLocator === 'string') {
+    await page.waitForSelector(selectorOrLocator, { state, timeout });
+  } else {
+    await selectorOrLocator.waitFor({ state, timeout });
+  }
+  if (delayMs > 0) {
+    await page.waitForTimeout(delayMs);
+  }
+}
+
 /**
  * Take a screenshot of the current page
  * REMOVED: Screenshots have been disabled to prevent blocking operations and call disconnections

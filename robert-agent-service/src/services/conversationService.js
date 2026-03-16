@@ -163,6 +163,14 @@ export class ConversationService {
     const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false, overrideWorkflowPhase } = context;
     const isInitialGreeting = !hasInitialGreetingBeenSent;
 
+    // Unsupported language requested (e.g. Sinhala): say one clear line then continue in English
+    if (state?.unsupportedLanguageRequested) {
+      const instructions = 'Say exactly: "That language isn\'t available at the moment. I can help you in English. Would you like to continue in English?" Then continue the conversation in English.';
+      state.unsupportedLanguageRequested = null;
+      if (conversation) conversation.unsupportedLanguageRequested = null;
+      return { instructions, isInitialGreeting: !hasInitialGreetingBeenSent };
+    }
+
     if (isInitialGreeting) {
       const flowState = getConversationFlowState(callSid, state);
       const { waitingForLanguage, languageSelected, consentGiven, consentResponded } = flowState;

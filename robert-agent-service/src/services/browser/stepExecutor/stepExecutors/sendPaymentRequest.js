@@ -35,32 +35,16 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     
     // Step 1: Select "Send a payment request" option
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
-    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback);
+    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
     
-    // Step 2: Wait for page transition to paymentRequestLink page
-    console.log('⏳ [SEND_PAYMENT_REQUEST] Waiting for page transition to payment request link page...');
-    let transitionComplete = false;
-    for (let i = 0; i < 10; i++) {
-      const paymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
-      if (paymentRequestIframeExists) {
-        try {
-          const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
-          const testLocator = paymentRequestIframe.locator('body').first();
-          await testLocator.waitFor({ state: 'attached', timeout: 2000 });
-          console.log('✅ [SEND_PAYMENT_REQUEST] Page transition complete - now on payment request link page');
-          transitionComplete = true;
-          break;
-        } catch (iframeError) {
-          // Iframe exists but not loaded yet
-        }
-      }
-      if (i < 9) {
-        await page.waitForTimeout(2000);
-      }
-    }
-    
-    if (!transitionComplete) {
-      console.warn('⚠️ [SEND_PAYMENT_REQUEST] Page transition may not have completed, but proceeding...');
+    console.log('⏳ [SEND_PAYMENT_REQUEST] Waiting for payment request link page...');
+    try {
+      await page.waitForSelector('#contactSend3DSecureRequest_iframe', { state: 'attached', timeout: 10000 });
+      const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
+      await paymentRequestIframe.locator('body').first().waitFor({ state: 'attached', timeout: 5000 });
+      console.log('✅ [SEND_PAYMENT_REQUEST] On payment request link page');
+    } catch (e) {
+      console.warn('⚠️ [SEND_PAYMENT_REQUEST] Payment request page not ready, proceeding...');
     }
   } else if (isOnPaymentRequestPage) {
     console.log('✅ [SEND_PAYMENT_REQUEST] Already on payment request link page');
@@ -123,7 +107,8 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     clientMobile,
     effectiveConfirmed,
     termsAcceptedBeforeSend,
-    progressCallback
+    progressCallback,
+    args.abortSignal
   );
 
   if (result.requiresConfirmation && callSid) {

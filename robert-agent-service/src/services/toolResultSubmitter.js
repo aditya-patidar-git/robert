@@ -420,8 +420,21 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       const toolResult = options?.toolResult;
       const isClientVerification = toolName === 'client_verification';
 
-      // Step tool parameter/validation failure: instruct to resolve (ask user or use context) and retry, do NOT offer transfer
-      const isStepToolParamError = toolName && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_')) &&
+      // Search client: missing customerMobile/customerEmail/customerName — instruct to call in same turn if caller just gave it, else ask once
+      const isSearchClientRequiredParamError = (toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
+        toolResult && toolResult.success === false &&
+        String(toolResult.error || '').includes('is required for client search');
+      if (isSearchClientRequiredParamError) {
+        const searchToolName = toolName === 'cancellation_step_search_client' ? 'cancellation_step_search_client' : 'booking_step_search_client';
+        const searchClientParamInstruction = `CRITICAL: The caller must provide a search key (mobile, email, or name). If they just said their mobile number, email, or name in this or the previous turn, call **${searchToolName}** in THIS SAME RESPONSE with customerMobile, customerEmail, or customerName set to that value (UK mobile: 11 digits starting with 07). Do NOT say "let me do that" or "I'll enter it now" and then wait—call the tool now. If you do not have the value, ask one short question (e.g. "Could you say your mobile number again?") and then call the tool when they respond.`;
+        responseInstructions = responseInstructions
+          ? `${searchClientParamInstruction}\n\n${responseInstructions}`
+          : searchClientParamInstruction;
+        console.log(`🎯 [${callId}] Search client missing param - instructing to call in same turn if value from caller, else ask once`);
+      }
+
+      // Step tool parameter/validation failure: instruct to resolve (ask user or use context) and retry, do NOT offer transfer (skip when search_client required-param already handled)
+      const isStepToolParamError = !isSearchClientRequiredParamError && toolName && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_')) &&
         toolResult && toolResult.success === false && toolResult.error &&
         /Validation failed|Required|Invalid parameters|missing|courseType/i.test(toolResult.error);
       if (isStepToolParamError) {
@@ -535,6 +548,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
             responseInstructions = responseInstructions
               ? `${confirmationInstruction}\n\n${responseInstructions}`
               : confirmationInstruction;
+            if (this.stateManager) this.stateManager.postVerificationWaitingConfirmation = true;
             console.log(`🎯 [${callId}] Client verification successful - instructing explicit confirmation before proceeding: ${nextStepTool}`);
           } else {
             // Legacy behavior: Immediate continuation (for backward compatibility)
@@ -588,6 +602,7 @@ MANDATORY WORKFLOW: When the caller confirms the slot (e.g. "yes", "okay go ahea
 
       // Phase 2: After select_session, call select_booking_options in this turn first; do NOT ask for bike type until after the tool returns
       if (toolName === 'booking_step_select_session' && toolResult?.success === true) {
+        if (this.stateManager) this.stateManager.postVerificationWaitingConfirmation = false;
         const instruction = `CRITICAL: booking_step_select_session completed. The UI is still on the diaries tab—the booking options tab opens only when you call booking_step_select_booking_options. 
 
 ABSOLUTE REQUIREMENT: In your response, you MUST:
@@ -706,7 +721,7 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         toolResult.missingFields.length > 0;
       if (isFillContactDetailsMissing) {
         const msg = toolResult.message || `I need your ${(toolResult.missingFields || []).join(', ')}; could you please provide them?`;
-        let instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". For each required detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Do NOT move to the next question until the current one has been repeated and verified. STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself. Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber (as applicable).`;
+        let instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". For each required detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Exception: for driving licence number you may collect in two halves—ask for the first half only (8 characters), call the tool with drivingLicenceFirstHalf; when the tool returns requiresDrivingLicenceSecondHalf, ask for the second half and call again with both drivingLicenceFirstHalf and drivingLicenceSecondHalf; you do NOT need to ask the caller to repeat the full number when collected in two halves. Do NOT move to the next question until the current one has been repeated and verified. STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself. Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber or drivingLicenceFirstHalf+SecondHalf (as applicable).`;
         if (toolResult.missingFields?.includes('licenceHeld')) {
           const optionsList = getLicenceHeldOptionsForPrompt();
           instruction += ` For licence type (licenceHeld): list these exact options and ask the caller to choose one: ${optionsList}. Pass the exact option text they choose as licenceHeld—do not guess from vague terms like "motorcycle".`;
@@ -717,10 +732,33 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         console.log(`🎯 [${callId}] Fill contact details incomplete - instructing to collect all missing then call once: ${toolResult.missingFields?.join(', ')}`);
       }
 
+      // Fill contact details returned invalidFormat: ask caller to re-provide with correct UK format, then call fill_contact_details again (do not chain payment)
+      if (toolName === 'booking_step_fill_contact_details' && toolResult?.success === true && toolResult?.invalidFormat === true) {
+        const instruction = toolResult.instruction || (() => {
+          const fieldsList = toolResult.invalidFields && typeof toolResult.invalidFields === 'object'
+            ? Object.entries(toolResult.invalidFields).map(([k, v]) => `${k}: ${v}`).join('; ')
+            : 'see correct UK format for the invalid field(s)';
+          return `One or more details were in the wrong UK format. Ask the caller to provide again using the correct format (do not recite their value back). Expected: ${fieldsList}. Then call booking_step_fill_contact_details again with the corrected values.`;
+        })();
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Fill contact details invalid format - instructing to re-ask with correct UK format then call again`);
+      }
+
+      // Fill contact details returned requiresDrivingLicenceSecondHalf: ask for second half, then call again with both halves (do not chain payment)
+      if (toolName === 'booking_step_fill_contact_details' && toolResult?.success === true && toolResult?.requiresDrivingLicenceSecondHalf === true) {
+        const instruction = toolResult.instruction || 'Ask for the second half of the driving licence (7 or 8 characters; no spaces). Then call booking_step_fill_contact_details again with the same drivingLicenceFirstHalf and the new drivingLicenceSecondHalf. Do not ask the caller to repeat the full number.';
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Fill contact details needs second half of driving licence - instructing to ask then call again with both halves`);
+      }
+
       // Phase 6: After fill_contact_details completes successfully (no missingFields), call process_payment in the same turn—do not wait for caller
+      // Do NOT proceed to payment when address confirmation, invalidFormat, or requiresDrivingLicenceSecondHalf was returned.
       const isFillContactDetailsComplete = toolName === 'booking_step_fill_contact_details' &&
         toolResult?.success === true &&
-        (!Array.isArray(toolResult?.missingFields) || toolResult.missingFields.length === 0);
+        (!Array.isArray(toolResult?.missingFields) || toolResult.missingFields.length === 0) &&
+        !toolResult?.requiresAddressConfirmation &&
+        !toolResult?.invalidFormat &&
+        !toolResult?.requiresDrivingLicenceSecondHalf;
       if (isFillContactDetailsComplete) {
         const partialFill = toolResult?.partialFill === true || (Array.isArray(toolResult?.skippedFields) && toolResult.skippedFields.length > 0);
         const instruction = partialFill

@@ -242,8 +242,7 @@ class BrowserAgentService {
     // Clear reCAPTCHA storage
     await clearRecaptchaStorage(page);
     
-    // Wait for fresh initialization
-    await page.waitForTimeout(500 + Math.random() * 500); // 500-1000ms
+    await page.waitForTimeout(200 + Math.random() * 100); // 200-300ms anti-fingerprint
     
     console.log('✅ reCAPTCHA retry preparation complete');
   }

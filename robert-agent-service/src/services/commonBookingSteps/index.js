@@ -14,7 +14,7 @@ export { sendBookingConfirmationEmail } from './sendBookingConfirmationEmail.js'
 export { sendTermsAndConditionsEmail } from './sendTermsAndConditionsEmail.js';
 export { sendSMSConfirmation } from './sendSMSConfirmation.js';
 export { validateAge } from './validateAge.js';
-export { takeScreenshot, extractLocationIdentifier, extractPriceFromBooking, saveAuditLog, ensureDirectories } from './utils.js';
+export { takeScreenshot, extractLocationIdentifier, extractPriceFromBooking, saveAuditLog, ensureDirectories, CRM_SELECTOR_TIMEOUT_MS, CRM_IFRAME_TIMEOUT_MS, CRM_STABILITY_DELAY_MS, waitForThenOptionalDelay } from './utils.js';
 export { findBooking } from './findBooking.js';
 export { checkAvailabilityAndNoteDetails, getAvailabilityUrl, selectBestMatchingSlot } from './checkAvailability.js';
 export { cancelBooking } from './cancelBooking.js';

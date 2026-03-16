@@ -275,8 +275,9 @@ CRITICAL WORKFLOW:
 CRITICAL WORKFLOW:
 1. ONLY call this tool AFTER you have reached the contact details page (Step 8 for existing, Step 7 for new).
 2. DO NOT ask for Name, Email, Phone, Postcode, or any contact detail until you have called this tool at least once. The first call returns missingFields—only then ask for those specific missing fields, in one sequence, with double confirmation (ask → repeat to verify; if no match, ask once more and take that as final).
-3. Collect each missing field once: do not re-ask for a field already confirmed. When you have a value for every missing field, call this tool ONCE with ALL required parameters (postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber, customerEmail, customerMobile, customerName as needed)—do not call with only a subset or the form will not be fully filled.
-4. After the tool fills successfully, the flow proceeds to payment.`,
+3. Collect each missing field once: do not re-ask for a field already confirmed. When you have a value for every missing field, call this tool ONCE with ALL required parameters (postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber or drivingLicenceFirstHalf+SecondHalf, customerEmail, customerMobile, customerName as needed)—do not call with only a subset or the form will not be fully filled.
+4. DRIVING LICENCE: You may collect in two halves to reduce errors. First ask for the first half only (8 characters: either 5 digits + 3 letters, or 5 letters + 3 digits; no spaces). Call the tool with drivingLicenceFirstHalf only. If the tool returns requiresDrivingLicenceSecondHalf, ask for the second half (7 or 8 characters as per format), then call again with BOTH drivingLicenceFirstHalf and drivingLicenceSecondHalf. When collected in two halves you do NOT need to ask the caller to repeat the full number. Alternatively pass the full drivingLicenceNumber in one go (then use double confirmation as for other fields).
+5. After the tool fills successfully, the flow proceeds to payment.`,
 
       parameters: {
         type: 'object',
@@ -317,7 +318,15 @@ CRITICAL WORKFLOW:
           },
           drivingLicenceNumber: {
             type: 'string',
-            description: 'UK driving licence number (no spaces; current format is 5 digits, 3 letters, 5 digits)'
+            description: 'UK driving licence number (full 15 or 16 chars, no spaces). Alternatively use drivingLicenceFirstHalf then drivingLicenceSecondHalf in two steps.'
+          },
+          drivingLicenceFirstHalf: {
+            type: 'string',
+            description: 'First half of UK driving licence (8 chars): 5 digits + 3 letters (e.g. 12345ABC) or 5 letters + 3 digits (e.g. CARTD940). Use when collecting in two halves; then ask for second half and pass both halves on next call.'
+          },
+          drivingLicenceSecondHalf: {
+            type: 'string',
+            description: 'Second half of UK driving licence (7 or 8 chars). Pass together with drivingLicenceFirstHalf when you have both; no need to ask caller to repeat full number.'
           },
           licenceHeld: {
             type: 'string',

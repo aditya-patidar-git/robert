@@ -80,6 +80,13 @@ export class BargeInHandler {
         return;
       }
 
+      // Speakerphone/echo: suppress barge-in for first T ms of each response to reduce self-interruption
+      const bargeInSuppressMs = conversationBehaviorConfig?.conversationFlow?.bargeInSuppressMs ?? 1000;
+      if (bargeInSuppressMs > 0 && timeSinceResponseCreated < bargeInSuppressMs) {
+        console.log(`🔇 [${this.state.callSid}] Barge-in suppressed (within ${bargeInSuppressMs}ms of response start, ${Math.round(timeSinceResponseCreated)}ms) - reduces speakerphone echo`);
+        return;
+      }
+
       console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered on speech_started (industry standard: <200ms) - response ${this.state.activeResponseId || 'N/A'}`);
       console.log(`   - Time since response created: ${timeSinceResponseCreated}ms`);
       console.log(`   - Audio is playing: ${isAudioPlaying}`);

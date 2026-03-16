@@ -1,4 +1,4 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from './utils.js';
 
 /**
  * Cancel an existing booking
@@ -21,8 +21,7 @@ export async function cancelBooking(page, iframe, args, existingBooking, screens
     console.log('📅 [CANCEL] Step 1: Navigating to Diaries section...');
     const diariesTab = page.locator('h3.list-menu-item-heading:has-text("Diaries")');
     await diariesTab.click();
-    await page.waitForTimeout(8000);
-    await page.waitForLoadState('networkidle');
+    await waitForThenOptionalDelay(page, '#newDiaryDefault_iframe', { state: 'attached', timeout: 15000, delayMs: CRM_STABILITY_DELAY_MS }).catch(() => {});
     await takeScreenshot(page, 'cancel-diaries-opened.png', screenshotsDir);
     
     // Step 2: Select date of existing booking
@@ -44,8 +43,7 @@ export async function cancelBooking(page, iframe, args, existingBooking, screens
     }
     
     await calendarIcon.click();
-    await page.waitForTimeout(2000);
-    
+    await page.waitForTimeout(300); // CRM calendar open
     // Select the existing booking date
     let dateInputField;
     if (diariesIframeExists) {
@@ -56,21 +54,20 @@ export async function cancelBooking(page, iframe, args, existingBooking, screens
     }
     
     await dateInputField.click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     await page.keyboard.press('Backspace');
     await page.keyboard.press('Backspace');
-    await page.waitForTimeout(500);
-    
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     const dayStr = day.toString().padStart(2, '0');
     const monthStr = month.toString().padStart(2, '0');
     const yearStr = year.toString();
     const dateString = dayStr + monthStr + yearStr;
     
     await dateInputField.type(dateString);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(200);
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(3000);
-    
+    await page.waitForSelector('table.dx-scheduler-date-table, .dx-scheduler-work-space, #diary_ids', { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(200);
     // Step 3: Select location
     if (existingBooking.location) {
       console.log(`📍 [CANCEL] Step 3: Selecting location: ${existingBooking.location}`);
@@ -97,8 +94,7 @@ export async function cancelBooking(page, iframe, args, existingBooking, screens
         await locationDropdown.click();
       }
       
-      await page.waitForTimeout(2000);
-      
+      await waitForThenOptionalDelay(page, searchContext.locator('div.dx-list-item[role="option"]').first(), { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS }).catch(() => {});
       const locationOptions = searchContext.locator('div.dx-list-item[role="option"]');
       const optionCount = await locationOptions.count();
       
@@ -109,7 +105,7 @@ export async function cancelBooking(page, iframe, args, existingBooking, screens
         
         if (optionTextLower.includes(locationIdentifier) || locationIdentifier.includes(optionTextLower.split(',')[0].trim())) {
           await option.click();
-          await page.waitForTimeout(2000);
+          await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
           console.log(`✅ [CANCEL] Location selected: ${optionText}`);
           break;
         }
@@ -166,11 +162,10 @@ export async function cancelBooking(page, iframe, args, existingBooking, screens
     const customerNameElement = targetEntry.locator('.staffBooking.bookingActive span, .bookingActive').first();
     if (await customerNameElement.count() > 0) {
       await customerNameElement.click();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     } else {
-      // Fallback: click on the entry itself
       await targetEntry.click();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     }
     
     await takeScreenshot(page, 'cancel-dropdown-opened.png', screenshotsDir);
@@ -183,7 +178,7 @@ export async function cancelBooking(page, iframe, args, existingBooking, screens
     
     if (await cancelOption.count() > 0) {
       await cancelOption.click();
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       console.log('✅ [CANCEL] "Cancel Booking" clicked');
     } else {
       throw new Error('Could not find "Cancel Booking" option in dropdown');
@@ -199,25 +194,19 @@ export async function cancelBooking(page, iframe, args, existingBooking, screens
       const confirmButton = confirmDialog.locator('button:has-text("Confirm"), button:has-text("Yes"), button:has-text("OK"), button:has-text("Cancel")').first();
       if (await confirmButton.count() > 0) {
         await confirmButton.click();
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       }
     }
-    
-    // If there's a reason field, fill it
     if (args.reason) {
       const reasonField = page.locator('input[placeholder*="reason"], textarea[placeholder*="reason"], input[name*="reason"]').first();
       if (await reasonField.count() > 0) {
         await reasonField.fill(args.reason);
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       }
     }
-    
     await takeScreenshot(page, 'cancel-confirmed.png', screenshotsDir);
-    
-    // Step 8: Verify success (check booking removed/marked cancelled)
     console.log('🔍 [CANCEL] Step 8: Verifying cancellation success...');
-    
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
     
     // Check if booking is no longer visible or marked as cancelled
     const cancelledEntry = searchContext.locator(`td.diaryEvent.diaryEventCell[data-start_time*="${expectedTime}"]`);

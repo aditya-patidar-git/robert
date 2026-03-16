@@ -775,7 +775,7 @@ export class OpenAIIntegration {
             },
             tools: tools,
             tool_choice: 'auto',
-            input_audio_transcription: { model: 'gpt-4o-transcribe' }
+            input_audio_transcription: { model: 'gpt-4o-transcribe', language: 'en' }
           }
         };
         
@@ -790,7 +790,7 @@ export class OpenAIIntegration {
         console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
         console.log(`   - turn_detection: server_vad`);
         console.log(`   - barge_in_policy: ${audioConfig?.bargeInPolicy ?? 'pause'}, interrupt_response: ${audioConfig?.bargeInPolicy === 'stop'}`);
-        console.log(`   - input_transcription: gpt-4o-transcribe (flat input_audio_transcription)`);
+        console.log(`   - input_transcription: gpt-4o-transcribe, language: en (flat input_audio_transcription)`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
           console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
         }

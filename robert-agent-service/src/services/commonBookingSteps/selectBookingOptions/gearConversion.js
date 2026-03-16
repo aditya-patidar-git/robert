@@ -171,7 +171,7 @@ export default async function selectBookingOptions(page, bookingArgs = {}, scree
       console.log(`⚠️ [STEP 8] WARNING: Bike type was not selected`);
     }
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);
 
     // Click NEXT button
     await clickNextButton(searchContext, page, bookingIframe);

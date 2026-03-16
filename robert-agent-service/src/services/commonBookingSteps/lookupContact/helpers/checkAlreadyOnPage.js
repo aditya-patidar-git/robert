@@ -4,7 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { takeScreenshot } from '../../utils.js';
+import { takeScreenshot, CRM_STABILITY_DELAY_MS } from '../../utils.js';
 
 /**
  * Check if already on client details page
@@ -12,11 +12,16 @@ import { takeScreenshot } from '../../utils.js';
  * @param {string} identifier - Optional email for DOM check (empty when search was by mobile)
  * @param {string} screenshotsDir - Screenshots directory
  * @param {boolean} skipNextClick - If true, skip clicking Next button
+ * @param {boolean} [allowSkipIfAlreadyOnPage=true] - If false, never skip (run full lookup). Use when we have not yet completed this step.
  * @returns {Promise<boolean>} True if already on page and handled, false otherwise
  */
-export async function checkAlreadyOnPage(page, identifier, screenshotsDir, skipNextClick) {
+export async function checkAlreadyOnPage(page, identifier, screenshotsDir, skipNextClick, allowSkipIfAlreadyOnPage = true) {
+  if (!allowSkipIfAlreadyOnPage) {
+    console.log('🔍 [STEP 9] Skipping "already on page" check (allowSkipIfAlreadyOnPage=false) - running full lookup.');
+    return false;
+  }
   console.log('🔍 [STEP 9] Checking if already on client details page...');
-  await page.waitForTimeout(2000);
+  await page.waitForSelector('#eventNewBooking2_iframe, #contactSelect_iframe', { state: 'attached', timeout: 5000 }).catch(() => {});
 
   const eventBookingIframeExistsEarly = await page.locator('#eventNewBooking2_iframe').count() > 0;
   const contactSelectIframeExistsEarly = await page.locator('#contactSelect_iframe').count() > 0;
@@ -80,10 +85,9 @@ export async function checkAlreadyOnPage(page, identifier, screenshotsDir, skipN
       const iframeForNext = eventBookingIframeExistsEarly ? eventBookingIframe : contactSelectIframe;
       const iframeIdForNext = eventBookingIframeExistsEarly ? '#eventNewBooking2_iframe' : '#contactSelect_iframe';
       
-      // Wait for form to render
-      console.log('⏳ [STEP 9] Waiting for Contact Details form to fully render...');
-      await page.waitForTimeout(3000);
-      
+      await iframeForNext.locator('#diaryNewCourseBookingWiz_nextBtn, text=First Names').first().waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
       // Click Next button
       console.log('👆 [STEP 9] Clicking Next button on Contact Details page...');
       

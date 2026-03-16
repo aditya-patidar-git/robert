@@ -274,6 +274,15 @@ class ToolExecutor {
       }
       delete normalized.contact;
     }
+    // Same tools: model sometimes sends "phoneNumber" instead of customerMobile
+    if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
+        normalized.phoneNumber != null && (normalized.customerMobile == null || normalized.customerMobile === '')) {
+      const raw = String(normalized.phoneNumber).trim();
+      if (raw) {
+        normalized.customerMobile = raw.replace(/\D/g, '') || raw;
+      }
+      delete normalized.phoneNumber;
+    }
     // Same tools: model sometimes sends "phone" or "mobile" instead of customerMobile
     if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
         (normalized.phone != null || normalized.mobile != null) && (normalized.customerMobile == null || normalized.customerMobile === '')) {

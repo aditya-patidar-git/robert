@@ -1,4 +1,4 @@
-import { takeScreenshot } from '../../utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../utils.js';
 
 /**
  * Selects a calendar type from the calendar type dropdown (Day planner or TfL Diary).
@@ -8,12 +8,8 @@ import { takeScreenshot } from '../../utils.js';
  * @returns {Promise<void>}
  */
 export async function selectCalendarType(page, diaryType, screenshotsDir) {
-  // Select calendar type from dropdown (after location selection)
   console.log(`📅 [STEP 6-7] Selecting calendar type from dropdown...`);
-  
-  // Wait 2 seconds after location selection before proceeding
-  await page.waitForTimeout(2000);
-  
+
   // Determine if we need to work with iframe or main page (reuse diariesIframeExists from date selection)
   // Check again to ensure iframe still exists (it may have changed)
   const calendarTypeIframeExists = await page.locator('#newDiaryDefault_iframe').count() > 0;
@@ -115,15 +111,11 @@ export async function selectCalendarType(page, diaryType, screenshotsDir) {
     }
   }
   
-  // WAIT FOR DROPDOWN MENU TO APPEAR - 2 seconds
   console.log('⏳ [STEP 6-7] Waiting for calendar type dropdown menu to appear...');
-  await page.waitForTimeout(2000);
-  
-  // Take screenshot of opened dropdown
+  await waitForThenOptionalDelay(page, calendarSearchContext.locator('div.dx-list-item[role="option"]').first(), { state: 'attached', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
+
   await takeScreenshot(page, 'calendar-type-dropdown-opened.png', screenshotsDir);
-  
-  // Find all calendar type options in the dropdown (same pattern as location dropdown)
-  // Options are in: .dx-list-item[role="option"] with text in .dx-item-content.dx-list-item-content
+
   const calendarTypeOptions = calendarSearchContext.locator('div.dx-list-item[role="option"]');
   const optionCount = await calendarTypeOptions.count();
   console.log(`📊 [STEP 6-7] Found ${optionCount} calendar type options in dropdown`);
@@ -158,25 +150,22 @@ export async function selectCalendarType(page, diaryType, screenshotsDir) {
       console.log('🔍 [STEP 6-7] Matching option not visible, scrolling in dropdown...');
       
       // Scroll up in the dropdown menu to make option visible
-      await page.keyboard.press('Home'); // Go to top of dropdown
-      await page.waitForTimeout(1000);
-      
-      // Alternative: try to scroll the dropdown container
+      await page.keyboard.press('Home');
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
       const dropdownMenu = calendarSearchContext.locator('[role="listbox"], .dx-dropdownlist, .dx-list, .dx-list-items').first();
       if (await dropdownMenu.count() > 0) {
         await dropdownMenu.evaluate(el => el.scrollTop = 0);
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       }
     }
-    
-    // Now try to find and click the matching option (always select, even if already selected)
+
     await matchingOption.waitFor({ state: 'visible', timeout: 5000 });
     console.log('📅 [STEP 6-7] Matching calendar type option is now visible, clicking...');
     await matchingOption.click();
-    
-    // WAIT FOR CALENDAR TYPE SELECTION TO BE APPLIED - 2 seconds
+
     console.log('⏳ [STEP 6-7] Waiting for calendar type selection...');
-    await page.waitForTimeout(2000);
+    await waitForThenOptionalDelay(page, calendarTypeDropdown, { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
     
     // Take screenshot after calendar type selection
     await takeScreenshot(page, 'calendar-type-selected.png', screenshotsDir);
@@ -186,6 +175,6 @@ export async function selectCalendarType(page, diaryType, screenshotsDir) {
     console.log(`⚠️ [STEP 6-7] Available options were checked, but none matched. Continuing without calendar type selection...`);
     // Close dropdown if it's still open (press Escape)
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
   }
 }

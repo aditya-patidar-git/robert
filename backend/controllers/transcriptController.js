@@ -15,90 +15,97 @@ function isValidTranscriptId(id) {
   return typeof id === 'string' && /^[a-fA-F0-9]{24}$/.test(id);
 }
 
+/**
+ * Build Mongo filter for transcript list/export (single source of truth).
+ * @param {Object} query - Query params: search, result, escalated, hasComplaint, consentStatus, startDate, endDate, userId
+ * @param {Object} options - { user } for role-based filtering
+ * @returns {Object} Mongo filter
+ */
+function buildTranscriptFilter(query, options = {}) {
+  const {
+    search,
+    result,
+    escalated,
+    hasComplaint,
+    consentStatus,
+    startDate,
+    endDate,
+    userId
+  } = query;
+
+  const filter = {};
+
+  if (userId && options.user?.role !== 'owner' && options.user?.role !== 'admin') {
+    filter.userId = userId;
+  }
+
+  if (search) {
+    const escapedSearch = escapeRegex(search);
+    filter.$or = [
+      { from: { $regex: escapedSearch, $options: 'i' } },
+      { to: { $regex: escapedSearch, $options: 'i' } },
+      { 'transcript.text': { $regex: escapedSearch, $options: 'i' } },
+      { summary: { $regex: escapedSearch, $options: 'i' } }
+    ];
+  }
+
+  if (result) {
+    filter.result = result;
+  }
+
+  if (escalated !== undefined) {
+    filter['escalation.escalated'] = escalated === 'true';
+  }
+
+  if (hasComplaint !== undefined) {
+    filter['complaint.hasComplaint'] = hasComplaint === 'true';
+  }
+
+  if (consentStatus) {
+    if (consentStatus === 'given') {
+      if (search) {
+        filter.$and = [
+          { $or: filter.$or },
+          { $or: [
+            { 'recordingConsent.given': true },
+            { 'recordingConsent.given': { $exists: false } },
+            { 'recordingConsent.given': null }
+          ]}
+        ];
+        delete filter.$or;
+      } else {
+        filter.$or = [
+          { 'recordingConsent.given': true },
+          { 'recordingConsent.given': { $exists: false } },
+          { 'recordingConsent.given': null }
+        ];
+      }
+    } else if (consentStatus === 'denied') {
+      filter['recordingConsent.given'] = false;
+    }
+  }
+
+  if (startDate || endDate) {
+    filter.createdAt = {};
+    if (startDate) filter.createdAt.$gte = new Date(startDate);
+    if (endDate) filter.createdAt.$lte = new Date(endDate);
+  }
+
+  return filter;
+}
+
+const EXPORT_MAX_RECORDS = 10000;
+
 // Get all transcripts with filtering and pagination
 export const getAllTranscripts = async (req, res) => {
   try {
     const {
       page = 1,
       limit = 20,
-      search,
-      result,
-      escalated,
-      hasComplaint,
-      consentStatus,
-      startDate,
-      endDate,
-      userId
+      ...rest
     } = req.query;
 
-    const filter = {};
-
-    // Role-based filtering
-    if (userId && req.user.role !== 'owner' && req.user.role !== 'admin') {
-      // Users can only see their own calls (if we track user association)
-      filter.userId = userId;
-    }
-
-    // Search filter
-    if (search) {
-      const escapedSearch = escapeRegex(search);
-      filter.$or = [
-        { from: { $regex: escapedSearch, $options: 'i' } },
-        { to: { $regex: escapedSearch, $options: 'i' } },
-        { 'transcript.text': { $regex: escapedSearch, $options: 'i' } },
-        { summary: { $regex: escapedSearch, $options: 'i' } }
-      ];
-    }
-
-    // Result filter
-    if (result) {
-      filter.result = result;
-    }
-
-    // Escalation filter
-    if (escalated !== undefined) {
-      filter['escalation.escalated'] = escalated === 'true';
-    }
-
-    // Complaint filter
-    if (hasComplaint !== undefined) {
-      filter['complaint.hasComplaint'] = hasComplaint === 'true';
-    }
-
-    // Consent status filter
-    if (consentStatus) {
-      if (consentStatus === 'given') {
-        // Consent given OR not explicitly denied (null/undefined = opt-in default)
-        filter.$or = filter.$or || [];
-        // If we already have an $or from search, we need to use $and
-        if (search) {
-          filter.$and = [
-            { $or: filter.$or },
-            { $or: [
-              { 'recordingConsent.given': true },
-              { 'recordingConsent.given': { $exists: false } },
-              { 'recordingConsent.given': null }
-            ]}
-          ];
-          delete filter.$or;
-        } else {
-          filter.$or = [
-            { 'recordingConsent.given': true },
-            { 'recordingConsent.given': { $exists: false } },
-            { 'recordingConsent.given': null }
-          ];
-        }
-      } else if (consentStatus === 'denied') {
-        filter['recordingConsent.given'] = false;
-      }
-    }
-
-    // Date range filter
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate);
-      if (endDate) filter.createdAt.$lte = new Date(endDate);
-    }
+    const filter = buildTranscriptFilter({ ...rest }, { user: req.user });
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -200,7 +207,7 @@ export const searchTranscripts = async (req, res) => {
 // Export transcripts
 export const exportTranscripts = async (req, res) => {
   try {
-    const { format = 'csv', id, ...filters } = req.query;
+    const { format = 'csv', id, ...queryRest } = req.query;
 
     let transcripts;
     let filename;
@@ -213,7 +220,7 @@ export const exportTranscripts = async (req, res) => {
       }
       // Check consent before export
       if (transcript.recordingConsent?.given === false) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Transcript not available - consent not given',
           message: 'This transcript cannot be exported as the customer did not provide recording consent.'
         });
@@ -221,9 +228,11 @@ export const exportTranscripts = async (req, res) => {
       transcripts = [transcript];
       filename = `transcript-${id}`;
     } else {
-      // Export filtered transcripts
-      transcripts = await CallRecord.find(filters)
+      // Export filtered transcripts using same filter as list (exclude page, limit, format)
+      const filter = buildTranscriptFilter(queryRest, { user: req.user });
+      transcripts = await CallRecord.find(filter)
         .sort({ createdAt: -1 })
+        .limit(EXPORT_MAX_RECORDS)
         .lean();
       filename = 'transcripts';
     }
@@ -360,20 +369,23 @@ function generateCSV(transcripts) {
     'Summary'
   ];
 
+  const safeStr = (v) => (v != null ? String(v) : '');
+  const safeDate = (v) => (v ? (v instanceof Date ? v : new Date(v)).toISOString() : '');
+
   const rows = transcripts.map(t => [
-    t.callSid,
-    t.from,
-    t.to,
-    t.createdAt.toISOString(),
-    t.duration || 0,
-    t.result,
-    t.escalation?.escalated || false,
-    t.complaint?.hasComplaint || false,
-    t.summary || ''
+    safeStr(t?.callSid),
+    safeStr(t?.from),
+    safeStr(t?.to),
+    safeDate(t?.createdAt),
+    t?.duration ?? 0,
+    safeStr(t?.result),
+    t?.escalation?.escalated === true,
+    t?.complaint?.hasComplaint === true,
+    safeStr(t?.summary)
   ]);
 
   return [headers, ...rows]
-    .map(row => row.map(cell => `"${cell}"`).join(','))
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     .join('\n');
 }
 

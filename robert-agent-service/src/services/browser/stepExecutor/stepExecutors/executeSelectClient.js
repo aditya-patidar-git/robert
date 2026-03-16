@@ -4,7 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { takeScreenshot } from '../../../commonBookingSteps/utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
 
 /**
  * Execute selectClient step
@@ -35,35 +35,15 @@ export async function executeSelectClient(page, args, sessionState, screenshotsD
       // Profile not open yet - need to click on search results
       console.log(`👤 [SELECT_CLIENT] Clicking on client name in search results: ${clientName}`);
       
-      // Wait for search results to be visible
       await page.waitForSelector('tr', { timeout: 30000 });
-      await page.waitForTimeout(2000);
-      
-      // Click on the client name link in search results
       const clientLink = page.locator(`tr:has-text("${clientName}")`).first();
-      
-      // Wait for the link to be visible
       await clientLink.waitFor({ state: 'visible', timeout: 30000 });
       await clientLink.click();
-      
-      // Wait for contactEdit_iframe to appear after clicking client name
       console.log('🔄 [SELECT_CLIENT] Waiting for contactEdit_iframe to appear...');
-      await page.waitForTimeout(3000);
-      
-      // Verify contactEdit_iframe exists
-      const iframeExists = await page.locator('#contactEdit_iframe').count();
-      if (iframeExists === 0) {
-        console.log('⚠️ [SELECT_CLIENT] contactEdit_iframe not found, waiting longer...');
-        await page.waitForTimeout(2000);
-      }
+      await waitForThenOptionalDelay(page, '#contactEdit_iframe', { state: 'attached', timeout: 10000, delayMs: CRM_STABILITY_DELAY_MS });
     }
     
-    // Switch to contactEdit_iframe for client profile
     const clientDetailsIframe = page.frameLocator('#contactEdit_iframe');
-    
-    // Wait for the client profile page to load in the iframe
-    console.log('⏳ [SELECT_CLIENT] Waiting for client profile page to load in iframe...');
-    await page.waitForTimeout(2000);
     
     // Verify we're on the client profile page by checking for the heading
     // Heading selector: <h1 class="jqx_formBoilerPlateText jqx_formHeading jqx_underline"><span>Bookings, credits and debits</span></h1>

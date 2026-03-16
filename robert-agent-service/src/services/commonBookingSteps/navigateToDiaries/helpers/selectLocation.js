@@ -1,4 +1,4 @@
-import { takeScreenshot, extractLocationIdentifier } from '../../utils.js';
+import { takeScreenshot, extractLocationIdentifier, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../utils.js';
 
 /**
  * Selects a location from the location dropdown.
@@ -99,25 +99,22 @@ export async function selectLocation(page, sessionDetails, screenshotsDir) {
       console.log('🔍 [STEP 6-7] Matching option not visible, scrolling in dropdown...');
       
       // Scroll up in the dropdown menu to make option visible
-      await page.keyboard.press('Home'); // Go to top of dropdown
-      await page.waitForTimeout(1000);
-      
-      // Alternative: try to scroll the dropdown container
+      await page.keyboard.press('Home');
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
       const dropdownMenu = searchContext.locator('[role="listbox"], .dx-dropdownlist, .dx-list, .dx-list-items').first();
       if (await dropdownMenu.count() > 0) {
         await dropdownMenu.evaluate(el => el.scrollTop = 0);
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       }
     }
-    
-    // Now try to find and click the matching option
+
     await matchingOption.waitFor({ state: 'visible', timeout: 5000 });
     console.log('📍 [STEP 6-7] Matching location option is now visible, clicking...');
     await matchingOption.click();
-    
-    // WAIT FOR LOCATION SELECTION TO BE APPLIED - 2 seconds (same as Contacts tab)
+
     console.log('⏳ [STEP 6-7] Waiting for location selection...');
-    await page.waitForTimeout(2000);
+    await waitForThenOptionalDelay(page, locationDropdown, { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
     
     // Take screenshot after location selection
     await takeScreenshot(page, 'location-selected.png', screenshotsDir);
@@ -127,6 +124,6 @@ export async function selectLocation(page, sessionDetails, screenshotsDir) {
     console.log(`⚠️ [STEP 6-7] Available options were checked, but none matched. Continuing without location selection...`);
     // Close dropdown if it's still open (press Escape)
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
   }
 }

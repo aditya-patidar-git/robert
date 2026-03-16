@@ -1,4 +1,4 @@
-import { takeScreenshot, cleanEmail } from '../utils.js';
+import { takeScreenshot, cleanEmail, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../utils.js';
 
 /**
  * Extract client details from the CRM contact details page
@@ -165,8 +165,9 @@ export async function extractClientDetails(iframe, page, screenshotsDir) {
     
     if (!firstNameLabel && !surnameLabel && !contactEmailLabel) {
       console.log('⚠️ [EXTRACT] Client details page not detected, waiting...');
-      await page.waitForTimeout(3000);
-      
+      await iframe.locator('.jqx_formSummaryTextLeft').first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
       // Re-check after waiting
       const firstNameLabel2 = await iframe.locator('.jqx_formSummaryTextLeft:has-text("First Names")').count() > 0;
       const surnameLabel2 = await iframe.locator('.jqx_formSummaryTextLeft:has-text("Surname")').count() > 0;

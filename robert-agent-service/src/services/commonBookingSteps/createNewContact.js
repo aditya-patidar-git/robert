@@ -1,4 +1,4 @@
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from './utils.js';
 
 /**
  * Step 6 (New client workflow): Click "New contact" button
@@ -40,10 +40,8 @@ export async function createNewContact(page, screenshotsDir, progressCallback = 
     }
     
     const eventBookingIframe = page.frameLocator('#eventNewBooking2_iframe');
-    
-    // Wait for iframe content to be ready (content may still be loading)
-    await page.waitForTimeout(2000);
-    
+    await waitForThenOptionalDelay(page, eventBookingIframe.locator('#btnBookNew, text=Contact choice, text=Choose one of these options').first(), { state: 'visible', timeout: 10000, delayMs: CRM_STABILITY_DELAY_MS }).catch(() => {});
+
     // Should see "Contact choice" or "3. Contact" page with two options
     console.log('🔍 [STEP 6] Looking for contact choice page indicators...');
     const contactChoiceIndicators = [
@@ -126,11 +124,9 @@ export async function createNewContact(page, screenshotsDir, progressCallback = 
     progressCallback?.({ message: 'Creating the contact.' });
     await newContactButton.waitFor({ state: 'visible', timeout: 5000 });
     await newContactButton.click();
-    
-    // Wait for "3. Contact" page to appear
-    console.log('⏳ [STEP 6] Waiting for "3. Contact" page to load...');
-    await page.waitForTimeout(3000);
-    
+
+    await waitForThenOptionalDelay(page, eventBookingIframe.locator('text=/3\\. Contact/i, text=First Names, text=Surname').first(), { state: 'visible', timeout: 10000, delayMs: CRM_STABILITY_DELAY_MS }).catch(() => {});
+
     // Verify we're on the contact details page
     const contactPageHeader = eventBookingIframe.locator('text=/3. Contact/i, heading:has-text("Contact")').first();
     await contactPageHeader.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {

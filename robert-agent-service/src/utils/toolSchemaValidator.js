@@ -231,6 +231,8 @@ const bookingStepFillContactDetailsSchema = z.object({
   houseNumber: z.string().optional(),
   nationalInsurance: z.string().optional(),
   drivingLicenceNumber: z.string().optional(),
+  drivingLicenceFirstHalf: z.string().optional(),
+  drivingLicenceSecondHalf: z.string().optional(),
   licenceHeld: z.string().optional(),
   addressConfirmed: z.boolean().optional(),
   correctedAddress: z.string().optional()

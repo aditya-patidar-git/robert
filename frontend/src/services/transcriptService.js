@@ -60,11 +60,12 @@ class TranscriptService extends BaseService {
    */
   async exportTranscripts(params = {}) {
     const { format = 'csv', id, ...filters } = params;
-    const response = await this.get('/export', { format, ...filters }, {
+    // Include id in query so single-transcript export works; backend uses id when present
+    const blob = await this.get('/export', { format, id, ...filters }, {
       responseType: 'blob',
-      normalizeResponse: false // Don't normalize blob responses
+      normalizeResponse: false
     });
-    return response.data;
+    return blob;
   }
 
   /**

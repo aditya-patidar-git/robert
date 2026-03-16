@@ -1,4 +1,4 @@
-import { takeScreenshot } from '../../utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../utils.js';
 
 /**
  * Helper function to extract time from data-start_time attribute.
@@ -216,25 +216,17 @@ export async function clickSessionAndSelectNewBooking(page, matchingEntry, scree
     await matchingEntry.click();
   }
   
-  // Wait for popup/dialog to appear
-  await page.waitForTimeout(2000);
-  
-  // Take screenshot after clicking
-  await takeScreenshot(page, 'session-clicked.png', screenshotsDir);
-  
-  // Find and click "New Booking" option in context menu
-  console.log('📝 [STEP 6-7] Looking for "New Booking" in context menu...');
-  
-  // Wait for context menu to appear (DevExtreme context menu)
+  // Wait for context menu to appear (condition-based instead of fixed 2s + 1.5s)
   console.log('⏳ [STEP 6-7] Waiting for context menu to appear...');
-  await page.waitForTimeout(1500);
-  
-  // Wait for context menu to be visible
   try {
-    await page.waitForSelector('.dx-context-menu[role="menu"], [role="menu"].dx-menu-base', { state: 'visible', timeout: 3000 });
+    await waitForThenOptionalDelay(page, '.dx-context-menu[role="menu"], [role="menu"].dx-menu-base', { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
   } catch (e) {
     console.log('⚠️ [STEP 6-7] Context menu visibility check timed out, continuing...');
   }
+
+  await takeScreenshot(page, 'session-clicked.png', screenshotsDir);
+
+  console.log('📝 [STEP 6-7] Looking for "New Booking" in context menu...');
   
   // Context menu is a DevExtreme menu with specific structure
   // Prioritize menu item selectors based on the HTML structure
@@ -293,20 +285,16 @@ export async function clickSessionAndSelectNewBooking(page, matchingEntry, scree
   if (newBookingOption && await newBookingOption.count() > 0) {
     console.log('✅ [STEP 6-7] Found "New Booking" option, clicking...');
     await newBookingOption.click();
-    
-    // WAIT FOR BOOKING PAGE TO LOAD - 4 seconds
-    console.log('⏳ [STEP 6-7] Waiting for booking page to load...');
-    await page.waitForTimeout(4000);
-    
-    // Wait for the booking form iframe to appear
+
+    // Wait for booking form iframe (condition-based instead of fixed 4s)
     console.log('🔍 [STEP 6-7] Waiting for booking form iframe to appear...');
     try {
-      await page.waitForSelector('#eventNewBooking2_iframe', { state: 'attached', timeout: 10000 });
+      await waitForThenOptionalDelay(page, '#eventNewBooking2_iframe', { state: 'attached', timeout: 10000, delayMs: CRM_STABILITY_DELAY_MS });
       console.log('✅ [STEP 6-7] Booking form iframe appeared');
     } catch (e) {
       console.log('⚠️ [STEP 6-7] Booking form iframe did not appear within timeout, continuing...');
     }
-    
+
     console.log('✅ [STEP 6-7] "New Booking" clicked successfully');
   } else {
     console.log('⚠️ [STEP 6-7] "New Booking" option not found in context menu');

@@ -4,8 +4,7 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { cleanEmail } from '../../utils.js';
-import { takeScreenshot } from '../../utils.js';
+import { cleanEmail, takeScreenshot, CRM_STABILITY_DELAY_MS } from '../../utils.js';
 
 /**
  * Select client from search results
@@ -37,9 +36,20 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
       : searchValue.toLowerCase().replace(/\s+/g, ' ').trim(); // name fragment
 
   const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
-  const rowCount = await resultRows.count();
+  let rowCount = await resultRows.count();
+
+  // Retry once after delay if grid was still empty (slow CRM render)
+  if (rowCount === 0) {
+    console.log('⏳ [STEP 9] No rows yet, waiting 1500ms for grid to populate...');
+    await page.waitForTimeout(1500);
+    rowCount = await resultRows.count();
+  }
 
   console.log(`🔍 [STEP 9] Found ${rowCount} search result rows, looking for ${searchType} matches...`);
+
+  if (rowCount === 0) {
+    throw new Error('No search results found. Please try again or use a different search value.');
+  }
 
   const matchingRows = [];
   for (let i = 0; i < rowCount; i++) {
@@ -77,7 +87,11 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
       }
     } else if (searchType === 'mobile') {
       try {
-        const phoneSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone:")) .jqx_inlineSummaryText span');
+        // Try exact "Phone:" first, then flexible "Phone" (matches "Phone (M):" etc.)
+        let phoneSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone:")) .jqx_inlineSummaryText span');
+        if (await phoneSpan.count() === 0) {
+          phoneSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone")) .jqx_inlineSummaryText span');
+        }
         if (await phoneSpan.count() > 0) {
           const phoneText = await phoneSpan.textContent();
           if (phoneText) {
@@ -303,7 +317,8 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
               }
             }
           }, rowIndex);
-          await page.waitForTimeout(2000); // Wait 2 seconds for navigation
+          await page.waitForSelector('#eventNewBooking2_iframe, #contactSelect_iframe', { state: 'attached', timeout: 10000 }).catch(() => {});
+          await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
           clientClicked = true;
           console.log(`✅ [STEP 9] Successfully clicked row ${rowIndex + 1} using JavaScript click`);
         } catch (jsErr) {
@@ -360,8 +375,9 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
     // Only wait for navigation if we're not already on the client details page
     if (clientClicked) {
       console.log('⏳ [STEP 9] Waiting for client page to load...');
-      await page.waitForTimeout(4000);
-      await page.waitForLoadState('networkidle');
+      const frame = page.frameLocator(iframeId);
+      await frame.locator('text=First Names, text=Surname, text=Contact e-mail').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(200); // CRM stability
       
       // Take screenshot after clicking client
       await takeScreenshot(page, 'client-selected.png', screenshotsDir);
@@ -405,10 +421,8 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
   // Take screenshot of Contact Details page before clicking Next
   await takeScreenshot(page, 'contact-details-page.png', screenshotsDir);
   
-  // After client selection, the Contact Details form is likely in eventNewBooking2_iframe
-  // Wait a bit more for the form to fully render
-  console.log('⏳ [STEP 9] Waiting for Contact Details form to fully render...');
-  await page.waitForTimeout(3000);
+  await iframe.locator('#diaryNewCourseBookingWiz_nextBtn, text=First Names, .jqx_formSummaryTextLeft').first().waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
   
   return true;
 }

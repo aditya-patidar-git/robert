@@ -77,6 +77,8 @@ function resolveLicenceHeldLabel(optionValue) {
     'full': 'Full UK car licence',
     'full licence': 'Full UK car licence',
     'full uk car': 'Full UK car licence',
+    'full uk driving licence': 'Full UK car licence',
+    'full uk driving license': 'Full UK car licence',
     'full car': 'Full UK car licence',
     'full uk manual bike': 'Full UK manual bike licence',
     'full manual bike': 'Full UK manual bike licence',

@@ -51,7 +51,7 @@ export class SearchClientStep extends BaseStepTool {
     if (result.success === false && result.error && String(result.error).includes('is required for client search')) {
       return {
         ...result,
-        instruction: `CRITICAL: You must call booking_step_search_client with the search key the caller just gave. If they said a phone number, pass it as customerMobile (digits only, e.g. 11 digits for UK). If they said an email, pass it as customerEmail. If they said their name, pass it as customerName. Do NOT ask them to repeat if they already provided it. Do not ask irrelevant questions (e.g. whether the number is "continuous digits" or similar). Call the tool now with that parameter from their last message.`
+        instruction: `CRITICAL: You must call booking_step_search_client with the search key the caller just gave. If they said a phone number, pass it as customerMobile (digits only, e.g. 11 digits for UK—strip spaces and dashes). If they said an email, pass it as customerEmail. If they said their name, pass it as customerName. Do NOT say you will "enter it as digits" or "do that right now" without calling the tool in the same turn. Do NOT ask them to repeat if they already provided it. Call the tool now with that parameter from their last message.`
       };
     }
 

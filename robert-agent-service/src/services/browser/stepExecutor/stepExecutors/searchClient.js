@@ -6,6 +6,12 @@
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
 
+/** Strip non-digits from mobile value; format validation is handled by findAndVerifyClient/validateUKMobile */
+function normalizeMobileToDigits(value) {
+  if (value == null) return '';
+  return String(value).replace(/\D/g, '');
+}
+
 /**
  * Execute searchClient step
  * @param {Object} page - Playwright page object
@@ -22,10 +28,17 @@ export async function executeSearchClient(page, args, sessionState, screenshotsD
   let searchType = null;
   let searchValue = null;
   let email = null;
-  
+
   if (args.customerMobile || args.customerPhone || args.phoneNumber) {
     searchType = 'mobile';
-    searchValue = args.customerMobile || args.customerPhone || args.phoneNumber;
+    const raw = args.customerMobile || args.customerPhone || args.phoneNumber;
+    searchValue = normalizeMobileToDigits(raw);
+    if (!searchValue) {
+      return {
+        success: false,
+        error: 'Either customerMobile, customerEmail, or customerName is required for client search'
+      };
+    }
   } else if (args.customerEmail) {
     searchType = 'email';
     searchValue = args.customerEmail;

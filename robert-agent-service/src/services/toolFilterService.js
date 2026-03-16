@@ -206,6 +206,7 @@ export function getToolNamesForPhase(phase) {
  * @param {boolean} [additionalContext.clientVerified] - Whether client identity is verified
  * @param {boolean} [additionalContext.adminAccess] - Whether admin operations are allowed
  * @param {boolean} [additionalContext.legacyMode] - Whether to include legacy tools
+ * @param {boolean} [additionalContext.postVerificationWaitingConfirmation] - When true and phase is booking_existing_client, exclude booking_step_search_client so model calls booking_step_select_session after user says "yes"
  * @returns {string[]|null} Array of tool names, or null for full access
  */
 export function getToolsForContext(phase, additionalContext = {}) {
@@ -216,7 +217,12 @@ export function getToolsForContext(phase, additionalContext = {}) {
     return null;
   }
   
-  const toolSet = new Set(baseTools);
+  let toolsList = baseTools;
+  if (phase === 'booking_existing_client' && additionalContext.postVerificationWaitingConfirmation) {
+    toolsList = baseTools.filter(t => t !== 'booking_step_search_client');
+  }
+  
+  const toolSet = new Set(toolsList);
   const includeSearchTools = !SEARCH_TOOLS_DISABLED_PHASES.has(phase);
   ALWAYS_AVAILABLE_TOOLS.forEach(tool => {
     if (includeSearchTools || (tool !== 'file_search' && tool !== 'web_search')) {
