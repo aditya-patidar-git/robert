@@ -12,9 +12,10 @@ import { getTermsText, validateTermsAcceptance } from './termsUtils.js';
  * @param {boolean} confirmed - Whether client has confirmed the email/phone number (default: false)
  * @param {boolean|undefined} termsAcceptedBeforeSend - Whether client has accepted terms and conditions BEFORE sending payment request (MANDATORY)
  * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates (holding; never sets waitingForUser)
+ * @param {AbortSignal|null} abortSignal - Optional; when aborted (e.g. call ended), exit immediately
  * @returns {Promise<{success: boolean, paymentCompleted: boolean, requiresConfirmation?: boolean, requiresClientEmail?: boolean, requiresClientMobile?: boolean, requiresTermsBeforeSend?: boolean, termsText?: string, termsNotAccepted?: boolean, requiresRetry?: boolean, emailAddress?: string, phoneNumber?: string, error?: string, message?: string, instruction?: string}>}
  */
-export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null, confirmed = false, termsAcceptedBeforeSend = undefined, progressCallback = null) {
+export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, clientEmail = null, clientMobile = null, confirmed = false, termsAcceptedBeforeSend = undefined, progressCallback = null, abortSignal = null) {
   try {
     // ============================================
     // CRITICAL: MANDATORY TERMS CHECK - FIRST THING IN FUNCTION
@@ -66,6 +67,11 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     }
     
     console.log('✅ [PAYMENT_REQUEST] Terms accepted, proceeding with payment request flow...');
+    if (abortSignal?.aborted) {
+      const e = new Error('Aborted');
+      e.name = 'AbortError';
+      throw e;
+    }
     console.log(`💳 [PAYMENT_REQUEST] Sending payment request via ${deliveryMethod}...`);
     progressCallback?.({ message: 'Opening the payment form.' });
 
@@ -101,6 +107,11 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     // First, try to find contactSend3DSecureRequest_iframe (payment request page)
     // INCREASED retries and timeout since this is critical
     for (let i = 0; i < 10; i++) {
+      if (abortSignal?.aborted) {
+        const e = new Error('Aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
       paymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
       if (paymentRequestIframeExists) {
         try {
@@ -133,6 +144,11 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
       console.log('⚠️ [PAYMENT_REQUEST] Checking booking iframe as fallback...');
       
       for (let i = 0; i < 3; i++) {
+        if (abortSignal?.aborted) {
+          const e = new Error('Aborted');
+          e.name = 'AbortError';
+          throw e;
+        }
         eventBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
         if (eventBookingIframeExists) {
           try {
@@ -167,6 +183,11 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     let modalFound = false;
     
     for (let attempt = 0; attempt < 5; attempt++) { // Increased retries from 3 to 5
+      if (abortSignal?.aborted) {
+        const e = new Error('Aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
       try {
         // Try multiple indicators that the payment request page has loaded
         const indicators = [
@@ -809,6 +830,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     };
     
   } catch (error) {
+    if (error?.name === 'AbortError') throw error;
     console.error('❌ [PAYMENT_REQUEST] Error in sendPaymentRequest:', error);
     await takeScreenshot(page, 'payment-request-error.png', screenshotsDir);
     return {

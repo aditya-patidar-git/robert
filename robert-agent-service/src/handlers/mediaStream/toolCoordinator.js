@@ -14,6 +14,7 @@ import { AFTER_LOGIN_MESSAGE } from '../../config/cancellationPhrases.js';
 import toolExecutionService from '../../services/toolExecutionService.js';
 import progressIndicatorService from '../../services/progressIndicatorService.js';
 import configManager from '../../agent/configManager.js';
+import toolExecutor from '../../tools/index.js';
 
 /**
  * Tool Coordinator
@@ -367,16 +368,26 @@ export class ToolCoordinator {
         hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent,
         overrideWorkflowPhase
       });
-      if (toolChoice === 'auto') {
+      const sessionUpdate = { tool_choice: toolChoice };
+      if (toolChoice === 'auto' && workflowPhase) {
+        const toolContext = {
+          workflowPhase,
+          clientVerified: conversations[this.state.callSid]?.kba?.verified || false,
+          postVerificationWaitingConfirmation: this.state.postVerificationWaitingConfirmation || false
+        };
+        sessionUpdate.tools = toolExecutor.getFilteredToolDefinitions(toolContext);
+        if (this.state.postVerificationWaitingConfirmation) {
+          console.log(`📤 [${this.state.callSid}] Sending session.update - tool_choice: auto, tools exclude search_client (postVerificationWaitingConfirmation)`);
+        }
+      }
+      if (toolChoice === 'auto' && !sessionUpdate.tools) {
         console.log(`📤 [${this.state.callSid}] Sending session.update - tool_choice: auto for phase ${workflowPhase ?? 'unknown'}`);
-      } else {
+      } else if (toolChoice !== 'auto') {
         console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
       }
       this.openaiWs.send(JSON.stringify({
         type: 'session.update',
-        session: {
-          tool_choice: toolChoice
-        }
+        session: sessionUpdate
       }));
 
       if (isInitialGreeting) {

@@ -256,7 +256,8 @@ export class BaseStepTool {
         ...stepArgs,
         courseType,
         workflowType: finalWorkflowType,
-        callSid // Include callSid for steps that need it (e.g., searchClient)
+        callSid, // Include callSid for steps that need it (e.g., searchClient)
+        abortSignal: callContext.callAbortSignal ?? undefined
       };
 
       if (callContext.callAbortSignal?.aborted) {

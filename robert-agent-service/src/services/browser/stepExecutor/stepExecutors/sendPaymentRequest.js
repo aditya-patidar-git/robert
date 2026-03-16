@@ -35,7 +35,7 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     
     // Step 1: Select "Send a payment request" option
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
-    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback);
+    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
     
     console.log('⏳ [SEND_PAYMENT_REQUEST] Waiting for payment request link page...');
     try {
@@ -107,7 +107,8 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     clientMobile,
     effectiveConfirmed,
     termsAcceptedBeforeSend,
-    progressCallback
+    progressCallback,
+    args.abortSignal
   );
 
   if (result.requiresConfirmation && callSid) {

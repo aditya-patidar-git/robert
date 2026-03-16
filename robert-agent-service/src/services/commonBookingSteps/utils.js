@@ -10,6 +10,9 @@ export const CRM_IFRAME_TIMEOUT_MS = 15000;
 /** Post-wait stability delay (ms). Tune here if CRM needs a longer buffer; use 100 to minimize step length. */
 export const CRM_STABILITY_DELAY_MS = 100;
 
+/** Extra delay (ms) after search results grid is visible so content is fully rendered before we read rows. */
+export const CRM_RESULTS_STABILITY_MS = 350;
+
 /**
  * Wait for a selector or locator to be ready, then optionally apply a short stability delay.
  * Use this instead of fixed waitForTimeout after waitForSelector/locator.waitFor to shorten step duration.

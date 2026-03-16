@@ -36,9 +36,20 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
       : searchValue.toLowerCase().replace(/\s+/g, ' ').trim(); // name fragment
 
   const resultRows = iframe.locator('table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]');
-  const rowCount = await resultRows.count();
+  let rowCount = await resultRows.count();
+
+  // Retry once after delay if grid was still empty (slow CRM render)
+  if (rowCount === 0) {
+    console.log('⏳ [STEP 9] No rows yet, waiting 1500ms for grid to populate...');
+    await page.waitForTimeout(1500);
+    rowCount = await resultRows.count();
+  }
 
   console.log(`🔍 [STEP 9] Found ${rowCount} search result rows, looking for ${searchType} matches...`);
+
+  if (rowCount === 0) {
+    throw new Error('No search results found. Please try again or use a different search value.');
+  }
 
   const matchingRows = [];
   for (let i = 0; i < rowCount; i++) {
@@ -76,7 +87,11 @@ export async function selectClient(page, iframe, iframeId, searchValue, searchTy
       }
     } else if (searchType === 'mobile') {
       try {
-        const phoneSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone:")) .jqx_inlineSummaryText span');
+        // Try exact "Phone:" first, then flexible "Phone" (matches "Phone (M):" etc.)
+        let phoneSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone:")) .jqx_inlineSummaryText span');
+        if (await phoneSpan.count() === 0) {
+          phoneSpan = row.locator('.jqx_inlineSummary:has(.jqx_inlineSummaryTitle:has-text("Phone")) .jqx_inlineSummaryText span');
+        }
         if (await phoneSpan.count() > 0) {
           const phoneText = await phoneSpan.textContent();
           if (phoneText) {

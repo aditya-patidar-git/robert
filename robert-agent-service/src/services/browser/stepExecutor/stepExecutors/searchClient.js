@@ -6,14 +6,10 @@
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
 
-/** Normalize UK mobile for search: 11-digit 07xxxxxxxxx format expected by findAndVerifyClient/validateUKMobile */
+/** Strip non-digits from mobile value; format validation is handled by findAndVerifyClient/validateUKMobile */
 function normalizeMobileToDigits(value) {
   if (value == null) return '';
-  const digits = String(value).replace(/\D/g, '');
-  if (digits.length === 11 && digits.startsWith('0')) return digits;
-  if (digits.length === 12 && digits.startsWith('44')) return '0' + digits.slice(2);
-  if (digits.length === 10 && digits.startsWith('7')) return '0' + digits;
-  return digits;
+  return String(value).replace(/\D/g, '');
 }
 
 /**

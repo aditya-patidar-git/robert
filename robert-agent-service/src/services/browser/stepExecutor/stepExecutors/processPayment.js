@@ -50,7 +50,7 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     // Step 1: Select "Send a payment request" option (updated strategy)
     progressCallback?.({ message: 'Selecting payment option.' });
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
-    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback);
+    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
     screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', screenshotsDir));
 
     console.log('🔍 [PAYMENT] Waiting for payment request link page...');
@@ -140,7 +140,9 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     clientEmail,
     clientMobile,
     false, // confirmed
-    termsAccepted // termsAcceptedBeforeSend: undefined = return terms; true = proceed
+    termsAccepted, // termsAcceptedBeforeSend: undefined = return terms; true = proceed
+    progressCallback,
+    args.abortSignal
   );
 
   // When terms not yet accepted, return requiresTermsBeforeSend + termsText so agent can read terms and call again with termsAccepted: true

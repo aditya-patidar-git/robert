@@ -6,9 +6,15 @@ import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {string} paymentType - Payment type: 'now' (default) for "Take a payment now", 'none' for "No payment required"
  * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
+ * @param {AbortSignal|null} abortSignal - Optional; when aborted (e.g. call ended), exit immediately
  */
-export async function selectPaymentOption(page, screenshotsDir, paymentType = 'now', progressCallback = null) {
+export async function selectPaymentOption(page, screenshotsDir, paymentType = 'now', progressCallback = null, abortSignal = null) {
   try {
+    if (abortSignal?.aborted) {
+      const e = new Error('Aborted');
+      e.name = 'AbortError';
+      throw e;
+    }
     console.log(`💳 [STEP 10] Selecting payment option (type: ${paymentType})...`);
     
     progressCallback?.({ message: 'Waiting for payment page.' });
@@ -42,6 +48,11 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
     // Wait for dropdown to be visible with increased timeout and retry logic
     let dropdownFound = false;
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (abortSignal?.aborted) {
+        const e = new Error('Aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
       try {
         await paymentDropdown.waitFor({ state: 'visible', timeout: 15000 }); // Increased from 10000 to 15000
         dropdownFound = true;
@@ -81,8 +92,11 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
     }
     
     progressCallback?.({ message: 'Waiting for payment dropdown.' });
-    console.log('⏳ [STEP 10] Waiting for payment dropdown menu to appear...');
-    await waitForThenOptionalDelay(page, searchContext.locator('div.dx-list-item[role="option"]').first(), { state: 'visible', timeout: 5000, delayMs: CRM_STABILITY_DELAY_MS });
+    // Wait for the target option by text so we don't rely on the first (possibly hidden) option
+    const targetOptionText = paymentType === 'none' ? 'No payment required' : paymentType === 'request' ? 'Send a payment request' : 'Take a payment now';
+    const targetOptionLocator = searchContext.locator('div.dx-list-item[role="option"]').filter({ hasText: new RegExp(targetOptionText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }).first();
+    console.log(`⏳ [STEP 10] Waiting for payment option "${targetOptionText}" to appear...`);
+    await waitForThenOptionalDelay(page, targetOptionLocator, { state: 'visible', timeout: 8000, delayMs: CRM_STABILITY_DELAY_MS });
 
     await takeScreenshot(page, 'payment-dropdown-opened.png', screenshotsDir);
 
@@ -90,18 +104,14 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
     const optionCount = await paymentOptions.count();
     console.log(`📊 [STEP 10] Found ${optionCount} payment options in dropdown`);
     
-    // Determine target option text based on paymentType
     let matchingOption = null;
-    let targetOptionText;
-    if (paymentType === 'none') {
-      targetOptionText = 'No payment required';
-    } else if (paymentType === 'request') {
-      targetOptionText = 'Send a payment request';
-    } else {
-      targetOptionText = 'Take a payment now';
-    }
     
     for (let i = 0; i < optionCount; i++) {
+      if (abortSignal?.aborted) {
+        const e = new Error('Aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
       const option = paymentOptions.nth(i);
       const optionText = await option.locator('.dx-item-content.dx-list-item-content').textContent();
       const optionTextTrimmed = optionText ? optionText.trim() : '';
@@ -189,6 +199,7 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
     }
 
   } catch (error) {
+    if (error?.name === 'AbortError') throw error;
     console.error('Error in selectPaymentOption:', error);
     await takeScreenshot(page, 'payment-selection-error.png', screenshotsDir);
     // Don't throw error - allow workflow to continue even if payment selection fails

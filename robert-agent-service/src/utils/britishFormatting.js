@@ -117,6 +117,23 @@ export function formatNationalInsurance(value) {
 }
 
 /**
+ * Validate UK National Insurance number (2 letters, 6 digits, 1 letter, e.g. AB123456C).
+ * Use before filling forms to reject invalid format and ask caller to repeat.
+ * @param {string} value - NI number as spoken or entered
+ * @returns {{ valid: boolean, formatted?: string, message?: string }}
+ */
+export function validateNationalInsurance(value) {
+  const formatted = formatNationalInsurance(value);
+  const cleaned = (value || '').trim().replace(/[\s\-]/g, '').toUpperCase();
+  const valid = /^[A-Z]{2}\d{6}[A-Z]$/.test(cleaned);
+  const message = 'UK National Insurance: 2 letters, 6 digits, 1 letter (e.g. AB123456C).';
+  if (valid) {
+    return { valid: true, formatted };
+  }
+  return { valid: false, message };
+}
+
+/**
  * Format UK driving licence number for form input (no spaces).
  * Removes spaces and dashes, uppercases letters. Many forms expect no spaces.
  * @param {string} value - Driving licence number as spoken or entered
@@ -131,6 +148,73 @@ export function formatDrivingLicenceNumber(value) {
   return trimmed.replace(/[\s\-]/g, '').toUpperCase();
 }
 
+/** New UK photocard: 5 digits, 3 letters, 5 digits, 2 letters (15 chars). */
+const UK_DRIVING_LICENCE_NEW = /^\d{5}[A-Z]{3}\d{5}[A-Z]{2}$/;
+/** Old UK format: 5 letters, 5 digits, 6 alphanumeric (16 chars), e.g. CARTD940315D9A8F. */
+const UK_DRIVING_LICENCE_OLD = /^[A-Z]{5}\d{5}[A-Z0-9]{6}$/;
+
+/**
+ * Validate UK driving licence number (new 15-char photocard or old 16-char format).
+ * Use before filling forms to avoid CRM/DVLA "Value is invalid" errors.
+ * @param {string} value - Driving licence number as spoken or entered
+ * @returns {{ valid: boolean, formatted?: string, message?: string }}
+ */
+export function validateDrivingLicenceNumber(value) {
+  const formatted = formatDrivingLicenceNumber(value);
+  if (!formatted) {
+    return { valid: false, message: 'UK driving licence: 16 characters (e.g. CARTD940315D9A8F) or 15 (5 digits, 3 letters, 5 digits, 2 letters), no spaces.' };
+  }
+  const valid = UK_DRIVING_LICENCE_NEW.test(formatted) || UK_DRIVING_LICENCE_OLD.test(formatted);
+  const message = 'UK driving licence: 16 characters (e.g. CARTD940315D9A8F) or 15 (5 digits, 3 letters, 5 digits, 2 letters), no spaces.';
+  if (valid) {
+    return { valid: true, formatted };
+  }
+  return { valid: false, message };
+}
+
+/** First half: 8 chars — new style 5 digits + 3 letters, or old style 5 letters + 3 digits. */
+const UK_DRIVING_LICENCE_FIRST_HALF = /^(\d{5}[A-Z]{3}|[A-Z]{5}\d{3})$/;
+/** Second half: new 7 chars (5 digits + 2 letters) or old 8 chars (3 digits + 5 alphanumeric). */
+const UK_DRIVING_LICENCE_SECOND_HALF = /^(\d{5}[A-Z]{2}|\d{3}[A-Z0-9]{5})$/;
+
+/**
+ * Validate first half of UK driving licence (8 chars).
+ * New format: 5 digits + 3 letters (e.g. 12345ABC). Old format: 5 letters + 3 digits (e.g. CARTD940).
+ * @param {string} value - First half as spoken or entered
+ * @returns {{ valid: boolean, formatted?: string, message?: string }}
+ */
+export function validateDrivingLicenceFirstHalf(value) {
+  const formatted = formatDrivingLicenceNumber(value);
+  if (!formatted || formatted.length !== 8) {
+    return { valid: false, message: 'First half: 8 characters — either 5 digits then 3 letters (e.g. 12345ABC) or 5 letters then 3 digits (e.g. CARTD940), no spaces.' };
+  }
+  const valid = UK_DRIVING_LICENCE_FIRST_HALF.test(formatted);
+  const message = 'First half: 8 characters — either 5 digits then 3 letters (e.g. 12345ABC) or 5 letters then 3 digits (e.g. CARTD940), no spaces.';
+  if (valid) {
+    return { valid: true, formatted };
+  }
+  return { valid: false, message };
+}
+
+/**
+ * Validate second half of UK driving licence (7 or 8 chars).
+ * New format: 7 chars = 5 digits + 2 letters (e.g. 67890CD). Old format: 8 chars = 3 digits + 5 alphanumeric (e.g. 315D9A8F).
+ * @param {string} value - Second half as spoken or entered
+ * @returns {{ valid: boolean, formatted?: string, message?: string }}
+ */
+export function validateDrivingLicenceSecondHalf(value) {
+  const formatted = formatDrivingLicenceNumber(value);
+  if (!formatted || (formatted.length !== 7 && formatted.length !== 8)) {
+    return { valid: false, message: 'Second half: 7 characters (5 digits, 2 letters, e.g. 67890CD) or 8 (3 digits then 5 letters/numbers, e.g. 315D9A8F), no spaces.' };
+  }
+  const valid = UK_DRIVING_LICENCE_SECOND_HALF.test(formatted);
+  const message = 'Second half: 7 characters (5 digits, 2 letters) or 8 (3 digits then 5 letters/numbers), no spaces.';
+  if (valid) {
+    return { valid: true, formatted };
+  }
+  return { valid: false, message };
+}
+
 export default {
   formatDate,
   formatTime,
@@ -138,6 +222,10 @@ export default {
   formatPostcode,
   formatPhoneNumber,
   formatNationalInsurance,
-  formatDrivingLicenceNumber
+  formatDrivingLicenceNumber,
+  validateNationalInsurance,
+  validateDrivingLicenceNumber,
+  validateDrivingLicenceFirstHalf,
+  validateDrivingLicenceSecondHalf
 };
 

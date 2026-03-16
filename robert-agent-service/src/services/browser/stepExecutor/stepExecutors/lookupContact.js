@@ -7,6 +7,8 @@
 
 import { conversations } from '../../../../shared/state.js';
 import * as commonSteps from '../../../commonBookingSteps/index.js';
+import { getStepNumber, STEP_NAMES } from '../../stepConfiguration.js';
+import sessionStateManager from '../../sessionStateManager.js';
 
 /**
  * Normalize UK mobile for search (digits only, 0 or 44 prefix)
@@ -68,9 +70,16 @@ export async function executeLookupContact(page, args, sessionState, screenshots
 
   const postcode = args.postcode || sessionState.postcode || clientDetails?.postcode;
 
+  // Only skip "already on page" when we have actually completed this step in this flow (currentStep >= lookup step)
+  const courseType = conversation?.bookingSession?.courseType || sessionState?.courseType;
+  const workflowType = conversation?.bookingSession?.workflowType || sessionState?.workflowType || 'existing';
+  const lookupStepNumber = courseType && workflowType ? getStepNumber(courseType, workflowType, STEP_NAMES.LOOKUP_CONTACT) : null;
+  const currentStep = callSid ? sessionStateManager.getCurrentStep(callSid) : (sessionState?.currentStep ?? null);
+  const allowSkipIfAlreadyOnPage = (currentStep != null && lookupStepNumber != null && currentStep >= lookupStepNumber);
+
   // Do not click Next here: stay on client details so fill_contact_details can check required fields
   // (e.g. National Insurance) and only then click Next to payment.
-  await commonSteps.lookupContactAndWait(page, searchValue, searchType, screenshotsDir, postcode, true, progressCallback);
+  await commonSteps.lookupContactAndWait(page, searchValue, searchType, screenshotsDir, postcode, true, allowSkipIfAlreadyOnPage, progressCallback);
 
   return {
     success: true,

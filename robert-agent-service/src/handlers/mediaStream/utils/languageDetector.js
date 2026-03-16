@@ -54,21 +54,21 @@ export class LanguageDetector {
       
       // Get updated config with new language (respects database config priority)
       const config = configManager.getConfigForNumber(this.state.phoneNumber, detectedLanguageCode);
-      // ISO-639-1 for transcription API (e.g. en-GB -> en)
-      const iso6391 = detectedLanguageCode.length === 2 ? detectedLanguageCode : (detectedLanguageCode.split('-')[0] || 'en');
+      // Transcript always in English (Option A): Realtime API transcribes with English bias; agent can still speak other languages via voice/instructions
+      const transcriptionLanguage = 'en';
       
-      // Update OpenAI session with new language, voice, and input transcription language (keeps transcripts in selected language)
+      // Update OpenAI session with new language, voice; input transcription always English for consistent stored transcript
       this.state.sendToOpenAI({
         type: 'session.update',
         session: {
           modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
           voice: config.voice.id,
           instructions: config.instructions,
-          input_audio_transcription: { model: 'gpt-4o-transcribe', language: iso6391 }
+          input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLanguage }
         }
       }, { priority: 'high' });
       
-      console.log(`🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${config.voice.id}, transcription language: ${iso6391}`);
+      console.log(`🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${config.voice.id}, transcription language: ${transcriptionLanguage}`);
       console.log(`✅ [${this.state.callSid}] Language preference marked as selected - can proceed to business questions`);
       return true;
     } catch (error) {
@@ -94,70 +94,52 @@ export class LanguageDetector {
     if (waitingForLanguage && !languageSelected) {
       const normalizedTranscript = transcript.toLowerCase().trim();
 
-      // Recognised but unsupported languages: agent will say "not available" and continue in English
-      const unsupportedLanguagePhrases = {
-        'sinhala': 'Sinhala',
-        'sinhalese': 'Sinhala',
-        'tamil': 'Tamil',
-        'hindi': 'Hindi',
-        'bengali': 'Bengali',
-        'urdu': 'Urdu',
-        'punjabi': 'Punjabi',
-        'gujarati': 'Gujarati',
-        'marathi': 'Marathi'
-      };
-      for (const [phrase, displayName] of Object.entries(unsupportedLanguagePhrases)) {
-        if (normalizedTranscript.includes(phrase)) {
-          console.log(`🌐 [${this.state.callSid}] Unsupported language requested: ${displayName} - will respond that it is not available and continue in English`);
-          const { conversations } = await import('../../../shared/state.js');
-          this.state.languagePreferenceState.selected = true;
-          this.state.languagePreferenceState.language = 'en';
-          this.state.languagePreferenceState.selectedAt = new Date();
-          this.state.waitingForLanguage = false;
-          this.state.unsupportedLanguageRequested = displayName;
-          if (conversations[this.state.callSid]) {
-            conversations[this.state.callSid].language = 'en';
-            if (!conversations[this.state.callSid].languagePreferenceState) {
-              conversations[this.state.callSid].languagePreferenceState = {};
-            }
-            conversations[this.state.callSid].languagePreferenceState.selected = true;
-            conversations[this.state.callSid].languagePreferenceState.language = 'en';
-            conversations[this.state.callSid].languagePreferenceState.selectedAt = new Date();
-            conversations[this.state.callSid].waitingForLanguage = false;
-          }
-          return;
-        }
-      }
+      // Ensure allowed languages are loaded from DB (languageMappings collection)
+      await multilingualService.loadLanguageMappings();
 
-      // Check for explicit language names in transcript (supported languages)
-      const languageNameMap = {
-        'english': 'en',
-        'eng': 'en',
-        'french': 'fr',
-        'français': 'fr',
-        'francais': 'fr',
-        'german': 'de',
-        'deutsch': 'de',
-        'spanish': 'es',
-        'español': 'es',
-        'espanol': 'es',
-        'italian': 'it',
-        'italiano': 'it',
-        'portuguese': 'pt',
-        'português': 'pt',
-        'portugues': 'pt',
-        'dutch': 'nl',
-        'nederlands': 'nl',
-        'polish': 'pl',
-        'polski': 'pl'
+      // Phrase -> ISO 639-1 code: used to recognise requested language; allowed = from DB (isValidLanguage)
+      const phraseToCode = {
+        'english': 'en', 'eng': 'en',
+        'french': 'fr', 'français': 'fr', 'francais': 'fr',
+        'german': 'de', 'deutsch': 'de',
+        'spanish': 'es', 'español': 'es', 'espanol': 'es',
+        'italian': 'it', 'italiano': 'it',
+        'portuguese': 'pt', 'português': 'pt', 'portugues': 'pt',
+        'dutch': 'nl', 'nederlands': 'nl',
+        'polish': 'pl', 'polski': 'pl',
+        'sinhala': 'si', 'sinhalese': 'si',
+        'tamil': 'ta', 'hindi': 'hi', 'bengali': 'bn', 'urdu': 'ur',
+        'punjabi': 'pa', 'gujarati': 'gu', 'marathi': 'mr'
       };
 
-      for (const [name, code] of Object.entries(languageNameMap)) {
-        if (normalizedTranscript.includes(name)) {
-          console.log(`🌐 [${this.state.callSid}] Explicit language preference detected: ${name} (${code}) from transcript: "${transcript.substring(0, 50)}..."`);
+      for (const [phrase, code] of Object.entries(phraseToCode)) {
+        if (!normalizedTranscript.includes(phrase)) continue;
+        if (multilingualService.isValidLanguage(code)) {
+          console.log(`🌐 [${this.state.callSid}] Explicit language preference detected: ${phrase} (${code}) from transcript: "${transcript.substring(0, 50)}..."`);
           await this.switchLanguage(code);
           return;
         }
+        // Requested language not in languageMappings: say not supported and continue in English
+        const displayName = phrase.charAt(0).toUpperCase() + phrase.slice(1);
+        console.log(`🌐 [${this.state.callSid}] Language not supported (not in languageMappings): ${displayName} - will say not available and continue in English`);
+        const { conversations } = await import('../../../shared/state.js');
+        this.state.languagePreferenceState.selected = true;
+        this.state.languagePreferenceState.language = 'en';
+        this.state.languagePreferenceState.selectedAt = new Date();
+        this.state.waitingForLanguage = false;
+        this.state.unsupportedLanguageRequested = displayName;
+        if (conversations[this.state.callSid]) {
+          conversations[this.state.callSid].language = 'en';
+          if (!conversations[this.state.callSid].languagePreferenceState) {
+            conversations[this.state.callSid].languagePreferenceState = {};
+          }
+          conversations[this.state.callSid].languagePreferenceState.selected = true;
+          conversations[this.state.callSid].languagePreferenceState.language = 'en';
+          conversations[this.state.callSid].languagePreferenceState.selectedAt = new Date();
+          conversations[this.state.callSid].waitingForLanguage = false;
+        }
+        await this.switchLanguage('en');
+        return;
       }
 
       // If no explicit language name, detect from language patterns

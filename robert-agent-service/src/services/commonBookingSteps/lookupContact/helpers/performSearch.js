@@ -4,7 +4,12 @@
  * Preserves all Playwright timing and state checks
  */
 
-import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../utils.js';
+import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS, CRM_RESULTS_STABILITY_MS } from '../../utils.js';
+
+/** Same row selector as selectClient - wait until at least one row exists before proceeding. */
+const RESULTS_GRID_ROW_SELECTOR = 'table.dx-datagrid-table tr.dx-row.dx-data-row[role="row"]';
+const RESULTS_READY_TIMEOUT_MS = 4000;
+const RESULTS_POLL_INTERVAL_MS = 350;
 
 /**
  * Perform contact search (Smart search supports telephone, email, or name per CRM doc)
@@ -138,6 +143,22 @@ export async function performSearch(page, iframe, iframeId, searchValue, screens
   }
 
   await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+
+  // CRITICAL: Wait until results grid has at least one data row (same selector as selectClient)
+  // so we don't call selectClient before the grid has rendered and return "no matches" early.
+  const resultRowsLocator = iframe.locator(RESULTS_GRID_ROW_SELECTOR);
+  const deadline = Date.now() + RESULTS_READY_TIMEOUT_MS;
+  let rowCount = await resultRowsLocator.count();
+  while (rowCount === 0 && Date.now() < deadline) {
+    await page.waitForTimeout(RESULTS_POLL_INTERVAL_MS);
+    rowCount = await resultRowsLocator.count();
+  }
+  if (rowCount === 0) {
+    console.log('⚠️ [STEP 9] No result rows visible after waiting - selectClient may still retry once');
+  } else {
+    console.log(`✅ [STEP 9] Results grid ready: ${rowCount} row(s) visible`);
+  }
+  await page.waitForTimeout(CRM_RESULTS_STABILITY_MS);
 
   // Take screenshot after search
   await takeScreenshot(page, 'contact-search-results.png', screenshotsDir);

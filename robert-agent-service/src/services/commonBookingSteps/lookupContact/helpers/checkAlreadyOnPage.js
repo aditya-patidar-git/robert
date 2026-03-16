@@ -12,9 +12,14 @@ import { takeScreenshot, CRM_STABILITY_DELAY_MS } from '../../utils.js';
  * @param {string} identifier - Optional email for DOM check (empty when search was by mobile)
  * @param {string} screenshotsDir - Screenshots directory
  * @param {boolean} skipNextClick - If true, skip clicking Next button
+ * @param {boolean} [allowSkipIfAlreadyOnPage=true] - If false, never skip (run full lookup). Use when we have not yet completed this step.
  * @returns {Promise<boolean>} True if already on page and handled, false otherwise
  */
-export async function checkAlreadyOnPage(page, identifier, screenshotsDir, skipNextClick) {
+export async function checkAlreadyOnPage(page, identifier, screenshotsDir, skipNextClick, allowSkipIfAlreadyOnPage = true) {
+  if (!allowSkipIfAlreadyOnPage) {
+    console.log('🔍 [STEP 9] Skipping "already on page" check (allowSkipIfAlreadyOnPage=false) - running full lookup.');
+    return false;
+  }
   console.log('🔍 [STEP 9] Checking if already on client details page...');
   await page.waitForSelector('#eventNewBooking2_iframe, #contactSelect_iframe', { state: 'attached', timeout: 5000 }).catch(() => {});
 

@@ -112,6 +112,8 @@ export class CallStateManager {
     this.toolExecutionCompleting = false; // Flag to prevent periodic updates during tool completion (race condition fix)
     this.toolExecutionCompletingTimeout = null; // Safety timeout to auto-clear stuck flag
     this.progressQueue = []; // { message: string, queuedAt: number } — path-based progress for periodic updates
+    /** When true (after client_verification verified + requiresExplicitConfirmation), next turn must not offer booking_step_search_client so model calls booking_step_select_session when user says "yes" */
+    this.postVerificationWaitingConfirmation = false;
 
     // VAD Calibration tracking
     this.calibrationSamples = [];
