@@ -4,42 +4,46 @@
  */
 
 /**
+ * Normalize input so 10-digit UK numbers (from JSON number or stripped leading 0) become 11-digit 07 format.
+ * Model/API may send 7223456789 (number or string); we convert to 07123456789.
+ * @param {string|number} mobileNumber - Raw mobile value (may be number, so leading 0 is lost)
+ * @returns {string} - Digits only; 10 digits starting with 7 become 0 + digits
+ */
+function toUKMobileString(mobileNumber) {
+  if (mobileNumber == null) return '';
+  const str = String(mobileNumber).trim();
+  const cleaned = str.replace(/[\s\-\(\)]/g, '').replace(/^\+44/, '0').replace(/\D/g, '');
+  // 10 digits starting with 7 → UK mobile without leading 0 (e.g. from JSON number)
+  if (cleaned.length === 10 && cleaned.startsWith('7')) {
+    return '0' + cleaned;
+  }
+  return cleaned;
+}
+
+/**
  * Validate UK mobile number format
  * UK mobile numbers: 11 digits starting with 07 (excluding country code +44)
- * @param {string} mobileNumber - Mobile number to validate
+ * Accepts string or number (model may send number, losing leading 0).
+ * @param {string|number} mobileNumber - Mobile number to validate
  * @returns {boolean} - True if valid UK mobile format
  */
 export function validateUKMobile(mobileNumber) {
-  if (!mobileNumber || typeof mobileNumber !== 'string') {
-    return false;
-  }
-
-  // Remove spaces, dashes, parentheses, and country code
-  const cleaned = mobileNumber.replace(/[\s\-\(\)]/g, '').replace(/^\+44/, '0');
-  
-  // Must be 11 digits starting with 07
+  const cleaned = toUKMobileString(mobileNumber);
+  if (!cleaned) return false;
   const ukMobilePattern = /^07\d{9}$/;
   return ukMobilePattern.test(cleaned);
 }
 
 /**
  * Normalize UK mobile number to standard format (07XXXXXXXXX)
- * @param {string} mobileNumber - Mobile number to normalize
+ * Accepts string or number (model may send number, losing leading 0).
+ * @param {string|number} mobileNumber - Mobile number to normalize
  * @returns {string|null} - Normalized mobile number or null if invalid
  */
 export function normalizeUKMobile(mobileNumber) {
-  if (!mobileNumber || typeof mobileNumber !== 'string') {
-    return null;
-  }
-
-  // Remove spaces, dashes, parentheses, and country code
-  const cleaned = mobileNumber.replace(/[\s\-\(\)]/g, '').replace(/^\+44/, '0');
-  
-  // Validate format
-  if (!/^07\d{9}$/.test(cleaned)) {
-    return null;
-  }
-
+  const cleaned = toUKMobileString(mobileNumber);
+  if (!cleaned) return null;
+  if (!/^07\d{9}$/.test(cleaned)) return null;
   return cleaned;
 }
 

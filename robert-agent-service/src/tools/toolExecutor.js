@@ -308,6 +308,15 @@ class ToolExecutor {
         delete normalized.mobile;
       }
     }
+    // Normalize UK mobile: model/API may send number (e.g. 7223456789) so leading 0 is lost → prepend 0 for 10 digits starting with 7
+    if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
+        normalized.customerMobile != null && normalized.customerMobile !== '') {
+      const raw = String(normalized.customerMobile).trim();
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length === 10 && digits.startsWith('7')) {
+        normalized.customerMobile = '0' + digits;
+      }
+    }
     return normalized;
   }
 
