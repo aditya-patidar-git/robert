@@ -123,17 +123,20 @@ class ProvenanceService {
         const allScores = provenanceRecords.flatMap(p => p.similarityScores);
         analytics.averageSimilarityScore = allScores.reduce((sum, score) => sum + score, 0) / allScores.length;
 
-        // Find most used files
+        // Find most used files (include human-readable fileName from first occurrence)
         const fileUsage = {};
         provenanceRecords.forEach(record => {
           record.fileIds.forEach((fileId, index) => {
-            const title = record.titles[index] || 'Unknown';
-            fileUsage[fileId] = (fileUsage[fileId] || 0) + 1;
+            const title = record.titles && record.titles[index] ? record.titles[index] : 'Unknown file';
+            if (!fileUsage[fileId]) {
+              fileUsage[fileId] = { count: 0, fileName: title };
+            }
+            fileUsage[fileId].count += 1;
           });
         });
 
         analytics.mostUsedFiles = Object.entries(fileUsage)
-          .map(([fileId, count]) => ({ fileId, count }))
+          .map(([fileId, { count, fileName }]) => ({ fileId, count, fileName }))
           .sort((a, b) => b.count - a.count)
           .slice(0, 10);
 
@@ -249,7 +252,8 @@ class ProvenanceService {
         callId: record.callId,
         sessionId: record.sessionId,
         query: record.query,
-        filesUsed: record.titles,
+        fileNames: record.titles,
+        fileIds: record.fileIds,
         similarityScores: record.similarityScores,
         timestamp: record.timestamp,
         model: record.model,

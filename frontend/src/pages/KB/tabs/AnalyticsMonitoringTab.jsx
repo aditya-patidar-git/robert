@@ -1,9 +1,39 @@
-import React, { useState } from 'react';
-import { Box, Paper, Typography, Button, FormControl, InputLabel, Select, MenuItem, List, ListItem, ListItemText, Alert, CircularProgress, LinearProgress } from '@mui/material';
+import React, { useState, useMemo } from 'react';
+import { Box, Paper, Typography, Button, FormControl, InputLabel, Select, MenuItem, List, ListItem, ListItemText, Alert, CircularProgress, LinearProgress, Tooltip } from '@mui/material';
 import { PlayArrow, FileDownload } from '@mui/icons-material';
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import testRetrievalService from '../../../services/testRetrievalService';
 import provenanceService from '../../../services/provenanceService';
 import { useToast } from '../../../components/common/ToastProvider';
+
+function UsageByHourChart({ timeDistribution }) {
+  const chartData = useMemo(() => {
+    return Array.from({ length: 24 }, (_, i) => ({
+      hour: `${String(i).padStart(2, '0')}:00`,
+      count: timeDistribution[i] ?? 0
+    }));
+  }, [timeDistribution]);
+  const hasAny = Object.keys(timeDistribution).length > 0;
+  return (
+    <Box>
+      <Typography variant="subtitle2" gutterBottom>Usage by Hour (UTC)</Typography>
+      {hasAny ? (
+        <Box sx={{ width: '100%', height: 240 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+              <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <RechartsTooltip />
+              <Bar dataKey="count" fill="primary.main" name="Lookups" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Box>
+      ) : (
+        <Typography variant="body2" color="text.secondary">No usage by hour in this range.</Typography>
+      )}
+    </Box>
+  );
+}
 
 const AnalyticsMonitoringTab = ({ state }) => {
   const { showSuccess, showError } = useToast();
@@ -79,17 +109,22 @@ const AnalyticsMonitoringTab = ({ state }) => {
         if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
         return s;
       };
-      const headers = ['callId', 'sessionId', 'query', 'filesUsed', 'similarityScores', 'timestamp', 'model', 'confidence'];
-      const rows = exportData.map((row) => [
-        escapeCsv(row.callId),
-        escapeCsv(row.sessionId),
-        escapeCsv(row.query),
-        escapeCsv(Array.isArray(row.filesUsed) ? row.filesUsed.join('; ') : row.filesUsed),
-        escapeCsv(Array.isArray(row.similarityScores) ? row.similarityScores.join('; ') : row.similarityScores),
-        escapeCsv(row.timestamp ? new Date(row.timestamp).toISOString() : ''),
-        escapeCsv(row.model),
-        escapeCsv(row.confidence != null ? String(row.confidence) : '')
-      ]);
+      const headers = ['callId', 'sessionId', 'query', 'fileNames', 'fileIds', 'similarityScores', 'timestamp', 'model', 'confidence'];
+      const rows = exportData.map((row) => {
+        const fileNames = row.fileNames ?? row.filesUsed;
+        const fileIds = row.fileIds;
+        return [
+          escapeCsv(row.callId),
+          escapeCsv(row.sessionId),
+          escapeCsv(row.query),
+          escapeCsv(Array.isArray(fileNames) ? fileNames.join('; ') : fileNames),
+          escapeCsv(Array.isArray(fileIds) ? fileIds.join('; ') : fileIds),
+          escapeCsv(Array.isArray(row.similarityScores) ? row.similarityScores.join('; ') : row.similarityScores),
+          escapeCsv(row.timestamp ? new Date(row.timestamp).toISOString() : ''),
+          escapeCsv(row.model),
+          escapeCsv(row.confidence != null ? String(row.confidence) : '')
+        ];
+      });
       const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -226,21 +261,24 @@ const AnalyticsMonitoringTab = ({ state }) => {
         {provenanceData && (
           <Box>
             <Typography variant="subtitle1" gutterBottom>Analytics Summary</Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Across the selected time range
+            </Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 2, mb: 3 }}>
               <Box>
-                <Typography variant="caption" color="text.secondary">Total Records</Typography>
+                <Typography variant="caption" color="text.secondary">Total KB lookups</Typography>
                 <Typography variant="h6">{provenanceData.totalRecords ?? 0}</Typography>
               </Box>
               <Box>
-                <Typography variant="caption" color="text.secondary">Total Calls</Typography>
+                <Typography variant="caption" color="text.secondary">Unique calls</Typography>
                 <Typography variant="h6">{provenanceData.totalCalls ?? 0}</Typography>
               </Box>
               <Box>
-                <Typography variant="caption" color="text.secondary">Total Files</Typography>
+                <Typography variant="caption" color="text.secondary">Unique files used</Typography>
                 <Typography variant="h6">{provenanceData.totalFiles ?? 0}</Typography>
               </Box>
               <Box>
-                <Typography variant="caption" color="text.secondary">Avg Similarity</Typography>
+                <Typography variant="caption" color="text.secondary">Avg. match score</Typography>
                 <Typography variant="h6">
                   {typeof provenanceData.averageSimilarityScore === 'number'
                     ? (provenanceData.averageSimilarityScore * 100).toFixed(1) + '%'
@@ -255,11 +293,13 @@ const AnalyticsMonitoringTab = ({ state }) => {
                 <List dense disablePadding sx={{ bgcolor: 'action.hover', borderRadius: 1 }}>
                   {provenanceData.mostUsedFiles.map((item, idx) => (
                     <ListItem key={item.fileId ?? idx}>
-                      <ListItemText
-                        primary={item.fileId}
-                        secondary={`Used ${item.count} time${item.count !== 1 ? 's' : ''}`}
-                        primaryTypographyProps={{ variant: 'body2', sx: { fontFamily: 'monospace' } }}
-                      />
+                      <Tooltip title={item.fileId} placement="top" enterDelay={500}>
+                        <ListItemText
+                          primary={item.fileName || item.fileId}
+                          secondary={`Used ${item.count} time${item.count !== 1 ? 's' : ''}`}
+                          primaryTypographyProps={{ variant: 'body2' }}
+                        />
+                      </Tooltip>
                     </ListItem>
                   ))}
                 </List>
@@ -269,6 +309,9 @@ const AnalyticsMonitoringTab = ({ state }) => {
             {Array.isArray(provenanceData.queryPatterns) && provenanceData.queryPatterns.length > 0 && (
               <Box sx={{ mb: 3 }}>
                 <Typography variant="subtitle2" gutterBottom>Top Query Patterns</Typography>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                  Queries that triggered KB search
+                </Typography>
                 <List dense disablePadding sx={{ bgcolor: 'action.hover', borderRadius: 1 }}>
                   {provenanceData.queryPatterns.map((item, idx) => (
                     <ListItem key={`${item.query ?? ''}-${idx}`}>
@@ -283,19 +326,8 @@ const AnalyticsMonitoringTab = ({ state }) => {
               </Box>
             )}
 
-            {provenanceData.timeDistribution && typeof provenanceData.timeDistribution === 'object' && Object.keys(provenanceData.timeDistribution).length > 0 && (
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>Usage by Hour (UTC)</Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {Object.entries(provenanceData.timeDistribution)
-                    .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([hour, count]) => (
-                      <Typography key={hour} component="span" variant="body2" sx={{ px: 1, py: 0.5, bgcolor: 'action.selected', borderRadius: 1 }}>
-                        {hour}:00 — {count}
-                      </Typography>
-                    ))}
-                </Box>
-              </Box>
+            {provenanceData.timeDistribution && typeof provenanceData.timeDistribution === 'object' && (
+              <UsageByHourChart timeDistribution={provenanceData.timeDistribution} />
             )}
           </Box>
         )}

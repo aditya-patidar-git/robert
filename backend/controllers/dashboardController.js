@@ -6,6 +6,7 @@ import AIConfig from '../models/AIConfig.js';
 import mongoose from 'mongoose';
 import observabilityService from '../services/observabilityService.js';
 import mcpToolsService from '../services/mcpToolsService.js';
+import configSyncService from '../services/configSyncService.js';
 
 // Helper function to calculate metric changes
 const calculateMetricChange = (current, previous) => {
@@ -275,6 +276,11 @@ export const toggleRouting = async (req, res) => {
     // Toggle routing enabled
     telephonyConfig.routingEnabled = !telephonyConfig.routingEnabled;
     await telephonyConfig.save();
+
+    // Notify agent so it picks up the change immediately via WebSocket
+    configSyncService.notifyConfigChange('telephony', null, {
+      changedBy: req.user?.id || req.user?.username || req.user?.email || 'admin'
+    });
 
     // Get updated system status
     const mcpTools = mcpToolsService.getAllTools();
