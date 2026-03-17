@@ -1,7 +1,9 @@
-import React from 'react';
-import { Paper, Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton } from '@mui/material';
+import React, { useState } from 'react';
+import { Paper, Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, Chip, IconButton } from '@mui/material';
 import { Description, Visibility, Edit, Refresh, Warning, CheckCircle } from '@mui/icons-material';
-import { formatDateTime } from '../../../utils/formatters';
+import { formatDate, formatDateTime } from '../../../utils/formatters';
+
+const ROWS_PER_PAGE = 15;
 
 const FilesTable = ({
   kbFiles,
@@ -14,11 +16,20 @@ const FilesTable = ({
   handleReingestFile,
   handleDetectDrift
 }) => {
+  const fileList = Array.isArray(kbFiles) ? kbFiles : [];
+  const [page, setPage] = useState(0);
+
+  const paginatedFiles = fileList.slice(page * ROWS_PER_PAGE, page * ROWS_PER_PAGE + ROWS_PER_PAGE);
+
+  const handlePageChange = (event, newPage) => {
+    setPage(newPage);
+  };
+
   return (
     <Paper sx={{ mb: 3 }}>
       <Box sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom>
-          Knowledge Base Files ({Array.isArray(kbFiles) ? kbFiles.length : 0})
+          Knowledge Base Files ({fileList.length})
         </Typography>
       </Box>
       <TableContainer>
@@ -34,7 +45,7 @@ const FilesTable = ({
             </TableRow>
           </TableHead>
           <TableBody>
-            {(Array.isArray(kbFiles) ? kbFiles : []).map((file, index) => (
+            {paginatedFiles.map((file, index) => (
               <TableRow key={file.id || index}>
                 <TableCell>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -55,7 +66,7 @@ const FilesTable = ({
                     )}
                   </Box>
                 </TableCell>
-                <TableCell sx={{ width: 150 }}>{formatDateTime(new Date(file.created_at * 1000)).slice(0,11)}</TableCell>
+                <TableCell sx={{ width: 150 }}>{formatDate(new Date(file.created_at * 1000))}</TableCell>
                 <TableCell>
                   <Chip
                     label={file.status || 'Active'}
@@ -125,6 +136,14 @@ const FilesTable = ({
             ))}
           </TableBody>
         </Table>
+        <TablePagination
+          component="div"
+          count={fileList.length}
+          page={page}
+          onPageChange={handlePageChange}
+          rowsPerPage={ROWS_PER_PAGE}
+          rowsPerPageOptions={[]}
+        />
       </TableContainer>
     </Paper>
   );
