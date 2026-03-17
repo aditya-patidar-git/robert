@@ -323,9 +323,17 @@ export class ToolCoordinator {
           conv.lastAvailabilityCheck = snapshot.lastAvailabilityCheck;
           console.log(`📋 [${callSid}] Restored lastAvailabilityCheck from barge-in snapshot`);
         }
+        // Only restore phase when it wouldn't roll back an already-advanced phase (e.g. booking_start
+        // set by start_workflow after the snapshot was taken with phase=greeting)
         if (snapshot.phase != null && this.openaiIntegration) {
-          this.openaiIntegration.setCurrentWorkflowPhase(snapshot.phase);
-          console.log(`📋 [${callSid}] Restored workflow phase from barge-in snapshot: ${snapshot.phase}`);
+          const currentPhase = this.openaiIntegration.getCurrentWorkflowPhase?.() ?? null;
+          const wouldRollBack = snapshot.phase === 'greeting' && currentPhase != null && currentPhase !== 'greeting';
+          if (!wouldRollBack) {
+            this.openaiIntegration.setCurrentWorkflowPhase(snapshot.phase);
+            console.log(`📋 [${callSid}] Restored workflow phase from barge-in snapshot: ${snapshot.phase}`);
+          } else {
+            console.log(`📋 [${callSid}] Skipped restoring phase from barge-in snapshot (current: ${currentPhase}, snapshot: ${snapshot.phase}) - phase already advanced`);
+          }
         }
         this.state.bargeInWorkflowSnapshot = null;
       }
