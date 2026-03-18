@@ -12,6 +12,8 @@ process.on('uncaughtException', (err) => {
 });
 
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import WebSocket, { WebSocketServer } from 'ws';
 import twilioClient from '../utils/twilioClient.js';
@@ -126,6 +128,9 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Required for Twilio form-encoded callbacks
+
+const __agentDir = path.dirname(fileURLToPath(import.meta.url));
+app.use(express.static(path.join(__agentDir, '../../public')));
 
 // Initialize config manager
 await configManager.initialize();

@@ -83,7 +83,7 @@ The agent service includes direct tool integration:
 - **crm**: Access CRM system for customer management
 - **payments**: Process payments and refunds
 - **file_search**: Search the knowledge base for relevant information
-- **transfer_call**: Transfer call to human agent
+- **transfer_call**: Transfer call to human agent (caller hears a short hold message, then instrumental hold from `public/audio/hold-music.mp3` via Conference `waitUrl` while the agent hears the handover summary; requires `TUNNEL_DOMAIN` or public `BASE_URL` for Twilio to fetch hold audio)
 
 ## Development
 

@@ -27,6 +27,7 @@ import abusePreventionService from "../services/abusePreventionService.js";
 import { isAfterHours } from "../utils/afterHoursUtils.js";
 import { incrementActiveCalls, decrementActiveCalls } from "../services/metricsService.js";
 import { setDefaultRecordingConsent, getEffectiveRecordingConsentSettings } from "../services/callRecordPersistenceService.js";
+import { getPublicBaseUrlForTwilio } from "../utils/publicBaseUrl.js";
 import consentInstructionBuilder from "../services/consentInstructionBuilder.js";
 import { ConsentHandler } from "./mediaStream/events/index.js";
 import silenceDetectionService from "../services/silenceDetectionService.js";
@@ -819,6 +820,25 @@ export const handleSipCallHandler = async (req, res) => {
     res.type('text/xml');
     res.send(twiml);
   }
+};
+
+/**
+ * GET or POST /api/sip/conference-hold-wait
+ * Twilio Conference waitUrl: loop instrumental hold until another participant joins.
+ */
+export const handleConferenceHoldWait = (req, res) => {
+  const base = getPublicBaseUrlForTwilio();
+  res.type("text/xml");
+  if (!base) {
+    res.send(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Pause length="120"/></Response>'
+    );
+    return;
+  }
+  const mp3 = `${base}/audio/hold-music.mp3`.replace(/&/g, "&amp;");
+  res.send(
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Play loop="0">${mp3}</Play></Response>`
+  );
 };
 
 /**
