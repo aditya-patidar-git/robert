@@ -12,7 +12,7 @@
  * (response delays, speech continuation) are Media Streams–specific; Realtime handles turn-taking on SIP.
  */
 
-import { conversations } from "../shared/state.js";
+import { getConversation, updateConversation } from "../shared/state.js";
 import configManager from "../agent/configManager.js";
 import toolExecutor from "../tools/index.js";
 import sipService from "../services/sipService.js";
@@ -27,7 +27,9 @@ import abusePreventionService from "../services/abusePreventionService.js";
 import { isAfterHours } from "../utils/afterHoursUtils.js";
 import { incrementActiveCalls, decrementActiveCalls } from "../services/metricsService.js";
 import { setDefaultRecordingConsent, getEffectiveRecordingConsentSettings } from "../services/callRecordPersistenceService.js";
+import { getPublicBaseUrlForTwilio } from "../utils/publicBaseUrl.js";
 import consentInstructionBuilder from "../services/consentInstructionBuilder.js";
+import { getFlowCopy } from "../services/flowCopyByLanguage.js";
 import { ConsentHandler } from "./mediaStream/events/index.js";
 import silenceDetectionService from "../services/silenceDetectionService.js";
 import sessionManagementService from "../services/sessionManagementService.js";
@@ -325,7 +327,8 @@ export const handleCallAccept = async (req, res) => {
     }
 
     // Initialize conversation state
-    if (!conversations[call_id]) {
+    let sipConv = await getConversation(call_id);
+    if (!sipConv) {
       sessionManagementService.initializeSession(call_id, {
         language: 'en-GB',
         from: from,
@@ -344,9 +347,10 @@ export const handleCallAccept = async (req, res) => {
           respondedAt: null
         }
       });
+      sipConv = await getConversation(call_id);
     }
-    conversations[call_id].workflowPhase = 'greeting';
-    conversations[call_id].workflowContext = null;
+    await updateConversation(call_id, { workflowPhase: 'greeting', workflowContext: null });
+    sipConv = await getConversation(call_id);
 
     // Create SIP session and track status
     sipService.createSession(call_id, {
@@ -360,7 +364,7 @@ export const handleCallAccept = async (req, res) => {
 
     // Get configuration
     const phoneNumber = from || to;
-    const currentLanguage = conversations[call_id]?.language || 'en';
+    const currentLanguage = sipConv?.language || 'en';
     const config = configManager.getConfigForNumber(phoneNumber, currentLanguage);
     const filteredTools = toolExecutor.getFilteredToolDefinitions({ workflowPhase: 'greeting', clientVerified: false });
 
@@ -425,21 +429,25 @@ export const handleCallAccept = async (req, res) => {
         const PrivacyConfig = (await import("../database/models/PrivacyConfig.js")).default;
         const privacySettings = await PrivacyConfig?.findOne({ isActive: true }).lean().catch(() => null) ?? null;
         const { consentRequired: requireExplicitConsent, consentMessage: consentNotice } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
-        const consentQuestion = "Do you consent to this call being recorded?";
-        const existingConsent = conversations[call_id]?.recordingConsent;
+        const flowEn = getFlowCopy('en');
+        const convAccept = await getConversation(call_id);
+        const existingConsent = convAccept?.recordingConsent;
         const consentAlreadySet = existingConsent?.given === true;
 
         if (requireExplicitConsent && !consentAlreadySet) {
           sessionConfig.instructions = consentInstructionBuilder.buildSessionInstructions({
             consentNotice,
-            consentQuestion,
+            consentQuestion: flowEn.consentQuestion,
+            mainFollowUpQuestion: flowEn.mainFollowUpQuestion,
             baseInstructions: config.instructions || ''
           });
-          if (conversations[call_id]) {
-            conversations[call_id].recordingConsent = conversations[call_id].recordingConsent || {};
-            conversations[call_id].recordingConsent.requested = true;
-            conversations[call_id].recordingConsent.requestedAt = new Date();
-          }
+          await updateConversation(call_id, {
+            recordingConsent: {
+              ...(convAccept?.recordingConsent || {}),
+              requested: true,
+              requestedAt: new Date()
+            }
+          });
           console.log(`📋 [SIP] [${call_id}] Consent flow injected into session instructions`);
         }
 
@@ -463,41 +471,54 @@ export const handleCallAccept = async (req, res) => {
             }
             if (event.type === 'conversation.item.input_audio_transcription.completed') {
               const transcript = event.transcript || '';
-              const consent = conversations[call_id]?.recordingConsent;
+              let convWs = await getConversation(call_id);
+              const consent = convWs?.recordingConsent;
               if (transcript && consent?.requested && consent.given === null) {
                 const consentHandler = new ConsentHandler({ callSid: call_id }, null);
                 const { consentDetected, declineDetected } = consentHandler.detectConsent(transcript);
                 if (consentDetected && !declineDetected) {
-                  conversations[call_id].recordingConsent.given = true;
-                  conversations[call_id].recordingConsent.respondedAt = new Date();
-                  conversations[call_id].recordingConsent.optOutReason = null;
+                  const rcGiven = {
+                    ...consent,
+                    given: true,
+                    respondedAt: new Date(),
+                    optOutReason: null
+                  };
+                  await updateConversation(call_id, { recordingConsent: rcGiven });
                   await CallRecord.findOneAndUpdate(
                     { callSid: call_id },
-                    { $set: { recordingConsent: conversations[call_id].recordingConsent } },
+                    { $set: { recordingConsent: rcGiven } },
                     { upsert: true }
                   ).catch(() => {});
                   console.log(`✅ [SIP] [${call_id}] Recording consent given via transcript`);
                 } else if (declineDetected) {
-                  conversations[call_id].recordingConsent.given = false;
-                  conversations[call_id].recordingConsent.respondedAt = new Date();
+                  const rcDecline = {
+                    ...consent,
+                    given: false,
+                    respondedAt: new Date()
+                  };
+                  await updateConversation(call_id, { recordingConsent: rcDecline });
                   await CallRecord.findOneAndUpdate(
                     { callSid: call_id },
-                    { $set: { recordingConsent: conversations[call_id].recordingConsent } },
+                    { $set: { recordingConsent: rcDecline } },
                     { upsert: true }
                   ).catch(() => {});
                   console.log(`✅ [SIP] [${call_id}] Recording consent declined via transcript`);
                 }
               }
-              const currentPhase = conversations[call_id]?.workflowPhase ?? 'greeting';
-              const workflowContext = conversations[call_id]?.workflowContext ?? null;
+              convWs = await getConversation(call_id);
+              const currentPhase = convWs?.workflowPhase ?? 'greeting';
+              const workflowContext = convWs?.workflowContext ?? null;
               if (transcript && configManager.getConversationBehaviorConfig()?.silenceDetection?.enabled) {
                 silenceDetectionService.userSpoke(call_id);
               }
               const result = conversationService.detectIntent(transcript, { callSid: call_id, currentPhase, workflowContext });
               if (result.shouldUpdateTools && result.phase) {
-                conversations[call_id].workflowPhase = result.phase;
-                conversations[call_id].workflowContext = result.newWorkflowContext ?? conversations[call_id].workflowContext;
-                const toolContext = { workflowPhase: result.phase, clientVerified: conversations[call_id]?.kba?.verified ?? false };
+                await updateConversation(call_id, {
+                  workflowPhase: result.phase,
+                  workflowContext: result.newWorkflowContext ?? convWs?.workflowContext
+                });
+                convWs = await getConversation(call_id);
+                const toolContext = { workflowPhase: result.phase, clientVerified: convWs?.kba?.verified ?? false };
                 const toolsForPhase = toolExecutor.getFilteredToolDefinitions(toolContext);
                 const ws = getSipCallWebSocket(call_id);
                 if (ws && ws.readyState === 1) {
@@ -679,7 +700,7 @@ export const handleToolExecution = async (req, res) => {
     // Get SIP session to retrieve phone number and track tool call
     const sipSession = sipService.getSession(call_id);
     const phoneNumber = sipSession?.from || sipSession?.to || null;
-    const conversation = conversations[call_id] || {};
+    const conversation = (await getConversation(call_id)) || {};
 
     // Track pending tool call
     if (sipSession) {
@@ -819,6 +840,25 @@ export const handleSipCallHandler = async (req, res) => {
     res.type('text/xml');
     res.send(twiml);
   }
+};
+
+/**
+ * GET or POST /api/sip/conference-hold-wait
+ * Twilio Conference waitUrl: loop instrumental hold until another participant joins.
+ */
+export const handleConferenceHoldWait = (req, res) => {
+  const base = getPublicBaseUrlForTwilio();
+  res.type("text/xml");
+  if (!base) {
+    res.send(
+      '<?xml version="1.0" encoding="UTF-8"?><Response><Pause length="120"/></Response>'
+    );
+    return;
+  }
+  const mp3 = `${base}/audio/hold-music.mp3`.replace(/&/g, "&amp;");
+  res.send(
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Play loop="0">${mp3}</Play></Response>`
+  );
 };
 
 /**

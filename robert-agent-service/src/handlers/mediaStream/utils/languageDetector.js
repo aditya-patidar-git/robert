@@ -1,5 +1,6 @@
-import multilingualService from '../../../services/multilingualService.js';
+import multilingualService, { resolveTranscriptionLanguage } from '../../../services/multilingualService.js';
 import configManager from '../../../agent/configManager.js';
+import { inferLanguageCodeFromCallerUtterance } from '../../../services/languageSelectionInference.js';
 
 /**
  * Language Detector
@@ -19,26 +20,26 @@ export class LanguageDetector {
         return false;
       }
       
-      // Validate language
-      if (!multilingualService.isValidLanguage(detectedLanguageCode)) {
+      await multilingualService.loadLanguageMappings();
+      const canonical =
+        multilingualService.resolveSupportedLanguageKey(detectedLanguageCode);
+      if (!canonical) {
         console.warn(`⚠️ [${this.state.callSid}] Invalid language code: ${detectedLanguageCode}`);
         return false;
       }
-      
-      // Get language config
-      const languageConfig = multilingualService.getLanguageConfig(detectedLanguageCode);
-      const languageInstructions = multilingualService.getSystemInstructions(detectedLanguageCode);
-      
+
+      const languageConfig = multilingualService.getLanguageConfig(canonical);
+
       // Update conversation state
       const { conversations } = await import('../../../shared/state.js');
       if (conversations[this.state.callSid]) {
-        conversations[this.state.callSid].language = detectedLanguageCode;
+        conversations[this.state.callSid].language = canonical;
         conversations[this.state.callSid].locale = languageConfig.code;
       }
-      
+
       // CRITICAL: Mark language as selected and clear waitingForLanguage flag
       this.state.languagePreferenceState.selected = true;
-      this.state.languagePreferenceState.language = detectedLanguageCode;
+      this.state.languagePreferenceState.language = canonical;
       this.state.languagePreferenceState.selectedAt = new Date();
       this.state.waitingForLanguage = false;
       
@@ -47,28 +48,36 @@ export class LanguageDetector {
           conversations[this.state.callSid].languagePreferenceState = {};
         }
         conversations[this.state.callSid].languagePreferenceState.selected = true;
-        conversations[this.state.callSid].languagePreferenceState.language = detectedLanguageCode;
+        conversations[this.state.callSid].languagePreferenceState.language = canonical;
         conversations[this.state.callSid].languagePreferenceState.selectedAt = new Date();
         conversations[this.state.callSid].waitingForLanguage = false;
       }
       
       // Get updated config with new language (respects database config priority)
-      const config = configManager.getConfigForNumber(this.state.phoneNumber, detectedLanguageCode);
-      // Transcript always in English (Option A): Realtime API transcribes with English bias; agent can still speak other languages via voice/instructions
-      const transcriptionLanguage = 'en';
-      
-      // Update OpenAI session with new language, voice; input transcription always English for consistent stored transcript
-      this.state.sendToOpenAI({
-        type: 'session.update',
-        session: {
-          modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
-          voice: config.voice.id,
-          instructions: config.instructions,
-          input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLanguage }
-        }
-      }, { priority: 'high' });
-      
-      console.log(`🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) with voice ${config.voice.id}, transcription language: ${transcriptionLanguage}`);
+      const config = configManager.getConfigForNumber(this.state.phoneNumber, canonical);
+      const transcriptionLanguage = resolveTranscriptionLanguage(canonical);
+
+      // Update OpenAI session with new language, voice, and transcription language
+      const sent = this.state.sendToOpenAI(
+        {
+          type: 'session.update',
+          session: {
+            modalities: ['audio', 'text'], // CRITICAL: Preserve audio modality
+            voice: config.voice.id,
+            instructions: config.instructions,
+            input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLanguage }
+          }
+        },
+        { priority: 'high' }
+      );
+
+      if (sent && typeof this.state.waitForNextSessionUpdated === 'function') {
+        await this.state.waitForNextSessionUpdated(5000);
+      }
+
+      console.log(
+        `🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) key=${canonical} voice ${config.voice.id}, transcription language: ${transcriptionLanguage}`
+      );
       console.log(`✅ [${this.state.callSid}] Language preference marked as selected - can proceed to business questions`);
       return true;
     } catch (error) {
@@ -156,27 +165,61 @@ export class LanguageDetector {
       return;
     }
     
-    // Only detect language after initial greeting is completed (for mid-call language switching)
-    if (!this.state.hasInitialGreetingCompleted) {
+    if (!this.state.hasInitialGreetingCompleted || !languageSelected) {
       return;
     }
-    
-    // Skip if already in the detected language
-    if (currentLanguage !== 'en') {
-      return; // Already switched, don't re-detect
+
+    /**
+     * Mid-call: any LanguageVoiceMapping language. Inference matches initial selection.
+     * English from non-English: explicit phrasing or long Latin-heavy utterance only.
+     */
+    await multilingualService.loadLanguageMappings();
+    const currentCanon =
+      multilingualService.resolveSupportedLanguageKey(currentLanguage) || currentLanguage;
+    const currentBase = currentCanon.split(/[-_]/)[0].toLowerCase();
+
+    const inferred = await inferLanguageCodeFromCallerUtterance(transcript);
+    const inferredCanon =
+      multilingualService.resolveSupportedLanguageKey(inferred) || inferred;
+    const inferredBase = inferred.split(/[-_]/)[0].toLowerCase();
+
+    if (!inferredCanon || inferredCanon === currentCanon) {
+      return;
     }
-    
-    // Detect language from transcript
-    const detectedLanguage = multilingualService.detectLanguage(transcript);
-    
-    // If detected language is different from current (and not English), switch
-    if (detectedLanguage !== currentLanguage && detectedLanguage !== 'en') {
-      console.log(`🌐 [${this.state.callSid}] Language detected: ${detectedLanguage} from transcript: "${transcript.substring(0, 50)}..."`);
-      await this.switchLanguage(detectedLanguage);
-    } else if (detectedLanguage === 'en' && currentLanguage === 'en') {
-      // Low confidence - ask for confirmation if we're not sure
-      // This will be handled by the AI's instructions to ask "Would you like me to continue in English, or [language]?"
-      console.log(`🌐 [${this.state.callSid}] Language detection inconclusive, keeping English`);
+
+    const t = transcript.trim();
+
+    if (inferredBase === 'en' && currentBase !== 'en') {
+      const explicitEnglish =
+        /\b(english|in english|speak english|talk in english|switch to english)\b/i.test(
+          t
+        );
+      const latin = (t.match(/[a-zA-Z]/g) || []).length;
+      const longEnglishUtterance =
+        t.length >= 22 && latin / Math.max(t.length, 1) >= 0.72;
+      if (!explicitEnglish && !longEnglishUtterance) {
+        return;
+      }
+    }
+
+    if (currentBase === 'en' && inferredBase !== 'en') {
+      if (
+        t.length < 5 &&
+        !/[\u0900-\u097F\u0980-\u09FF\u0A80-\u0AFF\u0A00-\u0A7F\u0B80-\u0BFF\u0600-\u06FF]/.test(
+          t
+        )
+      ) {
+        return;
+      }
+    }
+
+    console.log(
+      `🌐 [${this.state.callSid}] Mid-call language switch: ${currentCanon} -> ${inferredCanon} ("${t.substring(0, 70)}${t.length > 70 ? '...' : ''}")`
+    );
+    const ok = await this.switchLanguage(inferred);
+    if (ok) {
+      this.state.pendingOneShotOutputLanguageCanonical =
+        multilingualService.resolveSupportedLanguageKey(inferred) || inferred;
     }
   }
 }

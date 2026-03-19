@@ -9,6 +9,7 @@ import kbaVerificationTool from './kbaVerification.js';
 import complaintSubmissionTool from './complaintSubmission.js';
 import clientVerificationTool from './clientVerification.js';
 import startWorkflowTool from './startWorkflow.js';
+import setCallLanguageTool from './setCallLanguage.js';
 import configManager from '../agent/configManager.js';
 import ToolRegistry from './toolRegistry.js';
 import ToolExecutor from './toolExecutor.js';
@@ -54,7 +55,8 @@ class UnifiedToolExecutor {
       ['kba_verification', kbaVerificationTool],
       ['complaint_submission', complaintSubmissionTool],
       ['client_verification', clientVerificationTool],
-      ['start_workflow', startWorkflowTool]
+      ['start_workflow', startWorkflowTool],
+      ['set_call_language', setCallLanguageTool]
     ]);
     
     // Register step-based booking tools

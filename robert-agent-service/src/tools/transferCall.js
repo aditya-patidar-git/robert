@@ -4,6 +4,7 @@ import handoverSummaryService from '../services/handoverSummaryService.js';
 import HandoverRecord from '../database/models/HandoverRecord.js';
 import { conversations } from '../shared/state.js';
 import configManager from '../agent/configManager.js';
+import { getPublicBaseUrlForTwilio } from '../utils/publicBaseUrl.js';
 
 const ALL_OCCUPIED_MESSAGE = 'All our agents are occupied at the moment. Can we try again after a while, or would you prefer we contact you?';
 
@@ -49,7 +50,6 @@ class TransferCallTool {
       }
 
       try {
-        const handoverSummary = await handoverSummaryService.generateHandoverSummary(callSid, reason);
         const spokenAnnouncement = await handoverSummaryService.generateSpokenAnnouncement(callSid, reason);
         const conferenceName = `conf_${callSid}_${Date.now()}`;
 
@@ -66,9 +66,19 @@ class TransferCallTool {
         });
         await handoverRecord.save();
 
-        const sayText = escapeTwiMLText(spokenAnnouncement || 'Connecting you to a colleague. One moment.');
+        const callerHoldSay = escapeTwiMLText(
+          'Please hold while we connect you to a colleague.'
+        );
+        const publicBase = getPublicBaseUrlForTwilio();
+        const waitUrl = publicBase
+          ? `${publicBase}/api/sip/conference-hold-wait`.replace(/&/g, '&amp;')
+          : '';
+        const conferenceOpen =
+          waitUrl
+            ? `<Conference waitUrl="${waitUrl}" waitMethod="GET">${escapeTwiMLText(conferenceName)}</Conference>`
+            : `<Conference>${escapeTwiMLText(conferenceName)}</Conference>`;
         await twilioClient.calls(callSid).update({
-          twiml: `<Response><Say>${sayText}</Say><Dial><Conference>${escapeTwiMLText(conferenceName)}</Conference></Dial></Response>`
+          twiml: `<Response><Say>${callerHoldSay}</Say><Dial>${conferenceOpen}</Dial></Response>`
         });
 
         await HandoverRecord.updateOne(

@@ -20,9 +20,9 @@ import { sanitizeForJSON } from '../utils/objectUtils.js';
 
 /**
  * In-memory conversation storage (local instance only).
- * @deprecated Use getConversation/setConversation for distributed state.
+ * For horizontal scalability, prefer getConversation/setConversation which use distributed state when configured.
  */
-export const conversations = {}; // in-memory storage (maintained for backward compatibility)
+export const conversations = {}; // in-memory storage (backward compatible)
 // Structure: {
 //   [callSid]: {
 //     transcript: [],

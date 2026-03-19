@@ -5,6 +5,7 @@
  */
 
 import promptService from './promptService.js';
+import { getFlowCopy } from './flowCopyByLanguage.js';
 import { conversations } from '../shared/state.js';
 import { AFTER_LOGIN_MESSAGE, AFTER_DETERMINE_WORKFLOW_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
 import sessionStateManager from './browser/sessionStateManager.js';
@@ -405,6 +406,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         workflowPhase = 'booking_payment';
       }
 
+      const toolFlow = getFlowCopy(conversations[callSid]?.language || 'en');
       // Get contextual instructions for automatic continuation
       let responseInstructions = promptService.getContextualInstructions({
         isInitialGreeting: false,
@@ -412,12 +414,59 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         courseType,
         workflowType,
         currentStep,
-        activeTool: null // Tool just completed
+        activeTool: null, // Tool just completed
+        language: conversations[callSid]?.language || 'en',
+        consentQuestion: toolFlow.consentQuestion,
+        mainFollowUpQuestion: toolFlow.mainFollowUpQuestion
       });
 
-      // CRITICAL FIX: For client_verification specifically, handle both success and incomplete cases
       const toolName = options?.toolName;
       const toolResult = options?.toolResult;
+
+      if (toolName === 'set_call_language' && toolResult?.success === true) {
+        const lang = toolResult.language_code || conversations[callSid]?.language || 'en';
+        if (toolResult.midCallLanguageSwitch === true) {
+          responseInstructions = `CRITICAL — MID-CALL LANGUAGE CHANGE to ${lang}. Acknowledge briefly in that language only. Continue exactly where the conversation left off (same booking/cancellation topic if any). Do NOT repeat recording consent, language selection, or greeting. Do NOT use English unless ${lang} is en.`;
+          console.log(`🎯 [${callId}] set_call_language → mid-call switch (${lang})`);
+        } else {
+          const notice = String(toolResult.consentNotice || '').replace(/"/g, '\\"');
+          const cq = String(toolResult.consentQuestionLocalized || '').replace(/"/g, '\\"');
+          const fu = String(toolResult.mainFollowUpLocalized || '').replace(/"/g, '\\"');
+          if (toolResult.consentRequired === true) {
+            responseInstructions = `CRITICAL — LANGUAGE LOCK (code ${lang}): Speak ONLY in this call's configured language for the rest of the conversation unless the caller explicitly asks to switch. Do NOT use English when the selected language is not English.
+
+RECORDING CONSENT — entire next utterance(s) MUST be in that language only (before any main question):
+1) Convey this notice in fluent natural speech (same meaning): "${notice}"
+2) Ask this consent question in natural native phrasing (same meaning): "${cq}"
+3) WAIT for clear yes or no. Do NOT ask the main follow-up "${fu}" until consent is answered.
+
+Forbidden: skipping (1) or (2); English for non-en languages.`;
+          } else {
+            responseInstructions = `CRITICAL — LANGUAGE LOCK (${lang}): Speak only in this language. No recording consent required. Briefly acknowledge and ask the main question using meaning: "${fu}".`;
+          }
+          if (this.stateManager) {
+            if (!this.stateManager.recordingConsentState) this.stateManager.recordingConsentState = {};
+            if (toolResult.consentRequired === true) {
+              this.stateManager.recordingConsentState.requested = true;
+              this.stateManager.recordingConsentState.requestedAt = new Date();
+            }
+          }
+          if (conversations[callSid]) {
+            if (!conversations[callSid].recordingConsent) conversations[callSid].recordingConsent = {};
+            if (toolResult.consentRequired === true) {
+              conversations[callSid].recordingConsent.requested = true;
+              conversations[callSid].recordingConsent.requestedAt = new Date();
+            }
+          }
+          console.log(`🎯 [${callId}] set_call_language → localized consent / follow-up (${lang})`);
+        }
+      } else if (toolName === 'set_call_language' && toolResult && toolResult.success === false) {
+        const codes = (toolResult.supportedCodes || []).slice(0, 14).join(', ');
+        responseInstructions = `CRITICAL: set_call_language failed (${toolResult.error || 'error'}). Call set_call_language again. If the requested language is unavailable use language_code "en". Supported: ${codes || 'en, hi, fr, de, es, it, pt, nl, pl'}.`;
+        console.log(`🎯 [${callId}] set_call_language error — retry instructions`);
+      }
+
+      // CRITICAL FIX: For client_verification specifically, handle both success and incomplete cases
       const isClientVerification = toolName === 'client_verification';
 
       // Search client: missing customerMobile/customerEmail/customerName — instruct to call in same turn if caller just gave it, else ask once
@@ -587,13 +636,17 @@ MANDATORY WORKFLOW: When the caller confirms the slot (e.g. "yes", "okay go ahea
           : instruction;
         if (workflowPhase === 'general_inquiry' || workflowPhase === 'booking_start') {
           workflowPhase = 'booking_existing_client';
+          const rf = getFlowCopy(conversations[callSid]?.language || 'en');
           const refreshed = promptService.getContextualInstructions({
             isInitialGreeting: false,
             workflowPhase: 'booking_existing_client',
             courseType,
             workflowType: workflowType || 'existing',
             currentStep: currentStep ?? 5,
-            activeTool: null
+            activeTool: null,
+            language: conversations[callSid]?.language || 'en',
+            consentQuestion: rf.consentQuestion,
+            mainFollowUpQuestion: rf.mainFollowUpQuestion
           });
           responseInstructions = refreshed ? `${instruction}\n\n${refreshed}` : responseInstructions;
         }

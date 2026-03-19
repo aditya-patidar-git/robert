@@ -672,6 +672,22 @@ This tool returns guidance messages directing to the appropriate tools.`,
     },
     {
       type: 'function',
+      name: 'set_call_language',
+      description: `REQUIRED immediately after the caller answers "what language would you like?". Invoke this tool ONCE via function calling with language_code (ISO 639-1)—do NOT output {"language_code":"..."} as plain assistant text. Infer from their LAST message in ANY script: Hindi/हिंदी → hi; English → en; French → fr; etc. If unclear, en. Silent tool turn only; after success you will ask recording consent in that language.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          language_code: {
+            type: 'string',
+            description:
+              'ISO 639-1 code: en, hi, fr, de, es, it, pt, nl, pl, ur, ta, bn, pa, gu, mr, si, etc. Must match a language the service supports.'
+          }
+        },
+        required: ['language_code']
+      }
+    },
+    {
+      type: 'function',
       name: 'start_workflow',
       description: 'Start a specific workflow when you understand the caller\'s intent. Call this as soon as the caller clearly indicates what they want (in any language). Then in the SAME response, speak a short acknowledgment and the first question of that workflow. Allowed workflows: cancellation (cancel a booking), booking (make a new booking or check availability), complaint (file a complaint). Do NOT ask for booking reference, email or phone before starting cancellation—start cancellation and ask "Do you have a current booking with us?" first.',
       parameters: {

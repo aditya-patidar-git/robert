@@ -5,6 +5,8 @@ import toolExecutor from "../../../tools/index.js";
 import { WebSocketConnectionManager } from "../../../utils/websocketConnectionManager.js";
 import consentInstructionBuilder from "../../../services/consentInstructionBuilder.js";
 import { getEffectiveRecordingConsentSettings } from "../../../services/callRecordPersistenceService.js";
+import { getFlowCopy } from "../../../services/flowCopyByLanguage.js";
+import { resolveTranscriptionLanguage } from "../../../services/multilingualService.js";
 
 /**
  * Map internal workflow phase to FlowParameterOverride flowType for flow-specific temperature/model.
@@ -392,8 +394,8 @@ export class OpenAIIntegration {
         if (privacySettings && conv) conv._cachedPrivacySettings = privacySettings;
       }
       const { consentRequired: requireExplicitConsent, consentMessage: consentNotice } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
-      const consentQuestion = "Do you consent to this call being recorded?";
-      
+      const flowEn = getFlowCopy("en");
+
       // CRITICAL FIX: Check if consent was already set by handleIncomingCall (conv already ensured above)
       const existingConsent = conv.recordingConsent;
       const consentAlreadySet = existingConsent?.given === true;
@@ -404,7 +406,8 @@ export class OpenAIIntegration {
       if (requireExplicitConsent && !consentAlreadySet) {
         modifiedInstructions = consentInstructionBuilder.buildSessionInstructions({
           consentNotice,
-          consentQuestion,
+          consentQuestion: flowEn.consentQuestion,
+          mainFollowUpQuestion: flowEn.mainFollowUpQuestion,
           baseInstructions: config.instructions
         });
         conv.recordingConsent.requested = false;
@@ -591,6 +594,7 @@ export class OpenAIIntegration {
           // Get audio config for calibration check (noise_reduction not sent - session.audio rejected by API)
           const audioConfig = configManager.getAudioConfig();
           const initialThreshold = config.vadThreshold / 1000;
+          const transcriptionLang = resolveTranscriptionLanguage(conversations[this.state.callSid]?.language || 'en');
           const sessionUpdateMessage = {
             type: 'session.update',
             session: {
@@ -610,10 +614,9 @@ export class OpenAIIntegration {
               },
               tools: tools,
               tool_choice: 'auto',
-              input_audio_transcription: { model: 'gpt-4o-transcribe', language: 'en' }
+              input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLang }
             }
           };
-          
           // Use robust send method with connection manager support
           this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
           console.log(`[PICKUP_LATENCY] [${this.state.callSid}] session_update_sent ${this.state.pickupLatencyMs()}ms`);
@@ -626,7 +629,7 @@ export class OpenAIIntegration {
           console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
           console.log(`   - turn_detection: server_vad`);
           console.log(`   - barge_in_policy: ${audioConfig?.bargeInPolicy ?? 'pause'}, interrupt_response: ${audioConfig?.bargeInPolicy === 'stop'}`);
-        console.log(`   - input_transcription: gpt-4o-transcribe, language: en (flat input_audio_transcription)`);
+          console.log(`   - input_transcription: gpt-4o-transcribe, language: ${transcriptionLang}`);
           if (audioConfig?.energyThresholdAutoCalibrate !== false) {
             console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
           }
@@ -756,6 +759,7 @@ export class OpenAIIntegration {
         const flowTypeOpen = mapPhaseToFlowType(this.currentWorkflowPhase);
         const effectiveParamsOpen = configManager.getEffectiveParameters(flowTypeOpen, configManager.getAIConfig());
         const effectiveTemperatureOpen = effectiveParamsOpen.temperature ?? config.temperature;
+        const transcriptionLangOpen = resolveTranscriptionLanguage(conversations[this.state.callSid]?.language || 'en');
         const sessionUpdateMessage = {
           type: 'session.update',
           session: {
@@ -775,7 +779,7 @@ export class OpenAIIntegration {
             },
             tools: tools,
             tool_choice: 'auto',
-            input_audio_transcription: { model: 'gpt-4o-transcribe', language: 'en' }
+            input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLangOpen }
           }
         };
         
@@ -790,7 +794,7 @@ export class OpenAIIntegration {
         console.log(`   - workflow_phase: ${this.currentWorkflowPhase}`);
         console.log(`   - turn_detection: server_vad`);
         console.log(`   - barge_in_policy: ${audioConfig?.bargeInPolicy ?? 'pause'}, interrupt_response: ${audioConfig?.bargeInPolicy === 'stop'}`);
-        console.log(`   - input_transcription: gpt-4o-transcribe, language: en (flat input_audio_transcription)`);
+        console.log(`   - input_transcription: gpt-4o-transcribe, language: ${transcriptionLangOpen}`);
         if (audioConfig?.energyThresholdAutoCalibrate !== false) {
           console.log(`📊 [${this.state.callSid}] VAD auto-calibration enabled - will calibrate after ${this.state.CALIBRATION_DURATION_MS}ms of audio`);
         }

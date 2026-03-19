@@ -377,6 +377,9 @@ const toolSchemas = {
   start_workflow: z.object({
     workflow: z.enum(['cancellation', 'booking', 'complaint'])
   }),
+  set_call_language: z.object({
+    language_code: z.string().min(1).max(16)
+  }),
   // Booking step tools
   booking_step_check_availability: bookingStepCheckAvailabilitySchema,
   booking_step_authenticate: bookingStepAuthenticateSchema,

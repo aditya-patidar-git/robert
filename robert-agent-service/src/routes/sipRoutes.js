@@ -4,7 +4,7 @@
  */
 
 import express from "express";
-import { handleCallAccept, handleCallStatus, handleToolExecution, handleSipCallHandler, handleAgentCallHandler } from "../handlers/sipHandlers.js";
+import { handleCallAccept, handleCallStatus, handleToolExecution, handleSipCallHandler, handleAgentCallHandler, handleConferenceHoldWait } from "../handlers/sipHandlers.js";
 import { openaiWebhookAuth } from "../middleware/openaiWebhookAuth.js";
 
 const router = express.Router();
@@ -53,6 +53,9 @@ router.post("/call-handler", handleSipCallHandler);
 // Transfer: Twilio GET or POST when outbound agent call connects/answers; returns Say + Dial/Conference TwiML
 router.get("/agent-call-handler", handleAgentCallHandler);
 router.post("/agent-call-handler", handleAgentCallHandler);
+
+router.get("/conference-hold-wait", handleConferenceHoldWait);
+router.post("/conference-hold-wait", handleConferenceHoldWait);
 
 // OpenAI Realtime SIP webhooks (optional IP allowlist via OPENAI_WEBHOOK_IP_ALLOWLIST)
 router.post("/call-accept", openaiWebhookAuth, handleCallAccept);

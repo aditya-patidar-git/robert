@@ -26,6 +26,7 @@ class ConsentInstructionBuilder {
   buildConsentFlowInstructions({
     consentNotice,
     consentQuestion,
+    mainFollowUpQuestion = 'What would you like to do today?',
     languageSelected = false,
     consentGiven = false,
     consentResponded = false,
@@ -48,7 +49,7 @@ class ConsentInstructionBuilder {
 
 CRITICAL RULES:
 - You MUST ask the language preference question FIRST before any other conversation
-- DO NOT ask the consent question or "What would you like to do today?" until language preference is confirmed
+- DO NOT ask the consent question or the main follow-up question until language preference is confirmed
 - If you cannot clearly understand the caller's response (due to noise, barge-in, or unclear speech), you MUST repeat the question
 - Do not assume or guess the answer - always wait for a clear response
 - The language preference question is MANDATORY - it cannot be skipped
@@ -66,7 +67,8 @@ ${baseInstructions}`;
 CRITICAL RULES:
 - You MUST ask the consent question NOW before proceeding with any other conversation
 - Say exactly and only "${consentQuestion}" - no greeting, no repetition in the same turn
-- You MUST NOT ask "What would you like to do today?" until the caller has responded to the consent question (yes or no). If they decline recording, acknowledge briefly and continue the call with "What would you like to do today?"
+- You MUST NOT ask "${mainFollowUpQuestion}" until the caller has responded to the consent question (yes or no). If they decline recording, acknowledge briefly (in the caller's language) and then say exactly: "${mainFollowUpQuestion}"
+- Do NOT say that the caller declined or agreed until they have clearly said yes or no. Do NOT say "${mainFollowUpQuestion}" or move the conversation forward until you have a clear yes or no. If unclear, repeat only: "${consentQuestion}"
 - If you cannot clearly understand the caller's response, repeat the question once using the exact phrase above
 - Do not assume or guess the answer - always wait for a clear response
 
@@ -90,6 +92,7 @@ ${baseInstructions}`;
   buildSessionInstructions({
     consentNotice,
     consentQuestion,
+    mainFollowUpQuestion = 'What would you like to do today?',
     baseInstructions = ''
   }) {
     return `IMPORTANT: You must start every call with the following exact sequence:
@@ -104,12 +107,12 @@ ${baseInstructions}`;
    - WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
    - If the caller's response is unclear, repeat the question once only, saying exactly: "${consentQuestion}"
 
-5. AFTER the caller responds to the consent question (yes or no), you may proceed to: "What would you like to do today?" If they decline recording, acknowledge briefly (e.g. that the call will not be recorded) and then continue with "What would you like to do today?"
+5. AFTER the caller responds to the consent question (yes or no), you may proceed to: "${mainFollowUpQuestion}" If they decline recording, acknowledge briefly (e.g. that the call will not be recorded) and then continue with "${mainFollowUpQuestion}"
 
 CRITICAL RULES:
 - You MUST ask the language preference question FIRST before any other conversation
 - You MUST ask the consent question IMMEDIATELY after language preference is confirmed
-- You MUST NOT ask "What would you like to do today?" until the caller has responded to the consent question (yes or no). If they decline, acknowledge and continue the call as usual
+- You MUST NOT ask "${mainFollowUpQuestion}" until the caller has responded to the consent question (yes or no). Do NOT say that the caller declined or agreed until they have clearly said yes or no. If they decline, acknowledge and continue the call as usual
 - If you cannot clearly understand the caller's response (due to noise, barge-in, or unclear speech), you MUST repeat the question
 - Do not assume or guess the answer - always wait for a clear response
 - Both the language preference question and consent question are MANDATORY - they cannot be skipped

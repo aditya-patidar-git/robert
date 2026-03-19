@@ -6,12 +6,14 @@ import promptService from '../../../services/promptService.js';
 import conversationService from '../../../services/conversationService.js';
 import noiseFilterService from '../../../services/noiseFilterService.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
+import { resolveTranscriptionLanguage } from '../../../services/multilingualService.js';
 import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
 import { storePrematureResponse } from '../../../services/toolResultSubmitter.js';
 import { conversations } from '../../../shared/state.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
 import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
+import toolExecutor from '../../../tools/index.js';
 
 /**
  * Transcription Handler
@@ -19,7 +21,16 @@ import progressIndicatorService from '../../../services/progressIndicatorService
  * Supports partial transcription deltas for faster "stop" detection
  */
 export class TranscriptionHandler {
-  constructor(stateManager, languageDetector, consentHandler, openaiWs, bargeInHandler = null, onApplyIntentFromTranscript = null, onGetWorkflowPhase = null) {
+  constructor(
+    stateManager,
+    languageDetector,
+    consentHandler,
+    openaiWs,
+    bargeInHandler = null,
+    onApplyIntentFromTranscript = null,
+    onGetWorkflowPhase = null,
+    queueLanguageSelectionBackup = null
+  ) {
     this.state = stateManager;
     this.languageDetector = languageDetector;
     this.consentHandler = consentHandler;
@@ -27,6 +38,7 @@ export class TranscriptionHandler {
     this.bargeInHandler = bargeInHandler;
     this.onApplyIntentFromTranscript = onApplyIntentFromTranscript;
     this.onGetWorkflowPhase = onGetWorkflowPhase;
+    this.queueLanguageSelectionBackup = queueLanguageSelectionBackup;
   }
 
   appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations) {
@@ -188,7 +200,8 @@ export class TranscriptionHandler {
       role: 'user',
       text: transcript,
       timestamp: new Date(transcriptionTime),
-      confidence: qualityAssessment?.confidenceScore ?? 0.8
+      confidence: qualityAssessment?.confidenceScore ?? 0.8,
+      language: resolveTranscriptionLanguage(conv?.language || this.state.languagePreferenceState?.language || 'en')
     }, { consentGiven: conv?.recordingConsent?.given === true }).catch(() => {});
 
     // Handle memory consent
@@ -382,12 +395,16 @@ export class TranscriptionHandler {
       const languageSelected = this.state.languagePreferenceState?.selected || conversations[this.state.callSid]?.languagePreferenceState?.selected || false;
       
       if (waitingForLanguage && !languageSelected) {
-        // CRITICAL: Handle language preference selection
+        if (transcript?.trim()) {
+          this.state.lastUtteranceForLanguageSelection = transcript.trim();
+        }
+      } else if (
+        languageSelected &&
+        this.state.hasInitialGreetingCompleted &&
+        !waitingForLanguage &&
+        transcript?.trim()
+      ) {
         await this.languageDetector.detectAndSwitchLanguage(transcript);
-      } else if (conversations[this.state.callSid].languageDetectionEnabled && this.state.hasInitialGreetingCompleted) {
-        // Mid-call language switching (after initial greeting)
-        await this.languageDetector.detectAndSwitchLanguage(transcript);
-        conversations[this.state.callSid].languageDetectionEnabled = false;
       }
       
       // Monitor for complaint keywords
@@ -565,11 +582,27 @@ export class TranscriptionHandler {
                   hasInitialGreetingBeenSent: true,
                   overrideWorkflowPhase
                 });
+                const forcedSetLang =
+                  toolChoice &&
+                  typeof toolChoice === 'object' &&
+                  toolChoice.type === 'function' &&
+                  toolChoice.name === 'set_call_language';
+                if (forcedSetLang && typeof this.queueLanguageSelectionBackup === 'function') {
+                  this.state.lastUtteranceForLanguageSelection = transcriptText.trim();
+                  await this.queueLanguageSelectionBackup(transcriptText);
+                }
+                const sessionPatch = forcedSetLang
+                  ? {
+                      tool_choice: toolChoice,
+                      tools: toolExecutor.getFilteredToolDefinitions({
+                        workflowPhase: 'language_selection',
+                        clientVerified: conversations[this.state.callSid]?.kba?.verified || false
+                      })
+                    }
+                  : { tool_choice: toolChoice };
                 this.openaiWs.send(JSON.stringify({
                   type: 'session.update',
-                  session: {
-                    tool_choice: toolChoice
-                  }
+                  session: sessionPatch
                 }));
                 await new Promise(resolve => setTimeout(resolve, 150));
                 const { instructions: responseInstructions } = await conversationService.getResponseInstructions({

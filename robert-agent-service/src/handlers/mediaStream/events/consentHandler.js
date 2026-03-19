@@ -1,5 +1,6 @@
 import { MemoryManager } from '../utils/memoryManager.js';
 import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
+import { classifyRecordingConsent } from '../../../services/recordingConsentClassifier.js';
 
 /**
  * Consent Handler
@@ -93,35 +94,44 @@ export class ConsentHandler {
       return;
     }
     const { consentDetected, declineDetected } = this.detectConsent(transcript);
-    
-    // Reset timeout when user speaks (if not obvious consent/decline)
-    const normalized = normalizeForConsent(transcript);
-    const quickConsentCheck = /^(yes|yeah|yep|yup|okay|ok|sure|absolutely|definitely|of course|certainly|i consent|i agree|i do|go ahead)$/i.test(normalized);
-    const quickDeclineCheck = /^(no|nope|nah|not|don't|do not|refuse|decline|disagree|i don't|i do not)\s/i.test(normalized);
-    
-    if (this.state.consentTimeout && transcript && transcript.trim().length > 0 && !quickConsentCheck && !quickDeclineCheck) {
-      clearTimeout(this.state.consentTimeout);
-      this.state.consentTimeout = null;
-      // Restart timeout
-      this.state.consentTimeout = setTimeout(() => {
-        if (this.state.recordingConsentState.given === null && conv?.recordingConsent?.given === null) {
-          this.state.recordingConsentState.given = true;
-          this.state.recordingConsentState.respondedAt = new Date();
-          if (conv?.recordingConsent) {
-            conv.recordingConsent.given = true;
-            conv.recordingConsent.respondedAt = new Date();
-            conv.recordingConsent.optOutReason = null;
+    let accept = consentDetected && !declineDetected;
+    let decline = declineDetected;
+
+    if (!accept && !decline && transcript && transcript.trim().length >= 2) {
+      const llmOk =
+        process.env.CONSENT_LLM_CLASSIFY_ENABLED !== 'false' && !!process.env.OPENAI_API_KEY;
+      if (llmOk) {
+        conv.recordingConsent._consentLlmTries = conv.recordingConsent._consentLlmTries || 0;
+        if (conv.recordingConsent._consentLlmTries < 3) {
+          conv.recordingConsent._consentLlmTries += 1;
+          const decision = await classifyRecordingConsent(transcript);
+          const notYetAnswered = /\b(haven't|have not|didn't|did not|haven’t|didn’t)\s+(given|said|say|respond|answer|consent|decide)/i.test(transcript) ||
+            /\b(what does that mean|can you repeat|say that again|in english|in \w+ please)\b/i.test(transcript);
+          if (decision === 'accept') {
+            accept = true;
+            console.log(
+              `🤖 [${this.state.callSid}] Recording consent via LLM: accept — "${String(transcript).substring(0, 80)}"`
+            );
+          } else if (decision === 'decline' && !notYetAnswered) {
+            decline = true;
+            console.log(
+              `🤖 [${this.state.callSid}] Recording consent via LLM: decline — "${String(transcript).substring(0, 80)}"`
+            );
+          } else if (decision === 'decline' && notYetAnswered) {
+            console.log(
+              `🔄 [${this.state.callSid}] Recording consent: treating as unclear (not yet answered) — "${String(transcript).substring(0, 80)}"`
+            );
           }
-          console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-in`);
         }
-      }, this.state.CONSENT_TIMEOUT_MS);
-      console.log(`⏱️ [${this.state.callSid}] Consent timeout reset - user is speaking, extending response window`);
+      }
     }
-    
-    // Check if this is an unclear response (no clear yes/no detected)
-    const isUnclearResponse = !consentDetected && !declineDetected;
-    
-    if (consentDetected && !declineDetected) {
+
+    // Do NOT default to opt-in or opt-out on timeout or unclear response.
+    // We only set given = true/false when the caller clearly accepts or declines.
+
+    const isUnclearResponse = !accept && !decline;
+
+    if (accept) {
       // Clear timeout immediately
       if (this.state.consentTimeout) {
         clearTimeout(this.state.consentTimeout);
@@ -166,8 +176,8 @@ export class ConsentHandler {
       // CRITICAL: After consent is given, proceed to main follow-up
       this.state.waitingForLanguage = false;
       if (conv) conv.waitingForLanguage = false;
-      console.log(`✅ [${this.state.callSid}] Consent given - proceeding to main follow-up ("What would you like to do today?")`);
-    } else if (declineDetected) {
+      console.log(`✅ [${this.state.callSid}] Consent given - proceeding to main follow-up`);
+    } else if (decline) {
       // Clear timeout immediately
       if (this.state.consentTimeout) {
         clearTimeout(this.state.consentTimeout);

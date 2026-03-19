@@ -40,6 +40,8 @@ export const consentTemplates = {
   recordingNotice: `For training and quality, this call may be recorded and handled in line with our Privacy Policy.`,
   
   recordingQuestion: `Do you consent to this call being recorded?`,
+
+  recordingMainFollowUp: `What would you like to do today?`,
   
   consentFlow: `CRITICAL: You MUST ask the consent question NOW before proceeding with any other conversation. Follow this exact sequence:
 
@@ -48,7 +50,7 @@ export const consentTemplates = {
 3. WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
 4. If the caller's response is unclear, ambiguous, or you detect background noise/barge-in that prevents you from understanding their answer, IMMEDIATELY repeat the question: "{{consentQuestion}}" - DO NOT proceed until you receive a clear yes or no answer
 
-DO NOT proceed to "What would you like to do today?" or any business questions until the caller has responded to the consent question (yes or no). If they decline recording, acknowledge briefly (e.g. that the call will not be recorded) and then continue with "What would you like to do today?"`
+DO NOT proceed to "{{mainFollowUpQuestion}}" or any business questions until the caller has responded to the consent question (yes or no). If they decline recording, acknowledge briefly (e.g. that the call will not be recorded) and then continue with "{{mainFollowUpQuestion}}"`
 };
 
 /**
@@ -61,9 +63,13 @@ WAIT for the caller's response. If their response is unclear or you detect noise
 
 DO NOT ask the consent question or "What would you like to do today?" until language preference is confirmed.`,
 
-  language_selection: `Continue the conversation naturally. Be helpful and concise.`,
+  language_selection: `The caller chose a language. You must INVOKE the set_call_language function tool (not JSON text). One tool call with the right language_code.`,
+
+  recording_consent: `You are waiting for the caller to answer the recording consent question (yes or no). Do NOT start booking, cancellation, or complaint flows. Do NOT call start_workflow. Only handle consent or transfer. If unclear, repeat the consent question in the call language.`,
 
   general_inquiry: `Help the caller with their question. Be concise and helpful.
+
+LANGUAGE: If this call already has a selected language (you are speaking in French, Hindi, etc.), stay in that language for all replies unless the caller explicitly asks to switch.
 
 🚨 SEARCH TOOLS - USE IMMEDIATELY BASED ON QUERY:
 - Policies, GDPR, courses, pricing, procedures, or "search your database" → call file_search FIRST (never answer from memory without calling it)
