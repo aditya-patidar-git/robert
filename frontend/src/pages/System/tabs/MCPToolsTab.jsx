@@ -145,7 +145,11 @@ const MCPToolsTab = ({ control, watch, currentTab }) => {
       </Paper>
 
       {/* MCP Tools Registry */}
-      <MCPToolsConfig ref={mcpToolsConfigRef} showSystemControls={false} />
+      <MCPToolsConfig
+        ref={mcpToolsConfigRef}
+        showSystemControls={false}
+        excludeBookingCancellationTools
+      />
 
       {/* Save Button */}
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>

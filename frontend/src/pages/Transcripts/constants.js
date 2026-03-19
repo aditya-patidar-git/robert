@@ -24,11 +24,11 @@ export const COMPLAINT_TYPE_OPTIONS = [
   { value: 'other', label: 'Other' }
 ];
 
-// Consent filter options
+// Consent filter options (given = explicit Agreed in DB)
 export const CONSENT_FILTER_OPTIONS = [
   { value: '', label: 'All' },
-  { value: 'given', label: 'Consent Given (Available)' },
-  { value: 'denied', label: 'Consent Denied (Unavailable)' }
+  { value: 'given', label: 'Agreed' },
+  { value: 'denied', label: 'Declined' }
 ];
 
 // Result filter options

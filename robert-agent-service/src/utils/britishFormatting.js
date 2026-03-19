@@ -148,28 +148,31 @@ export function formatDrivingLicenceNumber(value) {
   return trimmed.replace(/[\s\-]/g, '').toUpperCase();
 }
 
-/** New UK photocard: 5 digits, 3 letters, 5 digits, 2 letters (15 chars). */
-const UK_DRIVING_LICENCE_NEW = /^\d{5}[A-Z]{3}\d{5}[A-Z]{2}$/;
-/** Old UK format: 5 letters, 5 digits, 6 alphanumeric (16 chars), e.g. CARTD940315D9A8F. */
+/** Old UK format (CRM): exactly 16 chars — 5 letters, 5 digits, 6 alphanumeric, e.g. CARTD940315D9A8F. */
 const UK_DRIVING_LICENCE_OLD = /^[A-Z]{5}\d{5}[A-Z0-9]{6}$/;
 
+const DRIVING_LICENCE_MESSAGE =
+  'UK driving licence: exactly 16 characters — 5 letters, 5 digits, then 6 letters or numbers (e.g. CARTD940315D9A8F), no spaces.';
+
 /**
- * Validate UK driving licence number (new 15-char photocard or old 16-char format).
- * Use before filling forms to avoid CRM/DVLA "Value is invalid" errors.
+ * Validate UK driving licence number for this CRM: exactly 16 characters, old format only.
+ * Use before filling forms to avoid CRM "Value is invalid" errors.
  * @param {string} value - Driving licence number as spoken or entered
  * @returns {{ valid: boolean, formatted?: string, message?: string }}
  */
 export function validateDrivingLicenceNumber(value) {
   const formatted = formatDrivingLicenceNumber(value);
   if (!formatted) {
-    return { valid: false, message: 'UK driving licence: 16 characters (e.g. CARTD940315D9A8F) or 15 (5 digits, 3 letters, 5 digits, 2 letters), no spaces.' };
+    return { valid: false, message: DRIVING_LICENCE_MESSAGE };
   }
-  const valid = UK_DRIVING_LICENCE_NEW.test(formatted) || UK_DRIVING_LICENCE_OLD.test(formatted);
-  const message = 'UK driving licence: 16 characters (e.g. CARTD940315D9A8F) or 15 (5 digits, 3 letters, 5 digits, 2 letters), no spaces.';
+  if (formatted.length !== 16) {
+    return { valid: false, message: DRIVING_LICENCE_MESSAGE };
+  }
+  const valid = UK_DRIVING_LICENCE_OLD.test(formatted);
   if (valid) {
     return { valid: true, formatted };
   }
-  return { valid: false, message };
+  return { valid: false, message: DRIVING_LICENCE_MESSAGE };
 }
 
 /** First half: 8 chars — new style 5 digits + 3 letters, or old style 5 letters + 3 digits. */

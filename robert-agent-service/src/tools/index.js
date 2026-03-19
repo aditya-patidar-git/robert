@@ -2,7 +2,6 @@ import webSearchTool from './webSearch.js';
 import emailTool from './email.js';
 import sendSMSTool from './sendSMS.js';
 import generateReferenceIdTool from './generateReferenceId.js';
-import paymentsTool from './payments.js';
 import fileSearchTool from './fileSearch.js';
 import transferCallTool from './transferCall.js';
 import kbaVerificationTool from './kbaVerification.js';
@@ -10,6 +9,7 @@ import complaintSubmissionTool from './complaintSubmission.js';
 import clientVerificationTool from './clientVerification.js';
 import startWorkflowTool from './startWorkflow.js';
 import setCallLanguageTool from './setCallLanguage.js';
+import recordingConsentResponseTool from './recordingConsentResponse.js';
 import configManager from '../agent/configManager.js';
 import ToolRegistry from './toolRegistry.js';
 import ToolExecutor from './toolExecutor.js';
@@ -49,14 +49,14 @@ class UnifiedToolExecutor {
       ['email', emailTool],
       ['send_sms', sendSMSTool],
       ['generate_reference_id', generateReferenceIdTool],
-      ['payments', paymentsTool],
       ['file_search', fileSearchTool],
       ['transfer_call', transferCallTool],
       ['kba_verification', kbaVerificationTool],
       ['complaint_submission', complaintSubmissionTool],
       ['client_verification', clientVerificationTool],
       ['start_workflow', startWorkflowTool],
-      ['set_call_language', setCallLanguageTool]
+      ['set_call_language', setCallLanguageTool],
+      ['recording_consent_response', recordingConsentResponseTool]
     ]);
     
     // Register step-based booking tools

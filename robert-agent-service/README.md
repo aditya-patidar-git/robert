@@ -7,7 +7,7 @@ Independent agent service for real-time call handling with direct tool integrati
 - Real-time call handling via Twilio Media Streams
 - Dynamic configuration fetching from MongoDB (updates every 30 seconds)
 - Per-number profile support
-- Direct tool integration (web search, calendar, email, CRM, payments, file search, transfer call)
+- Direct tool integration (web search, calendar, email, CRM, file search, transfer call)
 - OpenAI Realtime API integration with configurable voice, temperature, and VAD settings
 - Confidence threshold checking via uncertainty gate
 
@@ -17,7 +17,7 @@ Independent agent service for real-time call handling with direct tool integrati
 robert-agent-service/
 ├── src/
 │   ├── agent/               # Main agent service
-│   ├── tools/               # All tools (webSearch, calendar, email, crm, payments, fileSearch, transferCall)
+│   ├── tools/               # All tools (webSearch, calendar, email, crm, fileSearch, transferCall)
 │   ├── handlers/            # Call handlers
 │   ├── database/            # MongoDB models and connection
 │   ├── utils/               # Utilities
@@ -85,7 +85,6 @@ The agent service includes direct tool integration:
 - **calendar**: Manage calendar events and availability
 - **email**: Send and manage emails
 - **crm**: Access CRM system for customer management
-- **payments**: Process payments and refunds
 - **file_search**: Search the knowledge base for relevant information
 - **transfer_call**: Transfer call to human agent (caller hears a short hold message, then instrumental hold from `public/audio/hold-music.mp3` via Conference `waitUrl` while the agent hears the handover summary; requires `TUNNEL_DOMAIN` or public `BASE_URL` for Twilio to fetch hold audio)
 

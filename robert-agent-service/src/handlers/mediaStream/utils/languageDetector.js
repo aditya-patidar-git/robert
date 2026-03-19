@@ -75,6 +75,9 @@ export class LanguageDetector {
         await this.state.waitForNextSessionUpdated(5000);
       }
 
+      if (typeof this.state.lastMidCallLanguageSwitchAt === 'number') {
+        this.state.lastMidCallLanguageSwitchAt = Date.now();
+      }
       console.log(
         `🌐 [${this.state.callSid}] Language switched to ${languageConfig.name} (${languageConfig.code}) key=${canonical} voice ${config.voice.id}, transcription language: ${transcriptionLanguage}`
       );
@@ -170,8 +173,23 @@ export class LanguageDetector {
     }
 
     /**
+     * Mid-call transcript fallback: model-driven audio detection is primary; this catches missed switches.
+     */
+    const MID_CALL_SWITCH_COOLDOWN_MS = 12000;
+    const lastSwitch = this.state.lastMidCallLanguageSwitchAt || 0;
+    if (Date.now() - lastSwitch < MID_CALL_SWITCH_COOLDOWN_MS) {
+      return;
+    }
+
+    const t = transcript.trim();
+    const MIN_MID_CALL_TRANSCRIPT_LENGTH = 12;
+    if (t.length < MIN_MID_CALL_TRANSCRIPT_LENGTH) {
+      return;
+    }
+
+    /**
      * Mid-call: any LanguageVoiceMapping language. Inference matches initial selection.
-     * English from non-English: explicit phrasing or long Latin-heavy utterance only.
+     * English from non-English: explicit phrase or Latin-heavy utterance (relaxed thresholds).
      */
     await multilingualService.loadLanguageMappings();
     const currentCanon =
@@ -187,16 +205,15 @@ export class LanguageDetector {
       return;
     }
 
-    const t = transcript.trim();
-
     if (inferredBase === 'en' && currentBase !== 'en') {
       const explicitEnglish =
-        /\b(english|in english|speak english|talk in english|switch to english)\b/i.test(
+        /\b(english|in english|speak english|talk in english|switch to english|can we|could you|please answer|in english please)\b/i.test(
           t
         );
       const latin = (t.match(/[a-zA-Z]/g) || []).length;
+      const latinRatio = latin / Math.max(t.length, 1);
       const longEnglishUtterance =
-        t.length >= 22 && latin / Math.max(t.length, 1) >= 0.72;
+        (t.length >= 14 && latinRatio >= 0.55) || (t.length >= 22 && latinRatio >= 0.5);
       if (!explicitEnglish && !longEnglishUtterance) {
         return;
       }
@@ -204,7 +221,7 @@ export class LanguageDetector {
 
     if (currentBase === 'en' && inferredBase !== 'en') {
       if (
-        t.length < 5 &&
+        t.length < 6 &&
         !/[\u0900-\u097F\u0980-\u09FF\u0A80-\u0AFF\u0A00-\u0A7F\u0B80-\u0BFF\u0600-\u06FF]/.test(
           t
         )

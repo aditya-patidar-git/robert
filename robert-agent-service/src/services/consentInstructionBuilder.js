@@ -67,10 +67,9 @@ ${baseInstructions}`;
 CRITICAL RULES:
 - You MUST ask the consent question NOW before proceeding with any other conversation
 - Say exactly and only "${consentQuestion}" - no greeting, no repetition in the same turn
-- You MUST NOT ask "${mainFollowUpQuestion}" until the caller has responded to the consent question (yes or no). If they decline recording, acknowledge briefly (in the caller's language) and then say exactly: "${mainFollowUpQuestion}"
-- Do NOT say that the caller declined or agreed until they have clearly said yes or no. Do NOT say "${mainFollowUpQuestion}" or move the conversation forward until you have a clear yes or no. If unclear, repeat only: "${consentQuestion}"
-- If you cannot clearly understand the caller's response, repeat the question once using the exact phrase above
-- Do not assume or guess the answer - always wait for a clear response
+- When you hear a CLEAR yes or no from the caller (in any language, e.g. yes, no, ओके यस, हाँ, नहीं, oui, non), you MUST call the recording_consent_response tool with given: true for yes or given: false for no, then you may say the main follow-up. Do NOT say "${mainFollowUpQuestion}" until you have called recording_consent_response with the caller's clear answer.
+- If the response is unclear (e.g. "what?", "repeat", "I'll answer later"), do NOT call the tool—repeat only: "${consentQuestion}"
+- Do not assume or guess the answer - always wait for a clear response before calling recording_consent_response
 
 ${baseInstructions}`;
     }
@@ -104,15 +103,14 @@ ${baseInstructions}`;
 4. CRITICAL: Only AFTER language preference is confirmed, you MUST ask the consent question:
    - First, say: "${consentNotice}"
    - For the consent question, say exactly and only: "${consentQuestion}" - do not add a greeting or repeat the question in the same turn
-   - WAIT for the caller's response (yes, no, or silence) - DO NOT continue until they respond
-   - If the caller's response is unclear, repeat the question once only, saying exactly: "${consentQuestion}"
+   - WAIT for the caller's response (yes, no, or silence). When you hear a CLEAR yes or no (in any language), you MUST call the recording_consent_response tool with given: true or given: false, then you may proceed to "${mainFollowUpQuestion}". If the response is unclear, repeat the question only; do NOT call the tool.
 
-5. AFTER the caller responds to the consent question (yes or no), you may proceed to: "${mainFollowUpQuestion}" If they decline recording, acknowledge briefly (e.g. that the call will not be recorded) and then continue with "${mainFollowUpQuestion}"
+5. AFTER you have called recording_consent_response with the caller's clear answer, you may say: "${mainFollowUpQuestion}". If they declined, acknowledge briefly (e.g. that the call will not be recorded) and then continue with "${mainFollowUpQuestion}"
 
 CRITICAL RULES:
 - You MUST ask the language preference question FIRST before any other conversation
 - You MUST ask the consent question IMMEDIATELY after language preference is confirmed
-- You MUST NOT ask "${mainFollowUpQuestion}" until the caller has responded to the consent question (yes or no). Do NOT say that the caller declined or agreed until they have clearly said yes or no. If they decline, acknowledge and continue the call as usual
+- You MUST call recording_consent_response (given: true or given: false) when you hear a clear yes or no from the caller, in any language. Do NOT say "${mainFollowUpQuestion}" until you have called this tool. If the response is unclear, repeat the consent question; do not call the tool
 - If you cannot clearly understand the caller's response (due to noise, barge-in, or unclear speech), you MUST repeat the question
 - Do not assume or guess the answer - always wait for a clear response
 - Both the language preference question and consent question are MANDATORY - they cannot be skipped

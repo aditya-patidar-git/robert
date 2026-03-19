@@ -329,8 +329,12 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         const r = validateNationalInsurance(args.nationalInsurance);
         if (!r.valid) invalidFields.nationalInsurance = r.message;
       }
-      if (args.drivingLicenceNumber && effectiveDrivingLicenceNumber === undefined) {
-        const r = validateDrivingLicenceNumber(args.drivingLicenceNumber);
+      const dlCandidate =
+        effectiveDrivingLicenceNumber !== undefined
+          ? effectiveDrivingLicenceNumber
+          : (args.drivingLicenceNumber ? args.drivingLicenceNumber : undefined);
+      if (dlCandidate) {
+        const r = validateDrivingLicenceNumber(dlCandidate);
         if (!r.valid) invalidFields.drivingLicenceNumber = r.message;
       }
       if (Object.keys(invalidFields).length > 0) {

@@ -3,7 +3,7 @@ import { Paper, Box, Typography, Button, TextField, FormControl, InputLabel, Sel
 import { GetApp, Visibility, PlayArrow, Pause, Delete, VolumeOff } from '@mui/icons-material';
 import { formatDateTime, formatDuration } from '../../../utils/formatters';
 import { CONSENT_FILTER_OPTIONS, RESULT_FILTER_OPTIONS, DEFAULT_TRANSCRIPT_FILTERS } from '../constants';
-import { getConsentStatusDisplay, canAttemptPlayback, getRecordingStatusDisplay } from '../utils';
+import { getConsentStatusDisplay, canAttemptPlayback, getRecordingStatusDisplay, hasRecordingConsent } from '../utils';
 
 const TranscriptsTab = ({ state, handlers }) => {
   const {
@@ -150,7 +150,23 @@ const TranscriptsTab = ({ state, handlers }) => {
                       <TableCell><Chip label={t.complaint?.hasComplaint ? 'Yes' : 'No'} color={t.complaint?.hasComplaint ? 'error' : 'default'} size="small" /></TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 0.5 }}>
-                          <IconButton size="small" onClick={() => handleViewTranscript(t)}><Visibility fontSize="small" /></IconButton>
+                          <Tooltip
+                            title={
+                              hasRecordingConsent(t)
+                                ? 'View transcript'
+                                : 'Transcript requires agreed recording consent'
+                            }
+                          >
+                            <span>
+                              <IconButton
+                                size="small"
+                                disabled={!hasRecordingConsent(t)}
+                                onClick={() => hasRecordingConsent(t) && handleViewTranscript(t)}
+                              >
+                                <Visibility fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                           {(() => {
                             const canPlay = canAttemptPlayback(t);
                             const recordingStatus = getRecordingStatusDisplay(t);
@@ -179,7 +195,17 @@ const TranscriptsTab = ({ state, handlers }) => {
                             );
                           })()}
                           {canSeeAll && <>
-                            <IconButton size="small" onClick={() => handleExport({ id: t.id || t._id })}><GetApp fontSize="small" /></IconButton>
+                            <Tooltip title={hasRecordingConsent(t) ? 'Export' : 'Export requires agreed recording consent'}>
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  disabled={!hasRecordingConsent(t)}
+                                  onClick={() => hasRecordingConsent(t) && handleExport({ id: t.id || t._id })}
+                                >
+                                  <GetApp fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
                             <IconButton size="small" color="error" onClick={() => handleDeleteTranscript(t)}><Delete fontSize="small" /></IconButton>
                           </>}
                         </Box>

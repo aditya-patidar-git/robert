@@ -30,7 +30,7 @@ import { useTranscriptsState } from './hooks/useTranscriptsState';
 import TranscriptsTab from './tabs/TranscriptsTab';
 import ComplaintsTab from './tabs/ComplaintsTab';
 import { getComplaintPriority, COMPLAINT_TYPE_OPTIONS } from './constants';
-import { getConfidenceColor, formatConfidenceScore } from './utils';
+import { getConfidenceColor, formatConfidenceScore, hasRecordingConsent } from './utils';
 import transcriptService from '../../services/transcriptService';
 import complaintService from '../../services/complaintService';
 import { formatDateTime } from '../../utils/formatters';
@@ -152,9 +152,10 @@ const TranscriptsComplaintsPage = () => {
 
   // Handlers
   const handleViewTranscript = useCallback((transcript) => {
-    // Check consent before opening dialog
-    if (transcript?.recordingConsent?.given === false) {
-      showError('Transcript not available: The customer did not provide consent for call recording. In compliance with GDPR, transcripts are not stored when consent is not given.');
+    if (!hasRecordingConsent(transcript)) {
+      showError(
+        'Transcript not available: Recording consent must be agreed before transcript can be viewed.'
+      );
       return;
     }
     setSelectedTranscript(transcript);
@@ -171,8 +172,10 @@ const TranscriptsComplaintsPage = () => {
 
       // Check for opt-out - look up transcript by callSid
       const transcript = transcripts.find(t => t.callSid === callSid);
-      if (transcript?.recordingConsent?.given === false) {
-        showError('Recording not available: The customer did not provide consent for call recording. In compliance with GDPR, we do not store recordings when consent is not given.');
+      if (!hasRecordingConsent(transcript)) {
+        showError(
+          'Recording not available: Playback requires agreed recording consent.'
+        );
         return;
       }
 
@@ -228,9 +231,9 @@ const TranscriptsComplaintsPage = () => {
             showError('You do not have permission to access this recording.');
             return;
           } else if (audioResponse.status === 404) {
-            const transcript = transcripts.find(t => t.callSid === callSid);
-            if (transcript?.recordingConsent?.given === false) {
-              showError('Recording not available: The customer did not provide consent for call recording. In compliance with GDPR, we do not store recordings when consent is not given.');
+            const tr = transcripts.find(t => t.callSid === callSid);
+            if (!hasRecordingConsent(tr)) {
+              showError('Recording not available: Playback requires agreed recording consent.');
             } else {
               showError('Recording not found. The recording may not be available for this call.');
             }
@@ -341,9 +344,9 @@ const TranscriptsComplaintsPage = () => {
     } catch (error) {
       console.error('Error in handlePlayRecording:', error);
       // Check if error is due to opt-out
-      const transcript = transcripts.find(t => t.callSid === callSid);
-      if (transcript?.recordingConsent?.given === false) {
-        showError('Recording not available: The customer did not provide consent for call recording. In compliance with GDPR, we do not store recordings when consent is not given.');
+      const tr = transcripts.find(t => t.callSid === callSid);
+      if (!hasRecordingConsent(tr)) {
+        showError('Recording not available: Playback requires agreed recording consent.');
       } else {
         showError('Failed to play recording. Please check if the recording is available.');
       }
@@ -356,8 +359,8 @@ const TranscriptsComplaintsPage = () => {
     // Check for opt-out if exporting a single transcript
     if (params.id) {
       const transcript = transcripts.find(t => (t.id === params.id || t._id === params.id));
-      if (transcript?.recordingConsent?.given === false) {
-        showError('Transcript not available for export: The customer did not provide consent for call recording. In compliance with GDPR, transcripts are not stored when consent is not given.');
+      if (!hasRecordingConsent(transcript)) {
+        showError('Transcript not available for export: agreed recording consent is required.');
         return;
       }
     }
@@ -498,7 +501,6 @@ const TranscriptsComplaintsPage = () => {
                              (parentData?.transcript ? parentData.transcript.recordingConsent : null);
     
     if (!transcriptArray || transcriptArray.length === 0) {
-      // Check if empty due to opt-out
       if (recordingConsent?.given === false) {
         return (
           <Box sx={{ p: 3, textAlign: 'center' }}>
@@ -506,10 +508,19 @@ const TranscriptsComplaintsPage = () => {
               Transcript Not Available
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              The customer did not provide consent for call recording and transcript storage.
+              The caller declined recording consent; transcript content was not stored.
+            </Typography>
+          </Box>
+        );
+      }
+      if (recordingConsent?.given !== true) {
+        return (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              Transcript Not Available
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              In compliance with GDPR regulations, we do not store transcripts when recording consent is not given.
+              Recording consent was not recorded as agreed; transcript is not available for this call.
             </Typography>
           </Box>
         );
@@ -692,10 +703,21 @@ const TranscriptsComplaintsPage = () => {
                 return <Typography color="text.secondary">No transcript available</Typography>;
               })()}
               
-              {/* Display summary */}
+              {/* Display summary — only when consent was agreed (API also enforces) */}
               {(() => {
+                const rc =
+                  fullTranscriptData?.transcript?.recordingConsent ||
+                  fullTranscriptData?.recordingConsent ||
+                  selectedTranscript?.recordingConsent;
+                if (rc?.given !== true) return null;
                 const summaryRaw = fullTranscriptData?.transcript?.summary ?? fullTranscriptData?.summary ?? selectedTranscript?.summary;
                 if (!summaryRaw) return null;
+                if (
+                  typeof summaryRaw === 'string' &&
+                  summaryRaw.includes('consent not given')
+                ) {
+                  return null;
+                }
                 const summaryObj = parseSummary(summaryRaw);
                 return (
                   <Box sx={{ mt: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>

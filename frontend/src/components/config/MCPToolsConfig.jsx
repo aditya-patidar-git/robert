@@ -24,19 +24,25 @@ import {
 import { useToast } from '../common/ToastProvider';
 import { formatDateTime } from '../../utils/formatters';
 import mcpToolsService from '../../services/mcpToolsService';
+import { isHiddenFromMcpSystemToolsList } from './mcpToolsVisibility';
 
 const PAGE_SIZE = 25;
 
-const MCPToolsConfig = forwardRef(({ 
-  showSystemControls = true, // Show MCP System Controls section
-  readOnly = false // If true, disable all editing
-}, ref) => {
+const MCPToolsConfig = forwardRef(
+  ({
+    showSystemControls = true, // Show MCP System Controls section
+    readOnly = false, // If true, disable all editing
+    excludeBookingCancellationTools = false
+  },
+  ref) => {
   const { showSuccess, showError } = useToast();
   const queryClient = useQueryClient();
   const sentinelRef = useRef(null);
   
   const [toolsList, setToolsList] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
+  /** Raw API offset: how many tools the server has returned so far (unfiltered count) */
+  const [apiOffset, setApiOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [editingDomains, setEditingDomains] = useState({});
@@ -45,32 +51,46 @@ const MCPToolsConfig = forwardRef(({
   const [maxTimeValues, setMaxTimeValues] = useState({});
   const [enabledValues, setEnabledValues] = useState({});
 
-  const hasMore = toolsList.length < totalCount;
+  const filterVisibleTools = useCallback(
+    (tools) => {
+      if (!excludeBookingCancellationTools) return tools;
+      return tools.filter((t) => !isHiddenFromMcpSystemToolsList(t?.name));
+    },
+    [excludeBookingCancellationTools]
+  );
+
+  const hasMore = apiOffset < totalCount;
 
   const loadFirstPage = useCallback(async () => {
     setLoading(true);
     try {
       const { tools, total } = await mcpToolsService.getToolsPaginated({ offset: 0, limit: PAGE_SIZE });
-      setToolsList(tools);
+      setApiOffset(tools.length);
+      setToolsList(filterVisibleTools(tools));
       setTotalCount(total);
     } catch (e) {
       setToolsList([]);
       setTotalCount(0);
+      setApiOffset(0);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterVisibleTools]);
 
   const loadNextPage = useCallback(async () => {
-    if (!hasMore || loadingMore || loading) return;
+    if (apiOffset >= totalCount || loadingMore || loading) return;
     setLoadingMore(true);
     try {
-      const { tools } = await mcpToolsService.getToolsPaginated({ offset: toolsList.length, limit: PAGE_SIZE });
-      setToolsList(prev => [...prev, ...tools]);
+      const { tools } = await mcpToolsService.getToolsPaginated({
+        offset: apiOffset,
+        limit: PAGE_SIZE
+      });
+      setApiOffset((prev) => prev + tools.length);
+      setToolsList((prev) => [...prev, ...filterVisibleTools(tools)]);
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, loading, toolsList.length]);
+  }, [apiOffset, totalCount, loadingMore, loading, filterVisibleTools]);
 
   useEffect(() => {
     loadFirstPage();
@@ -272,10 +292,13 @@ const MCPToolsConfig = forwardRef(({
     <Box>
       {/* MCP Tools Registry */}
       <Paper>
-        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" gutterBottom>
-            Available MCP Tools ({toolsList.length}{totalCount > toolsList.length ? ` of ${totalCount}` : ''})
-          </Typography>
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+          <Box>
+            <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+              Available MCP Tools ({toolsList.length}
+              {totalCount > toolsList.length && !excludeBookingCancellationTools ? ` of ${totalCount}` : ''})
+            </Typography>
+          </Box>
           <Button
             variant="outlined"
             size="small"

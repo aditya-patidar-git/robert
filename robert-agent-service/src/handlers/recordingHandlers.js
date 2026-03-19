@@ -164,18 +164,15 @@ export const proxyRecording = async (req, res) => {
             return res.status(404).json({ error: "Recording not found" });
         }
 
-        // Check consent FIRST before attempting to fetch
-        // Default is opt-in, so null/undefined means consent given
-        // Only explicitly denied (false) should block access
-        if (rec.recordingConsent?.given === false) {
-            return res.status(403).json({ 
-                error: 'Recording not available - consent not given',
-                message: 'Recording consent was not provided for this call.'
+        // Require explicit agreed consent before streaming recording
+        if (rec.recordingConsent?.given !== true) {
+            return res.status(403).json({
+                error: 'Recording not available - recording consent not agreed',
+                message: 'Recording is only available when the caller agreed to recording.'
             });
         }
 
-        // If recordingUrl is missing but consent allows (true or null for opt-in), try fetching from Twilio
-        if (!rec.recordingUrl && rec.recordingConsent?.given !== false) {
+        if (!rec.recordingUrl) {
             console.log(`🔍 [${req.params.callSid}] Recording URL missing but consent given - fetching from Twilio...`);
             
             try {

@@ -101,11 +101,11 @@ export const proxyRecording = async (req, res) => {
       return res.status(404).json({ error: 'Call record not found' });
     }
 
-    // Check consent first - only explicitly denied (false) should block access
-    if (callRecord.recordingConsent?.given === false) {
-      return res.status(403).json({ 
-        error: 'Recording not available - consent not given',
-        message: 'Recording consent was not provided for this call.'
+    // Require explicit agreed consent (true); declined or not recorded block playback
+    if (callRecord.recordingConsent?.given !== true) {
+      return res.status(403).json({
+        error: 'Recording not available - recording consent not agreed',
+        message: 'Recording is only available when the caller agreed to recording.'
       });
     }
 
@@ -275,7 +275,7 @@ export const ensureRecordings = async (req, res) => {
 
     const processOne = async (callSid) => {
       const callRecord = await CallRecord.findOne({ callSid }).lean();
-      if (!callRecord || callRecord.recordingConsent?.given === false) return 0;
+      if (!callRecord || callRecord.recordingConsent?.given !== true) return 0;
       const url = callRecord.recordingUrl;
       if (url && !url.startsWith('/')) return 0;
       const result = await fetchRecordingFromTwilio(twilioClient, callSid);

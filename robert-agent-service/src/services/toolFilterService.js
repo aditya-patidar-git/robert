@@ -9,16 +9,14 @@
  * @module toolFilterService
  */
 
-/** Tools available in every phase (advisory filtering; execution uses full registry). */
-const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search'];
+/**
+ * Tools merged into every workflow phase (file_search, web_search, complaint_submission).
+ * Prompts constrain when to use them; booking/cancellation step tools still take priority for automation.
+ */
+const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search', 'complaint_submission'];
 
-/** Phases where file_search and web_search are disabled to keep workflow order (use step tools only). */
-const SEARCH_TOOLS_DISABLED_PHASES = new Set([
-  'booking_start', 'booking_availability', 'booking_existing_client', 'booking_new_client',
-  'booking_payment', 'booking_completion', 'booking_modification', 'cancellation',
-  'language_selection',
-  'recording_consent'
-]);
+/** Phases where file_search/web_search are withheld — empty so these tools are available in all phases. */
+const SEARCH_TOOLS_DISABLED_PHASES = new Set();
 
 /**
  * Tool sets organized by workflow phase.
@@ -38,8 +36,8 @@ const TOOL_SETS = {
     'transfer_call'
   ],
 
-  // Until caller answers recording consent: no booking/cancellation/complaint tools
-  recording_consent: ['set_call_language', 'transfer_call'],
+  // Until caller answers recording consent: model calls recording_consent_response on clear yes/no
+  recording_consent: ['recording_consent_response', 'set_call_language', 'transfer_call'],
 
   // General inquiry handling - informational tools
   general_inquiry: [
@@ -131,7 +129,6 @@ const TOOL_SETS = {
     'cancellation_step_voice_confirmation',
     'transfer_call'
   ],
-
   // Customer verification workflow
   verification: [
     'kba_verification',
@@ -149,9 +146,8 @@ const TOOL_SETS = {
     'transfer_call'
   ],
 
-  // Payment-only operations (outside booking)
+  // Payment-related questions (outside booking) — escalate; booking flows use booking_step_* payment tools
   payment: [
-    'payments',
     'transfer_call'
   ],
 
@@ -180,9 +176,7 @@ const CONTEXTUAL_TOOLS = {
   adminAccess: [],
 
   // Add legacy tools when backward compatibility is needed
-  legacyMode: [
-    'payments'
-  ],
+  legacyMode: [],
 
   /** Mid-call language change (after initial language locked) */
   allowMidCallLanguageSwitch: ['set_call_language']
@@ -195,14 +189,15 @@ const CONTEXTUAL_TOOLS = {
  * @returns {string[]|null} Array of tool names, or null for full access
  */
 export function getToolNamesForPhase(phase) {
-  // Return the tool set for the phase, or default to general_inquiry
-  const toolSet = TOOL_SETS[phase];
-  
+  // Step-level cancellation phases use the same tool set as cancellation
+  const effectivePhase = (phase === 'cancellation_verify' || phase === 'cancellation_confirm') ? 'cancellation' : phase;
+  const toolSet = TOOL_SETS[effectivePhase];
+
   // If phase exists and is null, it means full access
-  if (phase in TOOL_SETS && toolSet === null) {
+  if (effectivePhase in TOOL_SETS && toolSet === null) {
     return null;
   }
-  
+
   // Return the tool set or default to general_inquiry
   return toolSet || TOOL_SETS.general_inquiry;
 }
@@ -233,6 +228,7 @@ export function getToolsForContext(phase, additionalContext = {}) {
   
   const toolSet = new Set(toolsList);
   const includeSearchTools = !SEARCH_TOOLS_DISABLED_PHASES.has(phase);
+  /** When a phase is listed in SEARCH_TOOLS_DISABLED_PHASES, only file_search and web_search are withheld; complaint_submission still merges. */
   ALWAYS_AVAILABLE_TOOLS.forEach(tool => {
     if (includeSearchTools || (tool !== 'file_search' && tool !== 'web_search')) {
       toolSet.add(tool);

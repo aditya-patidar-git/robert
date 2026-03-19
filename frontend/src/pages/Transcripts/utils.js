@@ -4,28 +4,37 @@
  */
 
 /**
- * Check if transcript/recording is available based on consent status
- * Content is available unless consent is explicitly denied (false)
- * null/undefined means opt-in (default behavior per GDPR)
+ * Recording/transcript may only be shown when the caller explicitly agreed to recording consent.
  * @param {Object} record - Call record with recordingConsent field
- * @returns {boolean} - true if content is available
+ * @returns {boolean}
  */
-export const isContentAvailable = (record) => {
-  return record?.recordingConsent?.given !== false;
+export const hasRecordingConsent = (record) => {
+  return record?.recordingConsent?.given === true;
 };
 
 /**
- * Get consent status display info for UI components
+ * Content (transcript + recording in UI) requires explicit agreement.
+ * @param {Object} record
+ * @returns {boolean}
+ */
+export const isContentAvailable = (record) => {
+  return hasRecordingConsent(record);
+};
+
+/**
+ * Get consent status display for the transcript list (Agreed / Declined / Not recorded).
  * @param {Object} record - Call record with recordingConsent field
  * @returns {Object} - { label, color, variant } for Chip component
  */
 export const getConsentStatusDisplay = (record) => {
-  const available = isContentAvailable(record);
-  return {
-    label: available ? 'Available' : 'No Consent',
-    color: available ? 'success' : 'default',
-    variant: available ? 'filled' : 'outlined'
-  };
+  const given = record?.recordingConsent?.given;
+  if (given === true) {
+    return { label: 'Agreed', color: 'success', variant: 'filled' };
+  }
+  if (given === false) {
+    return { label: 'Declined', color: 'default', variant: 'outlined' };
+  }
+  return { label: 'Not recorded', color: 'warning', variant: 'outlined' };
 };
 
 /**
@@ -35,11 +44,11 @@ export const getConsentStatusDisplay = (record) => {
  */
 export const formatConsentStatus = (record) => {
   if (record?.recordingConsent?.given === true) {
-    return 'Consent Given';
+    return 'Agreed';
   } else if (record?.recordingConsent?.given === false) {
-    return 'Consent Denied';
+    return 'Declined';
   }
-  return 'Not Requested (Default Opt-in)';
+  return 'Not recorded';
 };
 
 /**
@@ -91,20 +100,21 @@ export const RECORDING_STATUS = {
 export const getRecordingStatusDisplay = (record) => {
   const status = record?.recordingStatus || 'unknown';
   const hasUrl = !!record?.recordingUrl;
-  const consentDenied = record?.recordingConsent?.given === false;
+  const consentOk = hasRecordingConsent(record);
   const hasDuration = hasSufficientDuration(record);
 
-  // Check consent first
-  if (consentDenied) {
+  if (!consentOk) {
     return {
-      label: 'No Consent',
+      label: 'No access',
       color: 'default',
       canPlay: false,
-      tooltip: 'Recording consent was not given for this call'
+      tooltip:
+        record?.recordingConsent?.given === false
+          ? 'Caller declined recording consent — playback is not available'
+          : 'Recording consent was not recorded as agreed — playback is not available'
     };
   }
 
-  // Check duration - 0-second calls never have recordings
   if (!hasDuration) {
     return {
       label: 'No Audio',
@@ -114,7 +124,6 @@ export const getRecordingStatusDisplay = (record) => {
     };
   }
 
-  // Has recording URL - available for playback
   if (hasUrl || status === 'available') {
     return {
       label: 'Available',
@@ -124,7 +133,6 @@ export const getRecordingStatusDisplay = (record) => {
     };
   }
 
-  // Check status for calls with sufficient duration
   switch (status) {
     case 'not_found':
       return {
@@ -157,49 +165,25 @@ export const getRecordingStatusDisplay = (record) => {
   }
 };
 
-/**
- * Minimum duration (in seconds) for a call to potentially have a recording
- * Calls shorter than this are typically failed/missed connections
- */
 export const MIN_RECORDING_DURATION = 1;
 
-/**
- * Check if a call has sufficient duration to have a recording
- * @param {Object} record - Call record with duration field
- * @returns {boolean} - true if duration is sufficient for recording
- */
 export const hasSufficientDuration = (record) => {
   const duration = record?.duration;
-  // Duration must be a positive number greater than minimum
   return typeof duration === 'number' && duration >= MIN_RECORDING_DURATION;
 };
 
-/**
- * Check if recording can potentially be played
- * @param {Object} record - Call record
- * @returns {boolean} - true if recording might be playable
- */
 export const canAttemptPlayback = (record) => {
-  // Can't play if consent denied
-  if (record?.recordingConsent?.given === false) {
+  if (!hasRecordingConsent(record)) {
     return false;
   }
-  
-  // Can't play if duration is 0 or too short (no audio captured)
   if (!hasSufficientDuration(record)) {
     return false;
   }
-  
-  // Can play if we have URL or status is not definitively unavailable
   if (record?.recordingUrl) {
     return true;
   }
-  
-  // Don't attempt if we know it's not found
   if (record?.recordingStatus === 'not_found') {
     return false;
   }
-  
-  // For unknown/processing/error status, allow attempt (will trigger fetch)
   return true;
 };

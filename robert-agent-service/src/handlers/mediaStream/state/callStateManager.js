@@ -151,6 +151,8 @@ export class CallStateManager {
     this._sessionUpdatedWaiters = [];
     /** After mid-call language switch: next response.create gets a one-shot output-language instruction */
     this.pendingOneShotOutputLanguageCanonical = null;
+    /** Timestamp of last mid-call language switch (model or transcript); transcript fallback skips if within cooldown */
+    this.lastMidCallLanguageSwitchAt = 0;
 
     // Pre-connection message queue: flush when WebSocket becomes ready (avoids "Cannot send - WebSocket not ready")
     this.preConnectionMessageQueue = [];

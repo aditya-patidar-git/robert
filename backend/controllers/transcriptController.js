@@ -63,22 +63,12 @@ function buildTranscriptFilter(query, options = {}) {
 
   if (consentStatus) {
     if (consentStatus === 'given') {
+      const consentClause = { 'recordingConsent.given': true };
       if (search) {
-        filter.$and = [
-          { $or: filter.$or },
-          { $or: [
-            { 'recordingConsent.given': true },
-            { 'recordingConsent.given': { $exists: false } },
-            { 'recordingConsent.given': null }
-          ]}
-        ];
+        filter.$and = [{ $or: filter.$or }, consentClause];
         delete filter.$or;
       } else {
-        filter.$or = [
-          { 'recordingConsent.given': true },
-          { 'recordingConsent.given': { $exists: false } },
-          { 'recordingConsent.given': null }
-        ];
+        Object.assign(filter, consentClause);
       }
     } else if (consentStatus === 'denied') {
       filter['recordingConsent.given'] = false;
@@ -144,6 +134,14 @@ export const getTranscript = async (req, res) => {
     const transcript = await CallRecord.findById(id);
     if (!transcript) {
       return res.status(404).json({ error: 'Transcript not found' });
+    }
+
+    if (transcript.recordingConsent?.given !== true) {
+      return res.status(403).json({
+        error: 'Transcript not available - recording consent not agreed',
+        message:
+          'This call does not have agreed recording consent; transcript content is not available.'
+      });
     }
 
     // Get related escalation logs
@@ -218,11 +216,11 @@ export const exportTranscripts = async (req, res) => {
       if (!transcript) {
         return res.status(404).json({ error: 'Transcript not found' });
       }
-      // Check consent before export
-      if (transcript.recordingConsent?.given === false) {
+      if (transcript.recordingConsent?.given !== true) {
         return res.status(403).json({
-          error: 'Transcript not available - consent not given',
-          message: 'This transcript cannot be exported as the customer did not provide recording consent.'
+          error: 'Transcript not available - recording consent not agreed',
+          message:
+            'This transcript cannot be exported without agreed recording consent.'
         });
       }
       transcripts = [transcript];

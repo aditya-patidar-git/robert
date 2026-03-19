@@ -163,13 +163,14 @@ export class ConversationService {
       applyOneShotLanguageHint: false
     });
     if (result.isConsentQuestion === true) {
-      return { toolChoice: 'none', workflowPhase: null };
+      return { toolChoice: 'auto', workflowPhase: 'recording_consent' };
     }
     const fs = getConversationFlowState(callSid, state);
+    const inWorkflow = !!(conversation?.bookingSession || conversation?.workflowContext);
     let workflowPhase;
     if (fs.waitingForLanguage && !fs.languageSelected) {
       workflowPhase = 'language_selection';
-    } else if (overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null) {
+    } else if (inWorkflow && overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null) {
       workflowPhase = overrideWorkflowPhase;
     } else {
       workflowPhase = await this.promptService.determineWorkflowPhase(state, callSid);
@@ -265,8 +266,9 @@ export class ConversationService {
       return { instructions: withOneShot(instructions), isInitialGreeting: true };
     }
 
+    const inWorkflow = !!(conversation?.bookingSession || conversation?.workflowContext);
     let workflowPhase =
-      overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
+      inWorkflow && overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
         ? overrideWorkflowPhase
         : await this.promptService.determineWorkflowPhase(state, callSid);
     const activeToolName =
