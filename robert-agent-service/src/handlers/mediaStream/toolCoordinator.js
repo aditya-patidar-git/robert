@@ -54,11 +54,12 @@ export class ToolCoordinator {
     // and optional snapshot callback for workflow resume after barge-in
     const onBargeInSnapshot = (callSid) => {
       const conv = conversations[callSid];
-      let phase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? null;
-      // If phase is wrong (booking_start) but we are in payment steps, use booking_payment so restore gives correct instructions (e.g. call with confirmed: true)
-      if (phase === 'booking_start') {
-        const step = conv?.bookingSession?.currentStep;
-        if (step === 9 || step === 10) {
+      // Prefer phase from conversation (authoritative) when in workflow; fallback to in-memory phase
+      let phase = promptService.getWorkflowPhaseFromConversation(conv, this.state);
+      if (phase == null) {
+        phase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? null;
+        // If phase is wrong (booking_start) but we are in payment steps, use booking_payment so restore gives correct instructions
+        if (phase === 'booking_start' && (conv?.bookingSession?.currentStep === 9 || conv?.bookingSession?.currentStep === 10)) {
           phase = 'booking_payment';
         }
       }
@@ -97,6 +98,12 @@ export class ToolCoordinator {
             this.openaiIntegration) {
           this.openaiIntegration.setCurrentWorkflowPhase('booking_payment');
         }
+      },
+      onAfterToolComplete: (callSid, context, phase) => {
+        if (!phase || !this.openaiIntegration) return;
+        const name = context?.toolName;
+        if (!name || (!name.startsWith('booking_step_') && !name.startsWith('cancellation_step_'))) return;
+        this.openaiIntegration.setCurrentWorkflowPhase(phase);
       },
       onWorkflowSwitch: (callSid, phase) => {
         if (this.openaiIntegration) {

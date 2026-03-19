@@ -276,7 +276,7 @@ CRITICAL WORKFLOW:
 1. ONLY call this tool AFTER you have reached the contact details page (Step 8 for existing, Step 7 for new).
 2. DO NOT ask for Name, Email, Phone, Postcode, or any contact detail until you have called this tool at least once. The first call returns missingFields—only then ask for those specific missing fields, in one sequence, with double confirmation (ask → repeat to verify; if no match, ask once more and take that as final).
 3. Collect each missing field once: do not re-ask for a field already confirmed. When you have a value for every missing field, call this tool ONCE with ALL required parameters (postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber or drivingLicenceFirstHalf+SecondHalf, customerEmail, customerMobile, customerName as needed)—do not call with only a subset or the form will not be fully filled.
-4. DRIVING LICENCE: You may collect in two halves to reduce errors. First ask for the first half only (8 characters: either 5 digits + 3 letters, or 5 letters + 3 digits; no spaces). Call the tool with drivingLicenceFirstHalf only. If the tool returns requiresDrivingLicenceSecondHalf, ask for the second half (7 or 8 characters as per format), then call again with BOTH drivingLicenceFirstHalf and drivingLicenceSecondHalf. When collected in two halves you do NOT need to ask the caller to repeat the full number. Alternatively pass the full drivingLicenceNumber in one go (then use double confirmation as for other fields).
+4. DRIVING LICENCE: The full number must be exactly 16 characters (old UK format: 5 letters, 5 digits, then 6 letters or numbers; no spaces). You may collect in two halves: first half 8 characters (5 letters + 3 digits, or 5 digits + 3 letters), then second half so that first+second equals exactly 16 characters (typically second half is 8 characters for the old format). Call with drivingLicenceFirstHalf only first; if requiresDrivingLicenceSecondHalf, ask for the second half and call again with BOTH halves. When using halves you do NOT need the caller to repeat the full number. Alternatively pass drivingLicenceNumber in one go (then use double confirmation as for other fields).
 5. After the tool fills successfully, the flow proceeds to payment.`,
 
       parameters: {
@@ -318,15 +318,15 @@ CRITICAL WORKFLOW:
           },
           drivingLicenceNumber: {
             type: 'string',
-            description: 'UK driving licence number (full 15 or 16 chars, no spaces). Alternatively use drivingLicenceFirstHalf then drivingLicenceSecondHalf in two steps.'
+            description: 'UK driving licence number: exactly 16 characters (5 letters, 5 digits, 6 letters/numbers), no spaces, e.g. CARTD940315D9A8F. Alternatively use drivingLicenceFirstHalf + drivingLicenceSecondHalf so the combined value is exactly 16 characters.'
           },
           drivingLicenceFirstHalf: {
             type: 'string',
-            description: 'First half of UK driving licence (8 chars): 5 digits + 3 letters (e.g. 12345ABC) or 5 letters + 3 digits (e.g. CARTD940). Use when collecting in two halves; then ask for second half and pass both halves on next call.'
+            description: 'First half of UK driving licence (8 chars): 5 digits + 3 letters (e.g. 12345ABC) or 5 letters + 3 digits (e.g. CARTD940). Together with second half must form exactly 16 characters in old UK format.'
           },
           drivingLicenceSecondHalf: {
             type: 'string',
-            description: 'Second half of UK driving licence (7 or 8 chars). Pass together with drivingLicenceFirstHalf when you have both; no need to ask caller to repeat full number.'
+            description: 'Second half of UK driving licence (7 or 8 chars per half-validation). Together with first half must concatenate to exactly 16 characters. Pass with drivingLicenceFirstHalf when both are known.'
           },
           licenceHeld: {
             type: 'string',
@@ -499,7 +499,7 @@ export function getToolDefinitions() {
     {
       type: 'function',
       name: 'web_search',
-      description: 'Search the web for current information (weather, news, external facts) not in the company knowledge base. Use when the caller asks about live/external data; use file_search first for policy/course/internal questions.',
+      description: 'Search the web for live or external information (e.g. weather, news, facts not in training or the company KB). Use when the query strictly requires the web. For Universal Motorcycle Training policies, courses, or procedures, prefer answering or file_search first; do not use this for routine company questions.',
       parameters: {
         type: 'object',
         properties: {
@@ -587,54 +587,8 @@ export function getToolDefinitions() {
     },
     {
       type: 'function',
-      name: 'payments',
-      description: `⚠️ LEGACY TOOL: Provides guidance for payment processing. Direct payment processing is not supported in v1.
-      
-Per project requirements:
-- v1: Card payments in-agent are out-of-scope
-- v1.1: Will use Twilio <Pay> (PCI Mode) when enabled
-- Never collect card details directly
-
-For booking payments:
-- Use booking_step_process_payment (Twilio Pay during booking) OR
-- Use booking_step_send_payment_request (send payment link via email/SMS)
-
-For refunds:
-- Follow the appropriate refund process after identity verification (if permitted by policy)
-
-This tool returns guidance messages directing to the appropriate tools.`,
-      parameters: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['process_payment', 'refund'],
-            description: 'Payment action to perform'
-          },
-          amount: {
-            type: 'number',
-            description: 'Amount to process (optional, for informational purposes)'
-          },
-          currency: {
-            type: 'string',
-            description: 'Currency code (optional, default: GBP)'
-          },
-          customerId: {
-            type: 'string',
-            description: 'Customer ID (optional)'
-          },
-          bookingId: {
-            type: 'string',
-            description: 'Booking ID if payment is for a specific booking (optional)'
-          }
-        },
-        required: ['action']
-      }
-    },
-    {
-      type: 'function',
       name: 'file_search',
-      description: 'Search the company knowledge base for policies, GDPR, courses, pricing, and other internal information. Call this FIRST when the caller asks about company policies, procedures, "your database", or internal information—do not answer from memory without calling this tool.',
+      description: 'Search the company knowledge base (vector store) for policies, GDPR, courses, pricing, procedures, and internal information. Use when the caller needs informational answers likely found in company documents—not to execute booking or cancellation (use booking_step_* / cancellation_step_*). Prefer answering yourself when sufficient; use this when grounded retrieval is needed or the caller is not satisfied with a general answer.',
       parameters: {
         type: 'object',
         properties: {
@@ -673,7 +627,7 @@ This tool returns guidance messages directing to the appropriate tools.`,
     {
       type: 'function',
       name: 'set_call_language',
-      description: `REQUIRED immediately after the caller answers "what language would you like?". Invoke this tool ONCE via function calling with language_code (ISO 639-1)—do NOT output {"language_code":"..."} as plain assistant text. Infer from their LAST message in ANY script: Hindi/हिंदी → hi; English → en; French → fr; etc. If unclear, en. Silent tool turn only; after success you will ask recording consent in that language.`,
+      description: `REQUIRED (1) right after the caller answers "what language would you like?" and (2) MID-CALL as soon as you detect the caller is using a different language than this call's current language—infer from audio/transcript; pass language_code. Before any verbal workflow tool in the same turn (e.g. booking_step_* that shapes what you say), call this FIRST so the session language updates before TTS. You may invoke in parallel ONLY with non-verbal automation (e.g. browser/Playwright steps that do not determine spoken language). Do not wait for "please switch language". Examples: Hindi→hi; English→en; French→fr. Function calling only—never print JSON. After success, continue in that language (or consent flow if initial).`,
       parameters: {
         type: 'object',
         properties: {
@@ -684,6 +638,21 @@ This tool returns guidance messages directing to the appropriate tools.`,
           }
         },
         required: ['language_code']
+      }
+    },
+    {
+      type: 'function',
+      name: 'recording_consent_response',
+      description: `REQUIRED when the caller has given a clear yes or no to the recording consent question. You hear their answer in any language (e.g. yes, no, ओके यस, हाँ, नहीं, oui, non). Call this tool ONCE with given: true if they consented, given: false if they declined. Do NOT call it if the response was unclear (e.g. "what?", "repeat", "I'll answer later")—instead repeat the consent question. Do NOT say the main follow-up question until you have called this tool with the caller's clear answer.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          given: {
+            type: 'boolean',
+            description: 'true = caller consented to recording; false = caller declined'
+          }
+        },
+        required: ['given']
       }
     },
     {
@@ -785,7 +754,7 @@ WARNING: Never disclose any personal information from our clients found in the s
     {
       type: 'function',
       name: 'complaint_submission',
-      description: 'Submit a formal complaint. Use this when a customer expresses dissatisfaction, reports an issue, or requests to file a complaint. Automatically creates a complaint record and sends email notification.',
+      description: 'Submit a formal complaint record and send email notification. Use only when the caller explicitly asks to file, lodge, or report a formal complaint—not for general grumbling or step errors unless they clearly want a formal complaint logged.',
       parameters: {
         type: 'object',
         properties: {

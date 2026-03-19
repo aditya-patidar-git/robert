@@ -96,14 +96,6 @@ const crmBrowserSchema = z.object({
   args: crmBrowserArgsSchema
 });
 
-// Payments Schema
-const paymentsSchema = z.object({
-  action: z.enum(['process_payment', 'refund']),
-  amount: z.number().positive('Amount must be positive'),
-  currency: z.string().length(3).optional().default('GBP'),
-  customerId: z.string().optional()
-});
-
 // File Search Schema
 const fileSearchSchema = z.object({
   query: z.string().min(1, 'Search query is required'),
@@ -368,7 +360,6 @@ const toolSchemas = {
   email: emailSchema,
   send_sms: sendSMSSchema,
   generate_reference_id: generateReferenceIdSchema,
-  payments: paymentsSchema,
   file_search: fileSearchSchema,
   transfer_call: transferCallSchema,
   kba_verification: kbaVerificationSchema,

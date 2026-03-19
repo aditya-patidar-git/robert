@@ -82,15 +82,19 @@ export async function executeNewClientFlow(page, args, sessionState, screenshots
   const missingFromArgs = REQUIRED_PARAM_NAMES.filter(p => !getArgValue(args, p));
   const skipNextClick = missingFromArgs.length > 0;
 
-  // When we have NI or full driving licence (not halves), validate UK format before filling; return invalidFormat so agent re-asks with correct format
+  // When we have NI or driving licence (full or concatenated halves), validate UK format before filling; return invalidFormat so agent re-asks with correct format
   if (!skipNextClick) {
     const invalidFields = {};
     if (getArgValue(args, 'nationalInsurance')) {
       const r = validateNationalInsurance(args.nationalInsurance);
       if (!r.valid) invalidFields.nationalInsurance = r.message;
     }
-    if (getArgValue(args, 'drivingLicenceNumber') && effectiveDrivingLicenceNumber === undefined) {
-      const r = validateDrivingLicenceNumber(args.drivingLicenceNumber);
+    const dlCandidate =
+      effectiveDrivingLicenceNumber !== undefined
+        ? effectiveDrivingLicenceNumber
+        : (getArgValue(args, 'drivingLicenceNumber') ? args.drivingLicenceNumber : undefined);
+    if (dlCandidate) {
+      const r = validateDrivingLicenceNumber(dlCandidate);
       if (!r.valid) invalidFields.drivingLicenceNumber = r.message;
     }
     if (Object.keys(invalidFields).length > 0) {

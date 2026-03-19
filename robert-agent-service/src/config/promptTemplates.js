@@ -69,17 +69,13 @@ DO NOT ask the consent question or "What would you like to do today?" until lang
 
   general_inquiry: `Help the caller with their question. Be concise and helpful.
 
-LANGUAGE: If this call already has a selected language (you are speaking in French, Hindi, etc.), stay in that language for all replies unless the caller explicitly asks to switch.
+LANGUAGE: If this call already has a selected language (you are speaking in French, Hindi, etc.), stay in that language for all replies unless the caller explicitly asks to switch. Mid-call: if you detect from the caller's speech that they are speaking a different language than the current call language, call set_call_language with the appropriate language_code. Rely on what you hear; only switch when the language is clearly different (do not switch on very short or ambiguous utterances).
 
-🚨 SEARCH TOOLS - USE IMMEDIATELY BASED ON QUERY:
-- Policies, GDPR, courses, pricing, procedures, or "search your database" → call file_search FIRST (never answer from memory without calling it)
-- Weather, current events, or external/live information → call web_search
-- Complaints/dissatisfaction → call complaint_submission
-- Need to send confirmation/summary → call email or send_sms
+(See appended INFORMATIONAL TOOLS policy for file_search, web_search, and complaint_submission.)
 
 NOTE: For booking/availability questions, follow the booking_start workflow phase instructions which require asking preferences FIRST before checking availability.
 
-DO NOT say "I don't have access to a database" without calling file_search first. Use the appropriate tool immediately—do not ask "Would you like me to check?"`,
+Need to send confirmation/summary → call email or send_sms when appropriate.`,
 
   booking_start: `You're starting a booking flow. CRITICAL WORKFLOW ORDER - DO NOT SKIP STEPS:
 
@@ -271,14 +267,10 @@ AUTOMATIC CONTINUATION: For automatic steps, say the acknowledgement (bear with 
 
 🚨 NO SILENT WAIT: Never go into wait mode without telling the caller. If you are waiting for something (e.g. a tool or system), periodically say you are still there and what you are waiting for (e.g. "I'm still here, just checking that for you.", "One moment.").
 
-🚨 SEARCH TOOLS - USE BASED ON QUERY:
-- Policies, GDPR, courses, pricing, or "search your database" → call file_search FIRST (do not answer from memory without calling it)
-- Weather, current events, external facts → call web_search
-- Availability questions → use booking_step_check_availability
-- Complaints/dissatisfaction → use complaint_submission
-- Need to send confirmation/summary → use email or send_sms
+(See appended INFORMATIONAL TOOLS policy for file_search, web_search, and complaint_submission.)
 
-DO NOT say you lack database access without calling file_search first. Use the appropriate tool immediately.`
+- Availability questions → use booking_step_check_availability when in booking flow.
+- Need to send confirmation/summary → use email or send_sms when appropriate.`
 };
 
 /**
@@ -346,6 +338,20 @@ export const courseTemplates = {
 export const defaultContext = {
   locations: ['Alperton', 'Croydon', 'Edgware', 'Eltham', 'Wimbledon', 'Dagenham', 'Hoddesdon']
 };
+
+/** Appended to instructions when language is selected so the model can switch mid-call when it detects a different language. */
+export const midCallLanguageInstructionTemplate = `Current call language: {{language}} (ISO code). MID-CALL: As soon as you hear the caller using a different language than {{language}} (sustained sentence or clear shift—do not wait for them to say "switch language"), call set_call_language with the correct language_code. ORDERING: If you also need another tool in the same turn, call set_call_language *before* any tool whose outcome includes spoken agent audio (verbal booking/workflow step); otherwise TTS may still use the previous language. Parallel invocation of set_call_language together with a *non-verbal* step only (e.g. browser/Playwright UI automation that does not drive what you say next) is allowed. If the other step is verbal, use set_call_language first, let it complete, then the other tool. Your spoken reply after tools must match the language set by set_call_language. If unsure the language changed, keep {{language}}.`;
+
+/** Appended to contextual instructions in most phases: disciplined use of file_search, web_search, complaint_submission. */
+export const informationalToolsGuidance = `INFORMATIONAL TOOLS (available in every workflow — use with discipline):
+- **Default:** Answer from your own knowledge when you can do so accurately and helpfully. Do **not** call file_search or web_search for every question.
+- **file_search:** Use when the caller asks for **informational** content that is likely in company materials (policies, GDPR, courses, pricing, procedures, internal facts). Do **not** use it to execute booking or cancellation — use booking_step_* or cancellation_step_* for navigation, availability, and forms. Do **not** use it when the caller only wants to proceed with the current step tool.
+- **web_search:** Use only when the answer **strictly requires** live or external web information (e.g. weather, news, facts not in your training or the company knowledge base). Prefer answering yourself or file_search first when the question is about Universal Motorcycle Training.
+- **complaint_submission:** Use **only** when the caller **explicitly** wants to **report or file a complaint** (e.g. "I want to make a complaint", "I'd like to complain formally"). Do **not** use it for general grumbling, dissatisfaction with your last answer, or routine booking/cancellation issues — unless they clearly ask to lodge a formal complaint. If they want the complaint workflow but have not started it, you may use start_workflow(workflow: "complaint").
+- **If the caller is not satisfied with your answer:** Re-analyse the question; if grounded company or web facts would clearly help, then use file_search or web_search. If they then want a **formal complaint** logged, use complaint_submission with their details.`;
+
+/** Shorter note during recording consent — full informational policy applies after consent is resolved. */
+export const consentPhaseInformationalToolsNote = `Until recording consent is clearly resolved, prefer not to use file_search, web_search, or complaint_submission — focus on consent or transfer unless safety requires otherwise.`;
 
 /**
  * Get all templates as a single object for easy access

@@ -43,14 +43,6 @@ class MCPToolsService {
       maxTime: 15000
     });
 
-    // Payments Tool
-    this.registerTool('payments', {
-      name: 'payments',
-      description: 'Process payments and refunds',
-      rateLimit: 10,
-      domains: [],
-      maxTime: 20000
-    });
   }
 
   registerTool(toolName, config) {
@@ -108,9 +100,6 @@ class MCPToolsService {
           break;
         case 'crm':
           result = await this.executeCRM(parameters, callContext);
-          break;
-        case 'payments':
-          result = await this.executePayments(parameters, callContext);
           break;
         default:
           throw new Error(`Unknown tool: ${toolName}`);
@@ -359,34 +348,6 @@ class MCPToolsService {
         };
       default:
         throw new Error(`Unknown CRM action: ${action}`);
-    }
-  }
-
-  async executePayments(parameters, callContext) {
-    const { action, amount, currency, customerId } = parameters;
-    
-    // Mock payment implementation
-    switch (action) {
-      case 'process_payment':
-        return {
-          success: true,
-          transactionId: 'txn_' + Date.now(),
-          amount: amount,
-          currency: currency || 'GBP',
-          status: 'completed',
-          processedAt: new Date().toISOString()
-        };
-      case 'refund':
-        return {
-          success: true,
-          refundId: 'ref_' + Date.now(),
-          amount: amount,
-          currency: currency || 'GBP',
-          status: 'processed',
-          processedAt: new Date().toISOString()
-        };
-      default:
-        throw new Error(`Unknown payment action: ${action}`);
     }
   }
 

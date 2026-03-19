@@ -76,13 +76,6 @@ ToolConfigSchema.statics.initializeDefaults = async function() {
       domains: []
     },
     {
-      toolName: 'payments',
-      description: 'Process payments and refunds',
-      enabled: true,
-      rateLimit: { limit: 10, windowMs: 60000 },
-      domains: []
-    },
-    {
       toolName: 'file_search',
       description: 'Search the knowledge base for relevant information',
       enabled: true,
@@ -126,6 +119,9 @@ ToolConfigSchema.statics.initializeDefaults = async function() {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
   }
+
+  // Removed standalone MCP payments tool — drop legacy row if present
+  await this.deleteOne({ toolName: 'payments' });
 };
 
 export default mongoose.models.ToolConfig || mongoose.model("ToolConfig", ToolConfigSchema);

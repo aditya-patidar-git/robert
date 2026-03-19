@@ -363,7 +363,9 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       const callSid = callId;
       let workflowPhase = await promptService.determineWorkflowPhase(this.stateManager, callSid);
       if ((options?.toolName && options.toolName.startsWith('cancellation_step_')) || conversations[callSid]?.workflowContext === 'cancellation') {
-        workflowPhase = 'cancellation';
+        if (workflowPhase !== 'cancellation_verify' && workflowPhase !== 'cancellation_confirm') {
+          workflowPhase = workflowPhase || 'cancellation';
+        }
       }
       if ((options?.toolName && options.toolName.startsWith('booking_step_')) || conversations[callSid]?.workflowContext === 'booking') {
         workflowPhase = workflowPhase || 'booking_start';
@@ -381,7 +383,8 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
         currentStep = bookingSession.currentStep;
 
         // Phase 0: Override workflowPhase from session step so we get the right template (fixes workflowContext===booking always returning booking_start and general_inquiry when session was missing)
-        if (workflowPhase !== 'cancellation' && currentStep != null && currentStep !== undefined) {
+        const isCancellationPhase = workflowPhase === 'cancellation' || workflowPhase === 'cancellation_verify' || workflowPhase === 'cancellation_confirm';
+        if (!isCancellationPhase && currentStep != null && currentStep !== undefined) {
           const step = currentStep;
           const wt = bookingSession.workflowType || workflowType;
           if (step === 1) workflowPhase = 'booking_availability';
@@ -426,6 +429,9 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       if (toolName === 'set_call_language' && toolResult?.success === true) {
         const lang = toolResult.language_code || conversations[callSid]?.language || 'en';
         if (toolResult.midCallLanguageSwitch === true) {
+          if (this.stateManager && typeof this.stateManager.lastMidCallLanguageSwitchAt === 'number') {
+            this.stateManager.lastMidCallLanguageSwitchAt = Date.now();
+          }
           responseInstructions = `CRITICAL — MID-CALL LANGUAGE CHANGE to ${lang}. Acknowledge briefly in that language only. Continue exactly where the conversation left off (same booking/cancellation topic if any). Do NOT repeat recording consent, language selection, or greeting. Do NOT use English unless ${lang} is en.`;
           console.log(`🎯 [${callId}] set_call_language → mid-call switch (${lang})`);
         } else {
@@ -583,7 +589,7 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
           // Check if we're in a cancellation workflow
           const isCancellationWorkflow = (options?.toolName && options.toolName.startsWith('cancellation_step_')) ||
             conversations[callSid]?.workflowContext === 'cancellation' ||
-            workflowPhase === 'cancellation';
+            workflowPhase === 'cancellation' || workflowPhase === 'cancellation_verify' || workflowPhase === 'cancellation_confirm';
 
           // Use appropriate fallback message based on workflow type
           const fallbackMessage = isCancellationWorkflow
@@ -1158,6 +1164,15 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
       if (this.stateManager) {
         this.stateManager.clearToolExecutionCompleting();
         console.log(`🔓 [${callId}] Cleared toolExecutionCompleting flag after response creation`);
+      }
+
+      // Phase sync after tool completion: run onComplete(workflowPhase) inside the lock so cache matches the response sent
+      if (typeof options?.onComplete === 'function') {
+        try {
+          options.onComplete(workflowPhase);
+        } catch (err) {
+          console.warn(`⚠️ [${callId}] onComplete callback error:`, err?.message || err);
+        }
       }
 
       // Step 3: Re-enable tools after delay

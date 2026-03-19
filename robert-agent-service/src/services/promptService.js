@@ -16,7 +16,10 @@ import {
   verificationTemplates,
   errorTemplates,
   courseTemplates,
-  defaultContext
+  defaultContext,
+  midCallLanguageInstructionTemplate,
+  informationalToolsGuidance,
+  consentPhaseInformationalToolsNote
 } from '../config/promptTemplates.js';
 
 class PromptService {
@@ -31,13 +34,15 @@ CORE BEHAVIOR:
 - Speak naturally in British English, warm and professional
 - Stop immediately if caller speaks (barge-in)
 - Verify identity before sharing personal data
-- Never guess facts - use tools proactively to find accurate information
+- Never guess facts — use tools when needed for accurate answers; answer from your own knowledge when you can do so accurately without a tool
 - Keep responses concise; ask permission for long explanations
 
 SAFETY:
 - Before irreversible actions (payments/bookings), summarize and get explicit confirmation
 - GDPR: Do NOT read back or repeat the caller's personal details on the call (e.g. full name, postcode, phone, email, NI number, licence number). STRICTLY: Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask the caller to repeat it; do not recite it yourself.
-- For company policies, GDPR, courses, pricing, or internal info → call file_search FIRST before answering. For current events, weather, or external facts → call web_search. Never say you don't have database access without calling file_search first.
+- **file_search** (company knowledge / vector store): use when the caller asks informational questions likely covered by company documents (policies, GDPR, courses, pricing, procedures). Do not use it to execute booking/cancellation — use step tools for that. Do not call it for every question; answer yourself when sufficient.
+- **web_search:** use only when the answer strictly requires live or external web data (e.g. weather, news) not available from you or file_search.
+- **complaint_submission:** use only when the caller explicitly wants to file or report a formal complaint — not for general dissatisfaction unless they ask to lodge a complaint.
 
 STEP TOOL ERRORS (booking/cancellation):
 - If a step tool returns a parameter or validation error (e.g. missing courseType, required field): first try to resolve it yourself. Use context (e.g. agreed slot, course already mentioned) or ask the caller one short question to get the missing detail, then call the same step again with the correct parameters. Do NOT offer to transfer to a human agent for missing-parameter or validation errors—only offer transfer when the issue cannot be resolved after you have tried (e.g. repeated failures or a real system error).
@@ -47,17 +52,17 @@ BEFORE EVERY TOOL CALL:
 - During the tool run, the caller will hear short step-specific progress messages automatically (e.g. "Opening the Contacts tab.", "Waiting for results."). You do not need to announce each substep in speech—the system plays these updates for each step.
 
 TOOLS - PROACTIVE USAGE:
-🚨 CRITICAL: Use tools proactively whenever they're needed to provide accurate answers, even if the caller doesn't explicitly ask you to use them.
+🚨 CRITICAL: Use workflow and step tools whenever they are required to complete booking, cancellation, or a started complaint flow. For file_search, web_search, and complaint_submission, follow discipline below — do not invoke them on every turn.
 - When the caller says what they want (e.g. cancel my booking, want to book, file a complaint) in ANY language → IMMEDIATELY call start_workflow with the right workflow (cancellation, booking, or complaint). In the SAME response also speak a short acknowledgment and the first question of that workflow (e.g. for cancellation: "Do you have a current booking with us?"). Do NOT ask for booking reference, email or phone before starting cancellation.
-- If a caller wants to book (e.g. "I want to book a course", "book Introduction to Motorcycling") and you already have booking tools → use booking_step_check_availability first. Do NOT use file_search for booking; use file_search only for informational questions about courses (what is a course, pricing, procedures), not when the caller wants to make a booking.
-- If a caller asks about policies, GDPR, courses, prices, procedures, or "search your database" → IMMEDIATELY use file_search (do not answer from memory; call the tool first)
-- If a caller asks about availability and you have booking tools → IMMEDIATELY use booking_step_check_availability
-- If a caller asks about current events, weather, or external information not in KB → IMMEDIATELY use web_search
-- If a caller expresses dissatisfaction or wants to complain and you do not have complaint tools yet → call start_workflow(workflow: "complaint") first
-- If a caller needs verification → IMMEDIATELY use kba_verification or client_verification tools
-- If a caller needs a summary or confirmation sent → IMMEDIATELY use email or send_sms tools
+- If a caller wants to book (e.g. "I want to book a course") and you have booking tools → use booking_step_check_availability (and follow booking steps). Do NOT use file_search to perform booking actions; use file_search only for separate informational questions (e.g. what a course involves, pricing) when company documents would ground the answer.
+- If a caller asks informational questions about policies, GDPR, courses, prices, or procedures → use file_search when the answer is likely in the knowledge base and you need grounded text; you may answer briefly yourself first if confident, then use file_search if the caller needs more detail or is unsatisfied.
+- If a caller asks about availability and you have booking tools → use booking_step_check_availability (after collecting required preferences per booking phase instructions).
+- If a caller needs strictly live/external information (weather, news, etc.) → use web_search when file_search and your own answer are not enough.
+- If a caller explicitly wants to file or report a formal complaint → use complaint_submission with their details, or start_workflow(complaint) first if the complaint flow is not started. Do not use complaint_submission for vague dissatisfaction alone.
+- If a caller needs verification → use kba_verification or client_verification tools
+- If a caller needs a summary or confirmation sent → use email or send_sms tools
 
-DO NOT hesitate or ask permission before using tools - use them automatically when they're needed to answer accurately. The caller expects accurate, grounded answers, not guesses.
+Use tools when they improve accuracy; avoid unnecessary file_search/web_search on every message. If the caller is not satisfied with your answer, re-analyse and use file_search or web_search when it would clearly help.
 
 TOOLS AVAILABLE:
 - Only use tool names that appear in the tools list. For applying the caller's booking option choices (e.g. bike type), use booking_step_select_booking_options with top-level parameters (courseType, workflowType, bikeType). Do NOT use booking_step_finalize_booking, booking_step_finalize_course_options, or booking_step_select_options—they do not exist.
@@ -140,17 +145,29 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
     // Initial greeting instructions
     // NEW ORDER: Language preference (greeting) → Consent question → Main follow-up
     if (isInitialGreeting) {
-      return this.resolveTemplate(workflowInstructionTemplates.greeting, templateContext);
+      return (
+        this.resolveTemplate(workflowInstructionTemplates.greeting, templateContext) +
+        '\n\n' +
+        informationalToolsGuidance
+      );
     }
 
     // CRITICAL: After language is selected, MUST ask consent question before main follow-up
     if (languageSelected && requireConsent && consentNotice && consentQuestion) {
-      return this.resolveTemplate(consentTemplates.consentFlow, templateContext);
+      return (
+        this.resolveTemplate(consentTemplates.consentFlow, templateContext) +
+        '\n\n' +
+        consentPhaseInformationalToolsNote
+      );
     }
 
     // After language is selected but consent not required or already given
     if (waitingForLanguage && !languageSelected) {
-      return this.resolveTemplate(workflowInstructionTemplates.greeting, templateContext);
+      return (
+        this.resolveTemplate(workflowInstructionTemplates.greeting, templateContext) +
+        '\n\n' +
+        informationalToolsGuidance
+      );
     }
 
     // Subsequent response instructions based on workflow phase
@@ -178,14 +195,25 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       instructions += `\n\nCRITICAL RULES:\n- NEVER say "Booking confirmed", "you're all set", or give date/time/location summary unless paymentCompleted: true in tool result\n- There is NO tool named booking_step_confirm_booking—after select_booking_options use booking_step_lookup_contact or booking_step_create_new_contact\n- Terms acceptance ONLY after payment confirmed, before final "Make booking" click\n- For existing clients: Use email from booking_step_search_client result ONLY`;
     }
 
-    // Add critical rules if in cancellation flow
-    if (workflowPhase === 'cancellation') {
+    // Add critical rules if in cancellation flow (including step-level phases)
+    if (workflowPhase === 'cancellation' || workflowPhase === 'cancellation_verify' || workflowPhase === 'cancellation_confirm') {
       instructions += `\n\nCRITICAL CANCELLATION RULES:\n- MUST start with cancellation_step_verify_booking_intent. STRICT ORDER: (1) Ask "Do you have a current booking with us?" (2) If yes, ask "What type of course is your booking for?" (e.g. CBT, Introduction to Motorcycling, Private Lesson, Gear Conversion) and get courseType BEFORE stating the cancellation policy. (3) Only after you have courseType, explain the policy and ask "Would you like to proceed?" (4) If they say yes to proceed, call with verified: true, proceedToStep2: true and the same courseType.\n- ALWAYS invoke the tool for the current step; do not reply with only speech when the workflow requires a cancellation_step_* tool call. Interpret the caller's words in context of the last question (e.g. "Do you have a booking?" vs "What course type?" vs "Would you like to proceed?") and call the tool with the correct parameters.\n- NEVER speak tool parameters or JSON (e.g. do not say {"courseType": "CBT"}); call the tool instead.\n- NEVER ask for booking reference or email before Step 1\n- NEVER use client_verification before cancellation_step_search_client finds a client (Step 5)\n- Follow steps sequentially - do NOT skip steps`;
     }
 
     // Add tool-specific context if tool is active
     if (activeTool) {
       instructions += `\n\nCurrent tool: ${activeTool}. Follow tool result guidance and proceed to next step automatically.`;
+    }
+
+    // Mid-call language: tell model current call language so it can call set_call_language when it detects a different language from audio
+    if (languageSelected && language) {
+      instructions += '\n\n' + this.resolveTemplate(midCallLanguageInstructionTemplate, { ...templateContext, language });
+    }
+
+    if (workflowPhase === 'recording_consent') {
+      instructions += '\n\n' + consentPhaseInformationalToolsNote;
+    } else {
+      instructions += '\n\n' + informationalToolsGuidance;
     }
 
     return instructions.trim() || null;
@@ -330,14 +358,74 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
   }
 
   /**
-   * Determine workflow phase from call state
-   * This is a helper method to extract workflow phase from state manager
+   * Synchronous phase from conversation only. Use when conversation is already in hand (e.g. barge-in snapshot).
+   * Authority: conversation.bookingSession is authoritative; state is used only when bookingSession is null.
+   * @param {Object} conversation - conversations[callSid]
+   * @param {Object} state - CallStateManager or state object
+   * @returns {string|null} Workflow phase or null if not in a booking/cancellation workflow
+   */
+  getWorkflowPhaseFromConversation(conversation, state) {
+    if (!conversation || !state?.hasInitialGreetingBeenSent) return null;
+    const bookingSession = conversation?.bookingSession;
+    const workflowContext = conversation?.workflowContext;
+
+    if (workflowContext === 'cancellation' || (bookingSession?.cancellationCurrentStep != null && bookingSession.cancellationCurrentStep >= 1)) {
+      const ccStep = bookingSession?.cancellationCurrentStep;
+      if (ccStep != null) {
+        if (ccStep >= 1 && ccStep <= 3) return 'cancellation_verify';
+        if (ccStep === 8) return 'cancellation_confirm';
+      }
+      return 'cancellation';
+    }
+    if (workflowContext === 'booking' && bookingSession) {
+      const currentStep = bookingSession.currentStep;
+      const workflowType = bookingSession.workflowType;
+      if (currentStep !== null && currentStep !== undefined) {
+        if (currentStep === 1) return 'booking_availability';
+        if (currentStep === 2) return 'booking_authentication';
+        if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
+        if (currentStep === 6 && workflowType === 'new') return 'booking_new_client';
+        if (currentStep === 6 && workflowType === 'existing') return 'booking_existing_client';
+        if (currentStep === 7) return 'booking_options';
+        if (currentStep === 8 && workflowType === 'existing') return 'booking_lookup_contact';
+        if (currentStep >= 9 && currentStep <= 10) return 'booking_payment';
+        if (currentStep >= 11) return 'booking_completion';
+      }
+      if (workflowType === 'existing') return 'booking_existing_client';
+      if (workflowType === 'new') return 'booking_new_client';
+      return 'booking_start';
+    }
+    if (bookingSession) {
+      const currentStep = bookingSession.currentStep ?? state.currentBookingStep;
+      const wt = bookingSession.workflowType ?? state.workflowType;
+      if (currentStep !== null && currentStep !== undefined) {
+        if (currentStep === 1) return 'booking_availability';
+        if (currentStep === 2) return 'booking_authentication';
+        if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
+        if (currentStep === 6 && wt === 'new') return 'booking_new_client';
+        if (currentStep === 7) return 'booking_options';
+        if (currentStep === 8 && wt === 'existing') return 'booking_lookup_contact';
+        if (currentStep >= 9 && currentStep <= 10) return 'booking_payment';
+        if (currentStep >= 11) return 'booking_completion';
+      }
+      if (wt === 'existing') return 'booking_existing_client';
+      if (wt === 'new') return 'booking_new_client';
+      return 'booking_start';
+    }
+    return null;
+  }
+
+  /**
+   * Determine workflow phase from call state.
+   * Authority: conversations[callSid].bookingSession is the authoritative source for phase derivation;
+   * callStateManager (state) is only a tiebreaker when bookingSession is null. Do not let state override
+   * conversation (e.g. if state carries currentBookingStep from an in-flight write that has not yet
+   * landed in conversations[callSid], ignore state for phase).
    * @param {Object} state - CallStateManager instance or state object
    * @param {string} callSid - Call SID for accessing booking session
    * @returns {Promise<string>} Workflow phase string
    */
   async determineWorkflowPhase(state, callSid = null) {
-    // Check if initial greeting has been sent
     if (!state.hasInitialGreetingBeenSent) {
       return 'greeting';
     }
@@ -346,16 +434,24 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       try {
         const stateModule = await import('../../shared/state.js');
         const { conversations } = stateModule;
-        if (conversations[callSid]?.workflowContext === 'cancellation') {
+        const conv = conversations[callSid];
+        // Authority: bookingSession in conversation overrides state; use state only when bookingSession is null
+        if (conv?.workflowContext === 'cancellation') {
+          const ccStep = conv?.bookingSession?.cancellationCurrentStep;
+          if (ccStep != null) {
+            if (ccStep >= 1 && ccStep <= 3) return 'cancellation_verify';
+            if (ccStep === 8) return 'cancellation_confirm';
+          }
           return 'cancellation';
         }
-        // Fallback: we're in cancellation flow if session has cancellation step set (e.g. after locate_booking), so phase stays cancellation even if workflowContext was lost from sync
-        const ccStep = conversations[callSid]?.bookingSession?.cancellationCurrentStep;
-        if (ccStep != null && ccStep >= 1) {
+        if (conv?.bookingSession?.cancellationCurrentStep != null && conv.bookingSession.cancellationCurrentStep >= 1) {
+          const ccStep = conv.bookingSession.cancellationCurrentStep;
+          if (ccStep >= 1 && ccStep <= 3) return 'cancellation_verify';
+          if (ccStep === 8) return 'cancellation_confirm';
           return 'cancellation';
         }
-        if (conversations[callSid]?.workflowContext === 'booking') {
-          const bookingSession = conversations[callSid]?.bookingSession;
+        if (conv?.workflowContext === 'booking') {
+          const bookingSession = conv.bookingSession;
           const currentStep = bookingSession?.currentStep;
           const workflowType = bookingSession?.workflowType;
           if (currentStep !== null && currentStep !== undefined) {
@@ -378,48 +474,34 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       }
     }
 
-    // Try to get booking session from conversations if callSid is available
     let bookingSession = null;
     if (callSid) {
       try {
-        // Use dynamic import to avoid circular dependencies
         const stateModule = await import('../../shared/state.js');
         const { conversations } = stateModule;
         bookingSession = conversations[callSid]?.bookingSession;
       } catch (e) {
-        // If import fails, bookingSession will remain null
-        // Don't log warning in production to avoid noise
+        // ignore
       }
     }
 
-    // Check if in booking flow (from booking session or state)
+    // Tiebreaker only when bookingSession is null: use state
     const courseType = bookingSession?.courseType || state.courseType;
     if (courseType) {
-      // Check current step to determine phase
-      const currentStep = bookingSession?.currentStep || state.currentBookingStep;
+      const currentStep = bookingSession?.currentStep ?? state.currentBookingStep;
       if (currentStep !== null && currentStep !== undefined) {
-        // Map step numbers to phases
         if (currentStep === 1) return 'booking_availability';
         if (currentStep === 2) return 'booking_authentication';
         if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
         if (currentStep === 6 && bookingSession?.workflowType === 'new') return 'booking_new_client';
-        if (currentStep === 7) return 'booking_options'; // Select booking options (CBT type, bike type, etc.)
-        if (currentStep === 8 && bookingSession?.workflowType === 'existing') return 'booking_lookup_contact'; // Lookup contact (existing workflow only)
-        if (currentStep >= 9 && currentStep <= 10) {
-          // Payment steps
-          return 'booking_payment';
-        }
+        if (currentStep === 7) return 'booking_options';
+        if (currentStep === 8 && bookingSession?.workflowType === 'existing') return 'booking_lookup_contact';
+        if (currentStep >= 9 && currentStep <= 10) return 'booking_payment';
         if (currentStep >= 11) return 'booking_completion';
       }
-
-      // Check workflow type
       const workflowType = bookingSession?.workflowType || state.workflowType;
-      if (workflowType === 'existing') {
-        return 'booking_existing_client';
-      } else if (workflowType === 'new') {
-        return 'booking_new_client';
-      }
-
+      if (workflowType === 'existing') return 'booking_existing_client';
+      if (workflowType === 'new') return 'booking_new_client';
       return 'booking_start';
     }
 

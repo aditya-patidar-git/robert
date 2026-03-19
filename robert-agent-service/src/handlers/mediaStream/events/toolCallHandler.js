@@ -14,6 +14,7 @@ export class ToolCallHandler {
     this.state = stateManager;
     this.openaiWs = openaiWs;
     this.onBeforeTriggerResponse = options.onBeforeTriggerResponse;
+    this.onAfterToolComplete = options.onAfterToolComplete;
     this.onWorkflowSwitch = options.onWorkflowSwitch;
     this.resultSubmitter = new WebSocketResultSubmitter(openaiWs, stateManager);
   }
@@ -126,12 +127,16 @@ export class ToolCallHandler {
         
         const effectiveToolName = executionResult.resolvedToolName || name;
         const toolResult = executionResult.result || executionResult;
+        const toolContext = { toolName: effectiveToolName, toolResult };
         if (typeof this.onBeforeTriggerResponse === 'function') {
-          this.onBeforeTriggerResponse(this.state.callSid, { toolName: effectiveToolName, toolResult });
+          this.onBeforeTriggerResponse(this.state.callSid, toolContext);
         }
-        await this.resultSubmitter.triggerResponse(this.state.callSid, { 
+        await this.resultSubmitter.triggerResponse(this.state.callSid, {
           toolName: effectiveToolName,
-          toolResult // Pass the actual tool result, not the wrapper
+          toolResult,
+          onComplete: typeof this.onAfterToolComplete === 'function'
+            ? (phase) => this.onAfterToolComplete(this.state.callSid, toolContext, phase)
+            : undefined
         });
 
         progressIndicatorService.endToolExecution(this.state.callSid);
@@ -155,15 +160,19 @@ export class ToolCallHandler {
         }
       }
       
-      if (typeof this.onBeforeTriggerResponse === 'function') {
-        this.onBeforeTriggerResponse(this.state.callSid);
-      }
       const effectiveToolName = executionResult.resolvedToolName || name;
-      await this.resultSubmitter.triggerResponse(this.state.callSid, { 
+      const toolContext = { toolName: effectiveToolName, toolResult: executionResult.result || executionResult };
+      if (typeof this.onBeforeTriggerResponse === 'function') {
+        this.onBeforeTriggerResponse(this.state.callSid, toolContext);
+      }
+      await this.resultSubmitter.triggerResponse(this.state.callSid, {
         toolName: effectiveToolName,
-        toolResult: executionResult.result || executionResult // Pass the tool result so triggerResponse can check for incomplete verification
+        toolResult: toolContext.toolResult,
+        onComplete: typeof this.onAfterToolComplete === 'function'
+          ? (phase) => this.onAfterToolComplete(this.state.callSid, toolContext, phase)
+          : undefined
       });
-      
+
       // Clean up
       this.state.pendingToolCalls.delete(call_id);
     } catch (error) {
