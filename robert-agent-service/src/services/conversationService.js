@@ -12,11 +12,28 @@ import { getConversationFlowState } from '../handlers/mediaStream/utils/conversa
 import { isAgentAudioPlaying } from '../handlers/mediaStream/utils/audioPlayingState.js';
 import configManager from '../agent/configManager.js';
 import { getEffectiveRecordingConsentSettings } from './callRecordPersistenceService.js';
+import { getFlowCopy } from './flowCopyByLanguage.js';
+import multilingualService from './multilingualService.js';
 
 export class ConversationService {
   constructor(options = {}) {
     this.promptService = options.promptService || promptService;
     this.consentInstructionBuilder = options.consentInstructionBuilder || consentInstructionBuilder;
+  }
+
+  /**
+   * After mid-call language switch: force the next spoken reply to use the new language.
+   */
+  _applyOneShotPostLanguageSwitch(state, instructions) {
+    const canon = state?.pendingOneShotOutputLanguageCanonical;
+    if (!canon || typeof instructions !== 'string' || !instructions.trim()) {
+      return instructions;
+    }
+    state.pendingOneShotOutputLanguageCanonical = null;
+    const cfg = multilingualService.getLanguageConfig(canon);
+    const label = cfg?.name || canon;
+    const prefix = `CRITICAL — THIS SPOKEN RESPONSE ONLY: The caller has just switched to ${label}. Your entire reply must be in ${label} only. Ignore previous-turn languages; match the new session language.`;
+    return `${prefix}\n\n${instructions}`;
   }
 
   /**
@@ -141,15 +158,27 @@ export class ConversationService {
     if (!hasInitialGreetingBeenSent) {
       return { toolChoice: 'none', workflowPhase: 'greeting' };
     }
-    const result = await this.getResponseInstructions(context);
+    const result = await this.getResponseInstructions({
+      ...context,
+      applyOneShotLanguageHint: false
+    });
     if (result.isConsentQuestion === true) {
       return { toolChoice: 'none', workflowPhase: null };
     }
-    const workflowPhase = overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
-      ? overrideWorkflowPhase
-      : await this.promptService.determineWorkflowPhase(state, callSid);
+    const fs = getConversationFlowState(callSid, state);
+    let workflowPhase;
+    if (fs.waitingForLanguage && !fs.languageSelected) {
+      workflowPhase = 'language_selection';
+    } else if (overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null) {
+      workflowPhase = overrideWorkflowPhase;
+    } else {
+      workflowPhase = await this.promptService.determineWorkflowPhase(state, callSid);
+    }
     if (workflowPhase === 'language_selection') {
-      return { toolChoice: 'none', workflowPhase };
+      return {
+        toolChoice: { type: 'function', name: 'set_call_language' },
+        workflowPhase: 'language_selection'
+      };
     }
     return { toolChoice: 'auto', workflowPhase };
   }
@@ -160,15 +189,27 @@ export class ConversationService {
    * @returns {Promise<{ instructions: string|null, isInitialGreeting: boolean }>}
    */
   async getResponseInstructions(context = {}) {
-    const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false, overrideWorkflowPhase } = context;
+    const {
+      callSid,
+      state,
+      conversation = {},
+      hasInitialGreetingBeenSent = false,
+      overrideWorkflowPhase,
+      applyOneShotLanguageHint = true
+    } = context;
     const isInitialGreeting = !hasInitialGreetingBeenSent;
+
+    const withOneShot = (instructions) =>
+      applyOneShotLanguageHint
+        ? this._applyOneShotPostLanguageSwitch(state, instructions)
+        : instructions;
 
     // Unsupported language requested (e.g. Sinhala): say one clear line then continue in English
     if (state?.unsupportedLanguageRequested) {
       const instructions = 'Say exactly: "That language isn\'t available at the moment. I can help you in English. Would you like to continue in English?" Then continue the conversation in English.';
       state.unsupportedLanguageRequested = null;
       if (conversation) conversation.unsupportedLanguageRequested = null;
-      return { instructions, isInitialGreeting: !hasInitialGreetingBeenSent };
+      return { instructions: withOneShot(instructions), isInitialGreeting: !hasInitialGreetingBeenSent };
     }
 
     if (isInitialGreeting) {
@@ -189,12 +230,17 @@ export class ConversationService {
       }
       const telephonyConfig = configManager.getTelephonyConfig();
       const { consentRequired: requireExplicitConsent, consentMessage: consentNotice } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
-      const consentQuestion = 'Do you consent to this call being recorded?';
+      const flowLang = languageSelected
+        ? (conversation?.language || state?.languagePreferenceState?.language || 'en')
+        : 'en';
+      const flow = getFlowCopy(flowLang);
 
-      if (requireExplicitConsent && !consentResponded) {
+      // Consent only AFTER language is chosen (order: language Q → answer → consent → main question)
+      if (requireExplicitConsent && !consentResponded && languageSelected) {
         const consentInstructions = consentInstructionBuilder.buildConsentFlowInstructions({
           consentNotice,
-          consentQuestion,
+          consentQuestion: flow.consentQuestion,
+          mainFollowUpQuestion: flow.mainFollowUpQuestion,
           languageSelected,
           consentGiven,
           consentResponded,
@@ -202,7 +248,7 @@ export class ConversationService {
           baseInstructions: ''
         });
         return {
-          instructions: consentInstructions || null,
+          instructions: withOneShot(consentInstructions || null),
           isInitialGreeting: true
         };
       }
@@ -211,14 +257,18 @@ export class ConversationService {
         isInitialGreeting: !waitingForLanguage,
         requireConsent: false,
         waitingForLanguage: waitingForLanguage && !languageSelected,
-        languageSelected
+        languageSelected,
+        language: flowLang,
+        consentQuestion: flow.consentQuestion,
+        mainFollowUpQuestion: flow.mainFollowUpQuestion
       });
-      return { instructions, isInitialGreeting: true };
+      return { instructions: withOneShot(instructions), isInitialGreeting: true };
     }
 
-    const workflowPhase = overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
-      ? overrideWorkflowPhase
-      : await this.promptService.determineWorkflowPhase(state, callSid);
+    let workflowPhase =
+      overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null
+        ? overrideWorkflowPhase
+        : await this.promptService.determineWorkflowPhase(state, callSid);
     const activeToolName =
       state?.activeToolName || (state?.activeResponseId ? 'processing_response' : null);
     let courseType = null;
@@ -234,6 +284,19 @@ export class ConversationService {
     const flowState = getConversationFlowState(callSid, state);
     const { waitingForLanguage, languageSelected, consentRequested, consentGiven, consentResponded } = flowState;
 
+    if (waitingForLanguage && !languageSelected) {
+      workflowPhase = 'language_selection';
+    }
+
+    if (workflowPhase === 'language_selection' && waitingForLanguage && !languageSelected) {
+      return {
+        instructions:
+          'CRITICAL — FUNCTION TOOL ONLY: Invoke the set_call_language tool exactly once via OpenAI function calling. Do NOT output JSON, do NOT print {"language_code":...} as text—that breaks the call (caller hears silence). Do NOT speak. Infer language_code (ISO 639-1) from the caller\'s LAST utterance in ANY script. Examples: Hindi/हिंदी/hindi→hi; English→en; Urdu→ur; Français→fr; Deutsch→de; Español→es; Italiano→it; Português→pt; Nederlands→nl; Polski→pl; Tamil→ta; Bengali→bn; Punjabi→pa; Gujarati→gu; Marathi→mr; Sinhala→si. If ambiguous, use en.',
+        isInitialGreeting: false,
+        isConsentQuestion: false
+      };
+    }
+
     let privacySettings = conversation?._cachedPrivacySettings ?? null;
     if (!privacySettings) {
       try {
@@ -248,12 +311,16 @@ export class ConversationService {
     }
     const telephonyConfig = configManager.getTelephonyConfig();
     const { consentRequired: requireExplicitConsent, consentMessage: consentNotice } = getEffectiveRecordingConsentSettings(telephonyConfig, privacySettings);
-    const consentQuestion = 'Do you consent to this call being recorded?';
+    const flowLang = languageSelected
+      ? (conversation?.language || state?.languagePreferenceState?.language || 'en')
+      : 'en';
+    const flow = getFlowCopy(flowLang);
 
     if (requireExplicitConsent && !consentResponded && languageSelected) {
       const consentInstructions = this.consentInstructionBuilder.buildConsentFlowInstructions({
         consentNotice,
-        consentQuestion,
+        consentQuestion: flow.consentQuestion,
+        mainFollowUpQuestion: flow.mainFollowUpQuestion,
         languageSelected: true,
         consentGiven,
         consentResponded,
@@ -261,7 +328,11 @@ export class ConversationService {
         baseInstructions: ''
       });
       if (consentInstructions) {
-        return { instructions: consentInstructions, isInitialGreeting: false, isConsentQuestion: true };
+        return {
+          instructions: withOneShot(consentInstructions),
+          isInitialGreeting: false,
+          isConsentQuestion: true
+        };
       }
     }
 
@@ -273,12 +344,15 @@ export class ConversationService {
       currentStep,
       activeTool: activeToolName,
       waitingForLanguage: waitingForLanguage && !languageSelected,
-      languageSelected
+      languageSelected,
+      language: flowLang,
+      consentQuestion: flow.consentQuestion,
+      mainFollowUpQuestion: flow.mainFollowUpQuestion
     });
 
     // When caller declined recording: explicitly tell the model to acknowledge and continue (do not say call cannot proceed)
     if (consentResponded && !consentGiven) {
-      const postDeclineInstruction = `CRITICAL: The caller has just declined recording. You MUST acknowledge briefly (e.g. that the call will not be recorded) and then say "What would you like to do today?" Do NOT say the call cannot continue, that you need consent to proceed, or that they should contact by other means—continue the call as normal.`;
+      const postDeclineInstruction = `CRITICAL: The caller has just declined recording. You MUST acknowledge briefly (e.g. that the call will not be recorded) and then say exactly: "${flow.mainFollowUpQuestion}" Do NOT say the call cannot continue, that you need consent to proceed, or that they should contact by other means—continue the call as normal.`;
       instructions = instructions ? `${postDeclineInstruction}\n\n${instructions}` : postDeclineInstruction;
     }
 
@@ -290,7 +364,7 @@ export class ConversationService {
       instructions = instructions ? `${verificationInstruction}\n\n${instructions}` : verificationInstruction;
     }
 
-    return { instructions, isInitialGreeting: false };
+    return { instructions: withOneShot(instructions), isInitialGreeting: false };
   }
 }
 

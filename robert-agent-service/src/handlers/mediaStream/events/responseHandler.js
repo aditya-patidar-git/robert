@@ -6,6 +6,7 @@ import { MemoryManager } from '../utils/index.js';
 import { conversations } from '../../../shared/state.js';
 import testClientRegistry from '../../../services/testClientRegistry.js';
 import { appendTranscriptEntry } from '../../../services/transcriptPersistenceService.js';
+import { resolveTranscriptionLanguage } from '../../../services/multilingualService.js';
 import { getConversationFlowState } from '../utils/conversationStateHelpers.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
 import { detectPrematureQuestion } from '../../../services/toolResultSubmitter.js';
@@ -592,7 +593,13 @@ export class ResponseHandler {
       if (fullResponseText && conversations[this.state.callSid]) {
         const conv = conversations[this.state.callSid];
         if (!conv.transcript) conv.transcript = [];
-        const entry = { role: 'agent', text: fullResponseText, timestamp: new Date(), confidence: 1 };
+        const entry = {
+          role: 'agent',
+          text: fullResponseText,
+          timestamp: new Date(),
+          confidence: 1,
+          language: resolveTranscriptionLanguage(conv.language || 'en')
+        };
         conv.transcript.push(entry);
         const maxLogLen = 500;
         const logText = fullResponseText.length > maxLogLen ? `${fullResponseText.substring(0, maxLogLen)}... (${fullResponseText.length} chars)` : fullResponseText;

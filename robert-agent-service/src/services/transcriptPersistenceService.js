@@ -1,12 +1,13 @@
 import CallRecord from '../database/models/CallRecord.js';
 import gdprService from './gdprService.js';
 import piiDetectionService from './piiDetectionService.js';
+import { translateTranscriptToEnglish } from './transcriptEnTranslationService.js';
 
 /**
  * Append a single transcript entry to CallRecord (append-only, no overwrite).
  * Only persists when consentGiven is true.
  * @param {string} callSid - Call SID
- * @param {Object} entry - { role: 'user'|'agent', text: string, timestamp: Date, confidence?: number }
+ * @param {Object} entry - { role: 'user'|'agent', text: string, timestamp: Date, confidence?: number, language?: string }
  * @param {{ consentGiven?: boolean }} options - consentGiven must be true to persist
  * @returns {Promise<void>}
  */
@@ -26,11 +27,18 @@ export async function appendTranscriptEntry(callSid, entry, options = {}) {
     } catch (_) {}
   }
 
+  let transcriptEn = entry.transcriptEn;
+  if (transcriptEn == null && process.env.TRANSCRIPT_EN_ENABLED !== 'false') {
+    transcriptEn = await translateTranscriptToEnglish(textToSave, entry.role === 'agent' ? 'agent' : 'user');
+  }
+
   const doc = {
     role: entry.role,
     text: textToSave,
     timestamp: entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp),
-    confidence: entry.confidence != null ? entry.confidence : undefined
+    confidence: entry.confidence != null ? entry.confidence : undefined,
+    ...(transcriptEn ? { transcriptEn } : {}),
+    ...(entry.language != null ? { language: entry.language } : {})
   };
 
   await CallRecord.findOneAndUpdate(

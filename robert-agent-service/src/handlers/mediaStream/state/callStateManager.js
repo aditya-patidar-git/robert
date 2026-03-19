@@ -147,6 +147,10 @@ export class CallStateManager {
     // Event waiting promises for race condition fixes
     this.pendingSessionUpdatePromise = null;
     this.pendingItemCreatePromise = null;
+    /** Resolvers waiting for the next session.updated (mid-call language switch, etc.) */
+    this._sessionUpdatedWaiters = [];
+    /** After mid-call language switch: next response.create gets a one-shot output-language instruction */
+    this.pendingOneShotOutputLanguageCanonical = null;
 
     // Pre-connection message queue: flush when WebSocket becomes ready (avoids "Cannot send - WebSocket not ready")
     this.preConnectionMessageQueue = [];
@@ -245,6 +249,41 @@ export class CallStateManager {
     this.isClosed = true;
     this.accepting = false;
     this.preConnectionMessageQueue = [];
+    this._sessionUpdatedWaiters = [];
+    this.pendingOneShotOutputLanguageCanonical = null;
+  }
+
+  /**
+   * Wait until the next session.updated from Realtime API (or timeout).
+   * Used after session.update so response.create runs with applied voice/instructions.
+   */
+  waitForNextSessionUpdated(timeoutMs = 5000) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(t);
+        resolve();
+      };
+      const t = setTimeout(() => {
+        console.warn(
+          `⚠️ [${this.callSid}] waitForNextSessionUpdated timeout after ${timeoutMs}ms — continuing`
+        );
+        finish();
+      }, timeoutMs);
+      this._sessionUpdatedWaiters.push({ finish, t });
+    });
+  }
+
+  /** Called from toolCoordinator when session.updated is received */
+  flushSessionUpdatedWaiters() {
+    const list = [...this._sessionUpdatedWaiters];
+    this._sessionUpdatedWaiters = [];
+    for (const rec of list) {
+      clearTimeout(rec.t);
+      rec.finish();
+    }
   }
 
   /**

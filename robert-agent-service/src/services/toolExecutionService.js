@@ -237,8 +237,10 @@ class ToolExecutionService {
       };
     }
 
-    // Check for duplicate calls
-    const isDuplicate = this.checkDuplicateCall(callId, toolName, parameters);
+    const isDuplicate =
+      toolName === 'set_call_language'
+        ? false
+        : this.checkDuplicateCall(callId, toolName, parameters);
     if (isDuplicate) {
       console.log(`⚠️ [${callSid || callId}] DUPLICATE CALL DETECTED: ${toolName} with same parameters - ignoring`);
       return {
@@ -329,7 +331,8 @@ class ToolExecutionService {
       phoneNumber: phoneNumber,
       clientDetails: conversation.clientDetails,
       clientVerified: conversation.clientVerified || false,
-      callAbortSignal: getCallAbortSignal(cid)
+      callAbortSignal: getCallAbortSignal(cid),
+      stateManager: stateManager || null
     };
 
     // Execute tool

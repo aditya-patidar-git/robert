@@ -42,6 +42,10 @@ cp .env.example .env
 - `TWILIO_AUTH_TOKEN` - Twilio Auth Token
 - `TWILIO_NUMBER` - Twilio phone number
 - `OPENAI_API_KEY` - OpenAI API key
+- `CONSENT_LLM_CLASSIFY_ENABLED` - Set to `false` to disable GPT-based recording consent when transcript regex misses (default: on when API key present; max 3 calls per consent wait)
+- `CONSENT_LLM_MODEL` - Classifier model (default: `gpt-4o-mini`)
+- `TRANSCRIPT_EN_ENABLED` - Set to `false` to skip storing English translations on call transcripts (`transcriptEn` in MongoDB). When not `false`, each persisted user/agent line is translated via Chat Completions (requires `OPENAI_API_KEY`).
+- `TRANSCRIPT_EN_MODEL` - Model for transcript English (default: `gpt-4o-mini`)
 - `DOMAIN` - Tunnel domain (ngrok/cloudflare) for WebSocket
 - `PORT` - Service port (default: 3002)
 

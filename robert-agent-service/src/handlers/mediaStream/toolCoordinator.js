@@ -15,6 +15,13 @@ import toolExecutionService from '../../services/toolExecutionService.js';
 import progressIndicatorService from '../../services/progressIndicatorService.js';
 import configManager from '../../agent/configManager.js';
 import toolExecutor from '../../tools/index.js';
+import {
+  inferLanguageCodeFromCallerUtterance,
+  parseLanguageCodeFromModelOutput,
+  collectAssistantTextFromResponseOutput,
+  transcriptSupportsLanguageCode
+} from '../../services/languageSelectionInference.js';
+import multilingualService from '../../services/multilingualService.js';
 
 /**
  * Tool Coordinator
@@ -65,7 +72,16 @@ export class ToolCoordinator {
     this.bargeInHandler = new BargeInHandler(stateManager, openaiWs, this.responseHandler, onBargeInSnapshot);
     
     this.consentHandler = consentHandler;
-    this.transcriptionHandler = new TranscriptionHandler(stateManager, languageDetector, consentHandler, openaiWs, this.bargeInHandler, (text) => this.applyIntentFromTranscript(text), () => this.openaiIntegration?.getCurrentWorkflowPhase?.());
+    this.transcriptionHandler = new TranscriptionHandler(
+      stateManager,
+      languageDetector,
+      consentHandler,
+      openaiWs,
+      this.bargeInHandler,
+      (text) => this.applyIntentFromTranscript(text),
+      () => this.openaiIntegration?.getCurrentWorkflowPhase?.(),
+      (utterance) => this.queueLanguageSelectionBackup(utterance)
+    );
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs, {
       onBeforeTriggerResponse: (callSid, context) => {
         const conv = conversations[callSid];
@@ -160,6 +176,28 @@ export class ToolCoordinator {
   }
 
   /**
+   * Queue server-side backup for forced set_call_language turn (runs if model omits tool call).
+   * @param {string} utterance - caller text that triggered the language-selection response
+   */
+  async queueLanguageSelectionBackup(utterance) {
+    let backupCode = 'en';
+    try {
+      backupCode = await inferLanguageCodeFromCallerUtterance(utterance || '');
+    } catch (e) {
+      console.warn(`⚠️ [${this.state.callSid}] Language inference failed, using en:`, e?.message || e);
+    }
+    this.state.pendingChainedToolCall = {
+      toolName: 'set_call_language',
+      args: { language_code: backupCode },
+      callerUtteranceForLanguageBackup: utterance || ''
+    };
+    const prev = (utterance || '').slice(0, 80);
+    console.log(
+      `🌐 [${this.state.callSid}] Language selection backup queued: ${backupCode} (caller: "${prev}${(utterance || '').length > 80 ? '…' : ''}")`
+    );
+  }
+
+  /**
    * After a "say-only" or forced-tool response completes, run any pending chained/recovery tool (inject function_call, execute, submit, trigger).
    * If the response output already contained a function_call for the pending tool, skip (model already called it).
    * @param {Object} [event] - response.done event (optional) to check if model already invoked the pending tool
@@ -172,9 +210,61 @@ export class ToolCoordinator {
       }
       return;
     }
-    // If the model already called this tool in the response, do not run again (avoid duplicate execution)
     const outputItems = event?.response?.output || [];
-    const modelAlreadyCalledTool = outputItems.some(item => item.type === 'function_call' && item.name === pending.toolName);
+
+    if (pending.toolName === 'set_call_language') {
+      const flow = getConversationFlowState(this.state.callSid, this.state);
+      if (flow.languageSelected) {
+        this.state.pendingChainedToolCall = null;
+        console.log(`📢 [${this.state.callSid}] Language already selected — skipping set_call_language backup`);
+        return;
+      }
+      const modelInvokedSetLang = outputItems.some(
+        item => item.type === 'function_call' && item.name === 'set_call_language'
+      );
+      if (modelInvokedSetLang) {
+        this.state.pendingChainedToolCall = null;
+        console.log(
+          `📢 [${this.state.callSid}] set_call_language in model response — backup not needed`
+        );
+        return;
+      }
+      const assistantText = collectAssistantTextFromResponseOutput(outputItems);
+      const fromModelJson = parseLanguageCodeFromModelOutput(assistantText);
+      await multilingualService.loadLanguageMappings();
+      const inferred = pending.args?.language_code || 'en';
+      const callerText = pending.callerUtteranceForLanguageBackup || '';
+      let code = inferred;
+
+      if (fromModelJson && multilingualService.isValidLanguage(fromModelJson)) {
+        if (fromModelJson === inferred) {
+          code = fromModelJson;
+          console.log(
+            `🌐 [${this.state.callSid}] Language backup: assistant JSON matches inference → ${code}`
+          );
+        } else if (inferred !== 'en') {
+          console.log(
+            `🌐 [${this.state.callSid}] Language backup: ignoring assistant JSON "${fromModelJson}" (caller inference ${inferred})`
+          );
+        } else if (transcriptSupportsLanguageCode(callerText, fromModelJson)) {
+          code = fromModelJson;
+          console.log(
+            `🌐 [${this.state.callSid}] Language backup: assistant JSON corroborated by transcript → ${code}`
+          );
+        } else {
+          console.log(
+            `🌐 [${this.state.callSid}] Language backup: ignoring assistant JSON "${fromModelJson}" (transcript does not support it; using ${inferred})`
+          );
+        }
+      } else {
+        console.log(`🌐 [${this.state.callSid}] Language backup: using caller inference → ${code}`);
+      }
+      pending.args = { language_code: code };
+    }
+
+    const modelAlreadyCalledTool = outputItems.some(
+      item => item.type === 'function_call' && item.name === pending.toolName
+    );
     if (modelAlreadyCalledTool) {
       this.state.pendingChainedToolCall = null;
       console.log(`📢 [${this.state.callSid}] Pending tool ${pending.toolName} already called in response - skipping auto-run`);
@@ -376,22 +466,46 @@ export class ToolCoordinator {
         hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent,
         overrideWorkflowPhase
       });
-      const sessionUpdate = { tool_choice: toolChoice };
-      if (toolChoice === 'auto' && workflowPhase) {
+      const forcedSetLang =
+        toolChoice &&
+        typeof toolChoice === 'object' &&
+        toolChoice.type === 'function' &&
+        toolChoice.name === 'set_call_language';
+      const sessionUpdate = forcedSetLang
+        ? {
+            tool_choice: toolChoice,
+            tools: toolExecutor.getFilteredToolDefinitions({
+              workflowPhase: 'language_selection',
+              clientVerified: conversations[this.state.callSid]?.kba?.verified || false
+            })
+          }
+        : { tool_choice: toolChoice };
+      if (!forcedSetLang && toolChoice === 'auto' && workflowPhase) {
+        const langSel =
+          conversations[this.state.callSid]?.languagePreferenceState?.selected ||
+          this.state.languagePreferenceState?.selected;
+        const stillWaitingLang =
+          (conversations[this.state.callSid]?.waitingForLanguage ||
+            this.state.waitingForLanguage) &&
+          !langSel;
         const toolContext = {
           workflowPhase,
           clientVerified: conversations[this.state.callSid]?.kba?.verified || false,
-          postVerificationWaitingConfirmation: this.state.postVerificationWaitingConfirmation || false
+          postVerificationWaitingConfirmation: this.state.postVerificationWaitingConfirmation || false,
+          allowMidCallLanguageSwitch: !!(langSel && !stillWaitingLang)
         };
         sessionUpdate.tools = toolExecutor.getFilteredToolDefinitions(toolContext);
         if (this.state.postVerificationWaitingConfirmation) {
           console.log(`📤 [${this.state.callSid}] Sending session.update - tool_choice: auto, tools exclude search_client (postVerificationWaitingConfirmation)`);
         }
       }
-      if (toolChoice === 'auto' && !sessionUpdate.tools) {
+      if (!forcedSetLang && toolChoice === 'auto' && !sessionUpdate.tools) {
         console.log(`📤 [${this.state.callSid}] Sending session.update - tool_choice: auto for phase ${workflowPhase ?? 'unknown'}`);
-      } else if (toolChoice !== 'auto') {
+      } else if (!forcedSetLang && toolChoice !== 'auto') {
         console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
+      } else if (forcedSetLang) {
+        console.log(`📤 [${this.state.callSid}] Sending session.update - forced set_call_language`);
+        await this.queueLanguageSelectionBackup(this.state.lastUtteranceForLanguageSelection || '');
       }
       this.openaiWs.send(JSON.stringify({
         type: 'session.update',
@@ -563,7 +677,10 @@ export class ToolCoordinator {
           if (this.state.pendingSessionUpdatePromise) {
             this.state.pendingSessionUpdatePromise();
           }
-          
+          if (typeof this.state.flushSessionUpdatedWaiters === 'function') {
+            this.state.flushSessionUpdatedWaiters();
+          }
+
           await this.handleSessionUpdated(event);
           break;
           
@@ -885,28 +1002,9 @@ export class ToolCoordinator {
         this.state.isResponding = true;
         console.log(`✅ [${this.state.callSid}] Initial greeting sent`);
         
-        // Set timeout for consent response if needed
+        // Consent: we do NOT set a timeout that defaults to opt-in. We only proceed after a clear yes/no.
         if (this.state.recordingConsentState.requested && this.state.recordingConsentState.given === null) {
-          console.log(`⏱️ [${this.state.callSid}] Starting consent timeout (${this.state.CONSENT_TIMEOUT_MS/1000}s) - waiting for caller response`);
-          this.state.consentTimeout = setTimeout(() => {
-            // FIX: Safely check conversation state - it may have been cleaned up
-            if (!conversationExists(this.state.callSid)) {
-              console.warn(`⚠️ [${this.state.callSid}] Conversation cleaned up, skipping consent timeout handler`);
-              return;
-            }
-            
-            const consent = getRecordingConsent(this.state.callSid);
-            if (this.state.recordingConsentState.given === null && consent && consent.given === null) {
-              this.state.recordingConsentState.given = true;
-              this.state.recordingConsentState.respondedAt = new Date();
-              updateRecordingConsent(this.state.callSid, {
-                given: true,
-                respondedAt: new Date(),
-                optOutReason: null
-              });
-              console.log(`⏰ [${this.state.callSid}] Recording consent timeout expired - defaulting to opt-in`);
-            }
-          }, this.state.CONSENT_TIMEOUT_MS);
+          console.log(`⏱️ [${this.state.callSid}] Waiting for clear consent response (yes/no) - no timeout default`);
         }
       } catch (err) {
         this.state.explicitResponseRequested = false;

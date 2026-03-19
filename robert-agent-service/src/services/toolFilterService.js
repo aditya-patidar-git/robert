@@ -15,7 +15,9 @@ const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search'];
 /** Phases where file_search and web_search are disabled to keep workflow order (use step tools only). */
 const SEARCH_TOOLS_DISABLED_PHASES = new Set([
   'booking_start', 'booking_availability', 'booking_existing_client', 'booking_new_client',
-  'booking_payment', 'booking_completion', 'booking_modification', 'cancellation'
+  'booking_payment', 'booking_completion', 'booking_modification', 'cancellation',
+  'language_selection',
+  'recording_consent'
 ]);
 
 /**
@@ -30,10 +32,14 @@ const TOOL_SETS = {
     'start_workflow'
   ],
 
-  // Language selection phase - minimal tools
+  // Language selection phase - model must call set_call_language (transfer if urgent)
   language_selection: [
+    'set_call_language',
     'transfer_call'
   ],
+
+  // Until caller answers recording consent: no booking/cancellation/complaint tools
+  recording_consent: ['set_call_language', 'transfer_call'],
 
   // General inquiry handling - informational tools
   general_inquiry: [
@@ -176,7 +182,10 @@ const CONTEXTUAL_TOOLS = {
   // Add legacy tools when backward compatibility is needed
   legacyMode: [
     'payments'
-  ]
+  ],
+
+  /** Mid-call language change (after initial language locked) */
+  allowMidCallLanguageSwitch: ['set_call_language']
 };
 
 /**

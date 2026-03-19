@@ -137,9 +137,10 @@ class MultilingualService {
    * @returns {Object} - Language config with name, code, voice
    */
   getLanguageConfig(languageCode) {
-    // Use cached mappings if available, otherwise use defaults
     const languages = this.languageCache || this.supportedLanguages;
-    return languages[languageCode] || languages[this.defaultLanguage];
+    const key = this.resolveSupportedLanguageKey(languageCode);
+    if (key && languages[key]) return languages[key];
+    return languages[this.defaultLanguage];
   }
 
   /**
@@ -252,12 +253,49 @@ Speak in clear, calm, polite British English with a professional but warm tone. 
   }
 
   /**
-   * Check if language code is valid
+   * Resolve a user/model/base code (e.g. hi, hi-in) to the canonical key in supportedLanguages
+   * (e.g. hi-IN from DB). Keys are merged from defaults (en, fr, …) and LanguageVoiceMapping.
+   * @param {string|null|undefined} input
+   * @returns {string|null} canonical key or null
+   */
+  resolveSupportedLanguageKey(input) {
+    if (input == null || input === '') return null;
+    const languages = this.languageCache || this.supportedLanguages;
+    const keys = Object.keys(languages);
+    const normalized = String(input).trim().toLowerCase();
+    if (!normalized) return null;
+
+    for (const k of keys) {
+      if (k.toLowerCase() === normalized) return k;
+    }
+
+    const base = normalized.split(/[-_]/)[0];
+    if (!base) return null;
+
+    for (const k of keys) {
+      if (k.toLowerCase() === base) return k;
+    }
+
+    const candidates = keys.filter(k => {
+      const seg = k.split(/[-_]/)[0].toLowerCase();
+      return seg === base;
+    });
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    const regionMatch = candidates.find(c => c.toLowerCase() === normalized);
+    if (regionMatch) return regionMatch;
+
+    return candidates.sort((a, b) => a.localeCompare(b))[0];
+  }
+
+  /**
+   * Check if language code is valid (includes base ISO codes when DB uses locale keys, e.g. hi → hi-IN)
    * @param {string} languageCode - Language code to check
    * @returns {boolean} - True if valid
    */
   isValidLanguage(languageCode) {
-    return languageCode in this.supportedLanguages;
+    return this.resolveSupportedLanguageKey(languageCode) != null;
   }
 
   /**
@@ -279,6 +317,26 @@ Speak in clear, calm, polite British English with a professional but warm tone. 
     const config = this.getLanguageConfig(languageCode);
     return config.code || 'en-GB';
   }
+}
+
+/**
+ * OpenAI Realtime input_audio_transcription.language accepts ISO 639-1 as a hint.
+ * Returns a supported base code or 'en' for obscure/regional codes.
+ * @param {string} [lang] - Conversation language (e.g. 'en-GB', 'hi-IN', 'fr')
+ * @returns {string} - Two-letter code for input_audio_transcription.language
+ */
+const SUPPORTED_TRANSCRIPTION_LANGS = new Set([
+  'af', 'ar', 'hy', 'az', 'be', 'bs', 'bg', 'ca', 'zh', 'hr', 'cs', 'da', 'nl',
+  'en', 'et', 'fi', 'fr', 'gl', 'de', 'el', 'he', 'hi', 'hu', 'is', 'id', 'it',
+  'ja', 'kn', 'kk', 'ko', 'lv', 'lt', 'mk', 'ms', 'mr', 'mi', 'ne', 'no', 'fa',
+  'pl', 'pt', 'ro', 'ru', 'sr', 'sk', 'sl', 'es', 'sw', 'sv', 'tl', 'ta', 'th',
+  'tr', 'uk', 'ur', 'vi', 'cy'
+]);
+
+export function resolveTranscriptionLanguage(lang) {
+  if (!lang) return 'en';
+  const code = String(lang).toLowerCase().split(/[-_]/)[0];
+  return SUPPORTED_TRANSCRIPTION_LANGS.has(code) ? code : 'en';
 }
 
 export default new MultilingualService();

@@ -114,6 +114,7 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       requireConsent = false,
       consentNotice = null,
       consentQuestion = null,
+      mainFollowUpQuestion = null,
       waitingForLanguage = false,
       languageSelected = false,
       callerName = null,
@@ -132,7 +133,8 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       booking,
       language,
       consentNotice: consentNotice || consentTemplates.recordingNotice,
-      consentQuestion: consentQuestion || consentTemplates.recordingQuestion
+      consentQuestion: consentQuestion || consentTemplates.recordingQuestion,
+      mainFollowUpQuestion: mainFollowUpQuestion || consentTemplates.recordingMainFollowUp
     };
 
     // Initial greeting instructions
@@ -211,6 +213,7 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
     const phaseMap = {
       'greeting': 'greeting',
       'language': 'language_selection',
+      'recording_consent': 'recording_consent',
       'inquiry': 'general_inquiry',
       'question': 'general_inquiry',
       'booking': 'booking_start',
@@ -420,12 +423,36 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       return 'booking_start';
     }
 
-    // Check if waiting for language selection
-    if (state.waitingForLanguage && !state.languagePreferenceState?.selected) {
+    // Check if waiting for language selection (sync conversation + state)
+    const { getConversationFlowState } = await import(
+      '../handlers/mediaStream/utils/conversationStateHelpers.js'
+    );
+    const flow = callSid ? getConversationFlowState(callSid, state) : null;
+    if (flow?.waitingForLanguage && !flow?.languageSelected) {
       return 'language_selection';
     }
 
-    // Default to general inquiry
+    // Recording consent required before any booking/complaint workflow
+    if (callSid && flow?.languageSelected && !flow?.consentResponded) {
+      try {
+        const PrivacyConfig = (await import('../database/models/PrivacyConfig.js')).default;
+        const configManager = (await import('../agent/configManager.js')).default;
+        const { getEffectiveRecordingConsentSettings } = await import(
+          './callRecordPersistenceService.js'
+        );
+        const privacySettings = await PrivacyConfig.findOne({ isActive: true }).lean().catch(() => null);
+        const { consentRequired } = getEffectiveRecordingConsentSettings(
+          configManager.getTelephonyConfig(),
+          privacySettings
+        );
+        if (consentRequired) {
+          return 'recording_consent';
+        }
+      } catch (_) {
+        /* fall through */
+      }
+    }
+
     return 'general_inquiry';
   }
 }

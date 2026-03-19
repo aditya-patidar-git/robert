@@ -23,6 +23,10 @@ const callRecordSchema = new mongoose.Schema({
     {
       role: { type: String, enum: ["user", "agent"], required: true },
       text: { type: String, required: true },
+      /** English translation for admin (optional); original ASR/agent text stays in text */
+      transcriptEn: { type: String, required: false },
+      /** Session/intended language for this turn (e.g. en, fr, es); base ISO 639-1 */
+      language: { type: String, required: false },
       timestamp: { type: Date, default: Date.now },
       confidence: { type: Number, min: 0, max: 1 },
       redactions: [{ type: String }]
