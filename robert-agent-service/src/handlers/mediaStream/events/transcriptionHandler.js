@@ -12,6 +12,7 @@ import { storePrematureResponse } from '../../../services/toolResultSubmitter.js
 import { conversations } from '../../../shared/state.js';
 import { LanguageDetector } from '../utils/languageDetector.js';
 import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
+import { mergeWithBargeInFlushedGrace } from '../utils/graceBufferMerge.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
 import toolExecutor from '../../../tools/index.js';
 
@@ -585,7 +586,8 @@ export class TranscriptionHandler {
           
           console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] grace_period - will create response after intent check`);
           console.log(`✅ [${this.state.callSid}] Grace period expired - processing ${transcriptionsToProcess.length} transcriptions`);
-          const transcriptText = transcriptionsToProcess.map(t => t?.transcript).filter(Boolean).join(' ').trim();
+          const joined = transcriptionsToProcess.map(t => t?.transcript).filter(Boolean).join(' ').trim();
+          const transcriptText = mergeWithBargeInFlushedGrace(this.state.callSid, joined);
           console.log(`🔍 [INTENT] [${this.state.callSid}] grace_period transcriptText: "${(transcriptText || '').slice(0, 120)}"`);
           if (transcriptText && typeof this.onApplyIntentFromTranscript === 'function') {
             this.onApplyIntentFromTranscript(transcriptText);

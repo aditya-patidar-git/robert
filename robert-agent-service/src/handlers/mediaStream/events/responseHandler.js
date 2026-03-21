@@ -12,6 +12,26 @@ import progressIndicatorService from '../../../services/progressIndicatorService
 import { detectPrematureQuestion } from '../../../services/toolResultSubmitter.js';
 
 /**
+ * When barge-in runs, activeResponseId is cleared before response.done, so the main branch does not run.
+ * For the initial greeting cancelled that way, we still must set hasInitialGreetingCompleted or the caller gets silence.
+ * @param {{ cancelledResponseIds?: Set<string>, hasInitialGreetingBeenSent?: boolean, hasInitialGreetingCompleted?: boolean }} state
+ * @param {string|undefined} responseId
+ * @param {string|undefined} status
+ * @returns {boolean}
+ */
+export function shouldAdvanceInitialGreetingAfterCancelledNonActive(state, responseId, status) {
+  const statusNorm = String(status || '').toLowerCase();
+  const isCancelledStatus = statusNorm === 'cancelled' || statusNorm === 'canceled';
+  return (
+    Boolean(responseId) &&
+    isCancelledStatus &&
+    state?.hasInitialGreetingBeenSent === true &&
+    state?.hasInitialGreetingCompleted === false &&
+    state?.cancelledResponseIds?.has?.(responseId) === true
+  );
+}
+
+/**
  * Response Handler
  * Handles response creation, completion, and audio streaming
  */
@@ -737,6 +757,14 @@ export class ResponseHandler {
     } else {
       // Response completed but it's not the active one (might have been cancelled)
       console.log(`ℹ️ [${this.state.callSid}] Response done for non-active response - ID: ${responseId}, status: ${status}, activeResponseId: ${this.state.activeResponseId}`);
+
+      // Barge-in clears activeResponseId before response.done; cancelled first greeting would never set hasInitialGreetingCompleted — blocks grace follow-up. Advance flow only for that case (no MemoryManager here: user may not have heard full greeting).
+      if (shouldAdvanceInitialGreetingAfterCancelledNonActive(this.state, responseId, status)) {
+        this.state.hasInitialGreetingCompleted = true;
+        console.log(
+          `🎯 [${this.state.callSid}] Initial greeting response ended (cancelled); advancing flow so caller can receive follow-up (memory consent not triggered from this path)`
+        );
+      }
     }
   }
 
