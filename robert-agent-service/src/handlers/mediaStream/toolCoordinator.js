@@ -22,6 +22,7 @@ import {
   transcriptSupportsLanguageCode
 } from '../../services/languageSelectionInference.js';
 import multilingualService from '../../services/multilingualService.js';
+import { mergeWithBargeInFlushedGrace } from './utils/graceBufferMerge.js';
 
 /**
  * Tool Coordinator
@@ -791,7 +792,7 @@ export class ToolCoordinator {
           const transcriptionResult = await this.transcriptionHandler.handleTranscriptionCompleted(event);
           const transcriptionItemId = event.item_id; // Link to committed segment
           
-          const transcriptText = event.transcript || '';
+          const transcriptText = mergeWithBargeInFlushedGrace(this.state.callSid, event.transcript || '');
           this.applyIntentFromTranscript(transcriptText);
 
           // CRITICAL DIAGNOSTIC: Log transcription processing result
@@ -887,9 +888,10 @@ export class ToolCoordinator {
           // Handle process_transcriptions return value
           if (speechStoppedResult && speechStoppedResult.type === 'process_transcriptions') {
             const transcriptions = speechStoppedResult.transcriptions || [];
-            if (transcriptions.length > 0) {
-              const transcriptText = transcriptions.map(t => t?.transcript).filter(Boolean).join(' ').trim();
-              if (transcriptText) this.applyIntentFromTranscript(transcriptText);
+            const joinedBatch = transcriptions.map(t => t?.transcript).filter(Boolean).join(' ').trim();
+            const mergedBatch = mergeWithBargeInFlushedGrace(this.state.callSid, joinedBatch);
+            if (mergedBatch) {
+              this.applyIntentFromTranscript(mergedBatch);
             }
             const flowStateSt = getConversationFlowState(this.state.callSid, this.state);
             const consentJustSt =
@@ -923,7 +925,7 @@ export class ToolCoordinator {
               snapshotSpeechStopped
             );
             if (
-              transcriptions.length > 0 &&
+              mergedBatch &&
               shouldCreateFromSpeechStopped &&
               !this.state.isInterrupted &&
               this.state.tryAcquireResponseLock()
@@ -934,12 +936,11 @@ export class ToolCoordinator {
                   this.state.releaseResponseLock();
                   return;
                 }
-                const transcriptTextFromBatch = transcriptions.map(t => t?.transcript).filter(Boolean).join(' ').trim();
                 console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] speech_stopped process_transcriptions`);
                 this.state.explicitResponseRequested = true;
                 await this.createAudioResponse();
                 console.log(`🎯 [${this.state.callSid}] Created response after processing ${transcriptions.length} transcriptions`);
-                if (transcriptTextFromBatch && isTransferToHumanRequest(transcriptTextFromBatch)) {
+                if (mergedBatch && isTransferToHumanRequest(mergedBatch)) {
                   try {
                     const callContext = { callSid: this.state.callSid, phoneNumber: this.state.phoneNumber };
                     const result = await transferCallTool.execute({ reason: 'user_request' }, callContext);

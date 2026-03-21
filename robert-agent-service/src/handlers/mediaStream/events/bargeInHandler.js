@@ -2,6 +2,7 @@ import configManager from '../../../agent/configManager.js';
 import conversationQualityService from '../../../services/conversationQualityService.js';
 import adaptiveTimingService from '../../../services/adaptiveTimingService.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
+import { conversations } from '../../../shared/state.js';
 import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
 
 /**
@@ -219,6 +220,23 @@ export class BargeInHandler {
     this.state.speechStoppedTime = 0;
     this.state.speechResumedDuringGrace = false;
     this.state.gracePeriodExtensionCount = 0;
+    // Preserve grace-merge buffer so barge-in does not drop user words (workflow/tool state unchanged)
+    const pendingGrace = this.state.pendingTranscriptionsAfterGrace;
+    if (Array.isArray(pendingGrace) && pendingGrace.length > 0) {
+      const flushed = pendingGrace.map(t => t?.transcript).filter(Boolean).join(' ').trim();
+      if (flushed) {
+        let conv = conversations[this.state.callSid];
+        if (!conv) {
+          conversations[this.state.callSid] = {};
+          conv = conversations[this.state.callSid];
+        }
+        const existing = (conv.bargeInFlushedGraceText || '').trim();
+        conv.bargeInFlushedGraceText = existing ? `${existing} ${flushed}`.trim() : flushed;
+        console.log(
+          `📎 [${this.state.callSid}] Preserved ${pendingGrace.length} grace-buffer segment(s) before barge-in clear (${flushed.length} chars)`
+        );
+      }
+    }
     this.state.pendingTranscriptionsAfterGrace = [];
     
     // STEP 4: Mark response as cancelled and clear response tracking

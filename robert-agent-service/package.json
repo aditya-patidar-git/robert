@@ -6,7 +6,8 @@
   "main": "src/agent/index.js",
   "scripts": {
     "start:agent": "node src/agent/index.js",
-    "dev:agent": "nodemon src/agent/index.js"
+    "dev:agent": "nodemon src/agent/index.js",
+    "test": "node --test src/handlers/mediaStream/utils/graceBufferMerge.test.js src/handlers/mediaStream/events/responseHandler.greeting.test.js"
   },
   "keywords": ["voice-agent", "twilio", "openai"],
   "author": "",

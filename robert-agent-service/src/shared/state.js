@@ -26,6 +26,7 @@ export const conversations = {}; // in-memory storage (backward compatible)
 // Structure: {
 //   [callSid]: {
 //     transcript: [],
+//     bargeInFlushedGraceText: String|undefined, // speech-continuation buffer flushed on barge-in; merged into next user turn once
 //     prematureResponses: {},  // { bikeType: { responseText, storedAt, expectedTool } } - user responses to premature questions
 //     from: String,
 //     to: String,
