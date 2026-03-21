@@ -261,6 +261,31 @@ class SessionStateManager {
   }
 
   /**
+   * Draft args for new-client fill_contact_details (merged on each call).
+   * Lets a follow-up with only addressConfirmed (or partial args) still complete survey + Next.
+   */
+  getPendingNewClientContactArgs(callSid) {
+    const session = this.getSession(callSid);
+    const d = session?.pendingNewClientContactArgs;
+    return d && typeof d === 'object' ? { ...d } : null;
+  }
+
+  setPendingNewClientContactArgs(callSid, plainObject) {
+    if (!callSid) return;
+    this._syncBookingSession(callSid, (session) => {
+      session.pendingNewClientContactArgs =
+        plainObject && typeof plainObject === 'object' ? { ...plainObject } : {};
+    });
+  }
+
+  clearPendingNewClientContactArgs(callSid) {
+    if (!callSid) return;
+    this._syncBookingSession(callSid, (session) => {
+      delete session.pendingNewClientContactArgs;
+    });
+  }
+
+  /**
    * Get booking details
    * @param {string} callSid - Call SID identifier
    * @returns {Object|null} Booking details

@@ -15,6 +15,22 @@ import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
 import toolExecutor from '../../../tools/index.js';
 
+/** Snapshot for conversationService.shouldCreateResponse (Media Streams). */
+function buildResponseDecisionSnapshot(state, callSid, inConsentOrLanguagePhase) {
+  return {
+    waitingForUser: state.waitingForUser,
+    browserToolExecution: progressIndicatorService.getExecutionInfo(callSid),
+    toolExecutionCompleting: state.toolExecutionCompleting === true,
+    isResponding: state.isResponding,
+    activeResponseId: state.activeResponseId,
+    hasInitialGreetingCompleted: state.hasInitialGreetingCompleted,
+    outboundAudioPacer: state.outboundAudioPacer,
+    outboundAudioBuffer: state.outboundAudioBuffer,
+    bargeInTailUntil: state.bargeInTailUntil,
+    inConsentOrLanguagePhase
+  };
+}
+
 /**
  * Transcription Handler
  * Handles user transcriptions and speech stopped events
@@ -29,7 +45,8 @@ export class TranscriptionHandler {
     bargeInHandler = null,
     onApplyIntentFromTranscript = null,
     onGetWorkflowPhase = null,
-    queueLanguageSelectionBackup = null
+    queueLanguageSelectionBackup = null,
+    createAudioResponseFn = null
   ) {
     this.state = stateManager;
     this.languageDetector = languageDetector;
@@ -39,6 +56,8 @@ export class TranscriptionHandler {
     this.onApplyIntentFromTranscript = onApplyIntentFromTranscript;
     this.onGetWorkflowPhase = onGetWorkflowPhase;
     this.queueLanguageSelectionBackup = queueLanguageSelectionBackup;
+    /** When set, grace-period completion delegates to ToolCoordinator.createAudioResponse (mid-tool gating + conditional re-enable). */
+    this.createAudioResponseFn = createAudioResponseFn;
   }
 
   appendUserTurnToTranscript(transcript, transcriptionTime, qualityAssessment, conversations) {
@@ -439,7 +458,13 @@ export class TranscriptionHandler {
     // Update last processed transcription time
     this.state.lastProcessedTranscriptionTime = transcriptionTime;
     
-    const allowResponse = !isAudioPlayingForBlocking;
+    // After agent finished and we're waiting for an answer, do not drop the user's turn because
+    // residual buffer/pacer still marks "audio playing" (long think-time before speaking).
+    const msSinceAgentFinished =
+      this.state.agentFinishedSpeakingTime > 0 ? Date.now() - this.state.agentFinishedSpeakingTime : Infinity;
+    const waitingForAnswerAfterAgent =
+      this.state.waitingForUser && msSinceAgentFinished > 1200 && msSinceAgentFinished < 600000;
+    const allowResponse = !isAudioPlayingForBlocking || waitingForAnswerAfterAgent;
     return { 
       processed: true, 
       shouldCreateResponse: allowResponse,
@@ -565,22 +590,54 @@ export class TranscriptionHandler {
           if (transcriptText && typeof this.onApplyIntentFromTranscript === 'function') {
             this.onApplyIntentFromTranscript(transcriptText);
           }
-          if (this.state.waitingForUser && this.state.hasInitialGreetingCompleted && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
+          const { conversations } = await import('../../../shared/state.js');
+          const conv = conversations[this.state.callSid] || {};
+          const flowState = getConversationFlowState(this.state.callSid, this.state);
+          const consentJustResponded =
+            flowState.consentResponded &&
+            this.state.agentFinishedSpeakingTime > 0 &&
+            Date.now() - this.state.agentFinishedSpeakingTime < 5000;
+          const inConsentOrLanguagePhase =
+            flowState.waitingForLanguage ||
+            (flowState.languageSelected && !flowState.consentResponded) ||
+            consentJustResponded;
+          const syntheticTranscription = {
+            processed: true,
+            shouldCreateResponse: true,
+            qualityScore: 1,
+            isBackgroundNoise: false
+          };
+          const decisionSnapshot = buildResponseDecisionSnapshot(
+            this.state,
+            this.state.callSid,
+            inConsentOrLanguagePhase
+          );
+          const allowGraceResponse =
+            this.state.hasInitialGreetingCompleted &&
+            !this.state.isInterrupted &&
+            conversationService.shouldCreateResponse(syntheticTranscription, decisionSnapshot);
+          if (allowGraceResponse && this.state.tryAcquireResponseLock()) {
             try {
               if (this.state.isInterrupted) {
                 console.log(`🛑 [${this.state.callSid}] Skipping response creation after grace period - user interrupted`);
                 this.state.releaseResponseLock();
                 return;
               }
-              if (this.openaiWs && this.openaiWs.readyState === 1) {
-                const { conversations } = await import('../../../shared/state.js');
+              if (typeof this.createAudioResponseFn === 'function') {
+                this.state.explicitResponseRequested = true;
+                await this.createAudioResponseFn();
+                console.log(
+                  `🎯 [${this.state.callSid}] Created response after grace period via createAudioResponse (${transcriptionsToProcess.length} transcriptions)`
+                );
+              } else if (this.openaiWs && this.openaiWs.readyState === 1) {
                 const overrideWorkflowPhase = this.onGetWorkflowPhase?.() ?? undefined;
                 const { toolChoice } = await conversationService.getToolChoiceForResponse({
                   callSid: this.state.callSid,
                   state: this.state,
-                  conversation: conversations[this.state.callSid] || {},
+                  conversation: conv,
                   hasInitialGreetingBeenSent: true,
-                  overrideWorkflowPhase
+                  overrideWorkflowPhase,
+                  browserToolExecution: progressIndicatorService.getExecutionInfo(this.state.callSid)
                 });
                 const forcedSetLang =
                   toolChoice &&
@@ -596,7 +653,7 @@ export class TranscriptionHandler {
                       tool_choice: toolChoice,
                       tools: toolExecutor.getFilteredToolDefinitions({
                         workflowPhase: 'language_selection',
-                        clientVerified: conversations[this.state.callSid]?.kba?.verified || false
+                        clientVerified: conv?.kba?.verified || false
                       })
                     }
                   : { tool_choice: toolChoice };
@@ -605,12 +662,22 @@ export class TranscriptionHandler {
                   session: sessionPatch
                 }));
                 await new Promise(resolve => setTimeout(resolve, 150));
+                const allowMid = configManager.getConversationBehaviorConfig()?.allowMidToolEpistemicReplies !== false;
+                const browserToolExecution = progressIndicatorService.getExecutionInfo(this.state.callSid);
+                const midToolEpistemicMode = Boolean(
+                  allowMid &&
+                    browserToolExecution &&
+                    !this.state.toolExecutionCompleting &&
+                    this.state.waitingForUser === false
+                );
                 const { instructions: responseInstructions } = await conversationService.getResponseInstructions({
                   callSid: this.state.callSid,
                   state: this.state,
-                  conversation: conversations[this.state.callSid] || {},
+                  conversation: conv,
                   hasInitialGreetingBeenSent: true,
-                  overrideWorkflowPhase
+                  overrideWorkflowPhase,
+                  midToolEpistemicMode,
+                  browserToolExecution
                 });
                 const responseCreatePayload = {
                   type: 'response.create',
@@ -623,24 +690,22 @@ export class TranscriptionHandler {
                   console.log(`📋 [${this.state.callSid}] Including contextual instructions in response.create after grace period`);
                 }
                 this.openaiWs.send(JSON.stringify(responseCreatePayload));
-                
-                // Step 3: Re-enable tools after delay
                 setTimeout(() => {
                   if (this.openaiWs && this.openaiWs.readyState === 1) {
                     this.openaiWs.send(JSON.stringify({
                       type: 'session.update',
                       session: {
                         tool_choice: 'auto'
-                  }
-                }));
+                      }
+                    }));
                   }
                 }, 3000);
-                
-                console.log(`🎯 [${this.state.callSid}] Created response after grace period (${transcriptionsToProcess.length} transcriptions)`);
+                console.log(
+                  `🎯 [${this.state.callSid}] Created response after grace period (${transcriptionsToProcess.length} transcriptions) [fallback path]`
+                );
               }
             } catch (err) {
               console.error(`❌ [${this.state.callSid}] Error creating response after grace period:`, err);
-              // Release lock on error
               this.state.releaseResponseLock();
             }
           }

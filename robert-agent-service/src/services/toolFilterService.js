@@ -15,8 +15,8 @@
  */
 const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search', 'complaint_submission'];
 
-/** Phases where file_search/web_search are withheld — empty so these tools are available in all phases. */
-const SEARCH_TOOLS_DISABLED_PHASES = new Set();
+/** Phases where file_search/web_search are withheld (complaint_submission still merges via ALWAYS_AVAILABLE_TOOLS). */
+const SEARCH_TOOLS_DISABLED_PHASES = new Set(['booking_options']);
 
 /**
  * Tool sets organized by workflow phase.
@@ -81,6 +81,19 @@ const TOOL_SETS = {
     'booking_step_select_booking_options',
     'booking_step_create_new_contact',
     'booking_step_fill_contact_details',
+    'transfer_call'
+  ],
+
+  // Step 7: booking options + contact form (same phase in session) — no web/knowledge search; use booking_step_* only
+  booking_options: [
+    'booking_step_navigate_contacts',
+    'booking_step_search_client',
+    'booking_step_select_session',
+    'booking_step_select_booking_options',
+    'booking_step_lookup_contact',
+    'booking_step_create_new_contact',
+    'booking_step_fill_contact_details',
+    'client_verification',
     'transfer_call'
   ],
 

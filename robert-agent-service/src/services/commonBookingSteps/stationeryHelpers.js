@@ -352,11 +352,16 @@ export async function selectSMSPreset(page, searchContext, presetTemplateName) {
   if (!overlayExists) {
     throw new Error('Could not find dropdown overlay');
   }
-  
-  // Find dropdown list container with class dx-list and role="listbox"
-  const dropdownList = dropdownOverlay.locator('.dx-list[role="listbox"]');
-  const listExists = await dropdownList.count() > 0;
-  
+
+  // DevExtreme SelectBox: role="listbox" is on .dx-list-items; the scrollable root is .dx-list with role="group".
+  // Older builds may still use .dx-list[role="listbox"].
+  let dropdownList = dropdownOverlay.locator('.dx-list-items[role="listbox"]');
+  let listExists = (await dropdownList.count()) > 0;
+  if (!listExists) {
+    dropdownList = dropdownOverlay.locator('.dx-list[role="listbox"]');
+    listExists = (await dropdownList.count()) > 0;
+  }
+
   if (!listExists) {
     throw new Error('Could not find dropdown list container');
   }

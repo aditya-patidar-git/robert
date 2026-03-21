@@ -50,7 +50,7 @@ const ConversationBehaviorConfigSchema = new mongoose.Schema({
     },
     silenceThresholdMs: { 
       type: Number, 
-      default: 15000,
+      default: 28000,
       min: 5000,
       max: 60000
     },
@@ -214,6 +214,11 @@ const ConversationBehaviorConfigSchema = new mongoose.Schema({
       min: 500,
       max: 5000
     }
+  },
+  /** When true (default), allow brief tool-free replies while a long-running browser tool is active (silence between holding messages). */
+  allowMidToolEpistemicReplies: {
+    type: Boolean,
+    default: true
   },
   // System Settings
   isActive: { 

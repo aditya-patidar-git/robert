@@ -11,7 +11,12 @@ import { AFTER_LOGIN_MESSAGE, AFTER_DETERMINE_WORKFLOW_MESSAGE, AFTER_CONFIRM_CA
 import sessionStateManager from './browser/sessionStateManager.js';
 import progressIndicatorService from './progressIndicatorService.js';
 import { getNextStepName } from './browser/stepConfiguration.js';
-import { getLicenceHeldOptionsForPrompt } from './commonBookingSteps/index.js';
+import {
+  ADDRESS_CONFIRMATION_AGENT_INSTRUCTION,
+  getLicenceHeldOptionsForPrompt,
+  getHearAboutUsOptionsForPrompt,
+  getRidingExperienceOptionsForPrompt
+} from './commonBookingSteps/index.js';
 
 /** Cancellation step tools in order (step 1..14). Used to recover from wrong/non-existent tool by running the correct next step. */
 const CANCELLATION_TOOL_ORDER = [
@@ -620,14 +625,20 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
         }
       }
 
-      // Phase 0: After check_availability (step 1), present ONLY slots from tool result; do NOT invent slots; IMMEDIATELY call authenticate after slot confirmation
+      // Phase 0: After check_availability (step 1), present ONLY slots from tool result; do NOT invent slots; authenticate only after caller choice is explicit
       if (toolName === 'booking_step_check_availability' && toolResult?.success === true) {
         const slotsFromTool = toolResult?.message ? ` Tool result message: "${toolResult.message}"` : '';
+        const multi = toolResult?.requiresExplicitSlotChoice === true || (toolResult?.slotCount ?? 0) > 1;
+        const slotRules = multi
+          ? `MULTIPLE SLOTS (${toolResult?.slotCount ?? 'several'}): Do NOT call booking_step_authenticate until the caller has clearly chosen ONE slot that matches the list (e.g. they name date, time, location, or "the first/second"). Barge-in or interruption while you are reading the list is NOT confirmation—ask which slot they want, then call authenticate with agreedSlot set to THAT slot only (must match slotsToAnnounce/selectedSlot from the tool). Never default to selectedSlot if the caller intended a different listed slot.`
+          : `SINGLE SLOT: When the caller confirms they want this slot (e.g. "yes", "okay go ahead", "proceed", "book that"), call booking_step_authenticate with agreedSlot matching the tool result slot.`;
         const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool}
 
-MANDATORY WORKFLOW: When the caller confirms the slot (e.g. "yes", "okay go ahead", "proceed"), you MUST call booking_step_authenticate with agreedSlot (slot from tool result) in that same turn. booking_step_authenticate is CRM system login only—it does NOT mean asking the caller for their name or email. Do NOT ask for full name, email, or any contact details. Confirm the slot and call the tool.`;
+${slotRules}
+
+booking_step_authenticate is CRM system login only—it does NOT mean asking the caller for their name or email. Do NOT ask for full name, email, or any contact details before calling it once the slot is agreed.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
-        console.log(`🎯 [${callId}] Check availability completed - instructing to present ONLY tool result slots (verbatim), then IMMEDIATELY call booking_step_authenticate; no contact questions`);
+        console.log(`🎯 [${callId}] Check availability completed - slot choice explicit=${multi}; instructing verbatim slots then authenticate when agreed`);
       }
 
       // Phase 1: After search_client finds a client with requiresVerification, agent MUST call client_verification (not search_client again), then after verified call booking_step_select_session
@@ -780,10 +791,22 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         toolResult.missingFields.length > 0;
       if (isFillContactDetailsMissing) {
         const msg = toolResult.message || `I need your ${(toolResult.missingFields || []).join(', ')}; could you please provide them?`;
-        let instruction = toolResult.instruction || `Ask the caller for ALL missing details using: "${msg}". For each required detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Exception: for driving licence number you may collect in two halves—ask for the first half only (8 characters), call the tool with drivingLicenceFirstHalf; when the tool returns requiresDrivingLicenceSecondHalf, ask for the second half and call again with both drivingLicenceFirstHalf and drivingLicenceSecondHalf; you do NOT need to ask the caller to repeat the full number when collected in two halves. Do NOT move to the next question until the current one has been repeated and verified. STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself. Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters: customerEmail, customerMobile, postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber or drivingLicenceFirstHalf+SecondHalf (as applicable).`;
+        let instruction = toolResult.instruction || `Do NOT call file_search or web_search for CRM dropdown options—use the option lists below or free text, then **booking_step_fill_contact_details** only. Ask the caller for ALL missing details using: "${msg}". For hearAboutUs, ridingExperience, marketingConsent, and dataSharing: single ask only (no repeat-verify). For each other required detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST ask them to repeat it for cross-check without YOU speaking their value: say e.g. "Please repeat that back for me—I won't repeat it aloud." NEVER say "confirm it is…", "is that…", or read any part of email, phone, postcode, NI, name, driving licence number, or licence type option text aloud. For the driving licence photocard number: collect first 8 characters, verify with repeat (no echo), call with drivingLicenceFirstHalf only; then second 8 characters, same, call with both halves. Do NOT pass drivingLicenceNumber as a single 16-character value. Do NOT move to the next question until the current one has been repeated and verified. STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do NOT call booking_step_fill_contact_details again until you have every value. Then call it ONCE with all parameters (driving licence via drivingLicenceFirstHalf and drivingLicenceSecondHalf only).`;
         if (toolResult.missingFields?.includes('licenceHeld')) {
           const optionsList = getLicenceHeldOptionsForPrompt();
-          instruction += ` For licence type (licenceHeld): list these exact options and ask the caller to choose one: ${optionsList}. Pass the exact option text they choose as licenceHeld—do not guess from vague terms like "motorcycle".`;
+          instruction += ` For licence type (licenceHeld): list these exact options and ask the caller to choose one: ${optionsList}. Pass the exact option text they choose as licenceHeld—do not guess from vague terms like "motorcycle". On repeat-verify, do NOT quote or embed the chosen option wording in your question—the caller repeats; you only pass the exact text in the tool call.`;
+        }
+        if (toolResult.missingFields?.includes('hearAboutUs')) {
+          instruction += ` For hearAboutUs: list options and ask once; pass exact CRM text. Options: ${getHearAboutUsOptionsForPrompt()}.`;
+        }
+        if (toolResult.missingFields?.includes('ridingExperience')) {
+          instruction += ` For ridingExperience: ask once; pass exact CRM text. Options: ${getRidingExperienceOptionsForPrompt()}.`;
+        }
+        if (toolResult.missingFields?.includes('marketingConsent')) {
+          instruction += ` For marketingConsent: ask one yes/no (Keep you updated); pass true or false.`;
+        }
+        if (toolResult.missingFields?.includes('dataSharing')) {
+          instruction += ` For dataSharing: ask one yes/no (Send details to others); pass true or false.`;
         }
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
@@ -805,19 +828,38 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
 
       // Fill contact details returned requiresDrivingLicenceSecondHalf: ask for second half, then call again with both halves (do not chain payment)
       if (toolName === 'booking_step_fill_contact_details' && toolResult?.success === true && toolResult?.requiresDrivingLicenceSecondHalf === true) {
-        const instruction = toolResult.instruction || 'Ask for the second half of the driving licence (7 or 8 characters; no spaces). Then call booking_step_fill_contact_details again with the same drivingLicenceFirstHalf and the new drivingLicenceSecondHalf. Do not ask the caller to repeat the full number.';
+        const instruction =
+          toolResult.instruction ||
+          'Ask for the second 8 characters of the photocard licence number. Ask the caller to repeat them to verify—do NOT speak or echo any characters yourself. Then call booking_step_fill_contact_details again with the same drivingLicenceFirstHalf and drivingLicenceSecondHalf.';
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
         console.log(`🎯 [${callId}] Fill contact details needs second half of driving licence - instructing to ask then call again with both halves`);
       }
 
+      // Reject single-shot drivingLicenceNumber — must use two-step halves (do not chain payment)
+      if (toolName === 'booking_step_fill_contact_details' && toolResult?.success === true && toolResult?.requiresDrivingLicenceTwoStep === true) {
+        const instruction =
+          toolResult.instruction ||
+          'Collect the driving licence number in two steps (first 8 characters with repeat-verify, then second 8 with repeat-verify). Do not pass drivingLicenceNumber as one string.';
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Fill contact details — driving licence must be collected in two steps`);
+      }
+
+      // Address auto-populated: narrow speech exception for this turn only (see ADDRESS_CONFIRMATION_AGENT_INSTRUCTION)
+      if (toolName === 'booking_step_fill_contact_details' && toolResult?.success === true && toolResult?.requiresAddressConfirmation === true) {
+        const instruction = toolResult.instruction || ADDRESS_CONFIRMATION_AGENT_INSTRUCTION;
+        responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
+        console.log(`🎯 [${callId}] Fill contact details requires address confirmation`);
+      }
+
       // Phase 6: After fill_contact_details completes successfully (no missingFields), call process_payment in the same turn—do not wait for caller
-      // Do NOT proceed to payment when address confirmation, invalidFormat, or requiresDrivingLicenceSecondHalf was returned.
+      // Do NOT proceed to payment when address confirmation, invalidFormat, requiresDrivingLicenceSecondHalf, or requiresDrivingLicenceTwoStep was returned.
       const isFillContactDetailsComplete = toolName === 'booking_step_fill_contact_details' &&
         toolResult?.success === true &&
         (!Array.isArray(toolResult?.missingFields) || toolResult.missingFields.length === 0) &&
         !toolResult?.requiresAddressConfirmation &&
         !toolResult?.invalidFormat &&
-        !toolResult?.requiresDrivingLicenceSecondHalf;
+        !toolResult?.requiresDrivingLicenceSecondHalf &&
+        !toolResult?.requiresDrivingLicenceTwoStep;
       if (isFillContactDetailsComplete) {
         const partialFill = toolResult?.partialFill === true || (Array.isArray(toolResult?.skippedFields) && toolResult.skippedFields.length > 0);
         const instruction = partialFill

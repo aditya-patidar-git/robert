@@ -84,8 +84,9 @@ class MultilingualService {
     const languagePatterns = {
       'fr': /\b(oui|non|bonjour|bonsoir|merci|au revoir|comment|où|quand|pourquoi|parlez|français|francais|s'il vous plaît|s'il vous plait|excusez|désolé|desole|je voudrais|je veux|combien|bien sûr|bien sur)\b/i,
       'de': /\b(ja|nein|hallo|guten tag|guten morgen|danke|auf wiedersehen|wie|wo|wann|warum|sprechen|deutsch|bitte|entschuldigung|ich möchte|ich will|wie viel|natürlich|naturlich)\b/i,
-      'es': /\b(sí|si|no|hola|buenos días|buenos dias|gracias|adiós|adios|cómo|cómo|dónde|donde|cuándo|cuando|por qué|por que|hablar|español|espanol|por favor|disculpe|quiero|cuánto|cuanto|por supuesto)\b/i,
-      'it': /\b(sì|si|no|ciao|buongiorno|grazie|arrivederci|come|dove|quando|perché|perche|parlare|italiano|per favore|scusi|voglio|quanto|naturalmente)\b/i,
+      // Note: do not include standalone "no" — it matches English "No, ..." and falsely scores es/it.
+      'es': /\b(sí|si|hola|buenos días|buenos dias|gracias|adiós|adios|cómo|cómo|dónde|donde|cuándo|cuando|por qué|por que|hablar|español|espanol|por favor|disculpe|quiero|cuánto|cuanto|por supuesto)\b/i,
+      'it': /\b(sì|si|ciao|buongiorno|grazie|arrivederci|come|dove|quando|perché|perche|parlare|italiano|per favore|scusi|voglio|quanto|naturalmente)\b/i,
       'pt': /\b(sim|não|nao|olá|ola|bom dia|obrigado|obrigada|adeus|como|onde|quando|por que|falar|português|portugues|por favor|desculpe|quero|quanto|claro)\b/i,
       'nl': /\b(ja|nee|hallo|goedemorgen|dank je|dank u|tot ziens|hoe|waar|wanneer|waarom|spreken|nederlands|alstublieft|sorry|ik wil|hoeveel|natuurlijk)\b/i,
       'pl': /\b(tak|nie|cześć|czesć|dzień dobry|dzien dobry|dziękuję|dziekuje|do widzenia|jak|gdzie|kiedy|dlaczego|mówić|mowic|polski|proszę|prosze|przepraszam|chcę|chce|ile|oczywiście|oczywiscie)\b/i

@@ -65,12 +65,12 @@ export function formatPostcode(postcode) {
   // UK postcode format: SW1A 1AA
   // Remove all spaces and convert to uppercase
   const cleaned = postcode.replace(/\s+/g, '').toUpperCase();
-  
+
   // Add space before last 3 characters if not already present
   if (cleaned.length > 3) {
     return cleaned.slice(0, -3) + ' ' + cleaned.slice(-3);
   }
-  
+
   return cleaned;
 }
 
@@ -148,15 +148,69 @@ export function formatDrivingLicenceNumber(value) {
   return trimmed.replace(/[\s\-]/g, '').toUpperCase();
 }
 
-/** Old UK format (CRM): exactly 16 chars — 5 letters, 5 digits, 6 alphanumeric, e.g. CARTD940315D9A8F. */
-const UK_DRIVING_LICENCE_OLD = /^[A-Z]{5}\d{5}[A-Z0-9]{6}$/;
+/** Photocard: 5 surname (A–Z and 9 padding) + 6 DOB digits + 2 initials + 3 security = 16. */
+const UK_DL_SURNAME = /^[A-Z9]{5}$/;
+/** First 8 chars: surname + first 3 digits of the 6-digit DOB block. */
+const UK_DL_FIRST_HALF = /^[A-Z9]{5}\d{3}$/;
+/** Second 8 chars: last 3 digits of DOB + 2 initials + 3 security. */
+const UK_DL_SECOND_HALF = /^\d{3}[A-Z9]{2}[A-Z0-9]{3}$/;
 
 const DRIVING_LICENCE_MESSAGE =
-  'UK driving licence: exactly 16 characters — 5 letters, 5 digits, then 6 letters or numbers (e.g. CARTD940315D9A8F), no spaces.';
+  'UK photocard driving licence number: exactly 16 characters (not the 2-digit issue number on the card). ' +
+  'Structure: 5 characters (surname, padded with 9 if needed), 6 digits (encoded date of birth), 2 initials (second may be 9), 3 security characters. No spaces.';
+
+const DRIVING_LICENCE_DOB_MESSAGE =
+  'The 6-digit date section in the driving licence number is not valid (check encoded month/day/year).';
+
+const MSG_FIRST_HALF =
+  'First half: exactly 8 characters — surname (5 letters or 9 padding) plus the first 3 digits of the 6-digit date section. No spaces.';
+const MSG_SECOND_HALF =
+  'Second half: exactly 8 characters — last 3 digits of the date section, then 2 initials (second may be 9), then 3 security characters. No spaces.';
 
 /**
- * Validate UK driving licence number for this CRM: exactly 16 characters, old format only.
- * Use before filling forms to avoid CRM "Value is invalid" errors.
+ * Validate the 6-digit date-of-birth block in a UK photocard licence number (chars 6–11 of 16).
+ * Encoding: digit0 = tens of birth year (mod 100); digits1–2 = month (01–12 male, 51–62 female = 50+month);
+ * digits3–4 = day; digit5 = units of birth year (mod 100).
+ * @param {string} sixDigits - Exactly 6 digits
+ * @returns {{ valid: boolean, message?: string }}
+ */
+export function validateUkLicenceDobBlock(sixDigits) {
+  if (!sixDigits || sixDigits.length !== 6 || !/^\d{6}$/.test(sixDigits)) {
+    return { valid: false, message: DRIVING_LICENCE_DOB_MESSAGE };
+  }
+  const d0 = parseInt(sixDigits[0], 10);
+  const mEnc = parseInt(sixDigits.slice(1, 3), 10);
+  const day = parseInt(sixDigits.slice(3, 5), 10);
+  const d5 = parseInt(sixDigits[5], 10);
+
+  let month;
+  if (mEnc >= 1 && mEnc <= 12) {
+    month = mEnc;
+  } else if (mEnc >= 51 && mEnc <= 62) {
+    month = mEnc - 50;
+  } else {
+    return { valid: false, message: DRIVING_LICENCE_DOB_MESSAGE };
+  }
+  if (month < 1 || month > 12) {
+    return { valid: false, message: DRIVING_LICENCE_DOB_MESSAGE };
+  }
+  if (day < 1 || day > 31) {
+    return { valid: false, message: DRIVING_LICENCE_DOB_MESSAGE };
+  }
+
+  const yearMod100 = d0 * 10 + d5;
+  const candidates = [2000 + yearMod100, 1900 + yearMod100];
+  for (const fullYear of candidates) {
+    const trial = new Date(fullYear, month - 1, day);
+    if (trial.getFullYear() === fullYear && trial.getMonth() === month - 1 && trial.getDate() === day) {
+      return { valid: true };
+    }
+  }
+  return { valid: false, message: DRIVING_LICENCE_DOB_MESSAGE };
+}
+
+/**
+ * Validate UK photocard driving licence number (16 characters).
  * @param {string} value - Driving licence number as spoken or entered
  * @returns {{ valid: boolean, formatted?: string, message?: string }}
  */
@@ -168,54 +222,59 @@ export function validateDrivingLicenceNumber(value) {
   if (formatted.length !== 16) {
     return { valid: false, message: DRIVING_LICENCE_MESSAGE };
   }
-  const valid = UK_DRIVING_LICENCE_OLD.test(formatted);
-  if (valid) {
-    return { valid: true, formatted };
+
+  const surname = formatted.slice(0, 5);
+  const dobBlock = formatted.slice(5, 11);
+  const initials = formatted.slice(11, 13);
+  const security = formatted.slice(13, 16);
+
+  if (!UK_DL_SURNAME.test(surname)) {
+    return { valid: false, message: DRIVING_LICENCE_MESSAGE };
   }
-  return { valid: false, message: DRIVING_LICENCE_MESSAGE };
+  const dobR = validateUkLicenceDobBlock(dobBlock);
+  if (!dobR.valid) {
+    return { valid: false, message: dobR.message || DRIVING_LICENCE_MESSAGE };
+  }
+  if (!/^[A-Z9]{2}$/.test(initials)) {
+    return { valid: false, message: DRIVING_LICENCE_MESSAGE };
+  }
+  if (!/^[A-Z0-9]{3}$/.test(security)) {
+    return { valid: false, message: DRIVING_LICENCE_MESSAGE };
+  }
+
+  return { valid: true, formatted };
 }
 
-/** First half: 8 chars — new style 5 digits + 3 letters, or old style 5 letters + 3 digits. */
-const UK_DRIVING_LICENCE_FIRST_HALF = /^(\d{5}[A-Z]{3}|[A-Z]{5}\d{3})$/;
-/** Second half: new 7 chars (5 digits + 2 letters) or old 8 chars (3 digits + 5 alphanumeric). */
-const UK_DRIVING_LICENCE_SECOND_HALF = /^(\d{5}[A-Z]{2}|\d{3}[A-Z0-9]{5})$/;
-
 /**
- * Validate first half of UK driving licence (8 chars).
- * New format: 5 digits + 3 letters (e.g. 12345ABC). Old format: 5 letters + 3 digits (e.g. CARTD940).
+ * Validate first half of UK photocard driving licence (8 chars: surname + first 3 DOB digits).
  * @param {string} value - First half as spoken or entered
  * @returns {{ valid: boolean, formatted?: string, message?: string }}
  */
 export function validateDrivingLicenceFirstHalf(value) {
   const formatted = formatDrivingLicenceNumber(value);
   if (!formatted || formatted.length !== 8) {
-    return { valid: false, message: 'First half: 8 characters — either 5 digits then 3 letters (e.g. 12345ABC) or 5 letters then 3 digits (e.g. CARTD940), no spaces.' };
+    return { valid: false, message: MSG_FIRST_HALF };
   }
-  const valid = UK_DRIVING_LICENCE_FIRST_HALF.test(formatted);
-  const message = 'First half: 8 characters — either 5 digits then 3 letters (e.g. 12345ABC) or 5 letters then 3 digits (e.g. CARTD940), no spaces.';
-  if (valid) {
-    return { valid: true, formatted };
+  if (!UK_DL_FIRST_HALF.test(formatted)) {
+    return { valid: false, message: MSG_FIRST_HALF };
   }
-  return { valid: false, message };
+  return { valid: true, formatted };
 }
 
 /**
- * Validate second half of UK driving licence (7 or 8 chars).
- * New format: 7 chars = 5 digits + 2 letters (e.g. 67890CD). Old format: 8 chars = 3 digits + 5 alphanumeric (e.g. 315D9A8F).
+ * Validate second half of UK photocard driving licence (8 chars: last 3 DOB digits + initials + security).
  * @param {string} value - Second half as spoken or entered
  * @returns {{ valid: boolean, formatted?: string, message?: string }}
  */
 export function validateDrivingLicenceSecondHalf(value) {
   const formatted = formatDrivingLicenceNumber(value);
-  if (!formatted || (formatted.length !== 7 && formatted.length !== 8)) {
-    return { valid: false, message: 'Second half: 7 characters (5 digits, 2 letters, e.g. 67890CD) or 8 (3 digits then 5 letters/numbers, e.g. 315D9A8F), no spaces.' };
+  if (!formatted || formatted.length !== 8) {
+    return { valid: false, message: MSG_SECOND_HALF };
   }
-  const valid = UK_DRIVING_LICENCE_SECOND_HALF.test(formatted);
-  const message = 'Second half: 7 characters (5 digits, 2 letters) or 8 (3 digits then 5 letters/numbers), no spaces.';
-  if (valid) {
-    return { valid: true, formatted };
+  if (!UK_DL_SECOND_HALF.test(formatted)) {
+    return { valid: false, message: MSG_SECOND_HALF };
   }
-  return { valid: false, message };
+  return { valid: true, formatted };
 }
 
 export default {
@@ -229,6 +288,6 @@ export default {
   validateNationalInsurance,
   validateDrivingLicenceNumber,
   validateDrivingLicenceFirstHalf,
-  validateDrivingLicenceSecondHalf
+  validateDrivingLicenceSecondHalf,
+  validateUkLicenceDobBlock
 };
-
