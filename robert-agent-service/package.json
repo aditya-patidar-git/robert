@@ -6,8 +6,7 @@
   "main": "src/agent/index.js",
   "scripts": {
     "start:agent": "node src/agent/index.js",
-    "dev:agent": "nodemon src/agent/index.js",
-    "test": "node --test src/utils/britishFormatting.drivingLicence.test.js src/services/conversationService.midTool.test.js src/services/multilingualService.languageDetection.test.js"
+    "dev:agent": "nodemon src/agent/index.js"
   },
   "keywords": ["voice-agent", "twilio", "openai"],
   "author": "",
