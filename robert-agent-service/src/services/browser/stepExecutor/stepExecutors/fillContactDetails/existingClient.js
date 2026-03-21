@@ -10,6 +10,7 @@ import { cleanEmail } from '../../../../commonBookingSteps/utils.js';
 import { normalizeUKMobile } from '../../../../mobileSearchService.js';
 import { validateEmail } from './validators.js';
 import { formatPostcode, formatNationalInsurance, formatDrivingLicenceNumber, validateNationalInsurance, validateDrivingLicenceNumber, validateDrivingLicenceFirstHalf, validateDrivingLicenceSecondHalf } from '../../../../../utils/britishFormatting.js';
+import { ADDRESS_CONFIRMATION_AGENT_INSTRUCTION } from '../../../../commonBookingSteps/fillContactDetails.js';
 
 /**
  * Get client email from various sources
@@ -182,7 +183,19 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
     if (isOnClientDetailsPage && eventBookingIframeExists) {
       await page.waitForTimeout(200); // CRM stability before field checks
       // Required fields to check and request when missing (no extra fields beyond this list).
-      const REQUIRED_PARAM_NAMES = ['customerEmail', 'customerMobile', 'postcode', 'houseNumber', 'licenceHeld', 'nationalInsurance', 'drivingLicenceNumber'];
+      const REQUIRED_PARAM_NAMES = [
+        'customerEmail',
+        'customerMobile',
+        'postcode',
+        'houseNumber',
+        'licenceHeld',
+        'nationalInsurance',
+        'drivingLicenceNumber',
+        'hearAboutUs',
+        'ridingExperience',
+        'marketingConsent',
+        'dataSharing'
+      ];
 
       const fieldOrder = [
         { label: 'Contact e-mail', id: 'cnt_email', name: 'email', paramName: 'customerEmail', labelShort: 'email address' },
@@ -191,7 +204,11 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         { label: 'House number or name', id: 'cmp_buildingnumber', name: 'houseNumber', paramName: 'houseNumber', labelShort: 'house number or name' },
         { label: 'Licence held', id: 'xid_29019', name: 'licenceHeld', paramName: 'licenceHeld', labelShort: 'licence held type' },
         { label: 'National Insurance number', id: 'cnt_NI_number', name: 'nationalInsuranceNumber', paramName: 'nationalInsurance', labelShort: 'National Insurance number' },
-        { label: 'Driving licence number', id: 'cnt_driving_licence_no', name: 'drivingLicenceNumber', paramName: 'drivingLicenceNumber', labelShort: 'driving licence number' }
+        { label: 'Driving licence number', id: 'cnt_driving_licence_no', name: 'drivingLicenceNumber', paramName: 'drivingLicenceNumber', labelShort: 'driving licence number' },
+        { label: 'Hear about us?', id: 'cnt_hear_about', name: 'hearAboutUs', paramName: 'hearAboutUs', labelShort: 'how you heard about us' },
+        { label: 'Riding experience', id: 'xid_29022', name: 'ridingExperience', paramName: 'ridingExperience', labelShort: 'riding experience' },
+        { label: 'Keep you updated', id: 'cnt_GDPR_receive_own_marketing', name: 'marketingConsent', paramName: 'marketingConsent', labelShort: 'marketing contact preference (yes or no)' },
+        { label: 'Send details to others', id: 'cnt_GDPR_send_details_to_others', name: 'dataSharing', paramName: 'dataSharing', labelShort: 'data sharing preference (yes or no)' }
       ];
 
       // Fill all provided args first (so one tool call with all params fills everything, then we re-scan)
@@ -289,8 +306,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
                   success: true,
                   requiresAddressConfirmation: true,
                   autoPopulatedAddress: autoPopulatedAddress,
-                  message: 'Can you confirm the first line of your address is correct?',
-                  instruction: 'Ask the caller to confirm the first line of their address is correct. Do NOT say or read the address aloud (GDPR). If they say yes, call booking_step_fill_contact_details again with addressConfirmed: true. If no, ask them to tell you the correct first line, then call the tool again with correctedAddress set to what they said.'
+                  message: 'Can you confirm the address we have for you is correct?',
+                  instruction: ADDRESS_CONFIRMATION_AGENT_INSTRUCTION
                 };
               }
             }
@@ -298,20 +315,34 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         }
       }
 
+      const INSTRUCTION_DL_TWO_STEP =
+        'Do not pass drivingLicenceNumber as a single value. Collect the 16-character photocard number in two steps: (1) first 8 characters, repeat to verify, call with drivingLicenceFirstHalf only; (2) second 8 characters, repeat to verify, call with drivingLicenceFirstHalf and drivingLicenceSecondHalf. The 2-digit issue number on the card is not part of the licence number.';
+
+      const dlNumRaw = args.drivingLicenceNumber && String(args.drivingLicenceNumber).trim();
+      const hasBothHalves =
+        args.drivingLicenceFirstHalf &&
+        args.drivingLicenceSecondHalf &&
+        String(args.drivingLicenceFirstHalf).trim() &&
+        String(args.drivingLicenceSecondHalf).trim();
+      if (dlNumRaw && !hasBothHalves) {
+        return { success: true, requiresDrivingLicenceTwoStep: true, instruction: INSTRUCTION_DL_TWO_STEP };
+      }
+
       // Driving licence: only first half provided — validate and ask for second half
-      if (args.drivingLicenceFirstHalf && !args.drivingLicenceSecondHalf && !args.drivingLicenceNumber) {
+      if (args.drivingLicenceFirstHalf && !args.drivingLicenceSecondHalf) {
         const r = validateDrivingLicenceFirstHalf(args.drivingLicenceFirstHalf);
         if (!r.valid) {
           return { success: true, invalidFormat: true, invalidFields: { drivingLicenceFirstHalf: r.message }, instruction: 'Ask for the first half again, then call with drivingLicenceFirstHalf only.' };
         }
-        const instruction = 'Ask for the second half of the driving licence (7 or 8 characters; no spaces). Then call booking_step_fill_contact_details again with the same drivingLicenceFirstHalf and the new drivingLicenceSecondHalf. Do not ask the caller to repeat the full number.';
+        const instruction =
+          'Ask for the second 8 characters (last 3 date digits, 2 initials, 3 security). Ask the caller to repeat to verify, then call booking_step_fill_contact_details again with the same drivingLicenceFirstHalf and drivingLicenceSecondHalf.';
         console.log(`⚠️ [STEP 8] Driving licence first half valid — need second half`);
         return { success: true, requiresDrivingLicenceSecondHalf: true, drivingLicenceFirstHalf: r.formatted, instruction };
       }
 
-      // Driving licence: both halves provided — validate both, concatenate
+      // Driving licence: both halves provided — validate, concatenate, validate full number
       let effectiveDrivingLicenceNumber = undefined;
-      if (args.drivingLicenceFirstHalf && args.drivingLicenceSecondHalf && !args.drivingLicenceNumber) {
+      if (args.drivingLicenceFirstHalf && args.drivingLicenceSecondHalf) {
         const r1 = validateDrivingLicenceFirstHalf(args.drivingLicenceFirstHalf);
         const r2 = validateDrivingLicenceSecondHalf(args.drivingLicenceSecondHalf);
         if (!r1.valid) {
@@ -320,7 +351,17 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         if (!r2.valid) {
           return { success: true, invalidFormat: true, invalidFields: { drivingLicenceSecondHalf: r2.message }, instruction: 'Ask for the second half again, then call with both halves.' };
         }
-        effectiveDrivingLicenceNumber = (r1.formatted || '') + (r2.formatted || '');
+        const concatenated = (r1.formatted || '') + (r2.formatted || '');
+        const fullR = validateDrivingLicenceNumber(concatenated);
+        if (!fullR.valid) {
+          return {
+            success: true,
+            invalidFormat: true,
+            invalidFields: { drivingLicenceNumber: fullR.message || 'Combined halves do not form a valid UK photocard licence number.' },
+            instruction: 'The two halves must form a valid 16-character UK photocard licence number. Ask the caller to confirm each half again, then call with drivingLicenceFirstHalf and drivingLicenceSecondHalf.'
+          };
+        }
+        effectiveDrivingLicenceNumber = fullR.formatted;
       }
 
       // Validate UK format for NI and full driving licence before filling; return invalidFormat so agent re-asks with correct format
@@ -329,10 +370,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         const r = validateNationalInsurance(args.nationalInsurance);
         if (!r.valid) invalidFields.nationalInsurance = r.message;
       }
-      const dlCandidate =
-        effectiveDrivingLicenceNumber !== undefined
-          ? effectiveDrivingLicenceNumber
-          : (args.drivingLicenceNumber ? args.drivingLicenceNumber : undefined);
+      const dlCandidate = effectiveDrivingLicenceNumber !== undefined ? effectiveDrivingLicenceNumber : undefined;
       if (dlCandidate) {
         const r = validateDrivingLicenceNumber(dlCandidate);
         if (!r.valid) invalidFields.drivingLicenceNumber = r.message;
@@ -359,8 +397,8 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         }
       }
 
-      // Fill Driving Licence Number if provided (from full number or from two validated halves). UK format: no spaces.
-      const dlToFill = effectiveDrivingLicenceNumber !== undefined ? effectiveDrivingLicenceNumber : args.drivingLicenceNumber;
+      // Fill Driving Licence Number if provided (from two validated halves only). UK format: no spaces.
+      const dlToFill = effectiveDrivingLicenceNumber !== undefined ? effectiveDrivingLicenceNumber : undefined;
       if (dlToFill) {
         const dlFormatted = formatDrivingLicenceNumber(dlToFill);
         let dlField = eventBookingIframe.getByLabel('Driving licence number');
@@ -421,7 +459,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
           if (await fieldLocator.count() > 0) {
             let currentValue = '';
             if (['licenceHeld', 'hearAboutUs', 'ridingExperience', 'marketingConsent', 'dataSharing'].includes(field.name)) {
-              // DevExpress dropdowns: displayed value is in .dx-texteditor-input; read from inner input first
+              // DevExpress dropdowns: value in .dx-texteditor-input; treat Choose.../Select... as empty
               const inputLocator = eventBookingIframe.locator(`#${field.id} .dx-texteditor-input`);
               if (await inputLocator.count() > 0) {
                 currentValue = await inputLocator.inputValue().catch(() => '');
@@ -432,15 +470,18 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
                   const input = el.querySelector && el.querySelector('.dx-texteditor-input');
                   if (input && input.value) return input.value.trim();
                   const text = el.textContent?.trim() || '';
-                  if (text === 'Select...' || text === '') return '';
+                  if (text === 'Select...' || text === 'Choose...' || text === '') return '';
                   return text;
                 }).catch(() => '');
               }
             } else {
               currentValue = await fieldLocator.inputValue().catch(() => '');
             }
-            if (!currentValue || currentValue.trim() === '') {
-              missingFields.push(field);
+            {
+              const v = (currentValue || '').trim();
+              if (!v || v === 'Choose...' || v === 'Select...') {
+                missingFields.push(field);
+              }
             }
           }
         } catch (error) {
@@ -478,7 +519,7 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
         const paramNames = missingFields.map(f => f.paramName);
         const labelsList = missingFields.map(f => f.labelShort).join(', ');
         const message = `I need your ${labelsList}; could you please provide them?`;
-        const instruction = `Collect ONLY these missing details from the caller. For each detail use a two-step pattern: (1) ask for the detail; (2) when the caller gives it, your NEXT turn MUST be to ask them to repeat that same detail to cross-verify (e.g. "Could you please repeat that so I can confirm I have it correct?"). Only after they repeat, ask for the next detail. Exception: for driving licence number you may collect in two halves—ask for the first half only (8 characters), call with drivingLicenceFirstHalf; when the tool returns requiresDrivingLicenceSecondHalf, ask for the second half and call again with both drivingLicenceFirstHalf and drivingLicenceSecondHalf; you do NOT need to ask the caller to repeat the full number when collected in two halves. Do NOT move to the next question until the current one has been repeated and verified. STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. Do not say "X is confirmed" or recite the value to confirm—ask them to repeat it; do not recite it yourself. When you have confirmed values for all of: ${paramNames.join(', ')}, call booking_step_fill_contact_details ONCE with those parameters (or drivingLicenceFirstHalf then both halves for driving licence).`;
+        const instruction = `Collect ONLY these missing details from the caller. SINGLE-ASK (no repeat-verify): hearAboutUs, ridingExperience, marketingConsent, dataSharing — ask once each; pass exact CRM option text for the two dropdowns or booleans for yes/no. For all OTHER missing fields including the driving licence use double confirmation as usual. For the driving licence photocard number: two steps with repeat-verify (no echo). Do NOT pass drivingLicenceNumber as one string. STRICTLY (GDPR): Never say the caller's postcode, address, name, phone number, email, NI number, or any other personal detail aloud. When you have values for all of: ${paramNames.join(', ')}, call booking_step_fill_contact_details ONCE with those parameters.`;
         console.log(`⚠️ [STEP 8] Missing required fields (${missingFields.length}): ${paramNames.join(', ')}`);
         return {
           success: true,

@@ -227,7 +227,11 @@ const bookingStepFillContactDetailsSchema = z.object({
   drivingLicenceSecondHalf: z.string().optional(),
   licenceHeld: z.string().optional(),
   addressConfirmed: z.boolean().optional(),
-  correctedAddress: z.string().optional()
+  correctedAddress: z.string().optional(),
+  hearAboutUs: z.string().optional(),
+  ridingExperience: z.string().optional(),
+  marketingConsent: z.boolean().optional(),
+  dataSharing: z.boolean().optional()
 });
 
 const bookingStepProcessPaymentSchema = z.object({

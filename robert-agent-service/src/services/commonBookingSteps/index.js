@@ -4,7 +4,13 @@ export { findAndVerifyClient } from './clientSearch/index.js';
 export { navigateToDiariesAndSelectSession } from './navigateToDiaries/index.js';
 export { lookupContactAndWait } from './lookupContact/index.js';
 export { createNewContact } from './createNewContact.js';
-export { fillContactDetails, getLicenceHeldOptionsForPrompt } from './fillContactDetails.js';
+export {
+  fillContactDetails,
+  ADDRESS_CONFIRMATION_AGENT_INSTRUCTION,
+  getLicenceHeldOptionsForPrompt,
+  getHearAboutUsOptionsForPrompt,
+  getRidingExperienceOptionsForPrompt
+} from './fillContactDetails.js';
 export { selectPaymentOption } from './selectPaymentOption.js';
 export { selectPaymentMethod } from './selectPaymentMethod.js';
 export { sendPaymentRequest } from './sendPaymentRequest.js';

@@ -5,6 +5,7 @@
  */
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
+import sessionStateManager from '../../sessionStateManager.js';
 
 /**
  * Execute createNewContact step
@@ -17,6 +18,9 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
  */
 export async function executeCreateNewContact(page, args, sessionState, screenshotsDir, progressCallback = null) {
   progressCallback?.({ message: 'Creating a new contact.' });
+  if (args.callSid) {
+    sessionStateManager.clearPendingNewClientContactArgs(args.callSid);
+  }
   // Use existing createNewContact logic
   await commonSteps.createNewContact(page, screenshotsDir, progressCallback);
 

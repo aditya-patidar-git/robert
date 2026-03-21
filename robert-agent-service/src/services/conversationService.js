@@ -99,10 +99,35 @@ export class ConversationService {
   }
 
   /**
+   * Whether DB/config allows mid-tool epistemic replies (default true if unset).
+   * @param {Object|null} conversationBehaviorConfig
+   * @returns {boolean}
+   */
+  _allowMidToolEpistemicReplies(conversationBehaviorConfig) {
+    return conversationBehaviorConfig?.allowMidToolEpistemicReplies !== false;
+  }
+
+  /**
+   * Instruction suffix: brief answers only; no tools; no unverified claims (mid-browser-step).
+   * @param {string|null} toolName
+   * @returns {string}
+   */
+  buildMidToolEpistemicInstructionSuffix(toolName) {
+    const step = toolName ? ` (${toolName})` : '';
+    return (
+      `CRITICAL — MID-STEP REPLY${step}: A background booking step is still running. You MUST NOT call any tools in this turn. ` +
+      'Answer ONLY from what you are certain of: this transcript, prior conversation, and established session facts. ' +
+      'Do NOT state success or failure of the step in progress, do NOT invent dates, times, prices, or policy details. ' +
+      'If you are not sure, say so in one short sentence and say you will confirm once processing finishes. ' +
+      'Keep the reply brief.'
+    );
+  }
+
+  /**
    * Decide whether to create a response after a transcription.
    * Pure function: no side effects.
    * @param {Object} transcriptionResult - { processed, shouldCreateResponse, qualityScore, isBackgroundNoise }
-   * @param {Object} stateSnapshot - { waitingForUser, isResponding, activeResponseId, hasInitialGreetingCompleted, outboundAudioPacer, outboundAudioBuffer, bargeInTailUntil, inConsentOrLanguagePhase }
+   * @param {Object} stateSnapshot - { waitingForUser, browserToolExecution, toolExecutionCompleting, isResponding, activeResponseId, hasInitialGreetingCompleted, outboundAudioPacer, outboundAudioBuffer, bargeInTailUntil, inConsentOrLanguagePhase }
    * @returns {boolean}
    */
   shouldCreateResponse(transcriptionResult, stateSnapshot = {}) {
@@ -117,9 +142,17 @@ export class ConversationService {
       consentPhaseRelaxed: inConsentOrLanguagePhase
     });
 
+    const cfg = configManager.getConversationBehaviorConfig();
+    const allowMid = this._allowMidToolEpistemicReplies(cfg);
+    const hasBrowserTool = stateSnapshot.browserToolExecution != null;
+    const completing = stateSnapshot.toolExecutionCompleting === true;
+    const canNormal = stateSnapshot.waitingForUser === true;
+    const canMidGap =
+      allowMid && hasBrowserTool && !completing && stateSnapshot.waitingForUser === false;
+
     return (
       shouldCreate &&
-      stateSnapshot.waitingForUser === true &&
+      (canNormal || canMidGap) &&
       !isAudioPlaying &&
       stateSnapshot.activeResponseId == null &&
       stateSnapshot.hasInitialGreetingCompleted === true
@@ -149,18 +182,30 @@ export class ConversationService {
 
   /**
    * Decide tool_choice for transcript-driven response (single place for Media Streams and SIP).
-   * Use 'none' only for greeting, consent question, or language_selection; otherwise 'auto'.
-   * @param {Object} context - { callSid, state, conversation, hasInitialGreetingBeenSent, overrideWorkflowPhase }
-   * @returns {Promise<{ toolChoice: 'none'|'auto', workflowPhase: string|null }>}
+   * Use 'none' for greeting, mid-tool epistemic reply, or language edge cases; 'auto' otherwise.
+   * @param {Object} context - { callSid, state, conversation, hasInitialGreetingBeenSent, overrideWorkflowPhase, browserToolExecution }
+   * @returns {Promise<{ toolChoice: 'none'|'auto'|object, workflowPhase: string|null, midToolEpistemicApplied?: boolean }>}
    */
   async getToolChoiceForResponse(context = {}) {
-    const { callSid, state, conversation = {}, hasInitialGreetingBeenSent = false, overrideWorkflowPhase } = context;
+    const {
+      callSid,
+      state,
+      conversation = {},
+      hasInitialGreetingBeenSent = false,
+      overrideWorkflowPhase,
+      browserToolExecution
+    } = context;
     if (!hasInitialGreetingBeenSent) {
       return { toolChoice: 'none', workflowPhase: 'greeting' };
     }
     const result = await this.getResponseInstructions({
-      ...context,
-      applyOneShotLanguageHint: false
+      callSid,
+      state,
+      conversation,
+      hasInitialGreetingBeenSent,
+      overrideWorkflowPhase,
+      applyOneShotLanguageHint: false,
+      midToolEpistemicMode: false
     });
     if (result.isConsentQuestion === true) {
       return { toolChoice: 'auto', workflowPhase: 'recording_consent' };
@@ -181,6 +226,24 @@ export class ConversationService {
         workflowPhase: 'language_selection'
       };
     }
+
+    const cfg = configManager.getConversationBehaviorConfig();
+    const allowMid = this._allowMidToolEpistemicReplies(cfg);
+    const waitingForUser = state?.waitingForUser === true;
+    const completing = state?.toolExecutionCompleting === true;
+    if (
+      allowMid &&
+      browserToolExecution &&
+      !completing &&
+      !waitingForUser
+    ) {
+      return {
+        toolChoice: 'none',
+        workflowPhase,
+        midToolEpistemicApplied: true
+      };
+    }
+
     return { toolChoice: 'auto', workflowPhase };
   }
 
@@ -196,7 +259,9 @@ export class ConversationService {
       conversation = {},
       hasInitialGreetingBeenSent = false,
       overrideWorkflowPhase,
-      applyOneShotLanguageHint = true
+      applyOneShotLanguageHint = true,
+      midToolEpistemicMode = false,
+      browserToolExecution = null
     } = context;
     const isInitialGreeting = !hasInitialGreetingBeenSent;
 
@@ -364,6 +429,11 @@ export class ConversationService {
     if (verificationPending) {
       const verificationInstruction = `CRITICAL: You are in client verification. Do NOT call booking_step_search_client again. Call client_verification with ONLY what the caller has just said—one field at a time. Ask for full name first and call with fullName only when they provide it. Then ask for postcode and call with fullName (from previous result) and postcode only when the caller says their postcode. Then ask for telephone number and call with fullName, postcode, and telephoneNumber only when the caller says their number. Do NOT pass postcode or telephoneNumber from the conversation or stored clientDetails—only use what the caller actually says. After client_verification returns verified: true, call booking_step_select_session.`;
       instructions = instructions ? `${verificationInstruction}\n\n${instructions}` : verificationInstruction;
+    }
+
+    if (midToolEpistemicMode === true) {
+      const suffix = this.buildMidToolEpistemicInstructionSuffix(browserToolExecution?.toolName);
+      instructions = instructions ? `${instructions}\n\n${suffix}` : suffix;
     }
 
     return { instructions: withOneShot(instructions), isInitialGreeting: false };

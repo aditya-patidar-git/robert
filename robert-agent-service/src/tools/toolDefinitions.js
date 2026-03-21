@@ -28,7 +28,7 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
 
 3. AFTER this tool returns: Present ONLY the slot(s) from the tool result message. Do not add or substitute any other slots.
 
-4. WHEN caller confirms a slot (e.g. "yes", "okay go ahead", "proceed", "that works"): IMMEDIATELY call booking_step_authenticate with agreedSlot containing the slot from the tool result (date, time, location). Do NOT ask for full name, email, or any contact details—Step 2 is CRM system login only, not collecting caller information.`,
+4. If the tool listed MULTIPLE slots: do NOT call booking_step_authenticate until the caller clearly chooses one slot from that list. If only ONE slot was presented, caller confirmation ("yes", "proceed", etc.) is enough. agreedSlot must match the slot the caller chose (not a default). Do NOT ask for full name, email, or contact details—Step 2 is CRM system login only.`,
       parameters: {
         type: 'object',
         properties: {
@@ -60,9 +60,9 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
     {
       type: 'function',
       name: 'booking_step_authenticate',
-      description: `Step 2: Log the system into the CRM (cookie-based browser login). This is NOT asking the caller for their name, email, or any contact details—it is a backend step that runs automatically. Call this tool IMMEDIATELY when the caller confirms a slot (e.g. "yes", "okay go ahead", "proceed"); do NOT ask for name/email before or instead of calling it.
+      description: `Step 2: Log the system into the CRM (cookie-based browser login). This is NOT asking the caller for their name, email, or any contact details—it is a backend step. Call when the caller has agreed a specific slot from Step 1: if multiple slots were offered, they must have clearly chosen one before you call. Pass agreedSlot matching that choice.
 
-CRITICAL: If the caller has confirmed a slot from Step 1, pass agreedSlot with the slot details (date, time, location, instructor if available) from the check_availability result. This stores the slot for later steps.`,
+CRITICAL: agreedSlot must match the slot the caller selected from the check_availability result (date, time, location). If multiple slots were listed, do not use a default—use the one they picked.`,
       parameters: {
         type: 'object',
         properties: {
@@ -274,10 +274,12 @@ CRITICAL WORKFLOW:
 
 CRITICAL WORKFLOW:
 1. ONLY call this tool AFTER you have reached the contact details page (Step 8 for existing, Step 7 for new).
-2. DO NOT ask for Name, Email, Phone, Postcode, or any contact detail until you have called this tool at least once. The first call returns missingFields—only then ask for those specific missing fields, in one sequence, with double confirmation (ask → repeat to verify; if no match, ask once more and take that as final).
-3. Collect each missing field once: do not re-ask for a field already confirmed. When you have a value for every missing field, call this tool ONCE with ALL required parameters (postcode, houseNumber, licenceHeld, nationalInsurance, drivingLicenceNumber or drivingLicenceFirstHalf+SecondHalf, customerEmail, customerMobile, customerName as needed)—do not call with only a subset or the form will not be fully filled.
-4. DRIVING LICENCE: The full number must be exactly 16 characters (old UK format: 5 letters, 5 digits, then 6 letters or numbers; no spaces). You may collect in two halves: first half 8 characters (5 letters + 3 digits, or 5 digits + 3 letters), then second half so that first+second equals exactly 16 characters (typically second half is 8 characters for the old format). Call with drivingLicenceFirstHalf only first; if requiresDrivingLicenceSecondHalf, ask for the second half and call again with BOTH halves. When using halves you do NOT need the caller to repeat the full number. Alternatively pass drivingLicenceNumber in one go (then use double confirmation as for other fields).
-5. After the tool fills successfully, the flow proceeds to payment.`,
+2. DO NOT ask for Name, Email, Phone, Postcode, or any contact detail until you have called this tool at least once. The first call returns missingFields—only then ask for those specific missing fields. For sensitive fields use double confirmation (ask → ask them to repeat without YOU reading their value aloud—no "confirm it is…"). For hearAboutUs, ridingExperience, marketingConsent, and dataSharing use SINGLE ask only (not sensitive)—no repeat-verify.
+3. Collect each missing field once: do not re-ask for a field already confirmed. When you have a value for every missing field, call this tool ONCE with ALL required parameters. New workflow requires: hearAboutUs (exact CRM option), ridingExperience (exact CRM option), marketingConsent and dataSharing (booleans), plus postcode, houseNumber, licenceHeld, nationalInsurance, customerEmail, customerMobile, customerName as needed. For the UK photocard driving licence number use ONLY drivingLicenceFirstHalf and drivingLicenceSecondHalf—do not call with only a subset or the form will not be fully filled.
+4. DRIVING LICENCE (photocard): The number on the card is exactly 16 characters (not the separate 2-digit issue number). Structure: 5 characters (surname, padded with 9 if needed), 6 digits (encoded date of birth), 2 initials (second may be 9), 3 security characters. Always collect in two steps: (1) first 8 characters—ask, ask the caller to repeat to verify, call with drivingLicenceFirstHalf only; (2) second 8 characters—ask, repeat to verify, call with drivingLicenceFirstHalf and drivingLicenceSecondHalf. If the tool returns requiresDrivingLicenceSecondHalf, collect the second half. Do NOT pass drivingLicenceNumber as a single 16-character string.
+5. HEAR ABOUT / RIDING EXPERIENCE: Pass the exact option text from the CRM lists in the parameter descriptions. Do not proceed to payment until these and the GDPR yes/no fields are filled.
+6. After the tool fills successfully, the flow proceeds to payment.
+7. AUTO-FILLED ADDRESS: If the tool returns requiresAddressConfirmation, you may briefly mention minimal identifying parts of the auto-filled address (street or building name, optionally town/area) so the caller knows what to confirm. Do not read the postcode aloud or recite the full multi-line address. This exception applies only to that confirmation turn; all other GDPR no-echo rules still apply.`,
 
       parameters: {
         type: 'object',
@@ -318,27 +320,47 @@ CRITICAL WORKFLOW:
           },
           drivingLicenceNumber: {
             type: 'string',
-            description: 'UK driving licence number: exactly 16 characters (5 letters, 5 digits, 6 letters/numbers), no spaces, e.g. CARTD940315D9A8F. Alternatively use drivingLicenceFirstHalf + drivingLicenceSecondHalf so the combined value is exactly 16 characters.'
+            description: 'Deprecated: do not use. Collect the photocard number only via drivingLicenceFirstHalf then drivingLicenceSecondHalf (two calls). Passing a single 16-character value is rejected.'
           },
           drivingLicenceFirstHalf: {
             type: 'string',
-            description: 'First half of UK driving licence (8 chars): 5 digits + 3 letters (e.g. 12345ABC) or 5 letters + 3 digits (e.g. CARTD940). Together with second half must form exactly 16 characters in old UK format.'
+            description: 'First 8 characters of the UK photocard licence number: surname (5 letters or 9-padding) plus first 3 digits of the 6-digit date block. Ask caller to repeat to verify before calling.'
           },
           drivingLicenceSecondHalf: {
             type: 'string',
-            description: 'Second half of UK driving licence (7 or 8 chars per half-validation). Together with first half must concatenate to exactly 16 characters. Pass with drivingLicenceFirstHalf when both are known.'
+            description: 'Second 8 characters: last 3 digits of the date block, then 2 initials (second may be 9), then 3 security characters. Pass together with drivingLicenceFirstHalf on the second call. Ask caller to repeat to verify.'
           },
           licenceHeld: {
             type: 'string',
-            description: 'Type of licence held. Use the EXACT option text the caller chose from this list: Prov licence with valid cat A, Prov licence cat P only, European license with D9 counterpart, Foreign licence, No licence, Full UK car licence, Full UK automatic bike licence, Full UK manual bike licence, Full EU Motorcycle Licence. List these options to the caller and pass their choice verbatim.'
+            description: 'Type of licence held. Use the EXACT option text the caller chose from this list: Prov licence with valid cat A, Prov licence cat P only, European license with D9 counterpart, Foreign licence, No licence, Full UK car licence, Full UK automatic bike licence, Full UK manual bike licence, Full EU Motorcycle Licence. List these options when asking; pass their choice verbatim in the tool. When asking the caller to repeat for verification, do not quote or read the option label aloud (GDPR).'
           },
           addressConfirmed: {
             type: 'boolean',
-            description: 'Whether the client has confirmed the auto-populated address. Set to false on first call to get confirmation, then set to true after client confirms. Default: false'
+            description: 'Whether the client has confirmed the auto-populated address. Set false on the first pass until they confirm; set true after they confirm. For new clients, after a full fill returned requiresAddressConfirmation, the next call may use only courseType, workflowType, and addressConfirmed: true—the server merges saved contact fields, fills survey/GDPR dropdowns, clicks Next, then you chain to booking_step_process_payment. Default: false'
           },
           correctedAddress: {
             type: 'string',
             description: 'Corrected address if the client said the auto-populated address was incorrect. Only provide this if client said "no" to the address confirmation.'
+          },
+          hearAboutUs: {
+            type: 'string',
+            description:
+              'How did they hear about us? Pass EXACT CRM option text. Options only: Friends, Google, Bing, Yahoo, Motorcycle Shop, Recommendation, Other websites, RideTo, Deliveroo, UberEATS. Single ask—no repeat-verify.'
+          },
+          ridingExperience: {
+            type: 'string',
+            description:
+              'Riding experience. Pass EXACT CRM option text. Options: None; None but can ride a push bike; Some but a while ago; Some recently; Some/medium experience; Had a previous CBT; Experienced Rider. Single ask—no repeat-verify.'
+          },
+          marketingConsent: {
+            type: 'boolean',
+            description:
+              'Keep you updated — Are you OK for us to contact you about further courses? true = Yes, false = No. Single ask—no repeat-verify.'
+          },
+          dataSharing: {
+            type: 'boolean',
+            description:
+              'Send details to others — OK to share contact details with DVSA, MCIA, HSM, TfL etc. for QA? true = Yes, false = No. Single ask—no repeat-verify.'
           }
         },
         required: ['courseType', 'workflowType']

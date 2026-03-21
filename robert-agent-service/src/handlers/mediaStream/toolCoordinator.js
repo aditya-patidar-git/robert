@@ -81,7 +81,8 @@ export class ToolCoordinator {
       this.bargeInHandler,
       (text) => this.applyIntentFromTranscript(text),
       () => this.openaiIntegration?.getCurrentWorkflowPhase?.(),
-      (utterance) => this.queueLanguageSelectionBackup(utterance)
+      (utterance) => this.queueLanguageSelectionBackup(utterance),
+      () => this.createAudioResponse()
     );
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs, {
       onBeforeTriggerResponse: (callSid, context) => {
@@ -438,12 +439,24 @@ export class ToolCoordinator {
       const isInitialGreeting = !this.state.hasInitialGreetingBeenSent;
       const overrideWorkflowPhase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? undefined;
 
+      const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
+      const allowMidToolEpistemic = conversationBehaviorConfig?.allowMidToolEpistemicReplies !== false;
+      const browserToolExecution = progressIndicatorService.getExecutionInfo(this.state.callSid);
+      const midToolEpistemicMode = Boolean(
+        allowMidToolEpistemic &&
+          browserToolExecution &&
+          !this.state.toolExecutionCompleting &&
+          this.state.waitingForUser === false
+      );
+
       const { instructions: responseInstructions, isConsentQuestion } = await conversationService.getResponseInstructions({
         callSid: this.state.callSid,
         state: this.state,
         conversation: conversations[this.state.callSid] || {},
         hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent,
-        overrideWorkflowPhase
+        overrideWorkflowPhase,
+        midToolEpistemicMode,
+        browserToolExecution
       });
 
       if (isConsentQuestion) {
@@ -466,12 +479,13 @@ export class ToolCoordinator {
         return;
       }
 
-      const { toolChoice, workflowPhase } = await conversationService.getToolChoiceForResponse({
+      const { toolChoice, workflowPhase, midToolEpistemicApplied } = await conversationService.getToolChoiceForResponse({
         callSid: this.state.callSid,
         state: this.state,
         conversation: conversations[this.state.callSid] || {},
         hasInitialGreetingBeenSent: this.state.hasInitialGreetingBeenSent,
-        overrideWorkflowPhase
+        overrideWorkflowPhase,
+        browserToolExecution
       });
       const forcedSetLang =
         toolChoice &&
@@ -509,7 +523,9 @@ export class ToolCoordinator {
       if (!forcedSetLang && toolChoice === 'auto' && !sessionUpdate.tools) {
         console.log(`📤 [${this.state.callSid}] Sending session.update - tool_choice: auto for phase ${workflowPhase ?? 'unknown'}`);
       } else if (!forcedSetLang && toolChoice !== 'auto') {
-        console.log(`📤 [${this.state.callSid}] Sending session.update to disable tools...`);
+        console.log(
+          `📤 [${this.state.callSid}] Sending session.update to disable tools...${midToolEpistemicApplied ? ' (mid-tool epistemic)' : ''}`
+        );
       } else if (forcedSetLang) {
         console.log(`📤 [${this.state.callSid}] Sending session.update - forced set_call_language`);
         await this.queueLanguageSelectionBackup(this.state.lastUtteranceForLanguageSelection || '');
@@ -562,16 +578,33 @@ export class ToolCoordinator {
       // Lock already acquired by tryAcquireResponseLock()
       this.openaiWs.send(JSON.stringify(responseCreatePayload));
       
-      // Step 4: Re-enable tools after delay
+      // Step 4: Re-enable tools after delay (skip unconditional auto if browser step still running — toolResultSubmitter restores later)
+      const callSidForReenable = this.state.callSid;
+      const useConditionalReenable = midToolEpistemicMode === true && midToolEpistemicApplied === true;
       setTimeout(() => {
-        if (this.openaiWs && this.openaiWs.readyState === 1) {
-          this.openaiWs.send(JSON.stringify({
-            type: 'session.update',
-            session: {
-              tool_choice: 'auto'
-            }
-          }));
+        if (!this.openaiWs || this.openaiWs.readyState !== 1) return;
+        if (useConditionalReenable) {
+          if (!progressIndicatorService.getExecutionInfo(callSidForReenable)) {
+            this.openaiWs.send(JSON.stringify({
+              type: 'session.update',
+              session: {
+                tool_choice: 'auto'
+              }
+            }));
+            console.log(`📤 [${callSidForReenable}] Re-enabled tool_choice auto after mid-tool epistemic (execution finished)`);
+          } else {
+            console.log(
+              `⏭️ [${callSidForReenable}] Skipped tool_choice auto re-enable — browser tool still active (toolResultSubmitter will restore)`
+            );
+          }
+          return;
         }
+        this.openaiWs.send(JSON.stringify({
+          type: 'session.update',
+          session: {
+            tool_choice: 'auto'
+          }
+        }));
       }, 3000);
       
     } catch (err) {
@@ -800,6 +833,8 @@ export class ToolCoordinator {
             consentJustResponded;
           const stateSnapshot = {
             waitingForUser: this.state.waitingForUser,
+            browserToolExecution: progressIndicatorService.getExecutionInfo(this.state.callSid),
+            toolExecutionCompleting: this.state.toolExecutionCompleting === true,
             isResponding: this.state.isResponding,
             activeResponseId: this.state.activeResponseId,
             hasInitialGreetingCompleted: this.state.hasInitialGreetingCompleted,
@@ -856,7 +891,43 @@ export class ToolCoordinator {
               const transcriptText = transcriptions.map(t => t?.transcript).filter(Boolean).join(' ').trim();
               if (transcriptText) this.applyIntentFromTranscript(transcriptText);
             }
-            if (transcriptions.length > 0 && this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && this.state.hasInitialGreetingCompleted && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
+            const flowStateSt = getConversationFlowState(this.state.callSid, this.state);
+            const consentJustSt =
+              flowStateSt.consentResponded &&
+              this.state.agentFinishedSpeakingTime > 0 &&
+              Date.now() - this.state.agentFinishedSpeakingTime < 5000;
+            const inConsentOrLanguagePhaseSt =
+              flowStateSt.waitingForLanguage ||
+              (flowStateSt.languageSelected && !flowStateSt.consentResponded) ||
+              consentJustSt;
+            const syntheticSpeechStopped = {
+              processed: true,
+              shouldCreateResponse: true,
+              qualityScore: 1,
+              isBackgroundNoise: false
+            };
+            const snapshotSpeechStopped = {
+              waitingForUser: this.state.waitingForUser,
+              browserToolExecution: progressIndicatorService.getExecutionInfo(this.state.callSid),
+              toolExecutionCompleting: this.state.toolExecutionCompleting === true,
+              isResponding: this.state.isResponding,
+              activeResponseId: this.state.activeResponseId,
+              hasInitialGreetingCompleted: this.state.hasInitialGreetingCompleted,
+              outboundAudioPacer: this.state.outboundAudioPacer,
+              outboundAudioBuffer: this.state.outboundAudioBuffer,
+              bargeInTailUntil: this.state.bargeInTailUntil,
+              inConsentOrLanguagePhase: inConsentOrLanguagePhaseSt
+            };
+            const shouldCreateFromSpeechStopped = conversationService.shouldCreateResponse(
+              syntheticSpeechStopped,
+              snapshotSpeechStopped
+            );
+            if (
+              transcriptions.length > 0 &&
+              shouldCreateFromSpeechStopped &&
+              !this.state.isInterrupted &&
+              this.state.tryAcquireResponseLock()
+            ) {
               try {
                 if (this.state.isInterrupted) {
                   console.log(`🛑 [${this.state.callSid}] Skipping response creation - user interrupted after lock acquisition`);

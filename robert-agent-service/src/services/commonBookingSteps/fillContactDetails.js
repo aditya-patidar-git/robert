@@ -1,5 +1,9 @@
 import { takeScreenshot } from './utils.js';
 
+/** Agent-facing copy when CRM auto-filled Address 1 from postcode—only for requiresAddressConfirmation; not used elsewhere. */
+export const ADDRESS_CONFIRMATION_AGENT_INSTRUCTION =
+  'The system has auto-filled an address from the postcode. NARROW EXCEPTION (this confirmation turn only): you MAY briefly say minimal identifying parts so the caller knows which address they are confirming—e.g. the main street or building name and optionally the town or area. Do NOT read the postcode aloud. Do NOT read the full multi-line address line-by-line. Keep it to one short phrase, then ask if that is correct. When they say yes, call booking_step_fill_contact_details again with courseType, workflowType, and addressConfirmed: true only—the server remembers the contact details you already submitted. If they say no, ask only for the corrected first line, then call with correctedAddress as needed (other fields still remembered). After that call succeeds, chain to payment in the same turn—do not wait for the caller.';
+
 /**
  * Step 7 (New client workflow): Fill all contact details from scratch
  * @param {Page} page - Playwright page object
@@ -18,12 +22,12 @@ import { takeScreenshot } from './utils.js';
  * @param {string} contactDetails.licenceFormat - 'GB' or 'NI' for driving licence format
  * @param {string} contactDetails.hearAboutUs - How did they hear about us
  * @param {string} contactDetails.ridingExperience - Riding experience level
- * @param {boolean} contactDetails.marketingConsent - Keep you updated (YES/NO)
- * @param {boolean} contactDetails.dataSharing - Send details to others (YES/NO)
+ * @param {boolean} contactDetails.marketingConsent - Keep you updated (Yes/No in UI)
+ * @param {boolean} contactDetails.dataSharing - Send details to others (Yes/No in UI)
  * @param {string} screenshotsDir - Directory to save screenshots
  * @param {boolean} addressConfirmed - Whether the client has confirmed the auto-populated address (default: false)
  * @param {string} correctedAddress - Corrected address if client said the auto-populated address was incorrect
- * @returns {Promise<{success: boolean, requiresAddressConfirmation?: boolean, autoPopulatedAddress?: string, townCity?: string, message?: string}>}
+ * @returns {Promise<{success: boolean, requiresAddressConfirmation?: boolean, autoPopulatedAddress?: string, townCity?: string, message?: string, instruction?: string}>}
  */
 
 /**
@@ -109,59 +113,172 @@ export function getLicenceHeldOptionsForPrompt() {
   return LICENCE_HELD_EXACT_OPTIONS.join(', ');
 }
 
-/** Timeout (ms) for Licence held dropdown overlay to become visible (increased to 10s for slow environments). */
-const LICENCE_HELD_OVERLAY_TIMEOUT_MS = 10000;
+/**
+ * Exact "Hear about us?" dropdown options (CRM). Pass verbatim as hearAboutUs.
+ */
+export const HEAR_ABOUT_US_EXACT_OPTIONS = [
+  'Friends',
+  'Google',
+  'Bing',
+  'Yahoo',
+  'Motorcycle Shop',
+  'Recommendation',
+  'Other websites',
+  'RideTo',
+  'Deliveroo',
+  'UberEATS'
+];
 
 /**
- * Select option from a DevExtreme dropdown by scoping to the visible overlay.
- * The overlay is shared by all dropdowns on the page and its content updates per dropdown;
- * we wait for it to show Licence held options (option with exactLabel) before selecting.
- * Tries iframe first, then page (in case overlay is rendered in top-level document).
- * @returns {Promise<boolean>} true if selection was done via overlay
+ * Exact "Riding experience" dropdown options (CRM). Pass verbatim as ridingExperience.
  */
-async function selectOptionFromOverlay(iframe, page, fieldId, exactLabel) {
-  const dropdownInput = iframe.locator(`#${fieldId} .dx-texteditor-input`);
-  await dropdownInput.click();
-  await page.waitForTimeout(700);
+export const RIDING_EXPERIENCE_EXACT_OPTIONS = [
+  'None',
+  'None but can ride a push bike',
+  'Some but a while ago',
+  'Some recently',
+  'Some/medium experience',
+  'Had a previous CBT',
+  'Experienced Rider'
+];
 
-  const overlayListSelector = '.dx-overlay-wrapper.dx-dropdowneditor-overlay .dx-list-items';
+export function getHearAboutUsOptionsForPrompt() {
+  return HEAR_ABOUT_US_EXACT_OPTIONS.join(', ');
+}
 
-  async function trySelectFromContainer(container) {
-    const items = container.locator('.dx-item');
-    const count = await items.count();
-    for (let i = 0; i < count; i++) {
-      const item = items.nth(i);
-      const content = item.locator('.dx-item-content');
-      const text = (await content.textContent()).trim();
-      if (text === exactLabel) {
-        await item.waitFor({ state: 'visible', timeout: LICENCE_HELD_OVERLAY_TIMEOUT_MS });
-        await item.click();
-        return true;
-      }
+export function getRidingExperienceOptionsForPrompt() {
+  return RIDING_EXPERIENCE_EXACT_OPTIONS.join(', ');
+}
+
+/**
+ * Map caller phrasing to exact "Hear about us?" label.
+ * @param {string} optionValue
+ * @returns {string}
+ */
+function resolveHearAboutUsLabel(optionValue) {
+  if (!optionValue || typeof optionValue !== 'string') return optionValue;
+  const normalized = optionValue.trim().toLowerCase().replace(/\s+/g, ' ');
+  const map = {
+    friend: 'Friends',
+    friends: 'Friends',
+    google: 'Google',
+    bing: 'Bing',
+    yahoo: 'Yahoo',
+    'motorcycle shop': 'Motorcycle Shop',
+    recommendation: 'Recommendation',
+    'other websites': 'Other websites',
+    website: 'Other websites',
+    websites: 'Other websites',
+    rideto: 'RideTo',
+    deliveroo: 'Deliveroo',
+    ubereats: 'UberEATS',
+    'uber eats': 'UberEATS',
+    newspaper: 'Other websites',
+    radio: 'Other websites',
+    other: 'Other websites',
+    somewhere: 'Other websites',
+    online: 'Other websites'
+  };
+  if (map[normalized]) return map[normalized];
+  const match = HEAR_ABOUT_US_EXACT_OPTIONS.find(opt => opt.trim().toLowerCase() === normalized);
+  if (match) return match;
+  return optionValue.trim();
+}
+
+/**
+ * Map caller phrasing to exact "Riding experience" label.
+ * @param {string} optionValue
+ * @returns {string}
+ */
+function resolveRidingExperienceLabel(optionValue) {
+  if (!optionValue || typeof optionValue !== 'string') return optionValue;
+  const normalized = optionValue.trim().toLowerCase().replace(/\s+/g, ' ');
+  const map = {
+    none: 'None',
+    beginner: 'None',
+    'push bike': 'None but can ride a push bike',
+    'a while ago': 'Some but a while ago',
+    recently: 'Some recently',
+    'some experience': 'Some/medium experience',
+    medium: 'Some/medium experience',
+    cbt: 'Had a previous CBT',
+    'previous cbt': 'Had a previous CBT',
+    experienced: 'Experienced Rider',
+    'experienced rider': 'Experienced Rider'
+  };
+  if (map[normalized]) return map[normalized];
+  const match = RIDING_EXPERIENCE_EXACT_OPTIONS.find(opt => opt.trim().toLowerCase() === normalized);
+  if (match) return match;
+  return optionValue.trim();
+}
+
+/** Timeout (ms) for DevExtreme dropdown overlay to become visible (increased to 10s for slow environments). */
+const DROPDOWN_OVERLAY_TIMEOUT_MS = 10000;
+
+/**
+ * Select an option from a DevExtreme selectbox (shared overlay may render on `page` or `iframe`).
+ * @param {string} [validOptionsHint] - Appended to errors (e.g. comma-separated list).
+ * @returns {Promise<boolean>} true if the option was clicked
+ */
+async function selectOptionFromOverlay(iframe, page, fieldId, exactLabel, validOptionsHint = '') {
+  // If focus is elsewhere, clicking the input may only focus; the dropdown button opens in one click.
+  const dropArrow = iframe.locator(`#${fieldId} .dx-dropdowneditor-button`);
+  if ((await dropArrow.count()) > 0) {
+    await dropArrow.first().click();
+  } else {
+    await iframe.locator(`#${fieldId} .dx-texteditor-input`).click();
+  }
+
+  const overlaySelector = '.dx-overlay-wrapper.dx-dropdowneditor-overlay:not(.dx-state-invisible)';
+
+  let portalOverlay = null;
+  let resolvedContext = null;
+
+  const deadline = Date.now() + DROPDOWN_OVERLAY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const pageCount = await page.locator(overlaySelector).filter({ hasText: exactLabel }).count();
+    if (pageCount > 0) {
+      portalOverlay = page.locator(overlaySelector).filter({ hasText: exactLabel });
+      resolvedContext = 'page';
+      break;
     }
-    return false;
+
+    const iframeCount = await iframe.locator(overlaySelector).filter({ hasText: exactLabel }).count();
+    if (iframeCount > 0) {
+      portalOverlay = iframe.locator(overlaySelector).filter({ hasText: exactLabel });
+      resolvedContext = 'iframe';
+      break;
+    }
+
+    await page.waitForTimeout(200);
   }
 
-  // Wait for the shared overlay to show Licence held options (option with exactLabel), then select.
-  // This avoids acting on another dropdown's options when the overlay content updates per dropdown.
-  async function waitForLicenceHeldContentAndSelect(context) {
-    const optionLocator = context.locator(`${overlayListSelector} .dx-item`).filter({ hasText: exactLabel }).first();
-    await optionLocator.waitFor({ state: 'visible', timeout: LICENCE_HELD_OVERLAY_TIMEOUT_MS });
-    const optionsContainer = context.locator(overlayListSelector);
-    return trySelectFromContainer(optionsContainer);
+  if (!portalOverlay || !resolvedContext) {
+    throw new Error(
+      `Overlay with "${exactLabel}" not found in either page or iframe after ${DROPDOWN_OVERLAY_TIMEOUT_MS}ms.` +
+        (validOptionsHint ? ` Valid options: ${validOptionsHint}` : '')
+    );
   }
 
-  try {
-    if (await waitForLicenceHeldContentAndSelect(iframe)) return true;
-  } catch (iframeErr) {
-    try {
-      if (await waitForLicenceHeldContentAndSelect(page)) return true;
-    } catch (pageErr) {
-      throw iframeErr;
+  console.log(`📋 [STEP 7] Dropdown overlay resolved in: ${resolvedContext} (fieldId=${fieldId})`);
+
+  await portalOverlay.waitFor({ state: 'visible', timeout: 5000 });
+
+  const items = portalOverlay.locator('.dx-list-items .dx-item');
+  const count = await items.count();
+  for (let i = 0; i < count; i++) {
+    const item = items.nth(i);
+    const text = (await item.locator('.dx-item-content').textContent()).trim();
+    if (text === exactLabel) {
+      await item.click();
+      return true;
     }
   }
 
-  return false;
+  throw new Error(
+    `Option "${exactLabel}" not found in ${resolvedContext} overlay. Found ${count} items.` +
+      (validOptionsHint ? ` Valid options: ${validOptionsHint}` : '')
+  );
 }
 
 /**
@@ -175,12 +292,47 @@ async function selectDropdownOption(iframe, page, labelText, fieldId, optionValu
   if (isLicenceHeld) {
     const exactLabel = resolveLicenceHeldLabel(optionValue);
     try {
-      const done = await selectOptionFromOverlay(iframe, page, fieldId, exactLabel);
+      const done = await selectOptionFromOverlay(iframe, page, fieldId, exactLabel, LICENCE_HELD_EXACT_OPTIONS.join(', '));
       if (done) {
         console.log(`✅ [STEP 7] Selected ${labelText} = "${exactLabel}" (from "${optionValue}") using overlay`);
         return;
       }
       throw new Error(`No option matching "${exactLabel}" in Licence held dropdown. Valid options: ${LICENCE_HELD_EXACT_OPTIONS.join(', ')}`);
+    } catch (overlayError) {
+      throw new Error(`Failed to select ${labelText}: ${overlayError.message}`);
+    }
+  }
+
+  if (fieldId === 'cnt_hear_about') {
+    const exactLabel = resolveHearAboutUsLabel(optionValue);
+    try {
+      await selectOptionFromOverlay(iframe, page, fieldId, exactLabel, HEAR_ABOUT_US_EXACT_OPTIONS.join(', '));
+      console.log(`✅ [STEP 7] Selected ${labelText} = "${exactLabel}" (from "${optionValue}") using overlay`);
+      return;
+    } catch (overlayError) {
+      throw new Error(`Failed to select ${labelText}: ${overlayError.message}`);
+    }
+  }
+
+  if (fieldId === 'xid_29022') {
+    const exactLabel = resolveRidingExperienceLabel(optionValue);
+    try {
+      await selectOptionFromOverlay(iframe, page, fieldId, exactLabel, RIDING_EXPERIENCE_EXACT_OPTIONS.join(', '));
+      console.log(`✅ [STEP 7] Selected ${labelText} = "${exactLabel}" (from "${optionValue}") using overlay`);
+      return;
+    } catch (overlayError) {
+      throw new Error(`Failed to select ${labelText}: ${overlayError.message}`);
+    }
+  }
+
+  if (fieldId === 'cnt_GDPR_receive_own_marketing' || fieldId === 'cnt_GDPR_send_details_to_others') {
+    let yn = String(optionValue).trim();
+    if (/^yes$/i.test(yn) || yn === 'YES') yn = 'Yes';
+    else if (/^no$/i.test(yn) || yn === 'NO') yn = 'No';
+    try {
+      await selectOptionFromOverlay(iframe, page, fieldId, yn, 'Yes, No');
+      console.log(`✅ [STEP 7] Selected ${labelText} = "${yn}" using overlay`);
+      return;
     } catch (overlayError) {
       throw new Error(`Failed to select ${labelText}: ${overlayError.message}`);
     }
@@ -232,9 +384,94 @@ async function selectDropdownOption(iframe, page, labelText, fieldId, optionValu
 }
 
 /**
- * @param {boolean} [skipNextClick=false] - If true, fill all provided fields but do NOT click Next (used when required fields are missing so we don't navigate away).
+ * Screenshot, optional progress message, click Contact Details Next, wait for navigation.
  */
-export async function fillContactDetails(page, contactDetails, screenshotsDir, addressConfirmed = false, progressCallback = null, skipNextClick = false) {
+async function clickContactDetailsNextButton(eventBookingIframe, page, screenshotsDir, progressCallback) {
+  await takeScreenshot(page, 'contact-details-filled.png', screenshotsDir);
+  progressCallback?.({ message: 'Saving your details.' });
+
+  console.log('👆 [STEP 7] Clicking Next button...');
+  let nextButton = eventBookingIframe.locator('#diaryNewCourseBookingWiz_nextBtn').first();
+
+  if (await nextButton.count() === 0) {
+    nextButton = eventBookingIframe.locator('[aria-label="Next"], [aria-label="next"]').first();
+  }
+
+  if (await nextButton.count() === 0) {
+    nextButton = eventBookingIframe.locator('button:has-text("Next"), button:has-text("next")').first();
+  }
+
+  if (await nextButton.count() === 0) {
+    throw new Error('Next button not found on contact details page');
+  }
+
+  await nextButton.waitFor({ state: 'visible', timeout: 5000 });
+  await nextButton.click();
+
+  console.log('⏳ [STEP 7] Waiting for next page to load...');
+  await page.waitForTimeout(3000);
+
+  await takeScreenshot(page, 'after-contact-details-next.png', screenshotsDir);
+}
+
+/**
+ * Non-sensitive survey + GDPR Yes/No dropdowns (same DevExtreme overlay behaviour as Licence held).
+ * @param {string[]} [skippedFields] - If provided, failed fields are pushed for partialFill reporting.
+ */
+async function fillSurveyAndGdprDropdowns(eventBookingIframe, page, contactDetails, skippedFields) {
+  if (contactDetails.hearAboutUs) {
+    try {
+      console.log(`📝 [STEP 7] Filling Hear about us?: ${contactDetails.hearAboutUs}`);
+      await selectDropdownOption(eventBookingIframe, page, 'Hear about us?', 'cnt_hear_about', contactDetails.hearAboutUs);
+    } catch (e) {
+      console.warn('⚠️ [STEP 7] Could not fill Hear about us?:', e.message);
+      skippedFields?.push('hearAboutUs');
+    }
+  }
+  if (contactDetails.ridingExperience) {
+    try {
+      console.log(`📝 [STEP 7] Filling riding experience: ${contactDetails.ridingExperience}`);
+      await selectDropdownOption(eventBookingIframe, page, 'riding experience', 'xid_29022', contactDetails.ridingExperience);
+    } catch (e) {
+      console.warn('⚠️ [STEP 7] Could not fill riding experience:', e.message);
+      skippedFields?.push('ridingExperience');
+    }
+  }
+  if (contactDetails.marketingConsent !== undefined) {
+    const value = contactDetails.marketingConsent ? 'Yes' : 'No';
+    try {
+      console.log(`📝 [STEP 7] Filling Keep you updated: ${value}`);
+      await selectDropdownOption(eventBookingIframe, page, 'Keep you updated', 'cnt_GDPR_receive_own_marketing', value);
+    } catch (e) {
+      console.warn('⚠️ [STEP 7] Could not fill Keep you updated:', e.message);
+      skippedFields?.push('marketingConsent');
+    }
+  }
+  if (contactDetails.dataSharing !== undefined) {
+    const value = contactDetails.dataSharing ? 'Yes' : 'No';
+    try {
+      console.log(`📝 [STEP 7] Filling Send details to others: ${value}`);
+      await selectDropdownOption(eventBookingIframe, page, 'Send details to others', 'cnt_GDPR_send_details_to_others', value);
+    } catch (e) {
+      console.warn('⚠️ [STEP 7] Could not fill Send details to others:', e.message);
+      skippedFields?.push('dataSharing');
+    }
+  }
+}
+
+/**
+ * @param {boolean} [skipNextClick=false] - If true, fill all provided fields but do NOT click Next (used when required fields are missing so we don't navigate away).
+ * @param {boolean} [addressConfirmShortcut=false] - If true (new client only), skip re-filling the full form: apply survey/GDPR dropdowns from contactDetails then Next. Used after caller confirms auto-populated address.
+ */
+export async function fillContactDetails(
+  page,
+  contactDetails,
+  screenshotsDir,
+  addressConfirmed = false,
+  progressCallback = null,
+  skipNextClick = false,
+  addressConfirmShortcut = false
+) {
   try {
     console.log('📝 [STEP 7] Filling contact details for new client...');
     
@@ -254,7 +491,20 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
     
     // Wait for form to be ready
     await page.waitForTimeout(2000);
-    
+
+    // New client: caller confirmed the auto-populated address and gave no correction—apply survey/GDPR dropdowns if provided, then Next (avoids re-filling text fields). Do not use for existing-client partial fills (they pass addressConfirmed=true for other reasons).
+    if (addressConfirmShortcut && addressConfirmed && !contactDetails.correctedAddress && !skipNextClick) {
+      console.log('✅ [STEP 7] Address confirmed with no correction—survey/GDPR dropdowns then Next');
+      await fillSurveyAndGdprDropdowns(eventBookingIframe, page, contactDetails, skippedFields);
+      await clickContactDetailsNextButton(eventBookingIframe, page, screenshotsDir, progressCallback);
+      console.log('✅ [STEP 7] Contact details step completed (address-confirm short path)');
+      return {
+        success: true,
+        partialFill: skippedFields.length > 0,
+        skippedFields: skippedFields.length > 0 ? [...skippedFields] : undefined
+      };
+    }
+
     // 1. Title
     if (contactDetails.title) {
       console.log(`📝 [STEP 7] Filling Title: ${contactDetails.title}`);
@@ -401,6 +651,7 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
             autoPopulatedAddress: autoPopulatedAddress,
             townCity: townCity,
             message: `Address auto-populated as: ${autoPopulatedAddress}. Please confirm with client before proceeding.`,
+            instruction: ADDRESS_CONFIRMATION_AGENT_INSTRUCTION,
             partialFill: skippedFields.length > 0,
             skippedFields: skippedFields.length > 0 ? [...skippedFields] : undefined
           };
@@ -416,10 +667,8 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
           throw error;
         }
       }
-    } else if (addressConfirmed) {
-      console.log(`✅ [STEP 8] Address already confirmed, skipping house number fill`);
     } else if (addressConfirmed && contactDetails.correctedAddress) {
-      // Address was confirmed but incorrect, update it
+      // Follow-up: caller gave a corrected first line — fill Address 1 once; if the CRM repopulates after this, we leave the field as-is and continue to Next.
       console.log(`📝 [STEP 7] Updating Address 1 with corrected address: ${contactDetails.correctedAddress}`);
       let address1Field = eventBookingIframe.getByLabel('Address 1');
       if (await address1Field.count() === 0) {
@@ -430,6 +679,8 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
         console.log(`✅ [STEP 7] Address 1 updated with corrected address`);
         await page.waitForTimeout(500);
       }
+    } else if (addressConfirmed) {
+      console.log(`✅ [STEP 8] Address already confirmed, skipping house number fill`);
     }
     
     // 9. Licence held (lenient: skip on timeout/error and continue)
@@ -469,68 +720,19 @@ export async function fillContactDetails(page, contactDetails, screenshotsDir, a
       await fillTextField(eventBookingIframe, 'Driving licence number', 'cnt_driving_licence_no', contactDetails.drivingLicenceNumber);
     }
     
-    // 12. Hear about us? (fixed label: added question mark)
-    if (contactDetails.hearAboutUs) {
-      console.log(`📝 [STEP 7] Filling Hear about us?: ${contactDetails.hearAboutUs}`);
-      await selectDropdownOption(eventBookingIframe, page, 'Hear about us?', 'cnt_hear_about', contactDetails.hearAboutUs);
-    }
-    
-    // 13. Riding experience (keep lowercase 'r' - matches HTML)
-    if (contactDetails.ridingExperience) {
-      console.log(`📝 [STEP 7] Filling riding experience: ${contactDetails.ridingExperience}`);
-      await selectDropdownOption(eventBookingIframe, page, 'riding experience', 'xid_29022', contactDetails.ridingExperience);
-    }
-    
-    // 14. Keep you updated
-    if (contactDetails.marketingConsent !== undefined) {
-      const value = contactDetails.marketingConsent ? 'YES' : 'NO';
-      console.log(`📝 [STEP 7] Filling Keep you updated: ${value}`);
-      await selectDropdownOption(eventBookingIframe, page, 'Keep you updated', 'cnt_GDPR_receive_own_marketing', value);
-    }
-    
-    // 15. Send details to others
-    if (contactDetails.dataSharing !== undefined) {
-      const value = contactDetails.dataSharing ? 'YES' : 'NO';
-      console.log(`📝 [STEP 7] Filling Send details to others: ${value}`);
-      await selectDropdownOption(eventBookingIframe, page, 'Send details to others', 'cnt_GDPR_send_details_to_others', value);
-    }
-    
-    // Take screenshot before clicking Next
-    await takeScreenshot(page, 'contact-details-filled.png', screenshotsDir);
-    progressCallback?.({ message: 'Saving your details.' });
-    
+    // 12–15. Hear about us, riding experience, Keep you updated, Send details to others
+    await fillSurveyAndGdprDropdowns(eventBookingIframe, page, contactDetails, skippedFields);
+
     // 16. Click Next button only when skipNextClick is false (e.g. when required fields are complete)
     if (skipNextClick) {
+      await takeScreenshot(page, 'contact-details-filled.png', screenshotsDir);
+      progressCallback?.({ message: 'Saving your details.' });
       console.log('⏭️ [STEP 7] Skipping Next click (required fields incomplete—caller will collect and retry).');
       return;
     }
-    
-    // If address confirmation is required, it should have been returned earlier
-    console.log('👆 [STEP 7] Clicking Next button...');
-    let nextButton = eventBookingIframe.locator('#diaryNewCourseBookingWiz_nextBtn').first();
-    
-    if (await nextButton.count() === 0) {
-      nextButton = eventBookingIframe.locator('[aria-label="Next"], [aria-label="next"]').first();
-    }
-    
-    if (await nextButton.count() === 0) {
-      nextButton = eventBookingIframe.locator('button:has-text("Next"), button:has-text("next")').first();
-    }
-    
-    if (await nextButton.count() === 0) {
-      throw new Error('Next button not found on contact details page');
-    }
-    
-    await nextButton.waitFor({ state: 'visible', timeout: 5000 });
-    await nextButton.click();
-    
-    // Wait for next page to load
-    console.log('⏳ [STEP 7] Waiting for next page to load...');
-    await page.waitForTimeout(3000);
-    
-    // Take screenshot after clicking Next
-    await takeScreenshot(page, 'after-contact-details-next.png', screenshotsDir);
-    
+
+    await clickContactDetailsNextButton(eventBookingIframe, page, screenshotsDir, progressCallback);
+
     console.log('✅ [STEP 7] Contact details filled and Next button clicked');
     if (skippedFields.length > 0) {
       console.log('⚠️ [STEP 7] Some fields were skipped:', skippedFields.join(', '));

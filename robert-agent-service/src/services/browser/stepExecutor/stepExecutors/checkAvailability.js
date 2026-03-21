@@ -47,6 +47,8 @@ export async function executeCheckAvailability(page, args, sessionState, screens
   }
 
   const slotsToAnnounce = result.slotsToAnnounce ?? [];
+  const slotCount = slotsToAnnounce.length;
+  const requiresExplicitSlotChoice = slotCount > 1;
   // Prefer selectedSlot (best match for preferences) for the message so we never announce a different slot (e.g. allSlots[0] fallback)
   const slotsSummary = result.selectedSlot
     ? `${result.selectedSlot.date} at ${result.selectedSlot.time}, ${result.selectedSlot.location}, ${result.selectedSlot.price}`
@@ -61,7 +63,10 @@ export async function executeCheckAvailability(page, args, sessionState, screens
     nextStep: 'booking_step_authenticate',
     nextStepNumber: 2,
     doNotRetry: true,
-    message: `✅ STEP 1 COMPLETE. DO NOT RETRY. Present ONLY these slot(s) to the caller and confirm their selection. Do not read out any other slots. Slots to present: ${slotsSummary}. When the caller confirms (e.g. yes, okay go ahead, proceed), call booking_step_authenticate with agreedSlot set to this slot—do not ask for name or email; Step 2 is CRM login only.`,
+    /** When true, agent must get caller to name a specific slot before authenticate (see toolResultSubmitter). */
+    requiresExplicitSlotChoice,
+    slotCount,
+    message: `✅ STEP 1 COMPLETE. DO NOT RETRY. Present ONLY these slot(s) to the caller. Do not read out any other slots. Slots to present: ${slotsSummary}.${requiresExplicitSlotChoice ? ' MULTIPLE SLOTS: ask which one they want (by date, time, or location) and only call booking_step_authenticate after they clearly choose one slot that matches the list.' : ' When the caller confirms this slot, call booking_step_authenticate with agreedSlot set to it—do not ask for name or email; Step 2 is CRM login only.'}`,
     allSlots: result.allSlots,
     selectedSlot: result.selectedSlot,
     slotsToAnnounce,
