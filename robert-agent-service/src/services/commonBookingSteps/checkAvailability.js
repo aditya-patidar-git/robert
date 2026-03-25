@@ -1,4 +1,5 @@
 import { takeScreenshot, extractLocationIdentifier } from './utils.js';
+import { filterSlotsByDateIntent, summarizeDateIntent } from './availabilityDateIntent.js';
 
 /** Postcode prefix to centre name for location matching (matches utils.js centres) */
 const POSTCODE_TO_CENTRE = {
@@ -92,13 +93,22 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       throw new Error('No availability entries found');
     }
 
-    const preferredDateNorm = preferences.preferredDate ? normalizeDateToYYYYMMDD(preferences.preferredDate) : null;
+    const preferredDateNorm = preferences._preferredDateScanYMD
+      ? preferences._preferredDateScanYMD
+      : (preferences.preferredDate ? normalizeDateToYYYYMMDD(preferences.preferredDate) : null);
     const preferredEndOfDay = preferredDateNorm ? (() => {
       const d = new Date(preferredDateNorm + 'T23:59:59.999Z');
       return isNaN(d.getTime()) ? null : d.getTime();
     })() : null;
 
-    const hasPreferences = !!(preferences.preferredDate || preferences.preferredTime || preferences.location || preferences.instructor);
+    const dateIntent = preferences._availabilityDateIntent || { type: 'none' };
+    const hasPreferences = !!(
+      preferences.preferredDate ||
+      preferences.preferredTime ||
+      preferences.location ||
+      preferences.instructor ||
+      (dateIntent && dateIntent.type !== 'none')
+    );
     const MAX_SLOTS_WHEN_NO_PREFERENCES = 25;
 
     let rowsToScan = allDataRows;
@@ -257,6 +267,10 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       }
     });
 
+    const { filtered: candidateSlots, noMatch: dateFilterNoMatch } = filterSlotsByDateIntent(allSlots, dateIntent);
+    const noSlotsInDateFilter = dateIntent.type !== 'none' && dateFilterNoMatch;
+    const dateFilterSummary = summarizeDateIntent(dateIntent);
+
     // Log the date range of extracted slots for debugging
     if (allSlots.length > 0) {
       const firstSlot = allSlots[0];
@@ -264,19 +278,32 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       console.log(`📅 [AVAILABILITY] Slot date range: ${firstSlot.date} (${firstSlot.monthYear}) to ${lastSlot.date} (${lastSlot.monthYear})`);
     }
 
+    const buildPrefsForScoring = (prefs, intent) => {
+      const p = { ...prefs };
+      if (intent.type === 'range' && intent.startISO === intent.endISO) {
+        p.preferredDate = intent.startISO;
+      } else if (intent.type === 'weekday') {
+        delete p.preferredDate;
+      }
+      return p;
+    };
+
     // Select the best matching slot based on preferences
     // Only auto-select if preferences are provided
     progressCallback?.({ message: 'Finding a slot for you.' });
     let selectedSlot = null;
 
-    if (hasPreferences) {
-      selectedSlot = selectBestMatchingSlot(allSlots, preferences);
+    if (hasPreferences && !noSlotsInDateFilter && candidateSlots.length > 0) {
+      const prefsForScoring = buildPrefsForScoring(preferences, dateIntent);
+      selectedSlot = selectBestMatchingSlot(candidateSlots, prefsForScoring);
       if (selectedSlot) {
         console.log(`✅ [AVAILABILITY] Selected slot based on preferences:`, selectedSlot);
         console.log(`   Date: ${selectedSlot.date}, Time: ${selectedSlot.time}, Location: ${selectedSlot.location}`);
       } else {
         console.log(`⚠️ [AVAILABILITY] No matching slot found for preferences, returning all slots`);
       }
+    } else if (hasPreferences && noSlotsInDateFilter) {
+      console.log(`⚠️ [AVAILABILITY] No slots in resolved date window (${dateFilterSummary || 'date filter'})`);
     } else {
       // No preferences provided - don't auto-select
       console.log(`📋 [AVAILABILITY] No preferences provided - returning all slots for user selection`);
@@ -287,14 +314,16 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       : latestMonthYear;
 
     let slotsToAnnounce;
-    if (preferredDateNorm) {
-      slotsToAnnounce = allSlots.filter(s => s.startDate && s.startDate.startsWith(preferredDateNorm));
+    if (noSlotsInDateFilter) {
+      slotsToAnnounce = [];
+    } else if (preferredDateNorm) {
+      slotsToAnnounce = candidateSlots.filter(s => s.startDate && s.startDate.startsWith(preferredDateNorm));
     } else {
-      const firstSlot = allSlots[0];
+      const firstSlot = candidateSlots[0];
       const soonestDateStr = firstSlot?.startDate ? firstSlot.startDate.split('T')[0] : null;
       slotsToAnnounce = soonestDateStr
-        ? allSlots.filter(s => s.startDate && s.startDate.startsWith(soonestDateStr))
-        : allSlots.slice(0, 3); // Announce first 3 slots if date parsing fails
+        ? candidateSlots.filter(s => s.startDate && s.startDate.startsWith(soonestDateStr))
+        : candidateSlots.slice(0, 3);
     }
 
 
@@ -321,13 +350,49 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       }
     }
 
-    if (slotsToAnnounce.length === 0 && allSlots.length > 0) slotsToAnnounce = selectedSlot ? [selectedSlot] : [allSlots[0]];
+    if (slotsToAnnounce.length === 0 && !noSlotsInDateFilter && candidateSlots.length > 0) {
+      slotsToAnnounce = selectedSlot ? [selectedSlot] : [candidateSlots[0]];
+    }
+
+    // When preferences produced a selectedSlot, the spoken list must lead with it and only
+    // include alternatives at the same centre. Otherwise the code above can announce the
+    // earliest calendar day globally (e.g. Thu 26th × 3) while CRM selectedSlot is Edgware Tue 31st.
+    if (selectedSlot && candidateSlots.length > 0) {
+      const slotKey = (s) =>
+        `${s.date}|${s.time}|${String(s.location || '').slice(0, 160)}`;
+      const selKey = slotKey(selectedSlot);
+      const centre = (loc) =>
+        normaliseToCentreName(extractLocationIdentifier(loc || ''));
+      const centreSel = centre(selectedSlot.location);
+      const sameCentre = (s) => {
+        const c = centre(s.location);
+        return centreSel && c && c.toLowerCase() === centreSel.toLowerCase();
+      };
+      const byCentre = allSlots.filter(sameCentre);
+      const ordered = [
+        selectedSlot,
+        ...byCentre.filter((s) => slotKey(s) !== selKey)
+      ];
+      const seen = new Set();
+      const dedup = [];
+      for (const s of ordered) {
+        const k = slotKey(s);
+        if (!seen.has(k)) {
+          seen.add(k);
+          dedup.push(s);
+        }
+        if (dedup.length >= 3) break;
+      }
+      slotsToAnnounce = dedup;
+    }
 
     return {
       allSlots,
       selectedSlot: selectedSlot ?? null,
       monthYear: returnMonthYear,
-      slotsToAnnounce
+      slotsToAnnounce,
+      noSlotsInDateFilter,
+      dateFilterSummary: dateFilterSummary || null
     };
 
   } catch (error) {
@@ -369,9 +434,12 @@ export function selectBestMatchingSlot(allSlots, preferences = {}) {
     }
   }
 
+  const dateIntent = preferences._availabilityDateIntent;
+  const hasActiveDateIntent = dateIntent && dateIntent.type !== 'none';
+
   // If no preferences provided, return null to indicate user should choose
   // According to documentation: "Feel free to discuss with the client the availability"
-  if (!preferredDate && !preferredTime && !location) {
+  if (!preferredDate && !preferredTime && !location && !hasActiveDateIntent) {
     console.log('📋 No preferences provided - returning null to indicate user selection needed');
     return null; // Changed from allSlots[0] - don't auto-select
   }

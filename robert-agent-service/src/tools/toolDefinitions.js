@@ -28,7 +28,9 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
 
 3. AFTER this tool returns: Present ONLY the slot(s) from the tool result message. Do not add or substitute any other slots.
 
-4. If the tool listed MULTIPLE slots: do NOT call booking_step_authenticate until the caller clearly chooses one slot from that list. If only ONE slot was presented, caller confirmation ("yes", "proceed", etc.) is enough. agreedSlot must match the slot the caller chose (not a default). Do NOT ask for full name, email, or contact details—Step 2 is CRM system login only.`,
+4. If the tool listed MULTIPLE slots: do NOT call booking_step_authenticate until the caller clearly chooses one slot from that list. If only ONE slot was presented, caller confirmation ("yes", "proceed", etc.) is enough. agreedSlot must match the slot the caller chose (not a default). Do NOT ask for full name, email, or contact details—Step 2 is CRM system login only.
+
+5. RE-CHECK: If the caller asks for other dates, locations, "earliest at [centre]", "show me Wimbledon", "check again", or any new criteria after a previous run, call this tool again with courseType and the updated preference fields—then present only the new result. Do not tell them you can only use the previous list or to use the website instead.`,
       parameters: {
         type: 'object',
         properties: {
@@ -39,7 +41,8 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
           },
           preferredDate: {
             type: 'string',
-            description: 'Preferred date (optional, for slot matching/filtering)'
+            description:
+              'Preferred date or natural-language phrase (optional). Pass ISO dates (YYYY-MM-DD) or phrases such as "next week", "mid of this month", "Friday", "this Friday"—the backend resolves these in Europe/London before matching slots. Refinements after a prior availability result (e.g. "Friday instead") are resolved using conversation context when available.'
           },
           preferredTime: {
             type: 'string',

@@ -101,6 +101,16 @@ function buildSyncPayload(sanitizedConversation, options = {}) {
     const compact = {
       slotCount: Array.isArray(lac.allSlots) ? lac.allSlots.length : 0
     };
+    if (lac.anchorDateMin) compact.anchorDateMin = lac.anchorDateMin;
+    if (lac.anchorDateMax) compact.anchorDateMax = lac.anchorDateMax;
+    if (Array.isArray(lac.slotsToAnnounce)) {
+      compact.slotsToAnnounceCount = lac.slotsToAnnounce.length;
+      compact.slotsToAnnounce = lac.slotsToAnnounce.slice(0, 8).map((s) => ({
+        startDate: s.startDate,
+        date: s.date,
+        time: s.time
+      }));
+    }
     if (lac.selectedSlot && typeof lac.selectedSlot === 'object') {
       compact.selectedSlot = {
         rowIndex: lac.selectedSlot.rowIndex,

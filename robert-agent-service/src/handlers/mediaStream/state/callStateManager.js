@@ -350,6 +350,9 @@ export class CallStateManager {
    * This prevents concurrent response creation from multiple handlers
    */
   tryAcquireResponseLock() {
+    if (this.isClosed) {
+      return false;
+    }
     if (this.isResponding || this.activeResponseId !== null) {
       return false; // Already responding
     }

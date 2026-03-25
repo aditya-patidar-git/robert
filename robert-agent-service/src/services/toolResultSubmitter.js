@@ -7,6 +7,7 @@
 import promptService from './promptService.js';
 import { getFlowCopy } from './flowCopyByLanguage.js';
 import { conversations } from '../shared/state.js';
+import configManager from '../agent/configManager.js';
 import { AFTER_LOGIN_MESSAGE, AFTER_DETERMINE_WORKFLOW_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
 import sessionStateManager from './browser/sessionStateManager.js';
 import progressIndicatorService from './progressIndicatorService.js';
@@ -35,6 +36,68 @@ const CANCELLATION_TOOL_ORDER = [
   'cancellation_step_send_confirmation',
   'cancellation_step_voice_confirmation'
 ];
+
+/**
+ * Longer end-of-speech while collecting phone digits (pauses between digit groups) without changing user-facing prompts.
+ */
+function syncExtendTurnSilenceForDigits(callSid, toolName, toolResult, isSearchClientRequiredParamError) {
+  if (!conversations[callSid]) conversations[callSid] = {};
+  const c = conversations[callSid];
+
+  if (toolName === 'booking_step_search_client' && toolResult?.success) {
+    c.extendTurnSilenceForDigits = false;
+  }
+  if (toolName === 'booking_step_lookup_contact' && toolResult?.success && toolResult?.contactLookedUp !== false) {
+    c.extendTurnSilenceForDigits = false;
+  }
+  if (toolName === 'client_verification' && toolResult?.verified === true) {
+    c.extendTurnSilenceForDigits = false;
+  }
+
+  let extend = !!c.extendTurnSilenceForDigits;
+  if (toolName === 'client_verification' && Array.isArray(toolResult?.missingFields) && toolResult.missingFields.includes('telephoneNumber')) {
+    extend = true;
+  }
+  if (isSearchClientRequiredParamError) extend = true;
+  if (toolName === 'booking_step_lookup_contact' && toolResult && toolResult.success === false) {
+    const err = String(toolResult.error || '');
+    if (err.includes('requires mobile') || err.includes('None was available')) extend = true;
+    if (toolResult.lookupRetryEscalation?.nextLookupStrategy === 'mobile') extend = true;
+  }
+  c.extendTurnSilenceForDigits = extend;
+}
+
+function applyDigitCollectionTurnSilence(openaiWs, callSid) {
+  if (!openaiWs || openaiWs.readyState !== 1) return;
+  const extend = conversations[callSid]?.extendTurnSilenceForDigits === true;
+  const prev = conversations[callSid]?._lastAppliedDigitSilenceExtend;
+  if (prev === extend) return;
+  if (conversations[callSid]) conversations[callSid]._lastAppliedDigitSilenceExtend = extend;
+
+  const phone = conversations[callSid]?.phoneNumber;
+  const lang = conversations[callSid]?.language || 'en';
+  const config = configManager.getConfigForNumber(phone, lang);
+  const audioConfig = configManager.getAudioConfig();
+  const baseSilence = config.endPadding ?? 500;
+  const silenceMs = extend ? Math.max(baseSilence, 1100) : baseSilence;
+  const threshold = config.vadThreshold / 1000;
+  openaiWs.send(JSON.stringify({
+    type: 'session.update',
+    session: {
+      turn_detection: {
+        type: 'server_vad',
+        threshold,
+        prefix_padding_ms: config.startPadding ?? 300,
+        silence_duration_ms: silenceMs,
+        create_response: false,
+        interrupt_response: (audioConfig?.bargeInPolicy === 'stop')
+      }
+    }
+  }));
+  if (extend) {
+    console.log(`📏 [${callSid}] Turn detection: silence_duration_ms=${silenceMs} (digit/phone collection)`);
+  }
+}
 
 /** Booking step name (from stepConfiguration) → tool name. Used to recover from wrong/non-existent booking step by tallying correct next step. */
 const BOOKING_STEP_NAME_TO_TOOL = {
@@ -320,6 +383,11 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
     // Retry loop to acquire lock
     while (retryCount < MAX_RETRIES && !lockAcquired) {
+      if (this.stateManager?.isClosed) {
+        console.log(`ℹ️ [${callId}] triggerResponse aborted — call closed while waiting for response lock`);
+        return;
+      }
+
       if (this.stateManager && this.stateManager.tryAcquireResponseLock()) {
         lockAcquired = true;
         break;
@@ -339,6 +407,13 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       if (retryCount < MAX_RETRIES) {
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
       }
+    }
+
+    if (lockAcquired && this.stateManager?.isClosed) {
+      this.stateManager.releaseResponseLock();
+      this.stateManager.clearToolExecutionCompleting();
+      console.log(`ℹ️ [${callId}] triggerResponse aborted — call closed after acquiring response lock`);
+      return;
     }
 
     // Check if we successfully acquired the lock
@@ -394,13 +469,22 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           const wt = bookingSession.workflowType || workflowType;
           if (step === 1) workflowPhase = 'booking_availability';
           else if (step === 2) workflowPhase = 'booking_authentication';
-          else if (step === 4 || step === 5) workflowPhase = 'booking_existing_client';
+          else if (wt === 'existing' && (step === 4 || step === 5)) workflowPhase = 'booking_existing_client';
+          else if (wt === 'new' && (step === 4 || step === 5)) workflowPhase = 'booking_new_client';
           else if (step === 6 && wt === 'new') workflowPhase = 'booking_new_client';
           else if (step === 6 && wt === 'existing') workflowPhase = 'booking_existing_client';
-          else if (step === 7) workflowPhase = 'booking_options';
+          else if (step === 7 && wt === 'existing') workflowPhase = 'booking_options';
+          else if (step === 7 && wt === 'new') workflowPhase = 'booking_new_client';
           else if (step === 8 && wt === 'existing') workflowPhase = 'booking_lookup_contact';
-          else if (step >= 8 && step <= 9) workflowPhase = 'booking_payment';
-          else if (step >= 10) workflowPhase = 'booking_completion';
+          // Align with stepConfiguration + promptService: existing = payment at steps 9–10, completion from 11+;
+          // new = payment at step 8, completion from 9+ (send_confirmation onward).
+          else if (wt === 'new') {
+            if (step === 8) workflowPhase = 'booking_payment';
+            else if (step >= 9) workflowPhase = 'booking_completion';
+          } else {
+            if (step >= 9 && step <= 10) workflowPhase = 'booking_payment';
+            else if (step >= 11) workflowPhase = 'booking_completion';
+          }
         }
       }
 
@@ -412,6 +496,22 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       // Also keep payment phase when process_payment returned requiresTermsBeforeSend (success but not completed)
       if (options?.toolName === 'booking_step_process_payment' && options?.toolResult && options.toolResult.requiresTermsBeforeSend === true) {
         workflowPhase = 'booking_payment';
+      }
+      // Keep payment phase when send_payment_request failed or still needs caller confirmation / details
+      if (options?.toolName === 'booking_step_send_payment_request' && options?.toolResult) {
+        const tr = options.toolResult;
+        if (tr.success === false) {
+          workflowPhase = 'booking_payment';
+          console.log(`🎯 [${callId}] send_payment_request failed - keeping phase booking_payment for next response`);
+        } else if (
+          tr.requiresConfirmation === true ||
+          tr.requiresClientEmail === true ||
+          tr.requiresClientMobile === true ||
+          tr.requiresTermsBeforeSend === true
+        ) {
+          workflowPhase = 'booking_payment';
+          console.log(`🎯 [${callId}] send_payment_request awaiting caller/terms - keeping phase booking_payment for next response`);
+        }
       }
 
       const toolFlow = getFlowCopy(conversations[callSid]?.language || 'en');
@@ -629,16 +729,25 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
       if (toolName === 'booking_step_check_availability' && toolResult?.success === true) {
         const slotsFromTool = toolResult?.message ? ` Tool result message: "${toolResult.message}"` : '';
         const multi = toolResult?.requiresExplicitSlotChoice === true || (toolResult?.slotCount ?? 0) > 1;
+        const rev = toolResult?.availabilityCheckRevision;
+        const supersession =
+          rev != null && Number.isFinite(Number(rev))
+            ? `SUPERSESSION (revision ${rev}): Ignore every earlier booking_step_check_availability output in this conversation and any slot list you already read aloud. The ONLY valid slots are in THIS tool result (AVAILABILITY_REVISION ${rev}) after "Slots to present:". If you previously said different dates, times, or locations, do NOT repeat them—read ONLY this list verbatim.`
+            : `SUPERSESSION: Ignore every earlier booking_step_check_availability output in this conversation and any slot list you already read aloud. The ONLY valid slots are in THIS tool result after "Slots to present:". If you previously said different dates, times, or locations, do NOT repeat them—read ONLY this list verbatim.`;
         const slotRules = multi
           ? `MULTIPLE SLOTS (${toolResult?.slotCount ?? 'several'}): Do NOT call booking_step_authenticate until the caller has clearly chosen ONE slot that matches the list (e.g. they name date, time, location, or "the first/second"). Barge-in or interruption while you are reading the list is NOT confirmation—ask which slot they want, then call authenticate with agreedSlot set to THAT slot only (must match slotsToAnnounce/selectedSlot from the tool). Never default to selectedSlot if the caller intended a different listed slot.`
           : `SINGLE SLOT: When the caller confirms they want this slot (e.g. "yes", "okay go ahead", "proceed", "book that"), call booking_step_authenticate with agreedSlot matching the tool result slot.`;
-        const instruction = `CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool}
+        const instruction = `${supersession}
+
+CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool}
 
 ${slotRules}
 
+If the caller asks for different availability (other location, date, or a fresh search) after this, call booking_step_check_availability again with updated preferences—do not claim you can only use this single result or redirect them to the website for alternatives.
+
 booking_step_authenticate is CRM system login only—it does NOT mean asking the caller for their name or email. Do NOT ask for full name, email, or any contact details before calling it once the slot is agreed.`;
         responseInstructions = responseInstructions ? `${instruction}\n\n${responseInstructions}` : instruction;
-        console.log(`🎯 [${callId}] Check availability completed - slot choice explicit=${multi}; instructing verbatim slots then authenticate when agreed`);
+        console.log(`🎯 [${callId}] Check availability completed - slot choice explicit=${multi}; revision=${rev ?? 'n/a'}; instructing verbatim slots then authenticate when agreed`);
       }
 
       // Phase 1: After search_client finds a client with requiresVerification, agent MUST call client_verification (not search_client again), then after verified call booking_step_select_session
@@ -1145,7 +1254,21 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
       if (retryCount > 0) {
         console.log(`✅ [${callId}] Successfully acquired response lock after ${retryCount} retry attempt(s)`);
       }
+
+      syncExtendTurnSilenceForDigits(callSid, toolName, toolResult, isSearchClientRequiredParamError);
+
       console.log(`[RESPONSE-SOURCE] [${callId}] tool_completion`);
+
+      const wsReady = (w) => w && w.readyState === 1;
+      if (this.stateManager?.isClosed || !wsReady(openaiWs)) {
+        if (this.stateManager) {
+          this.stateManager.releaseResponseLock();
+          this.stateManager.clearToolExecutionCompleting();
+        }
+        console.log(`ℹ️ [${callId}] triggerResponse aborted before session.update — call closed or WebSocket not ready`);
+        return;
+      }
+
       // Step 1: Set tool_choice before creating response (force next tool when chaining, else disable)
       const toolChoiceForResponse = forceNextToolChoice
         ? { type: 'function', name: forceNextToolChoice }
@@ -1159,6 +1282,17 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
 
       // Small delay to ensure session update is processed
       await new Promise(resolve => setTimeout(resolve, 150));
+
+      if (this.stateManager?.isClosed || !wsReady(openaiWs)) {
+        if (this.stateManager) {
+          this.stateManager.releaseResponseLock();
+          this.stateManager.clearToolExecutionCompleting();
+        }
+        console.log(`ℹ️ [${callId}] triggerResponse aborted after session.update — call closed or WebSocket not ready`);
+        return;
+      }
+
+      applyDigitCollectionTurnSilence(openaiWs, callSid);
 
       // Track when selectBookingOptions completes successfully to delay periodic updates
       if (toolName === 'booking_step_select_booking_options' && toolResult?.success === true) {
@@ -1196,6 +1330,15 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
       // "Your booking options are successfully selected" is a non-waiting acknowledgment; register next response so response.done does not set waitingForUser
       if (toolName === 'booking_step_select_booking_options' && toolResult?.success === true) {
         progressIndicatorService.setExpectNonWaitingResponse(callSid);
+      }
+
+      if (this.stateManager?.isClosed || !wsReady(openaiWs)) {
+        if (this.stateManager) {
+          this.stateManager.releaseResponseLock();
+          this.stateManager.clearToolExecutionCompleting();
+        }
+        console.log(`ℹ️ [${callId}] triggerResponse aborted before response.create — call closed or WebSocket not ready`);
+        return;
       }
 
       openaiWs.send(JSON.stringify(responseCreatePayload));

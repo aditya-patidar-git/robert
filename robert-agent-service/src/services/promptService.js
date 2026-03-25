@@ -383,11 +383,15 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       if (currentStep !== null && currentStep !== undefined) {
         if (currentStep === 1) return 'booking_availability';
         if (currentStep === 2) return 'booking_authentication';
-        if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
+        if (workflowType === 'existing' && (currentStep === 4 || currentStep === 5)) return 'booking_existing_client';
+        if (workflowType === 'new' && (currentStep === 4 || currentStep === 5)) return 'booking_new_client';
         if (currentStep === 6 && workflowType === 'new') return 'booking_new_client';
         if (currentStep === 6 && workflowType === 'existing') return 'booking_existing_client';
-        if (currentStep === 7) return 'booking_options';
+        if (currentStep === 7 && workflowType === 'existing') return 'booking_options';
+        if (currentStep === 7 && workflowType === 'new') return 'booking_new_client';
         if (currentStep === 8 && workflowType === 'existing') return 'booking_lookup_contact';
+        if (workflowType === 'new' && currentStep === 8) return 'booking_payment';
+        if (workflowType === 'new' && currentStep >= 9) return 'booking_completion';
         if (currentStep >= 9 && currentStep <= 10) return 'booking_payment';
         if (currentStep >= 11) return 'booking_completion';
       }
@@ -401,10 +405,14 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       if (currentStep !== null && currentStep !== undefined) {
         if (currentStep === 1) return 'booking_availability';
         if (currentStep === 2) return 'booking_authentication';
-        if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
+        if (wt === 'existing' && (currentStep === 4 || currentStep === 5)) return 'booking_existing_client';
+        if (wt === 'new' && (currentStep === 4 || currentStep === 5)) return 'booking_new_client';
         if (currentStep === 6 && wt === 'new') return 'booking_new_client';
-        if (currentStep === 7) return 'booking_options';
+        if (currentStep === 7 && wt === 'existing') return 'booking_options';
+        if (currentStep === 7 && wt === 'new') return 'booking_new_client';
         if (currentStep === 8 && wt === 'existing') return 'booking_lookup_contact';
+        if (wt === 'new' && currentStep === 8) return 'booking_payment';
+        if (wt === 'new' && currentStep >= 9) return 'booking_completion';
         if (currentStep >= 9 && currentStep <= 10) return 'booking_payment';
         if (currentStep >= 11) return 'booking_completion';
       }
@@ -457,11 +465,15 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
           if (currentStep !== null && currentStep !== undefined) {
             if (currentStep === 1) return 'booking_availability';
             if (currentStep === 2) return 'booking_authentication';
-            if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
+            if (workflowType === 'existing' && (currentStep === 4 || currentStep === 5)) return 'booking_existing_client';
+            if (workflowType === 'new' && (currentStep === 4 || currentStep === 5)) return 'booking_new_client';
             if (currentStep === 6 && workflowType === 'new') return 'booking_new_client';
             if (currentStep === 6 && workflowType === 'existing') return 'booking_existing_client';
-            if (currentStep === 7) return 'booking_options';
+            if (currentStep === 7 && workflowType === 'existing') return 'booking_options';
+            if (currentStep === 7 && workflowType === 'new') return 'booking_new_client';
             if (currentStep === 8 && workflowType === 'existing') return 'booking_lookup_contact';
+            if (workflowType === 'new' && currentStep === 8) return 'booking_payment';
+            if (workflowType === 'new' && currentStep >= 9) return 'booking_completion';
             if (currentStep >= 9 && currentStep <= 10) return 'booking_payment';
             if (currentStep >= 11) return 'booking_completion';
           }
@@ -492,10 +504,14 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       if (currentStep !== null && currentStep !== undefined) {
         if (currentStep === 1) return 'booking_availability';
         if (currentStep === 2) return 'booking_authentication';
-        if (currentStep === 4 || currentStep === 5) return 'booking_existing_client';
+        if (bookingSession?.workflowType === 'existing' && (currentStep === 4 || currentStep === 5)) return 'booking_existing_client';
+        if (bookingSession?.workflowType === 'new' && (currentStep === 4 || currentStep === 5)) return 'booking_new_client';
         if (currentStep === 6 && bookingSession?.workflowType === 'new') return 'booking_new_client';
-        if (currentStep === 7) return 'booking_options';
+        if (currentStep === 7 && bookingSession?.workflowType === 'existing') return 'booking_options';
+        if (currentStep === 7 && bookingSession?.workflowType === 'new') return 'booking_new_client';
         if (currentStep === 8 && bookingSession?.workflowType === 'existing') return 'booking_lookup_contact';
+        if (bookingSession?.workflowType === 'new' && currentStep === 8) return 'booking_payment';
+        if (bookingSession?.workflowType === 'new' && currentStep >= 9) return 'booking_completion';
         if (currentStep >= 9 && currentStep <= 10) return 'booking_payment';
         if (currentStep >= 11) return 'booking_completion';
       }

@@ -490,6 +490,10 @@ class ToolExecutionService {
             console.log(`🧹 [${callSid || callId}] Cleared ${toolName} from activeToolExecutions before fallback execution`);
           }
         }
+
+        // End progress tracking for file_search so getExecutionInfo() clears before web_search fallback returns
+        // (otherwise mid-tool epistemic and tool re-enable stay blocked until call teardown).
+        progressIndicatorService.endToolExecution(callSid || callId);
         
         // Save unanswered question asynchronously (don't wait - low latency)
         // This captures the initial failure before fallback attempt
@@ -646,6 +650,8 @@ class ToolExecutionService {
               console.log(`🧹 [${callSid || callId}] Cleared ${toolName} from activeToolExecutions before fallback execution`);
             }
           }
+
+          progressIndicatorService.endToolExecution(callSid || callId);
           
           try {
             const query = webSearchResult.query || parameters.query || '';

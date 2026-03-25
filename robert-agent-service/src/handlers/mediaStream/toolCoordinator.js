@@ -60,7 +60,12 @@ export class ToolCoordinator {
       if (phase == null) {
         phase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? null;
         // If phase is wrong (booking_start) but we are in payment steps, use booking_payment so restore gives correct instructions
-        if (phase === 'booking_start' && (conv?.bookingSession?.currentStep === 9 || conv?.bookingSession?.currentStep === 10)) {
+        const cs = conv?.bookingSession?.currentStep;
+        const wt = conv?.bookingSession?.workflowType;
+        if (
+          phase === 'booking_start' &&
+          ((wt === 'existing' && (cs === 9 || cs === 10)) || (wt === 'new' && cs === 8))
+        ) {
           phase = 'booking_payment';
         }
       }
@@ -94,9 +99,13 @@ export class ToolCoordinator {
         if (context?.toolName === 'booking_step_process_payment' && context?.toolResult?.success === false && this.openaiIntegration) {
           this.openaiIntegration.setCurrentWorkflowPhase('booking_payment');
         }
-        // Keep payment phase when send_payment_request returns requiresConfirmation or requiresTermsBeforeSend so barge-in snapshot and next response get correct phase
+        // Keep payment phase when send_payment_request fails or awaits confirmation/terms so barge-in snapshot matches tool list
         if (context?.toolName === 'booking_step_send_payment_request' &&
-            (context?.toolResult?.requiresConfirmation === true || context?.toolResult?.requiresTermsBeforeSend === true) &&
+            (context?.toolResult?.success === false ||
+              context?.toolResult?.requiresConfirmation === true ||
+              context?.toolResult?.requiresTermsBeforeSend === true ||
+              context?.toolResult?.requiresClientEmail === true ||
+              context?.toolResult?.requiresClientMobile === true) &&
             this.openaiIntegration) {
           this.openaiIntegration.setCurrentWorkflowPhase('booking_payment');
         }
@@ -582,11 +591,14 @@ export class ToolCoordinator {
       // Step 4: Re-enable tools after delay (skip unconditional auto if browser step still running — toolResultSubmitter restores later)
       const callSidForReenable = this.state.callSid;
       const useConditionalReenable = midToolEpistemicMode === true && midToolEpistemicApplied === true;
+      const openaiWsRef = this.openaiWs;
+      const MID_TOOL_REENABLE_POLL_MS = 800;
+      const MID_TOOL_REENABLE_FORCE_MS = 20000;
       setTimeout(() => {
-        if (!this.openaiWs || this.openaiWs.readyState !== 1) return;
+        if (!openaiWsRef || openaiWsRef.readyState !== 1) return;
         if (useConditionalReenable) {
           if (!progressIndicatorService.getExecutionInfo(callSidForReenable)) {
-            this.openaiWs.send(JSON.stringify({
+            openaiWsRef.send(JSON.stringify({
               type: 'session.update',
               session: {
                 tool_choice: 'auto'
@@ -595,12 +607,37 @@ export class ToolCoordinator {
             console.log(`📤 [${callSidForReenable}] Re-enabled tool_choice auto after mid-tool epistemic (execution finished)`);
           } else {
             console.log(
-              `⏭️ [${callSidForReenable}] Skipped tool_choice auto re-enable — browser tool still active (toolResultSubmitter will restore)`
+              `⏭️ [${callSidForReenable}] Skipped tool_choice auto re-enable — browser tool still active (polling until clear or safety timeout)`
             );
+            let done = false;
+            let poll = null;
+            let forceTimer = null;
+            const finish = (reason) => {
+              if (done || !openaiWsRef || openaiWsRef.readyState !== 1) return;
+              done = true;
+              if (poll) clearInterval(poll);
+              if (forceTimer) clearTimeout(forceTimer);
+              openaiWsRef.send(JSON.stringify({
+                type: 'session.update',
+                session: { tool_choice: 'auto' }
+              }));
+              console.log(`📤 [${callSidForReenable}] Re-enabled tool_choice auto after mid-tool epistemic (${reason})`);
+            };
+            poll = setInterval(() => {
+              if (!openaiWsRef || openaiWsRef.readyState !== 1) {
+                if (poll) clearInterval(poll);
+                if (forceTimer) clearTimeout(forceTimer);
+                return;
+              }
+              if (!progressIndicatorService.getExecutionInfo(callSidForReenable)) {
+                finish('browser execution cleared');
+              }
+            }, MID_TOOL_REENABLE_POLL_MS);
+            forceTimer = setTimeout(() => finish('safety timeout while execution still marked active'), MID_TOOL_REENABLE_FORCE_MS);
           }
           return;
         }
-        this.openaiWs.send(JSON.stringify({
+        openaiWsRef.send(JSON.stringify({
           type: 'session.update',
           session: {
             tool_choice: 'auto'
