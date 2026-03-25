@@ -40,24 +40,37 @@ export class BargeInHandler {
     if (speechContinuation?.enabled && this.state.speechContinuationGraceTimer && this.state.speechStoppedTime > 0) {
       const timeSinceSpeechStopped = Date.now() - this.state.speechStoppedTime;
       const gracePeriodMs = speechContinuation.gracePeriodMs || 1500;
-      
+
       if (timeSinceSpeechStopped < gracePeriodMs) {
-        // Speech resumed during grace period
-        this.state.speechResumedDuringGrace = true;
-        this.state.gracePeriodExtensionCount++;
-        
-        // Cancel grace period timer
-        if (this.state.speechContinuationGraceTimer) {
-          clearTimeout(this.state.speechContinuationGraceTimer);
-          this.state.speechContinuationGraceTimer = null;
-        }
-        
-        const maxExtensions = speechContinuation.maxGracePeriodExtensions || 2;
-        if (this.state.gracePeriodExtensionCount <= maxExtensions) {
-          console.log(`🔄 [${this.state.callSid}] Speech resumed during grace period (extension ${this.state.gracePeriodExtensionCount}/${maxExtensions}, ${Math.round(timeSinceSpeechStopped)}ms after speech stopped) - continuing to listen`);
+        // If the model is still in an active response, the caller is interrupting agent TTS — not
+        // continuing their own pre-agent utterance. Speech continuation must not return early here
+        // or barge-in is skipped until grace expires (felt as multiple failed interrupts).
+        const agentMidResponse = this.state.isResponding === true || this.state.activeResponseId != null;
+        if (agentMidResponse) {
+          if (this.state.speechContinuationGraceTimer) {
+            clearTimeout(this.state.speechContinuationGraceTimer);
+            this.state.speechContinuationGraceTimer = null;
+          }
           this.state.speechStoppedTime = 0;
-          return; // Exit early, don't process as barge-in
+          this.state.speechResumedDuringGrace = false;
+          this.state.gracePeriodExtensionCount = 0;
+          console.log(`🎯 [${this.state.callSid}] Skipping speech-continuation grace (agent mid-response) — barge-in allowed`);
         } else {
+          // Speech resumed during grace period (same user turn; agent not in active OpenAI response)
+          this.state.speechResumedDuringGrace = true;
+          this.state.gracePeriodExtensionCount++;
+
+          if (this.state.speechContinuationGraceTimer) {
+            clearTimeout(this.state.speechContinuationGraceTimer);
+            this.state.speechContinuationGraceTimer = null;
+          }
+
+          const maxExtensions = speechContinuation.maxGracePeriodExtensions || 2;
+          if (this.state.gracePeriodExtensionCount <= maxExtensions) {
+            console.log(`🔄 [${this.state.callSid}] Speech resumed during grace period (extension ${this.state.gracePeriodExtensionCount}/${maxExtensions}, ${Math.round(timeSinceSpeechStopped)}ms after speech stopped) - continuing to listen`);
+            this.state.speechStoppedTime = 0;
+            return; // Exit early, don't process as barge-in
+          }
           console.log(`⚠️ [${this.state.callSid}] Max grace period extensions reached (${this.state.gracePeriodExtensionCount}) - processing transcriptions`);
           this.state.speechResumedDuringGrace = false;
           this.state.gracePeriodExtensionCount = 0;
@@ -85,6 +98,19 @@ export class BargeInHandler {
       const bargeInSuppressMs = conversationBehaviorConfig?.conversationFlow?.bargeInSuppressMs ?? 1000;
       if (bargeInSuppressMs > 0 && timeSinceResponseCreated < bargeInSuppressMs) {
         console.log(`🔇 [${this.state.callSid}] Barge-in suppressed (within ${bargeInSuppressMs}ms of response start, ${Math.round(timeSinceResponseCreated)}ms) - reduces speakerphone echo`);
+        return;
+      }
+
+      // Rapid repeated speech_started (noise) while TTS plays: cooldown so we still pause once but avoid flapping
+      const cooldownMs = conversationBehaviorConfig?.conversationFlow?.bargeInFullSequenceCooldownMs ?? 450;
+      let conv = conversations[this.state.callSid];
+      if (!conv) {
+        conversations[this.state.callSid] = {};
+        conv = conversations[this.state.callSid];
+      }
+      const lastFull = typeof conv.lastFullBargeInSequenceAt === 'number' ? conv.lastFullBargeInSequenceAt : 0;
+      if (cooldownMs > 0 && lastFull > 0 && Date.now() - lastFull < cooldownMs) {
+        console.log(`🔇 [${this.state.callSid}] Barge-in cooldown (${cooldownMs}ms) — skipping duplicate full sequence (${Date.now() - lastFull}ms since last)`);
         return;
       }
 
@@ -131,6 +157,13 @@ export class BargeInHandler {
       }
     }
     
+    let conv = conversations[this.state.callSid];
+    if (!conv) {
+      conversations[this.state.callSid] = {};
+      conv = conversations[this.state.callSid];
+    }
+    conv.lastFullBargeInSequenceAt = Date.now();
+
     console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered from ${source} - stopping audio IMMEDIATELY (<200ms target)`);
     console.log(`🔍 [TEST-2] [${this.state.callSid}] BARGE-IN DETECTION START - timestamp: ${bargeInDetectionTime}`);
     console.log(`🔍 [TEST-2] [${this.state.callSid}] Source: ${source}, isMultipleInterruption: ${isMultipleInterruption}`);

@@ -155,6 +155,13 @@ class UncertaintyGateService {
         const passage1 = passages[i];
         const passage2 = passages[j];
         
+        // Same source file can mention both sides of a contrast (e.g. pricing tiers); only flag cross-file clashes
+        const fid1 = passage1.fileId || passage1.file_id;
+        const fid2 = passage2.fileId || passage2.file_id;
+        if (fid1 && fid2 && fid1 === fid2) {
+          continue;
+        }
+
         // Check for contradictory keywords
         if (this.hasContradictoryKeywords(passage1.content, passage2.content)) {
           conflicts.push({

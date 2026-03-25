@@ -582,11 +582,14 @@ export class ToolCoordinator {
       // Step 4: Re-enable tools after delay (skip unconditional auto if browser step still running — toolResultSubmitter restores later)
       const callSidForReenable = this.state.callSid;
       const useConditionalReenable = midToolEpistemicMode === true && midToolEpistemicApplied === true;
+      const openaiWsRef = this.openaiWs;
+      const MID_TOOL_REENABLE_POLL_MS = 800;
+      const MID_TOOL_REENABLE_FORCE_MS = 20000;
       setTimeout(() => {
-        if (!this.openaiWs || this.openaiWs.readyState !== 1) return;
+        if (!openaiWsRef || openaiWsRef.readyState !== 1) return;
         if (useConditionalReenable) {
           if (!progressIndicatorService.getExecutionInfo(callSidForReenable)) {
-            this.openaiWs.send(JSON.stringify({
+            openaiWsRef.send(JSON.stringify({
               type: 'session.update',
               session: {
                 tool_choice: 'auto'
@@ -595,12 +598,37 @@ export class ToolCoordinator {
             console.log(`📤 [${callSidForReenable}] Re-enabled tool_choice auto after mid-tool epistemic (execution finished)`);
           } else {
             console.log(
-              `⏭️ [${callSidForReenable}] Skipped tool_choice auto re-enable — browser tool still active (toolResultSubmitter will restore)`
+              `⏭️ [${callSidForReenable}] Skipped tool_choice auto re-enable — browser tool still active (polling until clear or safety timeout)`
             );
+            let done = false;
+            let poll = null;
+            let forceTimer = null;
+            const finish = (reason) => {
+              if (done || !openaiWsRef || openaiWsRef.readyState !== 1) return;
+              done = true;
+              if (poll) clearInterval(poll);
+              if (forceTimer) clearTimeout(forceTimer);
+              openaiWsRef.send(JSON.stringify({
+                type: 'session.update',
+                session: { tool_choice: 'auto' }
+              }));
+              console.log(`📤 [${callSidForReenable}] Re-enabled tool_choice auto after mid-tool epistemic (${reason})`);
+            };
+            poll = setInterval(() => {
+              if (!openaiWsRef || openaiWsRef.readyState !== 1) {
+                if (poll) clearInterval(poll);
+                if (forceTimer) clearTimeout(forceTimer);
+                return;
+              }
+              if (!progressIndicatorService.getExecutionInfo(callSidForReenable)) {
+                finish('browser execution cleared');
+              }
+            }, MID_TOOL_REENABLE_POLL_MS);
+            forceTimer = setTimeout(() => finish('safety timeout while execution still marked active'), MID_TOOL_REENABLE_FORCE_MS);
           }
           return;
         }
-        this.openaiWs.send(JSON.stringify({
+        openaiWsRef.send(JSON.stringify({
           type: 'session.update',
           session: {
             tool_choice: 'auto'
