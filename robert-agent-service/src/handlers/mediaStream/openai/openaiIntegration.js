@@ -1010,9 +1010,11 @@ export class OpenAIIntegration {
    * Cleanup OpenAI connection
    */
   cleanup() {
-    if (this.state.isClosed) return;
+    // Idempotent: media stream sets state.isClosed before calling us; we must still close the Realtime WS.
+    if (this._openaiCleanupRan) return;
+    this._openaiCleanupRan = true;
     this.state.isClosed = true;
-    
+
     console.log(`🧹 Cleaning up OpenAI integration for call: ${this.state.callSid}`);
     
     // Cleanup connection manager (stops keep-alive, clears queue)

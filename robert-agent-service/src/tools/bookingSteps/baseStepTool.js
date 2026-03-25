@@ -12,6 +12,7 @@ import { BrowserManager } from '../../services/browser/browserManager.js';
 import configManager from '../../agent/configManager.js';
 import { conversations, updateConversation } from '../../shared/state.js';
 import { storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from '../../services/commonBookingSteps/slotStorageUtils.js';
+import { computeAnchorRangeFromSlots } from '../../services/commonBookingSteps/availabilityDateIntent.js';
 
 const bookingToolNameMap = {
   'checkAvailability': 'booking_step_check_availability',
@@ -322,13 +323,21 @@ export class BaseStepTool {
           if (!conversations[callSid]) {
             conversations[callSid] = {};
           }
+          const anchor = computeAnchorRangeFromSlots({
+            slotsToAnnounce: result.slotsToAnnounce,
+            selectedSlot: result.selectedSlot || result.sessionDetails,
+            allSlots: result.allSlots
+          });
           conversations[callSid].lastAvailabilityCheck = {
             allSlots: result.allSlots || null,
             selectedSlot: result.selectedSlot || result.sessionDetails || null,
             sessionDetails: result.sessionDetails || result.selectedSlot || null,
-            monthYear: result.monthYear || null
+            monthYear: result.monthYear || null,
+            slotsToAnnounce: result.slotsToAnnounce || null,
+            anchorDateMin: anchor.anchorDateMin,
+            anchorDateMax: anchor.anchorDateMax
           };
-          console.log(`✅ [${callSid}] Stored availability data in conversation.lastAvailabilityCheck (allSlots: ${result.allSlots?.length || 0}, selectedSlot: ${!!result.selectedSlot}, sessionDetails: ${!!result.sessionDetails})`);
+          console.log(`✅ [${callSid}] Stored availability data in conversation.lastAvailabilityCheck (allSlots: ${result.allSlots?.length || 0}, selectedSlot: ${!!result.selectedSlot}, sessionDetails: ${!!result.sessionDetails}, anchors: ${anchor.anchorDateMin}–${anchor.anchorDateMax})`);
         }
 
         // CRITICAL FIX: Store selected slot when user picks one (via agreedSlot/selectedSlot parameter)

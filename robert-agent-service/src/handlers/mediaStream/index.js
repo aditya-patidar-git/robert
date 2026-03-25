@@ -334,6 +334,11 @@ export const handleMediaStreamConnection = (ws, req) => {
             if (stateManager.isClosed) return;
             stateManager.isClosed = true;
             stateManager.accepting = false;
+
+            // Release response pipeline lock immediately so tool completion / periodic paths cannot stay stuck
+            // until the 5s watchdog (e.g. Twilio closed while holding lock or before response.created).
+            stateManager.forceReleaseResponseLock();
+            stateManager.clearToolExecutionCompleting();
             
             console.log(`🧹 Cleaning up call ${stateManager.callSid} - reason: ${reason}`);
 

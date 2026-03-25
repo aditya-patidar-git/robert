@@ -41,7 +41,8 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
           },
           preferredDate: {
             type: 'string',
-            description: 'Preferred date (optional, for slot matching/filtering)'
+            description:
+              'Preferred date or natural-language phrase (optional). Pass ISO dates (YYYY-MM-DD) or phrases such as "next week", "mid of this month", "Friday", "this Friday"—the backend resolves these in Europe/London before matching slots. Refinements after a prior availability result (e.g. "Friday instead") are resolved using conversation context when available.'
           },
           preferredTime: {
             type: 'string',

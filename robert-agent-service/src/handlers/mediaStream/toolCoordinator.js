@@ -60,7 +60,12 @@ export class ToolCoordinator {
       if (phase == null) {
         phase = this.openaiIntegration?.getCurrentWorkflowPhase?.() ?? null;
         // If phase is wrong (booking_start) but we are in payment steps, use booking_payment so restore gives correct instructions
-        if (phase === 'booking_start' && (conv?.bookingSession?.currentStep === 9 || conv?.bookingSession?.currentStep === 10)) {
+        const cs = conv?.bookingSession?.currentStep;
+        const wt = conv?.bookingSession?.workflowType;
+        if (
+          phase === 'booking_start' &&
+          ((wt === 'existing' && (cs === 9 || cs === 10)) || (wt === 'new' && cs === 8))
+        ) {
           phase = 'booking_payment';
         }
       }
@@ -94,9 +99,13 @@ export class ToolCoordinator {
         if (context?.toolName === 'booking_step_process_payment' && context?.toolResult?.success === false && this.openaiIntegration) {
           this.openaiIntegration.setCurrentWorkflowPhase('booking_payment');
         }
-        // Keep payment phase when send_payment_request returns requiresConfirmation or requiresTermsBeforeSend so barge-in snapshot and next response get correct phase
+        // Keep payment phase when send_payment_request fails or awaits confirmation/terms so barge-in snapshot matches tool list
         if (context?.toolName === 'booking_step_send_payment_request' &&
-            (context?.toolResult?.requiresConfirmation === true || context?.toolResult?.requiresTermsBeforeSend === true) &&
+            (context?.toolResult?.success === false ||
+              context?.toolResult?.requiresConfirmation === true ||
+              context?.toolResult?.requiresTermsBeforeSend === true ||
+              context?.toolResult?.requiresClientEmail === true ||
+              context?.toolResult?.requiresClientMobile === true) &&
             this.openaiIntegration) {
           this.openaiIntegration.setCurrentWorkflowPhase('booking_payment');
         }

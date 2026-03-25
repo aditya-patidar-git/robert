@@ -5,6 +5,7 @@
  */
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
+import { resolveAvailabilityDateIntent } from '../../../commonBookingSteps/availabilityDateIntent.js';
 import { conversations } from '../../../../shared/state.js';
 
 /**
@@ -19,19 +20,32 @@ import { conversations } from '../../../../shared/state.js';
 export async function executeCheckAvailability(page, args, sessionState, screenshotsDir, progressCallback = null) {
   // No progress/ack during availability check: prevents agent from speaking before tool returns and suggesting imaginary slots
   const courseType = args.courseType || sessionState?.courseType;
-  
-  // Use existing checkAvailabilityAndNoteDetails logic (pass null so no path-based messages during check)
+  const callSid = args.callSid;
+  const lastCheck = callSid && conversations[callSid]?.lastAvailabilityCheck
+    ? conversations[callSid].lastAvailabilityCheck
+    : null;
+
+  const dateIntent = resolveAvailabilityDateIntent({
+    preferredDate: args.preferredDate,
+    now: new Date(),
+    lastCheck
+  });
+
   const preferences = {
     preferredDate: args.preferredDate,
     preferredTime: args.preferredTime,
     location: args.location,
-    instructor: args.instructor
+    instructor: args.instructor,
+    _availabilityDateIntent: dateIntent
   };
-  
+  if (dateIntent.type === 'range' && dateIntent.startISO === dateIntent.endISO) {
+    preferences._preferredDateScanYMD = dateIntent.startISO;
+  }
+
   const result = await commonSteps.checkAvailabilityAndNoteDetails(
-    page, 
-    courseType, 
-    screenshotsDir, 
+    page,
+    courseType,
+    screenshotsDir,
     preferences,
     null
   );
@@ -60,7 +74,6 @@ export async function executeCheckAvailability(page, args, sessionState, screens
         ? formatSlot(result.selectedSlot)
         : 'No slots';
 
-  const callSid = args.callSid;
   let availabilityCheckRevision = 1;
   if (callSid) {
     if (!conversations[callSid]) conversations[callSid] = {};
@@ -69,6 +82,13 @@ export async function executeCheckAvailability(page, args, sessionState, screens
   }
 
   const revisionPreamble = `AVAILABILITY_REVISION ${availabilityCheckRevision} (AUTHORITATIVE for this call). Ignore every earlier booking_step_check_availability result and any slot list you already read aloud—only this revision counts. `;
+
+  const dateFilterNote =
+    dateIntent.type !== 'none' && result.dateFilterSummary
+      ? result.noSlotsInDateFilter
+        ? ` NO_SLOTS_IN_DATE_FILTER (${result.dateFilterSummary}). Say there are no sessions in that period; do not suggest slots outside that window.`
+        : ` DATE_FILTER: ${result.dateFilterSummary}.`
+      : '';
 
   return {
     success: true,
@@ -81,7 +101,8 @@ export async function executeCheckAvailability(page, args, sessionState, screens
     /** When true, agent must get caller to name a specific slot before authenticate (see toolResultSubmitter). */
     requiresExplicitSlotChoice,
     slotCount,
-    message: `${revisionPreamble}✅ STEP 1 COMPLETE. Present ONLY these slot(s) to the caller from this result—do not read out any other slots. Slots to present: ${slotsSummary}. Do not call booking_step_check_availability again in the same assistant turn with the same preferences (avoid duplicate runs). If the caller wants different dates, times, locations, instructor, or a fresh availability table after other topics, collect their updated preferences and call booking_step_check_availability again—then present only the new tool result (higher AVAILABILITY_REVISION).${requiresExplicitSlotChoice ? ' MULTIPLE SLOTS: ask which one they want (by date, time, or location) and only call booking_step_authenticate after they clearly choose one slot that matches the list.' : ' When the caller confirms this slot, call booking_step_authenticate with agreedSlot set to it—do not ask for name or email; Step 2 is CRM login only.'}`,
+    noSlotsInDateFilter: !!result.noSlotsInDateFilter,
+    message: `${revisionPreamble}✅ STEP 1 COMPLETE.${dateFilterNote} Present ONLY these slot(s) to the caller from this result—do not read out any other slots. Slots to present: ${slotsSummary}. Do not call booking_step_check_availability again in the same assistant turn with the same preferences (avoid duplicate runs). If the caller wants different dates, times, locations, instructor, or a fresh availability table after other topics, collect their updated preferences and call booking_step_check_availability again—then present only the new tool result (higher AVAILABILITY_REVISION).${requiresExplicitSlotChoice ? ' MULTIPLE SLOTS: ask which one they want (by date, time, or location) and only call booking_step_authenticate after they clearly choose one slot that matches the list.' : ' When the caller confirms this slot, call booking_step_authenticate with agreedSlot set to it—do not ask for name or email; Step 2 is CRM login only.'}`,
     allSlots: result.allSlots,
     selectedSlot: result.selectedSlot,
     slotsToAnnounce,

@@ -383,6 +383,11 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
 
     // Retry loop to acquire lock
     while (retryCount < MAX_RETRIES && !lockAcquired) {
+      if (this.stateManager?.isClosed) {
+        console.log(`ℹ️ [${callId}] triggerResponse aborted — call closed while waiting for response lock`);
+        return;
+      }
+
       if (this.stateManager && this.stateManager.tryAcquireResponseLock()) {
         lockAcquired = true;
         break;
@@ -402,6 +407,13 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       if (retryCount < MAX_RETRIES) {
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
       }
+    }
+
+    if (lockAcquired && this.stateManager?.isClosed) {
+      this.stateManager.releaseResponseLock();
+      this.stateManager.clearToolExecutionCompleting();
+      console.log(`ℹ️ [${callId}] triggerResponse aborted — call closed after acquiring response lock`);
+      return;
     }
 
     // Check if we successfully acquired the lock
@@ -457,13 +469,22 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
           const wt = bookingSession.workflowType || workflowType;
           if (step === 1) workflowPhase = 'booking_availability';
           else if (step === 2) workflowPhase = 'booking_authentication';
-          else if (step === 4 || step === 5) workflowPhase = 'booking_existing_client';
+          else if (wt === 'existing' && (step === 4 || step === 5)) workflowPhase = 'booking_existing_client';
+          else if (wt === 'new' && (step === 4 || step === 5)) workflowPhase = 'booking_new_client';
           else if (step === 6 && wt === 'new') workflowPhase = 'booking_new_client';
           else if (step === 6 && wt === 'existing') workflowPhase = 'booking_existing_client';
-          else if (step === 7) workflowPhase = 'booking_options';
+          else if (step === 7 && wt === 'existing') workflowPhase = 'booking_options';
+          else if (step === 7 && wt === 'new') workflowPhase = 'booking_new_client';
           else if (step === 8 && wt === 'existing') workflowPhase = 'booking_lookup_contact';
-          else if (step >= 8 && step <= 9) workflowPhase = 'booking_payment';
-          else if (step >= 10) workflowPhase = 'booking_completion';
+          // Align with stepConfiguration + promptService: existing = payment at steps 9–10, completion from 11+;
+          // new = payment at step 8, completion from 9+ (send_confirmation onward).
+          else if (wt === 'new') {
+            if (step === 8) workflowPhase = 'booking_payment';
+            else if (step >= 9) workflowPhase = 'booking_completion';
+          } else {
+            if (step >= 9 && step <= 10) workflowPhase = 'booking_payment';
+            else if (step >= 11) workflowPhase = 'booking_completion';
+          }
         }
       }
 
@@ -475,6 +496,22 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       // Also keep payment phase when process_payment returned requiresTermsBeforeSend (success but not completed)
       if (options?.toolName === 'booking_step_process_payment' && options?.toolResult && options.toolResult.requiresTermsBeforeSend === true) {
         workflowPhase = 'booking_payment';
+      }
+      // Keep payment phase when send_payment_request failed or still needs caller confirmation / details
+      if (options?.toolName === 'booking_step_send_payment_request' && options?.toolResult) {
+        const tr = options.toolResult;
+        if (tr.success === false) {
+          workflowPhase = 'booking_payment';
+          console.log(`🎯 [${callId}] send_payment_request failed - keeping phase booking_payment for next response`);
+        } else if (
+          tr.requiresConfirmation === true ||
+          tr.requiresClientEmail === true ||
+          tr.requiresClientMobile === true ||
+          tr.requiresTermsBeforeSend === true
+        ) {
+          workflowPhase = 'booking_payment';
+          console.log(`🎯 [${callId}] send_payment_request awaiting caller/terms - keeping phase booking_payment for next response`);
+        }
       }
 
       const toolFlow = getFlowCopy(conversations[callSid]?.language || 'en');
@@ -1221,6 +1258,17 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
       syncExtendTurnSilenceForDigits(callSid, toolName, toolResult, isSearchClientRequiredParamError);
 
       console.log(`[RESPONSE-SOURCE] [${callId}] tool_completion`);
+
+      const wsReady = (w) => w && w.readyState === 1;
+      if (this.stateManager?.isClosed || !wsReady(openaiWs)) {
+        if (this.stateManager) {
+          this.stateManager.releaseResponseLock();
+          this.stateManager.clearToolExecutionCompleting();
+        }
+        console.log(`ℹ️ [${callId}] triggerResponse aborted before session.update — call closed or WebSocket not ready`);
+        return;
+      }
+
       // Step 1: Set tool_choice before creating response (force next tool when chaining, else disable)
       const toolChoiceForResponse = forceNextToolChoice
         ? { type: 'function', name: forceNextToolChoice }
@@ -1234,6 +1282,15 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
 
       // Small delay to ensure session update is processed
       await new Promise(resolve => setTimeout(resolve, 150));
+
+      if (this.stateManager?.isClosed || !wsReady(openaiWs)) {
+        if (this.stateManager) {
+          this.stateManager.releaseResponseLock();
+          this.stateManager.clearToolExecutionCompleting();
+        }
+        console.log(`ℹ️ [${callId}] triggerResponse aborted after session.update — call closed or WebSocket not ready`);
+        return;
+      }
 
       applyDigitCollectionTurnSilence(openaiWs, callSid);
 
@@ -1273,6 +1330,15 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
       // "Your booking options are successfully selected" is a non-waiting acknowledgment; register next response so response.done does not set waitingForUser
       if (toolName === 'booking_step_select_booking_options' && toolResult?.success === true) {
         progressIndicatorService.setExpectNonWaitingResponse(callSid);
+      }
+
+      if (this.stateManager?.isClosed || !wsReady(openaiWs)) {
+        if (this.stateManager) {
+          this.stateManager.releaseResponseLock();
+          this.stateManager.clearToolExecutionCompleting();
+        }
+        console.log(`ℹ️ [${callId}] triggerResponse aborted before response.create — call closed or WebSocket not ready`);
+        return;
       }
 
       openaiWs.send(JSON.stringify(responseCreatePayload));

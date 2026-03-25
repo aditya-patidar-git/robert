@@ -6,41 +6,48 @@
   "main": "src/agent/index.js",
   "scripts": {
     "start:agent": "node src/agent/index.js",
-    "dev:agent": "nodemon src/agent/index.js"
+    "dev:agent": "nodemon src/agent/index.js",
+    "test": "node --test src/services/commonBookingSteps/availabilityDateIntent.test.js"
   },
-  "keywords": ["voice-agent", "twilio", "openai"],
+  "keywords": [
+    "voice-agent",
+    "twilio",
+    "openai"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "socket.io-client": "^4.8.1",
-    "openai": "^4.0.0",
-    "express": "^5.1.0",
-    "ws": "^8.18.0",
-    "twilio": "^5.10.0",
-    "mongoose": "^8.18.1",
-    "dotenv": "^17.2.2",
-    "cors": "^2.8.5",
-    "axios": "^1.7.7",
-    "google-auth-library": "^9.0.0",
-    "nodemailer": "^6.9.0",
-    "playwright": "^1.56.1",
-    "zod": "^3.22.0",
-    "node-cron": "^3.0.3",
-    "tiktoken": "^1.0.0",
     "@opentelemetry/api": "^1.7.0",
-    "@opentelemetry/sdk-node": "^0.48.0",
     "@opentelemetry/auto-instrumentations-node": "^0.48.0",
-    "@opentelemetry/instrumentation": "^0.48.0",
-    "@opentelemetry/instrumentation-http": "^0.48.0",
-    "@opentelemetry/instrumentation-express": "^0.48.0",
     "@opentelemetry/exporter-jaeger": "^1.20.1",
     "@opentelemetry/exporter-prometheus": "^0.48.0",
-    "@opentelemetry/sdk-metrics": "^1.20.0",
+    "@opentelemetry/instrumentation": "^0.48.0",
+    "@opentelemetry/instrumentation-express": "^0.48.0",
+    "@opentelemetry/instrumentation-http": "^0.48.0",
     "@opentelemetry/resources": "^1.20.1",
-    "@opentelemetry/semantic-conventions": "^1.20.1"
+    "@opentelemetry/sdk-metrics": "^1.20.0",
+    "@opentelemetry/sdk-node": "^0.48.0",
+    "@opentelemetry/semantic-conventions": "^1.20.1",
+    "axios": "^1.7.7",
+    "chrono-node": "^2.9.0",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "google-auth-library": "^9.0.0",
+    "mongoose": "^8.18.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.0",
+    "openai": "^4.0.0",
+    "playwright": "^1.56.1",
+    "socket.io-client": "^4.8.1",
+    "tiktoken": "^1.0.0",
+    "twilio": "^5.10.0",
+    "ws": "^8.18.0",
+    "zod": "^3.22.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.0"
   }
 }
-
