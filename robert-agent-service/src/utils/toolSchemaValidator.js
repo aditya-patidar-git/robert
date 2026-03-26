@@ -237,6 +237,8 @@ const bookingStepFillContactDetailsSchema = z.object({
 const bookingStepProcessPaymentSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
+  paymentSource: z.enum(['balance', 'payment_request']).optional(),
+  useAvailableBalance: z.boolean().optional(),
   termsAccepted: z.boolean().optional(), // Omit on first call to get termsText; pass true after caller accepts
   confirmed: z.boolean().optional(), // Optional confirmation flag (for future use if needed)
   paymentMethod: z.string().optional(),

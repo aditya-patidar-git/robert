@@ -368,6 +368,7 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       toolResult.requiresConfirmation === true ||
       toolResult.requiresPreferences === true ||
       toolResult.requiresTermsBeforeSend === true ||
+      toolResult.requiresBalanceDecision === true ||
       toolResult.requiresPaymentMethod === true ||
       (Array.isArray(toolResult.missingFields) && toolResult.missingFields.length > 0)
     );
@@ -605,6 +606,36 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
         console.log(`🎯 [${callId}] Step tool parameter/validation error - instructing to resolve and retry, not transfer`);
       }
 
+      // Targeted recovery: select_session without sessionDetails can loop forever.
+      // Route back to check_availability to reconstruct a concrete slot, then proceed.
+      const isSelectSessionMissingDetails =
+        toolName === 'booking_step_select_session' &&
+        toolResult?.success === false &&
+        /Session details are required to select a session/i.test(String(toolResult?.error || ''));
+      if (isSelectSessionMissingDetails) {
+        const session = sessionStateManager.getSession(callSid);
+        const reqCourseType = courseType || session?.courseType;
+        const wfType = workflowType || session?.workflowType || 'existing';
+        const prefs = sessionStateManager.getKnownPreferences(callSid) || {};
+        const args = {
+          courseType: reqCourseType,
+          workflowType: wfType
+        };
+        if (prefs.preferredDate) args.preferredDate = prefs.preferredDate;
+        if (prefs.preferredTime) args.preferredTime = prefs.preferredTime;
+        if (prefs.location) args.location = prefs.location;
+        if (prefs.instructor) args.instructor = prefs.instructor;
+
+        if (this.stateManager && reqCourseType) {
+          this.stateManager.pendingChainedToolCall = { toolName: 'booking_step_check_availability', args };
+        }
+        const recoveryInstruction = `CRITICAL: booking_step_select_session cannot proceed because slot/session details are missing. Do NOT call booking_step_select_session again now. In THIS response, briefly acknowledge and IMMEDIATELY call **booking_step_check_availability** (with courseType/workflowType and known preferences). Present the returned slots, get explicit slot agreement, then call **booking_step_authenticate** and continue the normal flow.`;
+        responseInstructions = responseInstructions
+          ? `${recoveryInstruction}\n\n${responseInstructions}`
+          : recoveryInstruction;
+        console.log(`🎯 [${callId}] select_session missing session details - routing recovery to booking_step_check_availability to avoid retry loop`);
+      }
+
       // Step execution failure (timeout or retriable): offer to retry or restart workflow
       const isStepExecutionFailure = toolName && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_')) &&
         toolResult && toolResult.success === false &&
@@ -648,14 +679,41 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
         (/(Unknown tool|Tool not found)/i.test(toolResult.details || '') || /(Unknown tool|Tool not found)/i.test(toolResult.error || ''));
       if (isUnknownCancellationTool && this.stateManager) {
         const session = sessionStateManager.getSession(callSid);
-        const currentStep = sessionStateManager.getCancellationCurrentStep(callSid) ?? 1; // 1-based
-        const nextIndex = Math.max(0, Math.min((currentStep - 1), CANCELLATION_TOOL_ORDER.length - 1));
-        const correctTool = CANCELLATION_TOOL_ORDER[nextIndex] || CANCELLATION_TOOL_ORDER[0];
+        // cancellationCurrentStep = last completed step number (1 = first step done, …). Next tool is CANCELLATION_TOOL_ORDER[lastCompleted] (0-based). Use 0 when unset so we offer step 1, not step 2.
+        const lastCompleted = sessionStateManager.getCancellationCurrentStep(callSid) ?? 0;
+        const nextIndex = Math.max(0, Math.min(lastCompleted, CANCELLATION_TOOL_ORDER.length - 1));
+        let correctTool = CANCELLATION_TOOL_ORDER[nextIndex] || CANCELLATION_TOOL_ORDER[0];
         const reqCourseType = courseType || session?.courseType;
         if (reqCourseType) {
-          const args = { courseType: reqCourseType, workflowType: 'existing' };
+          const hasClientDetails = !!conversations[callSid]?.clientDetails;
+          const clientVerified = conversations[callSid]?.clientVerified === true;
+          const verificationPending = hasClientDetails && !clientVerified && lastCompleted >= 5 && lastCompleted < 7;
+          const looksLikeCancellationVerifyAlias = typeof toolName === 'string' &&
+            toolName.startsWith('cancellation_step_') &&
+            /verify/i.test(toolName);
+          if (verificationPending || looksLikeCancellationVerifyAlias) {
+            correctTool = 'client_verification';
+          }
+
+          const lastCancelSearch = conversations[callSid]?.lastCancellationSearchClientArgs;
+          const lastLocate = conversations[callSid]?.lastCancellationLocateArgs;
+          const prefs = sessionStateManager.getKnownPreferences(callSid);
+          let args =
+            correctTool === 'cancellation_step_search_client' && lastCancelSearch && typeof lastCancelSearch === 'object'
+              ? { ...lastCancelSearch, courseType: reqCourseType, workflowType: 'existing' }
+              : { courseType: reqCourseType, workflowType: 'existing' };
+          if (correctTool === 'client_verification') {
+            // Let client_verification drive sequential prompts from stored clientDetails.
+            args = {};
+          }
+          if (correctTool === 'cancellation_step_locate_booking' && lastLocate && typeof lastLocate === 'object') {
+            args = { ...lastLocate, ...args, courseType: reqCourseType, workflowType: 'existing' };
+          }
           const bd = sessionStateManager.getBookingDetails(callSid) || session?.bookingDetails;
           if (bd?.courseDate) args.courseDate = bd.courseDate;
+          if (correctTool === 'cancellation_step_locate_booking' && (!args.courseDate || String(args.courseDate).trim() === '') && prefs?.courseDate) {
+            args.courseDate = prefs.courseDate;
+          }
           this.stateManager.pendingChainedToolCall = { toolName: correctTool, args };
           responseInstructions = (responseInstructions || '') + `\n\nCRITICAL: That tool does not exist. The correct next step is ${correctTool}. Call it with courseType "${reqCourseType}".`;
           console.log(`🎯 [${callId}] Unknown cancellation tool - pending recovery set to ${correctTool} (step ${nextIndex + 1})`);
@@ -689,12 +747,12 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
           console.log(`🎯 [${callId}] Client verification incomplete - instructing to ask for missing fields: ${toolResult.missingFields?.join(', ')}${toolResult.requiresImmediateContinuation ? ' (requires immediate continuation)' : ''}`);
         } else if (toolResult && toolResult.verified) {
           // Verification successful - agent must confirm and ask for explicit yes/no before proceeding
-          const nextStepTool = toolResult.nextStepTool || 'booking_step_select_session';
-
-          // Check if we're in a cancellation workflow
           const isCancellationWorkflow = (options?.toolName && options.toolName.startsWith('cancellation_step_')) ||
             conversations[callSid]?.workflowContext === 'cancellation' ||
             workflowPhase === 'cancellation' || workflowPhase === 'cancellation_verify' || workflowPhase === 'cancellation_confirm';
+
+          const nextStepTool = toolResult.nextStepTool
+            || (isCancellationWorkflow ? 'cancellation_step_select_client' : 'booking_step_select_session');
 
           // Use appropriate fallback message based on workflow type
           const fallbackMessage = isCancellationWorkflow
@@ -997,6 +1055,21 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         console.log(`🎯 [${callId}] process_payment requiresPaymentMethod - instructing to ask email/SMS question in this response, then call send_payment_request`);
       }
 
+      // process_payment returned requiresBalanceDecision: agent must ask caller whether to use balance or send payment link
+      if (toolName === 'booking_step_process_payment' && toolResult?.requiresBalanceDecision === true) {
+        const availableBalance = typeof toolResult?.availableBalance === 'number'
+          ? toolResult.availableBalance.toFixed(2)
+          : null;
+        const fallback = availableBalance
+          ? `CRITICAL: In THIS response ask exactly: "I can see an available balance of GBP ${availableBalance}. Would you like to use this balance, or should I send a payment link via email or SMS?" If caller says use balance, call **booking_step_process_payment** with courseType, workflowType, and useAvailableBalance: true. If caller says link/email/sms, call **booking_step_process_payment** with courseType, workflowType, and useAvailableBalance: false.`
+          : `CRITICAL: In THIS response ask exactly: "Would you like to use your available balance, or should I send a payment link via email or SMS?" If caller says use balance, call **booking_step_process_payment** with courseType, workflowType, and useAvailableBalance: true. If caller says link/email/sms, call **booking_step_process_payment** with courseType, workflowType, and useAvailableBalance: false.`;
+        const instruction = toolResult.instruction || fallback;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] process_payment requiresBalanceDecision - instructing to ask balance-or-link question in this response`);
+      }
+
       // send_payment_request returned requiresClientEmail: agent must ask caller for email, then call again with clientEmail
       if (toolName === 'booking_step_send_payment_request' && toolResult?.requiresClientEmail === true) {
         const instruction = toolResult.instruction || `CRITICAL: Ask the caller: "What email address should I send the payment link to?" When they give it, call **booking_step_send_payment_request** again with the same parameters (courseType, workflowType, deliveryMethod: "email", termsAcceptedBeforeSend as before) and **clientEmail** set to the address they said. Do not use a different tool.`;
@@ -1033,15 +1106,18 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         console.log(`🎯 [${callId}] send_sms requiresClientMobile - instructing to ask caller for mobile then call again with customerMobile`);
       }
 
-      // send_payment_request returned payment completed / booking finalized: run send_confirmation → send_terms → send_sms automatically via chained tools (no waiting for user)
-      const isBookingFinalized = toolName === 'booking_step_send_payment_request' && toolResult?.success === true &&
+      // Payment finalized (either via send_payment_request OR process_payment balance path):
+      // run send_confirmation → send_terms → send_sms automatically via chained tools (no waiting for user).
+      const isBookingFinalized =
+        (toolName === 'booking_step_send_payment_request' || toolName === 'booking_step_process_payment') &&
+        toolResult?.success === true &&
         (toolResult?.paymentCompleted === true || toolResult?.bookingFinalized === true);
       if (isBookingFinalized) {
         const instruction = `CRITICAL: Booking is finalized. Say ONLY a brief confirmation to the caller (e.g. "Your booking is complete. I'm sending your confirmation and details now."). Do NOT wait for the caller to respond. The system will automatically send the confirmation email, terms, and SMS. Do not call any tools in this response.`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
-        console.log(`🎯 [${callId}] send_payment_request booking finalized - setting chained tools: send_confirmation → send_terms → send_sms`);
+        console.log(`🎯 [${callId}] ${toolName} booking finalized - setting chained tools: send_confirmation → send_terms → send_sms`);
         if (callSid && this.stateManager && (courseType || sessionStateManager.getSession(callSid)?.courseType)) {
           const chainArgs = { courseType: courseType || sessionStateManager.getSession(callSid)?.courseType, workflowType: workflowType || sessionStateManager.getSession(callSid)?.workflowType || 'existing' };
           // Pass customerMobile for booking_step_send_sms when available (recipient email is from booking context for send_confirmation/send_terms)

@@ -15,7 +15,12 @@ import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from
  * @returns {Promise<Object>} Step execution result
  */
 export async function executeSelectClient(page, args, sessionState, screenshotsDir) {
-  const clientName = args.clientName || sessionState?.clientDetails?.name;
+  const clientName =
+    args.clientName ||
+    args.fullName ||
+    args.name ||
+    sessionState?.clientDetails?.name ||
+    sessionState?.clientDetails?.fullName;
   
   if (!clientName) {
     return {

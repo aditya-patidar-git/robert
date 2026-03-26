@@ -27,7 +27,32 @@ export class ConfirmCancellationStep extends CancellationBaseStepTool {
    */
   async execute(parameters, callContext = {}, progressCallback = null) {
     const callSid = callContext.callSid || 'unknown';
-    const { courseType, bookingDetails, cancellationFee, refundAmount, confirmed } = parameters;
+    let { courseType, bookingDetails, cancellationFee, refundAmount, confirmed } = parameters;
+
+    const sessionBooking = sessionStateManager.getBookingDetails(callSid);
+    if (
+      (!bookingDetails || typeof bookingDetails !== 'object' || Object.keys(bookingDetails).length === 0) &&
+      sessionBooking &&
+      typeof sessionBooking === 'object'
+    ) {
+      bookingDetails = sessionBooking;
+    }
+    if (cancellationFee === undefined || cancellationFee === null) {
+      const sessionFee = sessionStateManager.getCancellationFee(callSid);
+      if (sessionFee !== undefined && sessionFee !== null) {
+        cancellationFee = sessionFee;
+      }
+    }
+    if (refundAmount === undefined || refundAmount === null) {
+      const fromDetails = bookingDetails && typeof bookingDetails.refundAmount === 'number' ? bookingDetails.refundAmount : null;
+      if (fromDetails != null) {
+        refundAmount = fromDetails;
+      }
+    }
+    const sessionCourseType = sessionStateManager.getSession(callSid)?.courseType;
+    if (!courseType && sessionCourseType && sessionCourseType !== 'TBD') {
+      courseType = sessionCourseType;
+    }
 
     try {
       console.log(`🔧 [${this.getStepName()}] Executing voice step for ${callSid}`);

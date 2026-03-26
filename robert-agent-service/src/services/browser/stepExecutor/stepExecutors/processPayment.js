@@ -5,7 +5,8 @@
  */
 
 import { trackCRMBooking, buildBookingData } from '../../../bookingTrackingClient.js';
-import { waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
+import { CRM_STABILITY_DELAY_MS } from '../../../commonBookingSteps/utils.js';
+import { getTermsText, validateTermsAcceptance } from '../../../commonBookingSteps/termsUtils.js';
 
 /**
  * Execute processPayment step
@@ -20,6 +21,7 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
   progressCallback?.({ message: 'Opening the payment page.' });
   // Use the updated payment strategy: Select "Send a payment request" and use sendPaymentRequest
   const screenshots = [];
+  const requestedPaymentSource = normalizePaymentSource(args);
 
   // CRITICAL: If we're already on the payment request link page (e.g. after a prior call returned requiresPaymentMethod),
   // skip selectPaymentOption to avoid waiting for the dropdown in #eventNewBooking2_iframe (it's hidden on this page) and timeout/race.
@@ -46,6 +48,102 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
       page.waitForSelector('#eventNewBooking2_iframe', { state: 'attached', timeout: 10000 })
     ]).catch(() => {});
     console.log('✅ [PAYMENT] Payment page ready');
+
+    // Balance-first branch: if CRM shows positive available balance and caller has not chosen yet,
+    // ask whether to use balance or send a payment link.
+    const balanceInfo = await detectAvailableBalance(page);
+    if (
+      balanceInfo.hasAvailableBalance &&
+      requestedPaymentSource == null &&
+      args.deliveryMethod == null
+    ) {
+      return {
+        success: true,
+        paymentCompleted: false,
+        requiresBalanceDecision: true,
+        availableBalance: balanceInfo.availableBalance,
+        message: `An available balance of GBP ${balanceInfo.availableBalance.toFixed(2)} was found. Would you like to use this balance for payment, or should I send a payment link by email/SMS?`,
+        instruction: 'CRITICAL: Ask the caller in THIS response: "I can see an available balance of GBP ' + balanceInfo.availableBalance.toFixed(2) + '. Would you like to use this balance, or should I send a payment link via email or SMS?" If caller says use balance, call **booking_step_process_payment** again with useAvailableBalance: true (or paymentSource: "balance"). If caller says link/email/sms, call **booking_step_process_payment** again with useAvailableBalance: false (or paymentSource: "payment_request"), then follow normal email/SMS flow.'
+      };
+    }
+
+    // Caller chose to use available balance: select "No payment required" and finalize booking.
+    if (requestedPaymentSource === 'balance') {
+      progressCallback?.({ message: 'Applying available balance.' });
+      const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
+      const { acceptTermsAndMakeBooking } = await import('../../../commonBookingSteps/acceptTermsAndMakeBooking.js');
+      const termsAccepted = args.termsAccepted;
+
+      // Enforce explicit terms confirmation in the balance path too (same policy as payment-link flow).
+      const termsValidation = validateTermsAcceptance(termsAccepted);
+      if (termsValidation.requiresTermsBeforeSend) {
+        return {
+          success: true,
+          paymentCompleted: false,
+          requiresTermsBeforeSend: true,
+          termsText: getTermsText(),
+          message: 'Before I can proceed with completing the booking using your available balance, I must make you aware of the following terms and conditions.',
+          instruction: 'CRITICAL: Read the terms to the caller and ask "Do you agree with the statements that I have just made?" Wait for response. If yes, call booking_step_process_payment again with the same parameters plus useAvailableBalance: true and termsAccepted: true.'
+        };
+      }
+      if (termsValidation.termsNotAccepted) {
+        return {
+          success: false,
+          paymentCompleted: false,
+          termsNotAccepted: true,
+          requiresRetry: true,
+          paymentMethod: 'balance',
+          message: 'The client did not agree with the terms. Try to answer their questions. If they still do not agree, offer transfer to a human agent.',
+          instruction: 'Try to address the caller concerns. If they still do not agree, ask if they want to be transferred to a human agent. If yes, use transfer_call.'
+        };
+      }
+
+      // In many CRM states with available credit, no payment selection is required and "Make booking" is already available.
+      // Only attempt selecting "No payment required" when the payment dropdown is actually visible.
+      const paymentDropdownVisible = await isPaymentDropdownVisible(page);
+      if (paymentDropdownVisible) {
+        await selectPaymentOption(page, screenshotsDir, 'none', progressCallback, args.abortSignal);
+        screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-balance.png', screenshotsDir));
+        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+      } else {
+        console.log('ℹ️ [PAYMENT] Payment dropdown not visible in balance path - proceeding directly to booking confirmation');
+      }
+
+      const bookingResult = await acceptTermsAndMakeBooking(page, screenshotsDir, true, false);
+      if (!bookingResult.success) {
+        return {
+          success: false,
+          paymentCompleted: false,
+          paymentMethod: 'balance',
+          error: bookingResult.error || 'Failed to complete booking using available balance.'
+        };
+      }
+
+      try {
+        const bookingData = buildBookingData({
+          bookingArgs: args,
+          callContext: { callSid: args.callSid },
+          sessionDetails: sessionState?.sessionDetails || {},
+          paymentCompleted: true,
+          workflowType: sessionState?.workflowType || args.workflowType || 'new',
+          serviceType: args.courseType || sessionState?.courseType || 'ITM'
+        });
+        const trackingResult = await trackCRMBooking(bookingData);
+        if (!trackingResult.success) {
+          console.warn(`⚠️ [PAYMENT] Booking tracking failed (non-critical): ${trackingResult.error}`);
+        }
+      } catch (trackingError) {
+        console.warn(`⚠️ [PAYMENT] Booking tracking error (non-critical):`, trackingError.message);
+      }
+
+      return {
+        success: true,
+        paymentCompleted: true,
+        bookingFinalized: true,
+        paymentMethod: 'balance',
+        message: 'Booking completed using available balance.'
+      };
+    }
 
     // Step 1: Select "Send a payment request" option (updated strategy)
     progressCallback?.({ message: 'Selecting payment option.' });
@@ -199,4 +297,81 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     error: paymentResult.error,
     message: paymentResult.message
   };
+}
+
+function normalizePaymentSource(args) {
+  if (!args || typeof args !== 'object') return null;
+  if (args.useAvailableBalance === true) return 'balance';
+  if (args.useAvailableBalance === false) return 'payment_request';
+  if (typeof args.paymentSource === 'string') {
+    const value = args.paymentSource.trim().toLowerCase();
+    if (value === 'balance') return 'balance';
+    if (value === 'payment_request' || value === 'payment-link' || value === 'payment_link' || value === 'link') return 'payment_request';
+  }
+  return null;
+}
+
+async function isPaymentDropdownVisible(page) {
+  const contexts = [
+    page,
+    page.frameLocator('#eventNewBooking2_iframe')
+  ];
+  for (const ctx of contexts) {
+    try {
+      const dropdown = ctx.locator('[data-onchange="jqx_chgPayWhen"]').first();
+      if (await dropdown.count() > 0) {
+        const isVisible = await dropdown.isVisible().catch(() => false);
+        if (isVisible) return true;
+      }
+    } catch (_) {
+      // ignore and continue
+    }
+  }
+  return false;
+}
+
+async function detectAvailableBalance(page) {
+  const candidates = [
+    page,
+    page.frameLocator('#eventNewBooking2_iframe'),
+    page.frameLocator('#contactEdit_iframe')
+  ];
+  // Only treat explicit credit-like wording as available balance.
+  // Do NOT match generic "balance" because payment pages often show "balance due".
+  const positiveCreditRegex = /(?:available\s+balance|account\s+credit|credit\s+balance|credit\s+on\s+account|unapplied\s+credit|customer\s+credit|wallet\s+credit)/i;
+  const nonCreditBalanceRegex = /(?:balance\s+due|amount\s+due|to\s+pay|payable|grand\s+total|sub\s*total|total\s+due|cost\s+per\s+space)/i;
+  const amountRegex = /(£\s*-?\d+(?:\.\d{1,2})?)|(-?\d+(?:\.\d{1,2})?\s*£)/i;
+
+  for (const scope of candidates) {
+    try {
+      const body = scope.locator('body').first();
+      await body.waitFor({ state: 'attached', timeout: 1200 });
+      const text = await body.innerText({ timeout: 1200 });
+      if (!text || !positiveCreditRegex.test(text)) continue;
+
+      const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
+        if (!positiveCreditRegex.test(line)) continue;
+        if (nonCreditBalanceRegex.test(line)) continue;
+
+        // Amount may be on the same line or the next line in some CRM layouts.
+        const amountLineCandidates = [line, lines[i + 1] || ''];
+        for (const amountLine of amountLineCandidates) {
+          if (nonCreditBalanceRegex.test(amountLine)) continue;
+          const amountMatch = amountLine.match(amountRegex);
+          if (!amountMatch) continue;
+          const raw = (amountMatch[1] || amountMatch[2] || '').replace(/[^\d.-]/g, '');
+          const value = Number.parseFloat(raw);
+          if (Number.isFinite(value) && value > 0) {
+            return { hasAvailableBalance: true, availableBalance: value };
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore and continue; frame may not exist in current UI state.
+    }
+  }
+
+  return { hasAvailableBalance: false, availableBalance: 0 };
 }
