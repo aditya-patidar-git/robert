@@ -305,7 +305,10 @@ class ClientVerificationTool {
 
           const isBookingContext = !!conversation?.clientDetails;
           let nextStepTool = null;
-          if (isBookingContext && !isCancellationWorkflow) {
+          if (isCancellationWorkflow) {
+            // After CRM verification, prompt asks yes/no to proceed — next canonical step is select_client (then locate_booking), not confirm_cancellation.
+            nextStepTool = 'cancellation_step_select_client';
+          } else if (isBookingContext) {
             try {
               const currentStep = sessionStateManager.getCurrentStep(callSid);
               if (currentStep !== null && currentStep < 4) {
@@ -314,10 +317,9 @@ class ClientVerificationTool {
             } catch (error) {
               console.warn(`⚠️ [${callSid}] Could not check booking session state:`, error.message);
             }
-          }
-          
-          if (!nextStepTool && isBookingContext && !isCancellationWorkflow) {
-            nextStepTool = 'booking_step_select_session';
+            if (!nextStepTool) {
+              nextStepTool = 'booking_step_select_session';
+            }
           }
           
           const verificationMessage = isCancellationWorkflow

@@ -113,7 +113,7 @@ CRITICAL: agreedSlot must match the slot the caller selected from the check_avai
     {
       type: 'function',
       name: 'booking_step_search_client',
-      description: `Step 5 (Existing workflow only): Search for existing client in Contacts tab. This happens BEFORE client verification. Use this ONLY for existing client workflow after navigate_contacts. DO NOT confuse this with booking_step_lookup_contact (Step 8) which happens later in the booking form. Your FIRST question must be to ask for their mobile number (UK format: 07 and 11 digits). Do NOT ask for "phone number and email" or offer both options; ask only for mobile number first. When the caller gives a phone number, pass it as customerMobile (11 digits, UK format, no spaces). Only if the tool returns a retryPrompt (e.g. ask for email or full name) should you then ask for that and call again with customerEmail or customerName.`,
+      description: `Step 5 (Existing workflow only): Search for existing client in Contacts tab. This happens BEFORE client verification. Use this ONLY for existing client workflow after navigate_contacts. DO NOT confuse this with booking_step_lookup_contact (Step 8) which happens later in the booking form. Your FIRST question must be to ask for their mobile number (UK format: 07 and 11 digits). Do NOT ask for "phone number and email" or offer both options; ask only for mobile number first. When the caller gives a phone number, pass it as customerMobile (11 digits, UK format, no spaces). Prefer customerMobile, customerEmail, or customerName — do not use a generic contactInfo field alone without courseType and workflowType. Only if the tool returns a retryPrompt (e.g. ask for email or full name) should you then ask for that and call again with customerEmail or customerName.`,
       parameters: {
         type: 'object',
         properties: {
@@ -126,6 +126,10 @@ CRITICAL: agreedSlot must match the slot the caller selected from the check_avai
             type: 'string',
             enum: ['existing'],
             description: 'Must be "existing" for this step'
+          },
+          contactInfo: {
+            type: 'string',
+            description: 'Optional alias: mobile or email the caller just gave (digits/spaces ok for phone). Prefer customerMobile or customerEmail when possible; server maps this automatically.'
           },
           customerMobile: {
             type: 'string',
@@ -390,6 +394,15 @@ CRITICAL WORKFLOW:
             type: 'string',
             enum: ['payment_link', 'twilio_pay', 'phone_payment'],
             description: 'Payment method: "payment_link" (default, sends secure payment link via SMS/email) or "twilio_pay"/"phone_payment" (DTMF-based phone payment). If not provided, defaults to "payment_link".'
+          },
+          paymentSource: {
+            type: 'string',
+            enum: ['balance', 'payment_request'],
+            description: 'Optional payment source choice when available balance exists. Use "balance" to apply existing balance, or "payment_request" to continue with normal email/SMS payment link flow.'
+          },
+          useAvailableBalance: {
+            type: 'boolean',
+            description: 'Alias for paymentSource: true means use available balance, false means continue with payment request link.'
           },
           termsAccepted: {
             type: 'boolean',
@@ -911,7 +924,7 @@ Ask the caller: "Have you done training with us before?"
     {
       type: 'function',
       name: 'cancellation_step_search_client',
-      description: `Step 5: Search for client using smart search with fallback (mobile → email → name). Includes client verification. Reuses booking search logic. If email search fails, ask "Could you please tell me your full name?" and call again with customerName; name search uses first 3 letters of first name + space + first 3 of last name (or middle 3 if no match). WARNING: Never disclose any personal information from our clients found in the system to the caller (GDPR).`,
+      description: `Step 5: Search for client using smart search with fallback (mobile → email → name). Includes client verification. Reuses booking search logic. ALWAYS pass courseType and workflowType "existing" on every call (same as prior cancellation steps). When the caller gives a phone or email, pass customerMobile or customerEmail, or contactInfo as a single string — server maps contactInfo to mobile/email. If email search fails, ask "Could you please tell me your full name?" and call again with customerName; name search uses first 3 letters of first name + space + first 3 of last name (or middle 3 if no match). WARNING: Never disclose any personal information from our clients found in the system to the caller (GDPR).`,
       parameters: {
         type: 'object',
         properties: {
@@ -924,6 +937,10 @@ Ask the caller: "Have you done training with us before?"
             type: 'string',
             description: 'Workflow type (always "existing" for cancellation)',
             enum: ['existing']
+          },
+          contactInfo: {
+            type: 'string',
+            description: 'Optional alias: phone or email the caller just gave. Prefer customerMobile or customerEmail; server maps contactInfo automatically.'
           },
           customerMobile: {
             type: 'string',

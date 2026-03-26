@@ -101,18 +101,17 @@ class ComplaintDetectionService {
       return null;
     }
 
-    // Check last few user messages for complaints
-    const recentUserMessages = conversation.transcript
-      .filter(entry => entry.role === 'user')
-      .slice(-3)
-      .map(entry => entry.text)
-      .join(' ');
+    // Only classify complaint intent from the latest user utterance.
+    // Using multiple recent turns can leak prior complaint keywords into unrelated follow-up questions.
+    const lastUserMessage = [...conversation.transcript]
+      .reverse()
+      .find(entry => entry.role === 'user' && entry.text);
 
-    if (!recentUserMessages) {
+    if (!lastUserMessage?.text) {
       return null;
     }
 
-    return this.detectComplaintKeywords(recentUserMessages);
+    return this.detectComplaintKeywords(lastUserMessage.text);
   }
 
   /**

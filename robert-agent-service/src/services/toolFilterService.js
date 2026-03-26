@@ -10,10 +10,10 @@
  */
 
 /**
- * Tools merged into every workflow phase (file_search, web_search, complaint_submission).
- * Prompts constrain when to use them; booking/cancellation step tools still take priority for automation.
+ * Tools merged into every workflow phase.
+ * Keep this list tightly scoped to avoid broad internet-style Q&A in business flows.
  */
-const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'web_search', 'complaint_submission'];
+const ALWAYS_AVAILABLE_TOOLS = ['file_search', 'complaint_submission'];
 
 /** Phases where file_search/web_search are withheld (complaint_submission still merges via ALWAYS_AVAILABLE_TOOLS). */
 const SEARCH_TOOLS_DISABLED_PHASES = new Set(['booking_options']);
@@ -42,7 +42,6 @@ const TOOL_SETS = {
   // General inquiry handling - informational tools
   general_inquiry: [
     'file_search',
-    'web_search',
     'transfer_call',
     'start_workflow',
     'complaint_submission',

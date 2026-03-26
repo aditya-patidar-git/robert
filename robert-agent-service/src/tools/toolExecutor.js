@@ -9,6 +9,7 @@ import { recordToolMetrics } from '../services/metricsService.js';
 import ToolConfig from '../database/models/ToolConfig.js';
 import { setCancellationContext } from '../config/cancellationPhrases.js';
 import { conversations } from '../shared/state.js';
+import sessionStateManager from '../services/browser/sessionStateManager.js';
 
 const tracer = trace.getTracer('robert-agent-service', '1.0.0');
 
@@ -192,6 +193,108 @@ class ToolExecutor {
    * Normalize parameters for booking_step_select_booking_options when the model sent an alias
    * (e.g. selectedOptions.bikeType -> bikeType, and inject courseType/workflowType from session if missing).
    */
+  /**
+   * Model-invented names for identity verification in cancellation (canonical tool is client_verification).
+   */
+  _isCancellationClientVerificationAlias(toolName) {
+    if (!toolName || typeof toolName !== 'string') return false;
+    const n = toolName.trim().toLowerCase();
+    return (
+      n === 'cancellation_step_verify_client' ||
+      n === 'cancellation_step_verify_client_details' ||
+      n === 'cancellation_step_verify_details' ||
+      n === 'cancellation_step_verify_client_identity' ||
+      n === 'cancellation_step_verify_identity'
+    );
+  }
+
+  /**
+   * Model invents *confirm_cancellation*intent after post-verify "yes" or policy question; map to canonical tools.
+   */
+  _isCancellationConfirmIntentAlias(toolName) {
+    if (!toolName || typeof toolName !== 'string') return false;
+    const n = toolName.trim().toLowerCase();
+    if (n === 'cancellation_step_confirm_cancellation') return false;
+    return (
+      n === 'cancellation_step_confirm_cancellation_intent' ||
+      n === 'cancellation_step_confirm_cancel_intent' ||
+      (n.startsWith('cancellation_step_') && n.includes('intent') && n.includes('confirm') && n.includes('cancel'))
+    );
+  }
+
+  /**
+   * After locate_booking, session has bookingDetails — route to confirm_cancellation; otherwise post-verify → select_client.
+   */
+  _resolveCancellationConfirmIntentAlias(resolvedToolName, parameters, callSid) {
+    const bd = sessionStateManager.getBookingDetails(callSid);
+    const hasLocateData = bd && typeof bd === 'object' && bd.courseDate != null && String(bd.courseDate).trim() !== '';
+    const canonicalConfirm = 'cancellation_step_confirm_cancellation';
+    const canonicalSelect = 'cancellation_step_select_client';
+    let p = parameters && typeof parameters === 'object' ? { ...parameters } : {};
+    if (p.confirmCancellation === true && p.confirmed === undefined) p.confirmed = true;
+    if (p.confirmCancellation === false && p.confirmed === undefined) p.confirmed = false;
+    delete p.confirmCancellation;
+
+    if (hasLocateData && this.toolRegistry.has(canonicalConfirm)) {
+      const session = sessionStateManager.getSession(callSid);
+      const ct = p.courseType || session?.courseType;
+      if (ct && ct !== 'TBD') p.courseType = ct;
+      if (p.workflowType == null || p.workflowType === '') p.workflowType = 'existing';
+      p.bookingDetails = p.bookingDetails || bd;
+      const fee = sessionStateManager.getCancellationFee(callSid);
+      if (p.cancellationFee === undefined && fee != null) p.cancellationFee = fee;
+      console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "${resolvedToolName}" → ${canonicalConfirm} (booking details in session)`);
+      return { resolvedToolName: canonicalConfirm, parameters: p };
+    }
+    if (this.toolRegistry.has(canonicalSelect)) {
+      console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "${resolvedToolName}" → ${canonicalSelect} (pre-locate / post-verify)`);
+      return { resolvedToolName: canonicalSelect, parameters: p };
+    }
+    return null;
+  }
+
+  /**
+   * Map alias params to client_verification schema (fullName, postcode, telephoneNumber).
+   */
+  _normalizeClientVerificationAliasParams(parameters) {
+    if (!parameters || typeof parameters !== 'object') return parameters;
+    const out = { ...parameters };
+    if ((out.fullName == null || out.fullName === '') && out.customerName != null && out.customerName !== '') {
+      out.fullName = String(out.customerName).trim();
+    }
+    if ((out.fullName == null || out.fullName === '') && out.name != null && out.name !== '') {
+      out.fullName = String(out.name).trim();
+    }
+    delete out.customerName;
+    delete out.name;
+    if ((out.telephoneNumber == null || out.telephoneNumber === '') && out.phone_number != null && out.phone_number !== '') {
+      out.telephoneNumber = String(out.phone_number).trim();
+    }
+    if ((out.telephoneNumber == null || out.telephoneNumber === '') && out.phoneNumber != null && out.phoneNumber !== '') {
+      const raw = String(out.phoneNumber).trim();
+      if (raw) out.telephoneNumber = raw.replace(/\D/g, '') || raw;
+    }
+    if ((out.telephoneNumber == null || out.telephoneNumber === '') && out.phone != null && out.phone !== '') {
+      const raw = String(out.phone).trim();
+      if (raw) out.telephoneNumber = raw.replace(/\D/g, '') || raw;
+    }
+    if ((out.telephoneNumber == null || out.telephoneNumber === '') && out.mobile != null && out.mobile !== '') {
+      const raw = String(out.mobile).trim();
+      if (raw) out.telephoneNumber = raw.replace(/\D/g, '') || raw;
+    }
+    delete out.phone_number;
+    delete out.phoneNumber;
+    delete out.phone;
+    delete out.mobile;
+    if (out.telephoneNumber != null && out.telephoneNumber !== '') {
+      const digits = String(out.telephoneNumber).replace(/\D/g, '');
+      if (digits.length === 10 && digits.startsWith('7')) {
+        out.telephoneNumber = '0' + digits;
+      }
+    }
+    return out;
+  }
+
   _normalizeBookingOptionsParams(parameters, callSid) {
     if (!parameters || typeof parameters !== 'object') return parameters;
     const out = { ...parameters };
@@ -256,6 +359,20 @@ class ToolExecutor {
     if (normalized.end_date != null) {
       delete normalized.end_date;
     }
+    if (toolName === 'cancellation_step_locate_booking') {
+      if (normalized.courseDate == null || String(normalized.courseDate).trim() === '') {
+        if (normalized.preferredDate != null && String(normalized.preferredDate).trim() !== '') {
+          normalized.courseDate = normalized.preferredDate;
+          delete normalized.preferredDate;
+        } else if (normalized.date != null && String(normalized.date).trim() !== '') {
+          normalized.courseDate = normalized.date;
+          delete normalized.date;
+        } else if (normalized.course_date != null && String(normalized.course_date).trim() !== '') {
+          normalized.courseDate = normalized.course_date;
+          delete normalized.course_date;
+        }
+      }
+    }
     // booking_step_search_client / cancellation_step_search_client: model often sends phoneOrEmail
     if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
         normalized.phoneOrEmail != null && normalized.customerMobile == null) {
@@ -273,6 +390,17 @@ class ToolExecutor {
         normalized.customerMobile = contact.replace(/\D/g, '') || contact;
       }
       delete normalized.contact;
+    }
+    // Same tools: model often sends "contactInfo" (cancellation/general phrasing) — same handling as contact
+    if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
+        normalized.contactInfo != null && normalized.contactInfo !== '') {
+      const contact = String(normalized.contactInfo).trim();
+      if (contact.includes('@') && (normalized.customerEmail == null || normalized.customerEmail === '')) {
+        normalized.customerEmail = contact;
+      } else if (normalized.customerMobile == null || normalized.customerMobile === '') {
+        normalized.customerMobile = contact.replace(/\D/g, '') || contact;
+      }
+      delete normalized.contactInfo;
     }
     // Same tools: model sometimes sends "phoneNumber" instead of customerMobile
     if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
@@ -307,6 +435,22 @@ class ToolExecutor {
         normalized.customerMobile = normalized.mobile;
         delete normalized.mobile;
       }
+    }
+    // cancellation_step_select_client: model often sends fullName/name; schema expects clientName
+    if (toolName === 'cancellation_step_select_client') {
+      if (normalized.fullName != null && (normalized.clientName == null || normalized.clientName === '')) {
+        normalized.clientName = normalized.fullName;
+      }
+      if (normalized.name != null && (normalized.clientName == null || normalized.clientName === '')) {
+        normalized.clientName = normalized.name;
+      }
+      if (normalized.client_name != null && (normalized.clientName == null || normalized.clientName === '')) {
+        normalized.clientName = normalized.client_name;
+      }
+      if (normalized.clientName != null && normalized.clientName !== '') {
+        normalized.clientName = String(normalized.clientName).trim();
+      }
+      delete normalized.client_name;
     }
     // Normalize UK mobile: model/API may send number (e.g. 7223456789) so leading 0 is lost → prepend 0 for 10 digits starting with 7
     if ((toolName === 'booking_step_search_client' || toolName === 'cancellation_step_search_client') &&
@@ -418,6 +562,30 @@ class ToolExecutor {
         }
       }
 
+      // Alias resolution: cancellation — model invents cancellation_step_verify_* identity tools; canonical is client_verification
+      if (!this.toolRegistry.has(resolvedToolName) && this._isCancellationClientVerificationAlias(resolvedToolName)) {
+        if (this.toolRegistry.has('client_verification')) {
+          parameters = this._normalizeClientVerificationAliasParams(parameters);
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "${toolName}" → client_verification`);
+          resolvedToolName = 'client_verification';
+        }
+      }
+
+      // Alias resolution: cancellation — model invents *confirm*cancellation*intent; canonical select_client or confirm_cancellation
+      if (!this.toolRegistry.has(resolvedToolName) && this._isCancellationConfirmIntentAlias(resolvedToolName)) {
+        const remapped = this._resolveCancellationConfirmIntentAlias(resolvedToolName, parameters, callSid);
+        if (remapped) {
+          resolvedToolName = remapped.resolvedToolName;
+          parameters = remapped.parameters;
+        }
+      }
+
+      // Model invents cancellation_step_select_booking — canonical is cancellation_step_locate_booking
+      if (resolvedToolName === 'cancellation_step_select_booking' && this.toolRegistry.has('cancellation_step_locate_booking')) {
+        console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "${resolvedToolName}" → cancellation_step_locate_booking`);
+        resolvedToolName = 'cancellation_step_locate_booking';
+      }
+
       if (!this.toolRegistry.has(resolvedToolName)) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: `Tool not found: ${resolvedToolName}` });
         span.end();
@@ -448,6 +616,42 @@ class ToolExecutor {
         }
       }
 
+      // Cancellation steps: inject courseType/workflowType from session when missing (existing workflow only).
+      if (resolvedToolName.startsWith('cancellation_step_')) {
+        if (normalizedParams.workflowType == null || normalizedParams.workflowType === '') {
+          normalizedParams.workflowType = 'existing';
+        }
+        if (normalizedParams.courseType == null || normalizedParams.courseType === '') {
+          const sessionCourseType = conversations[callSid]?.bookingSession?.courseType;
+          if (sessionCourseType && sessionCourseType !== 'TBD') {
+            normalizedParams.courseType = sessionCourseType;
+          }
+        }
+      }
+      if (resolvedToolName === 'cancellation_step_search_client') {
+        const hasSearchKey = ['customerMobile', 'customerEmail', 'customerName'].some(
+          (k) => normalizedParams[k] != null && String(normalizedParams[k]).trim() !== ''
+        );
+        const lastSearch = conversations[callSid]?.lastCancellationSearchClientArgs;
+        if (!hasSearchKey && lastSearch && typeof lastSearch === 'object') {
+          normalizedParams = { ...lastSearch, ...normalizedParams };
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Merged lastCancellationSearchClientArgs into cancellation_step_search_client`);
+        }
+      }
+
+      if (resolvedToolName === 'cancellation_step_locate_booking') {
+        const prefs = sessionStateManager.getKnownPreferences(callSid);
+        const lastLocate = conversations[callSid]?.lastCancellationLocateArgs;
+        const needDate = normalizedParams.courseDate == null || String(normalizedParams.courseDate).trim() === '';
+        if (needDate && prefs?.courseDate && String(prefs.courseDate).trim() !== '') {
+          normalizedParams = { ...normalizedParams, courseDate: prefs.courseDate };
+        }
+        if ((normalizedParams.courseDate == null || String(normalizedParams.courseDate).trim() === '') && lastLocate?.courseDate) {
+          normalizedParams = { ...lastLocate, ...normalizedParams };
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Merged lastCancellationLocateArgs into cancellation_step_locate_booking`);
+        }
+      }
+
       // Strip null values from parameters to prevent Zod validation failures for optional fields
       // OpenAI often sends null for optional fields it decides not to populate.
       const cleanedParams = Object.fromEntries(
@@ -466,6 +670,27 @@ class ToolExecutor {
       // Use validated parameters
       const validatedParameters = validation.data;
       span.setAttribute('tool.parameters_validated', true);
+
+      if (resolvedToolName === 'cancellation_step_search_client') {
+        const v = validatedParameters;
+        if (v.customerMobile || v.customerEmail || v.customerName) {
+          if (!conversations[callSid]) conversations[callSid] = {};
+          conversations[callSid].lastCancellationSearchClientArgs = {
+            ...(v.customerMobile && { customerMobile: v.customerMobile }),
+            ...(v.customerEmail && { customerEmail: v.customerEmail }),
+            ...(v.customerName && { customerName: v.customerName })
+          };
+        }
+      }
+
+      if (resolvedToolName === 'cancellation_step_locate_booking' && validatedParameters.courseDate) {
+        if (!conversations[callSid]) conversations[callSid] = {};
+        conversations[callSid].lastCancellationLocateArgs = {
+          courseType: validatedParameters.courseType,
+          workflowType: validatedParameters.workflowType || 'existing',
+          courseDate: validatedParameters.courseDate
+        };
+      }
 
       // Get tool configuration from ConfigManager
       const toolConfig = this.configManager.getToolConfig(resolvedToolName);
