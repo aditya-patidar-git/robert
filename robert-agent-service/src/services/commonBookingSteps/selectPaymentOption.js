@@ -190,20 +190,36 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
       // Take screenshot after payment option selection
       await takeScreenshot(page, 'payment-option-selected.png', screenshotsDir);
       console.log('✅ [STEP 10] Payment option selected successfully');
+      return {
+        success: true,
+        paymentType,
+        selectedOption: targetOptionText
+      };
     } else {
       console.log(`⚠️ [STEP 10] No matching payment option found for "${targetOptionText}"`);
       console.log(`⚠️ [STEP 10] Available options were checked, but none matched. Continuing without payment selection...`);
       // Close dropdown if it's still open (press Escape)
       await page.keyboard.press('Escape');
       await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+      return {
+        success: false,
+        paymentType,
+        error: `Payment option "${targetOptionText}" was not found in dropdown options.`,
+        canRetry: true
+      };
     }
 
   } catch (error) {
     if (error?.name === 'AbortError') throw error;
     console.error('Error in selectPaymentOption:', error);
     await takeScreenshot(page, 'payment-selection-error.png', screenshotsDir);
-    // Don't throw error - allow workflow to continue even if payment selection fails
-    console.log('⚠️ [STEP 10] Payment selection failed, but continuing workflow...');
+    console.log('⚠️ [STEP 10] Payment selection failed.');
+    return {
+      success: false,
+      paymentType,
+      error: error.message || 'Payment selection failed.',
+      canRetry: true
+    };
   }
 }
 

@@ -1,6 +1,15 @@
 import { takeScreenshot, waitForThenOptionalDelay, CRM_STABILITY_DELAY_MS } from './utils.js';
 import { getTermsText, validateTermsAcceptance } from './termsUtils.js';
 
+export function buildPaymentRequestPageNotReadyResult() {
+  return {
+    success: false,
+    paymentCompleted: false,
+    canRetry: true,
+    error: 'Payment request page did not open after selecting "Send a payment request". Please retry.'
+  };
+}
+
 /**
  * Send Payment Request
  * Handles payment request modal/popup and polls for payment completion
@@ -134,7 +143,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     }
     
     // Fallback: If payment request iframe not found, check eventNewBooking2_iframe (booking page)
-    // BUT ONLY if we're sure we haven't transitioned yet
+    // BUT ONLY for diagnostics; do not continue on the wrong page.
     if (!paymentRequestIframeExists || !searchContext) {
       console.log('⚠️ [PAYMENT_REQUEST] Payment request iframe not found after 10 attempts');
       console.log('⚠️ [PAYMENT_REQUEST] This may indicate:');
@@ -155,9 +164,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
             const iframe = page.frameLocator('#eventNewBooking2_iframe');
             const testLocator = iframe.locator('body').first();
             await testLocator.waitFor({ state: 'attached', timeout: 2000 });
-            console.log('⚠️ [PAYMENT_REQUEST] Using eventNewBooking2_iframe as fallback (may be wrong page)');
-            console.log('⚠️ [PAYMENT_REQUEST] WARNING: We may still be on PaymentPage, not payment request link page');
-            searchContext = iframe;
+            console.log('⚠️ [PAYMENT_REQUEST] eventNewBooking2_iframe is present; still likely on PaymentPage');
             break;
           } catch (iframeError) {
             if (i < 2) await page.waitForTimeout(500);
@@ -168,10 +175,9 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
       }
     }
 
-    // Final fallback: Use main page
-    if (!searchContext) {
-      console.log('⚠️ [PAYMENT_REQUEST] No iframe found, using main page context');
-      searchContext = page;
+    if (!paymentRequestIframeExists || !searchContext) {
+      await takeScreenshot(page, 'payment-request-transition-failed.png', screenshotsDir);
+      return buildPaymentRequestPageNotReadyResult();
     }
     
     // FIX 4: Wait for payment request form to appear - check for multiple indicators
