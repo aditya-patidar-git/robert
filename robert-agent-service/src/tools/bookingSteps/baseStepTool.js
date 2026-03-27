@@ -335,7 +335,9 @@ export class BaseStepTool {
             monthYear: result.monthYear || null,
             slotsToAnnounce: result.slotsToAnnounce || null,
             anchorDateMin: anchor.anchorDateMin,
-            anchorDateMax: anchor.anchorDateMax
+            anchorDateMax: anchor.anchorDateMax,
+            requiresExplicitSlotChoice: result.requiresExplicitSlotChoice === true,
+            slotCount: result.slotCount ?? 0
           };
           console.log(`✅ [${callSid}] Stored availability data in conversation.lastAvailabilityCheck (allSlots: ${result.allSlots?.length || 0}, selectedSlot: ${!!result.selectedSlot}, sessionDetails: ${!!result.sessionDetails}, anchors: ${anchor.anchorDateMin}–${anchor.anchorDateMax})`);
         }

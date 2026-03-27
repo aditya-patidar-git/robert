@@ -22,7 +22,7 @@ export class BargeInHandler {
    * Handle speech_started event (user speaking detection)
    * INDUSTRY STANDARD: Trigger IMMEDIATE barge-in when audio is playing (<200ms response time)
    * Based on research: OpenAI emits speech_started immediately, transcription arrives 300-800ms later
-   * Best practice: Stop audio immediately on speech detection, verify "stop" command via transcription
+   * Best practice: Stop audio immediately on speech detection; completed transcripts drive reply (no keyword gate)
    */
   async handleSpeechStarted(event) {
     const conversationBehaviorConfig = configManager.getConversationBehaviorConfig();
@@ -81,8 +81,7 @@ export class BargeInHandler {
     
     // INDUSTRY STANDARD: Trigger IMMEDIATE barge-in when user speaks during agent response
     // This achieves <200ms interruptible latency (industry best practice)
-    // We'll verify "stop" command via transcription.delta/completed events
-    
+
     const isAudioPlaying = isAgentAudioPlaying(this.state);
 
     if (isAudioPlaying) {
@@ -117,12 +116,8 @@ export class BargeInHandler {
       console.log(`🛑 [${this.state.callSid}] IMMEDIATE Barge-in triggered on speech_started (industry standard: <200ms) - response ${this.state.activeResponseId || 'N/A'}`);
       console.log(`   - Time since response created: ${timeSinceResponseCreated}ms`);
       console.log(`   - Audio is playing: ${isAudioPlaying}`);
-      
-      // Trigger immediate barge-in (will verify "stop" command via transcription later)
+
       this.triggerImmediateBargeIn('speech_started');
-      
-      // Set flag to verify "stop" command when transcription arrives
-      this.state.pendingBargeInCheck = true;
       return;
     } else {
       // Normal user input - agent is waiting, not responding
@@ -134,7 +129,6 @@ export class BargeInHandler {
   /**
    * Trigger immediate barge-in (industry standard: <200ms response time)
    * Called when speech_started is detected during agent response
-   * Transcription verification happens separately via transcription.delta/completed events
    * @param {string} source - Source of barge-in trigger ('speech_started' or 'transcription')
    */
   triggerImmediateBargeIn(source = 'speech_started') {
@@ -237,8 +231,7 @@ export class BargeInHandler {
     this.state.isInterrupted = true;
     this.state.interruptionStartTime = bargeInDetectionTime;
     this.state.pendingTranscriptions = [];
-    this.state.pendingBargeInCheck = false; // Clear the pending check flag
-    
+
     // CRITICAL: Stop periodic updates and cancel queue-driven update timer when user interrupts
     progressIndicatorService.stopPeriodicUpdates(this.state.callSid);
     progressIndicatorService.onBargeIn(this.state.callSid);
@@ -307,15 +300,13 @@ export class BargeInHandler {
   }
 
   /**
-   * Trigger barge-in when "stop" is detected in transcription
-   * This is a fallback/verification method - immediate barge-in already triggered on speech_started
-   * Used to verify "stop" command and ensure audio is fully stopped
-   * @param {string} transcript - The transcription text that contains "stop"
+   * Fallback barge-in when speech_started was missed but user audio still overlaps agent playback.
+   * Primary path is always speech_started; this ensures Twilio clear + cancel when needed.
+   * @param {string} transcript - Transcription text (for logging only)
    */
   triggerBargeInFromTranscription(transcript) {
-    // If barge-in already triggered on speech_started, just verify and ensure cleanup
     if (this.state.isInterrupted) {
-      console.log(`✅ [${this.state.callSid}] Barge-in already triggered on speech_started - transcription confirms: "${transcript}"`);
+      console.log(`✅ [${this.state.callSid}] Barge-in already triggered on speech_started - transcription overlap: "${transcript}"`);
       // Ensure audio is stopped (may have been missed)
       if (this.responseHandler) {
         this.responseHandler.immediatelyStopAudio();

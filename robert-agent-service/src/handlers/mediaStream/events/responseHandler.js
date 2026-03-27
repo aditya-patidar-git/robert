@@ -509,6 +509,10 @@ export class ResponseHandler {
     console.log(`   - Buffer clear: ${bufferSize > 0 ? 'cleared ' + bufferSize + ' bytes' : 'no buffer'}`);
     console.log(`   - Twilio clear message: ${wsExists && wsIsOpen && streamSidExists && callIsOpen ? 'sent' : 'skipped'}`);
 
+    // Barge-in hard stop: clear post-TTS tail so isAgentAudioPlaying() does not stay true after Twilio clear
+    this.state.bargeInTailUntil = 0;
+    this.state.agentFinishedSpeakingTime = Date.now();
+
     // Track barge-in response time for metrics
     if (this.state.interruptionStartTime > 0) {
       const bargeInResponseTime = Date.now() - this.state.interruptionStartTime;

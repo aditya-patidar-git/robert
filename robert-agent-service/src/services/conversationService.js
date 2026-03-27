@@ -198,6 +198,20 @@ export class ConversationService {
     if (!hasInitialGreetingBeenSent) {
       return { toolChoice: 'none', workflowPhase: 'greeting' };
     }
+    if (state?.forceToolChoiceNoneOnce === true) {
+      state.forceToolChoiceNoneOnce = false;
+      const fs = getConversationFlowState(callSid, state);
+      const inWorkflow = !!(conversation?.bookingSession || conversation?.workflowContext);
+      let workflowPhase;
+      if (fs.waitingForLanguage && !fs.languageSelected) {
+        workflowPhase = 'language_selection';
+      } else if (inWorkflow && overrideWorkflowPhase !== undefined && overrideWorkflowPhase !== null) {
+        workflowPhase = overrideWorkflowPhase;
+      } else {
+        workflowPhase = await this.promptService.determineWorkflowPhase(state, callSid);
+      }
+      return { toolChoice: 'none', workflowPhase };
+    }
     const result = await this.getResponseInstructions({
       callSid,
       state,
@@ -434,6 +448,12 @@ export class ConversationService {
     if (midToolEpistemicMode === true) {
       const suffix = this.buildMidToolEpistemicInstructionSuffix(browserToolExecution?.toolName);
       instructions = instructions ? `${instructions}\n\n${suffix}` : suffix;
+    }
+
+    if (state?.pendingInterruptionInstructionSuffix) {
+      const extra = state.pendingInterruptionInstructionSuffix;
+      state.pendingInterruptionInstructionSuffix = null;
+      instructions = instructions ? `${extra}\n\n${instructions}` : extra;
     }
 
     return { instructions: withOneShot(instructions), isInitialGreeting: false };

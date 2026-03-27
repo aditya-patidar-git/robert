@@ -78,11 +78,14 @@ class NoiseFilterService {
    * @param {string} transcript - Transcription text
    * @param {number} confidence - Confidence score (0-1)
    * @param {string} itemId - Optional item ID for tracking
+   * @param {{ postBargeInGrace?: boolean }} [options] - postBargeInGrace: relax min length briefly after barge-in
    * @returns {object} - Quality assessment result
    */
-  assessTranscriptionQuality(transcript, confidence, itemId = null) {
+  assessTranscriptionQuality(transcript, confidence, itemId = null, options = {}) {
     // Get thresholds from config (or use defaults)
     const thresholds = this.getThresholds();
+    const minLen =
+      options.postBargeInGrace === true ? 1 : thresholds.minTranscriptLength;
     
     // If noise filtering is disabled, accept all transcriptions
     if (!thresholds.enabled) {
@@ -108,7 +111,7 @@ class NoiseFilterService {
     const passesConfidence = confidenceScore >= thresholds.minConfidence;
     
     const length = trimmed.length;
-    const passesLength = length >= thresholds.minTranscriptLength || this.isConfirmationWord(trimmed);
+    const passesLength = length >= minLen || this.isConfirmationWord(trimmed);
     
     // Factor 3: Pattern-based noise detection (30% weight)
     const isNoisePattern = this.NOISE_PATTERNS.some(pattern => pattern.test(trimmed));
@@ -167,9 +170,13 @@ class NoiseFilterService {
    * Check if transcription should trigger response loop prevention
    * @param {string} transcript - Transcription text
    * @param {number} timeSinceLastResponse - Milliseconds since last agent response
+   * @param {{ postBargeInGrace?: boolean }} [options]
    * @returns {boolean} - True if should prevent response loop
    */
-  shouldPreventResponseLoop(transcript, timeSinceLastResponse) {
+  shouldPreventResponseLoop(transcript, timeSinceLastResponse, options = {}) {
+    if (options.postBargeInGrace === true) {
+      return false;
+    }
     const trimmed = (transcript || '').trim();
     const isRecentResponse = timeSinceLastResponse < 2000; // Within 2 seconds
     
