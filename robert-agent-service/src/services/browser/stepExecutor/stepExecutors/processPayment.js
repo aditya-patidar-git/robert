@@ -42,12 +42,21 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
   if (!onPaymentRequestPage) {
     progressCallback?.({ message: 'Loading the payment page.' });
     console.log('🔍 [PAYMENT] Waiting for payment page...');
-    await Promise.race([
-      page.waitForSelector('text=/Confirm and Pay/i', { timeout: 10000 }),
-      page.waitForSelector('text=/4\\. Pay/i', { timeout: 10000 }),
-      page.waitForSelector('#eventNewBooking2_iframe', { state: 'attached', timeout: 10000 })
-    ]).catch(() => {});
-    console.log('✅ [PAYMENT] Payment page ready');
+    let paymentPageIndicator = null;
+    try {
+      paymentPageIndicator = await Promise.race([
+        page.waitForSelector('text=/Confirm and Pay/i', { timeout: 10000 }).then(() => 'Confirm and Pay text'),
+        page.waitForSelector('text=/4\\. Pay/i', { timeout: 10000 }).then(() => '4. Pay text'),
+        page.waitForSelector('#eventNewBooking2_iframe', { state: 'attached', timeout: 10000 }).then(() => 'eventNewBooking2_iframe')
+      ]);
+    } catch (_) {
+      // All selectors timed out
+    }
+    if (paymentPageIndicator) {
+      console.log(`✅ [PAYMENT] Payment page ready (matched: ${paymentPageIndicator})`);
+    } else {
+      console.warn('⚠️ [PAYMENT] No payment page indicator found within 10s — proceeding cautiously');
+    }
 
     // Balance-first branch: if CRM shows positive available balance and caller has not chosen yet,
     // ask whether to use balance or send a payment link.
@@ -102,7 +111,16 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
       // Only attempt selecting "No payment required" when the payment dropdown is actually visible.
       const paymentDropdownVisible = await isPaymentDropdownVisible(page);
       if (paymentDropdownVisible) {
-        await selectPaymentOption(page, screenshotsDir, 'none', progressCallback, args.abortSignal);
+        const selectionResult = await selectPaymentOption(page, screenshotsDir, 'none', progressCallback, args.abortSignal);
+        if (!selectionResult?.success) {
+          return {
+            success: false,
+            paymentCompleted: false,
+            paymentMethod: 'balance',
+            canRetry: true,
+            error: selectionResult?.error || 'Unable to select "No payment required" on the payment page.'
+          };
+        }
         screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-balance.png', screenshotsDir));
         await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
       } else {
@@ -148,7 +166,30 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     // Step 1: Select "Send a payment request" option (updated strategy)
     progressCallback?.({ message: 'Selecting payment option.' });
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
-    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
+    const requestSelectionResult = await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
+    if (!requestSelectionResult?.success) {
+      // Fallback: if payment dropdown was not found, the CRM may have already satisfied
+      // payment via credit/balance and is showing "Make booking" directly.
+      const makeBookingVisible = await isMakeBookingButtonVisible(page);
+      if (makeBookingVisible) {
+        console.log('ℹ️ [PAYMENT] Payment dropdown not available but "Make booking" button is visible — CRM likely pre-satisfied payment via balance');
+        return {
+          success: true,
+          paymentCompleted: false,
+          requiresBalanceDecision: true,
+          availableBalance: 0,
+          makeBookingReady: true,
+          message: 'The payment appears to already be covered (possibly by an existing balance). Would you like to proceed with completing the booking, or should I send a payment link instead?',
+          instruction: 'CRITICAL: Ask the caller: "It looks like the payment may already be covered. Would you like me to complete the booking, or would you prefer a payment link via email or SMS?" If they say complete/proceed/yes, call **booking_step_process_payment** with useAvailableBalance: true and termsAccepted: true. If they want a link, call **booking_step_process_payment** with useAvailableBalance: false.'
+        };
+      }
+      return {
+        success: false,
+        paymentCompleted: false,
+        canRetry: true,
+        error: requestSelectionResult?.error || 'Unable to select "Send a payment request".'
+      };
+    }
     screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', screenshotsDir));
 
     console.log('🔍 [PAYMENT] Waiting for payment request link page...');
@@ -160,7 +201,13 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
       progressCallback?.({ message: 'Opening the payment request form.' });
       onPaymentRequestPage = true;
     } catch (e) {
-      console.warn('⚠️ [PAYMENT] Payment request page not ready - sendPaymentRequest will detect page');
+      console.warn('⚠️ [PAYMENT] Payment request page not ready after selection - returning retriable error');
+      return {
+        success: false,
+        paymentCompleted: false,
+        canRetry: true,
+        error: 'Payment request page did not load after selecting "Send a payment request".'
+      };
     }
     await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
   }
@@ -311,6 +358,26 @@ function normalizePaymentSource(args) {
   return null;
 }
 
+async function isMakeBookingButtonVisible(page) {
+  const selectors = [
+    '#diaryNewCourseBookingWiz_OKBtn',
+    '[aria-label="Make booking"]',
+    '[role="button"]:has-text("Make booking")'
+  ];
+  const contexts = [page, page.frameLocator('#eventNewBooking2_iframe')];
+  for (const ctx of contexts) {
+    for (const sel of selectors) {
+      try {
+        const btn = ctx.locator(sel).first();
+        if (await btn.count() > 0 && await btn.isVisible().catch(() => false)) {
+          return true;
+        }
+      } catch (_) { /* ignore */ }
+    }
+  }
+  return false;
+}
+
 async function isPaymentDropdownVisible(page) {
   const contexts = [
     page,
@@ -330,48 +397,70 @@ async function isPaymentDropdownVisible(page) {
   return false;
 }
 
+export function extractAvailableBalanceFromText(text) {
+  if (!text || typeof text !== 'string') {
+    return { hasAvailableBalance: false, availableBalance: 0, evidenceLine: null };
+  }
+
+  // Only treat explicit credit-like wording as available balance.
+  // Do NOT match generic "balance" because payment pages often show "balance due".
+  const positiveCreditRegex = /(?:available\s+balance|account\s+credit|credit\s+balance|credit\s+on\s+account|unapplied\s+credit|customer\s+credit|wallet\s+credit|credit\s+available|available\s+credit|overpayment\s+credit|on\s+account\s+credit)/i;
+  const nonCreditBalanceRegex = /(?:balance\s+due|amount\s+due|to\s+pay|payable|grand\s+total|sub\s*total|total\s+due|cost\s+per\s+space)/i;
+  const amountRegex = /(£\s*-?\d+(?:\.\d{1,2})?)|(-?\d+(?:\.\d{1,2})?\s*£)/i;
+
+  if (!positiveCreditRegex.test(text)) {
+    return { hasAvailableBalance: false, availableBalance: 0, evidenceLine: null };
+  }
+
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!positiveCreditRegex.test(line)) continue;
+    if (nonCreditBalanceRegex.test(line)) continue;
+
+    const amountLineCandidates = [line, lines[i + 1] || ''];
+    for (const amountLine of amountLineCandidates) {
+      if (nonCreditBalanceRegex.test(amountLine)) continue;
+      const amountMatch = amountLine.match(amountRegex);
+      if (!amountMatch) continue;
+      const raw = (amountMatch[1] || amountMatch[2] || '').replace(/[^\d.-]/g, '');
+      const value = Number.parseFloat(raw);
+      if (Number.isFinite(value) && value > 0) {
+        return { hasAvailableBalance: true, availableBalance: value, evidenceLine: line };
+      }
+    }
+  }
+
+  return { hasAvailableBalance: false, availableBalance: 0, evidenceLine: null };
+}
+
 async function detectAvailableBalance(page) {
   const candidates = [
     page,
     page.frameLocator('#eventNewBooking2_iframe'),
     page.frameLocator('#contactEdit_iframe')
   ];
-  // Only treat explicit credit-like wording as available balance.
-  // Do NOT match generic "balance" because payment pages often show "balance due".
-  const positiveCreditRegex = /(?:available\s+balance|account\s+credit|credit\s+balance|credit\s+on\s+account|unapplied\s+credit|customer\s+credit|wallet\s+credit)/i;
-  const nonCreditBalanceRegex = /(?:balance\s+due|amount\s+due|to\s+pay|payable|grand\s+total|sub\s*total|total\s+due|cost\s+per\s+space)/i;
-  const amountRegex = /(£\s*-?\d+(?:\.\d{1,2})?)|(-?\d+(?:\.\d{1,2})?\s*£)/i;
+  const scopeNames = ['main_page', 'eventNewBooking2_iframe', 'contactEdit_iframe'];
+  const scannedSnippets = [];
 
-  for (const scope of candidates) {
+  for (let idx = 0; idx < candidates.length; idx += 1) {
+    const scope = candidates[idx];
     try {
       const body = scope.locator('body').first();
       await body.waitFor({ state: 'attached', timeout: 1200 });
       const text = await body.innerText({ timeout: 1200 });
-      if (!text || !positiveCreditRegex.test(text)) continue;
-
-      const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
-      for (let i = 0; i < lines.length; i += 1) {
-        const line = lines[i];
-        if (!positiveCreditRegex.test(line)) continue;
-        if (nonCreditBalanceRegex.test(line)) continue;
-
-        // Amount may be on the same line or the next line in some CRM layouts.
-        const amountLineCandidates = [line, lines[i + 1] || ''];
-        for (const amountLine of amountLineCandidates) {
-          if (nonCreditBalanceRegex.test(amountLine)) continue;
-          const amountMatch = amountLine.match(amountRegex);
-          if (!amountMatch) continue;
-          const raw = (amountMatch[1] || amountMatch[2] || '').replace(/[^\d.-]/g, '');
-          const value = Number.parseFloat(raw);
-          if (Number.isFinite(value) && value > 0) {
-            return { hasAvailableBalance: true, availableBalance: value };
-          }
-        }
+      const snippet = (text || '').substring(0, 300).replace(/\s+/g, ' ').trim();
+      scannedSnippets.push(`[${scopeNames[idx]}] ${snippet}`);
+      const parsed = extractAvailableBalanceFromText(text);
+      if (parsed.hasAvailableBalance) {
+        console.log(`✅ [PAYMENT] Available balance detected in ${scopeNames[idx]}: GBP ${parsed.availableBalance.toFixed(2)}; evidence="${parsed.evidenceLine}"`);
+        return { hasAvailableBalance: true, availableBalance: parsed.availableBalance };
       }
     } catch (_) {
-      // Ignore and continue; frame may not exist in current UI state.
+      scannedSnippets.push(`[${scopeNames[idx]}] (not attached / timed out)`);
     }
   }
 
+  console.log(`ℹ️ [PAYMENT] No available balance/credit detected. Scanned text snippets:\n${scannedSnippets.join('\n')}`);
   return { hasAvailableBalance: false, availableBalance: 0 };
 }

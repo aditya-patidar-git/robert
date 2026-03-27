@@ -10,8 +10,8 @@ class ProgressIndicatorService {
     this.activeExecutions = new Map(); // callSid -> { toolName, startTime, lastUpdateTime, updateTimeout, periodicUpdateCount, maxPeriodicUpdates, stateManager, allowsPeriodicUpdates, delayedStartTime, expectHoldingResponse }
     this.holdingResponseIds = new Map(); // callSid -> Set of responseId (periodic updates; do not set waitingForUser when these complete)
     this.expectNonWaitingResponseCallSids = new Set(); // callSids for which the next response.created should be registered as non-waiting (e.g. "Your booking options are successfully selected")
-    /** First periodic update fires after this (ms) when config is not available. Default: 6s. */
-    this.FIRST_PERIODIC_INTERVAL_MS = 6000;
+    /** First periodic update fires after this (ms) when config is not available. Default: 3s. */
+    this.FIRST_PERIODIC_INTERVAL_MS = 3000;
     /** Default gap (ms) between next periodic updates when config.progressIndicators.updateIntervalMs is not available. 14s. */
     this.DEFAULT_UPDATE_INTERVAL_MS = 14000;
     /** Retry delay when response lock is unavailable (ms). */
@@ -49,7 +49,7 @@ class ProgressIndicatorService {
     // 3. booking_step_lookup_contact - looks up existing client contact (existing workflow only)
     // 4. booking_step_create_new_contact - creates new client contact (new workflow only)
     // 5. booking_step_fill_contact_details - fills contact details form and checks for missing fields sequentially
-    // 5b. booking_step_process_payment - processes payment (1 update)
+    // 5b. booking_step_process_payment - processes payment (3 updates — can take 45s+)
     // 6. booking_step_send_confirmation - sends booking confirmation email
     // 7. booking_step_send_terms - sends terms and conditions email
     // 8. booking_step_send_sms - sends SMS confirmation
@@ -105,7 +105,7 @@ class ProgressIndicatorService {
     // Step-based tools will use longer thresholds to avoid redundant messages for quick steps
     const allowsPeriodicUpdates = this.shouldEnablePeriodicUpdates(toolName);
     // Tools that get 3 periodic updates:
-    // - booking_step_lookup_contact, booking_step_search_client, booking_step_select_session (diaries), cancellation_step_search_client
+    // - booking_step_lookup_contact, booking_step_search_client, booking_step_select_session (diaries), booking_step_process_payment (45s+), cancellation_step_search_client
     // Tools that get 2 periodic updates:
     // - booking_step_select_booking_options (avoids race with lookup_contact start), booking_step_create_new_contact, booking_step_fill_contact_details (new workflow), cancellation_step_*
     // Last 3 post-booking steps get 0 updates (fast/chained; completion messages only)
@@ -119,6 +119,7 @@ class ProgressIndicatorService {
       'booking_step_lookup_contact',
       'booking_step_search_client',
       'booking_step_select_session',
+      'booking_step_process_payment',
       'cancellation_step_search_client'
     ];
     const toolsWithTwoUpdates = [

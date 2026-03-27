@@ -35,7 +35,15 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
     
     // Step 1: Select "Send a payment request" option
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
-    await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
+    const selectionResult = await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
+    if (!selectionResult?.success) {
+      return {
+        success: false,
+        paymentCompleted: false,
+        canRetry: true,
+        error: selectionResult?.error || 'Unable to select "Send a payment request".'
+      };
+    }
     
     console.log('⏳ [SEND_PAYMENT_REQUEST] Waiting for payment request link page...');
     try {
@@ -44,13 +52,25 @@ export async function executeSendPaymentRequest(page, args, sessionState, screen
       await paymentRequestIframe.locator('body').first().waitFor({ state: 'attached', timeout: 5000 });
       console.log('✅ [SEND_PAYMENT_REQUEST] On payment request link page');
     } catch (e) {
-      console.warn('⚠️ [SEND_PAYMENT_REQUEST] Payment request page not ready, proceeding...');
+      console.warn('⚠️ [SEND_PAYMENT_REQUEST] Payment request page not ready after selection');
+      return {
+        success: false,
+        paymentCompleted: false,
+        canRetry: true,
+        error: 'Payment request page did not load after selecting "Send a payment request".'
+      };
     }
   } else if (isOnPaymentRequestPage) {
     console.log('✅ [SEND_PAYMENT_REQUEST] Already on payment request link page');
     progressCallback?.({ message: 'Payment form is ready.' });
   } else {
-    console.warn('⚠️ [SEND_PAYMENT_REQUEST] Could not determine current page state, proceeding...');
+    console.warn('⚠️ [SEND_PAYMENT_REQUEST] Could not determine current page state');
+    return {
+      success: false,
+      paymentCompleted: false,
+      canRetry: true,
+      error: 'Could not determine payment page state. Please retry payment request step.'
+    };
   }
   
   const deliveryMethod = args.deliveryMethod; // 'email' or 'sms' (required)
