@@ -309,6 +309,13 @@ export class ToolCoordinator {
         this.state,
         getWsRef
       );
+      const chainedProgressCallback = ({ message }) => {
+        if (!message || this.state.toolExecutionCompleting || this.state.isInterrupted || this.state.isClosed) return;
+        if (this.state.progressQueue.length >= 10) return;
+        this.state.progressQueue.push({ message, queuedAt: Date.now() });
+        console.log(`📥 [${callSid}] Progress queued (chained): "${message}" (queue depth: ${this.state.progressQueue.length})`);
+        progressIndicatorService.scheduleQueuedProgressUpdate(callSid);
+      };
       const executionResult = await toolExecutionService.executeTool({
         callId,
         callSid,
@@ -317,7 +324,7 @@ export class ToolCoordinator {
         arguments: args,
         phoneNumber: this.state.phoneNumber,
         stateManager: this.state,
-        progressCallback: null
+        progressCallback: chainedProgressCallback
       });
       if (executionResult?.callEnded === true) {
         this.state.pendingChainedToolCall = null;
