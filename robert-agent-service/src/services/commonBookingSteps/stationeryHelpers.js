@@ -1,13 +1,42 @@
 import { format } from 'date-fns';
-import { takeScreenshot } from './utils.js';
+import { takeScreenshot, extractLocationIdentifier } from './utils.js';
+
+/** Postcode prefix → centre name (mirrors checkAvailability.js POSTCODE_TO_CENTRE) */
+const EMAIL_POSTCODE_TO_CENTRE = {
+  RM9: 'Dagenham',
+  EN11: 'Hoddesdon',
+  HA0: 'Alperton',
+  CR0: 'Croydon',
+  HA8: 'Edgware',
+  SE3: 'Eltham',
+  KT3: 'Wimbledon',
+};
 
 /**
- * Maps courseType enum to the correct confirmation email template name
+ * Converts a raw location string into an uppercase centre name suitable for
+ * CBT email template names, e.g. "Alperton" → "ALPERTON".
+ * Returns null if the centre cannot be determined.
+ * @param {string|null} location
+ * @returns {string|null}
+ */
+function extractEmailCentreName(location) {
+  if (!location) return null;
+  const identifier = extractLocationIdentifier(String(location));
+  if (!identifier) return null;
+  const key = identifier.toUpperCase();
+  const centre = EMAIL_POSTCODE_TO_CENTRE[key] || identifier;
+  return centre.toUpperCase();
+}
+
+/**
+ * Maps courseType enum to the correct confirmation email template name.
+ * For CBT courses the location must be supplied to select the site-specific template.
  * @param {string} courseType - Course type enum value
+ * @param {string|null} [location] - Raw location string from sessionDetails (used for CBT site selection)
  * @returns {string} Template name to search for in stationery grid
  */
-export function getConfirmationTemplateName(courseType) {
-  const courseTypeLower = courseType.toLowerCase();
+export function getConfirmationTemplateName(courseType, location = null) {
+  const courseTypeLower = (courseType || '').toLowerCase();
   
   if (courseTypeLower.includes('itm') || courseTypeLower.includes('introduction to motorcycling')) {
     return 'ITM / Gear Conversion confirmation';
@@ -19,6 +48,11 @@ export function getConfirmationTemplateName(courseType) {
     return 'ITM / Gear Conversion confirmation';
   }
   if (courseTypeLower.includes('cbt')) {
+    const centre = extractEmailCentreName(location);
+    if (centre) {
+      return `CBT - Booking confirmation - ${centre} SITE`;
+    }
+    // Fallback: partial match — selectStationeryTemplate will pick the first CBT template
     return 'CBT - Booking confirmation';
   }
   if (courseTypeLower.includes('tfl') && courseTypeLower.includes('beyond')) {
@@ -31,7 +65,7 @@ export function getConfirmationTemplateName(courseType) {
     return 'DAS/A2/A1 - BOOKING CONFIRMATION EMAIL';
   }
   
-  return 'ITM / Gear Conversion confirmation'; // Default fallback
+  return 'ITM / Gear Conversion confirmation';
 }
 
 /**
@@ -102,8 +136,10 @@ export async function selectStationeryTemplate(page, searchContext, templateName
     const rowText = await row.textContent();
     const normalizedRowText = rowText ? rowText.trim() : '';
     
-    // Check for exact match or partial match (template name might be part of longer text)
-    if (normalizedRowText.includes(templateName) || templateName.includes(normalizedRowText)) {
+    // Case-insensitive partial match (template name might be part of longer row text)
+    const normalizedLower = normalizedRowText.toLowerCase();
+    const templateLower = templateName.toLowerCase();
+    if (normalizedLower.includes(templateLower) || templateLower.includes(normalizedLower)) {
       console.log(`✅ [STATIONERY] Found matching template at row ${i + 1}: "${normalizedRowText.substring(0, 100)}..."`);
       matchingRow = row;
       break;
@@ -278,13 +314,13 @@ export function getSMSPresetTemplateName(courseType) {
   const courseTypeLower = raw.toLowerCase();
 
   if (courseTypeLower.includes('itm') || courseTypeLower.includes('introduction to motorcycling')) {
-    return 'London: ITM / Gear Conversion / Private Motorcycling Lessons Booking Confirmation';
+    return 'ITM / Gear Conversion / Private Motorcycling SMS Booking Confirmation';
   }
   if (courseTypeLower.includes('gear conversion')) {
-    return 'London: ITM / Gear Conversion / Private Motorcycling Lessons Booking Confirmation';
+    return 'ITM / Gear Conversion / Private Motorcycling SMS Booking Confirmation';
   }
   if (courseTypeLower.includes('private lesson')) {
-    return 'London: ITM / Gear Conversion / Private Motorcycling Lessons Booking Confirmation';
+    return 'ITM / Gear Conversion / Private Motorcycling SMS Booking Confirmation';
   }
   if (courseTypeLower.includes('cbt')) {
     return 'CBT Booking Confirmation';
@@ -302,7 +338,7 @@ export function getSMSPresetTemplateName(courseType) {
     return 'DAS / A2 / A1 / ERS / Full Licence Assessment Booking Confirmation';
   }
 
-  return 'London: ITM / Gear Conversion / Private Motorcycling Lessons Booking Confirmation';
+  return 'ITM / Gear Conversion / Private Motorcycling SMS Booking Confirmation';
 }
 
 /**
@@ -574,10 +610,19 @@ export async function selectSMSCourseOption(page, searchContext, sessionDetails,
   }
 
   console.log(`🔍 [SMS] Opening "Choose a course" dropdown (date="${dateNeedle}", time="${timeNeedle}")...`);
-  const { options: courseOptions } = await openSmsDevExtremeDropdown(page, searchContext, courseRow);
+  let courseOptions;
+  try {
+    ({ options: courseOptions } = await openSmsDevExtremeDropdown(page, searchContext, courseRow));
+  } catch (err) {
+    console.warn(`⚠️ [SMS] Could not open "Choose a course" dropdown — skipping (optional field): ${err.message}`);
+    await page.keyboard.press('Escape').catch(() => {});
+    return;
+  }
   const optionCount = await courseOptions.count();
   if (optionCount === 0) {
-    throw new Error('Choose a course dropdown opened but has no options');
+    console.warn('⚠️ [SMS] "Choose a course" dropdown opened but has no options — skipping (optional field)');
+    await page.keyboard.press('Escape').catch(() => {});
+    return;
   }
 
   const dateN = normalizeSmsListText(dateNeedle);
@@ -616,9 +661,9 @@ export async function selectSMSCourseOption(page, searchContext, sessionDetails,
   }
 
   if (!matchingOption) {
-    throw new Error(
-      `Could not match "Choose a course" option for date "${dateNeedle}" at ${timeNeedle}. Check sessionDetails.date/startDate and time.`
-    );
+    console.warn(`⚠️ [SMS] Could not match "Choose a course" option for date "${dateNeedle}" at ${timeNeedle} — skipping (optional field)`);
+    await page.keyboard.press('Escape').catch(() => {});
+    return;
   }
 
   await matchingOption.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});

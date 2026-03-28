@@ -148,6 +148,8 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'IT
     await stationeryHelpers.selectSMSPreset(page, smsSearchContext, presetTemplateName, venueHint);
 
     await takeScreenshot(page, 'preset-selected.png', screenshotsDir);
+    // Allow the form to re-render after preset selection before the course dropdown is clicked
+    await page.waitForTimeout(1500);
 
     if (sessionDetails) {
       await stationeryHelpers.selectSMSCourseOption(page, smsSearchContext, sessionDetails, courseTypeResolved);

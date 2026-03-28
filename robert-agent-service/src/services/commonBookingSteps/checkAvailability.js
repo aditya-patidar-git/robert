@@ -354,9 +354,11 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       slotsToAnnounce = selectedSlot ? [selectedSlot] : [candidateSlots[0]];
     }
 
-    // When preferences produced a selectedSlot, the spoken list must lead with it and only
-    // include alternatives at the same centre. Otherwise the code above can announce the
-    // earliest calendar day globally (e.g. Thu 26th × 3) while CRM selectedSlot is Edgware Tue 31st.
+    // When preferences produced a selectedSlot, the spoken list must lead with it and then
+    // include alternatives at the same centre sorted by date proximity to the selected slot.
+    // Sorting by proximity (not chronologically) ensures that when the preferred date was April 10
+    // but location was unavailable, the fallback centre's nearby dates (Apr 8, Apr 11) appear
+    // rather than the earliest calendar slots (Mar 31, Apr 1).
     if (selectedSlot && candidateSlots.length > 0) {
       const slotKey = (s) =>
         `${s.date}|${s.time}|${String(s.location || '').slice(0, 160)}`;
@@ -369,10 +371,18 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
         return centreSel && c && c.toLowerCase() === centreSel.toLowerCase();
       };
       const byCentre = allSlots.filter(sameCentre);
-      const ordered = [
-        selectedSlot,
-        ...byCentre.filter((s) => slotKey(s) !== selKey)
-      ];
+      // Sort alternatives by proximity to the selected slot's date so the caller hears
+      // the nearest dates first, not the chronologically earliest ones.
+      const selTime = selectedSlot.startDate ? new Date(selectedSlot.startDate).getTime() : null;
+      const alternatives = byCentre.filter((s) => slotKey(s) !== selKey);
+      if (selTime !== null) {
+        alternatives.sort((a, b) => {
+          const aTime = a.startDate ? new Date(a.startDate).getTime() : Infinity;
+          const bTime = b.startDate ? new Date(b.startDate).getTime() : Infinity;
+          return Math.abs(aTime - selTime) - Math.abs(bTime - selTime);
+        });
+      }
+      const ordered = [selectedSlot, ...alternatives];
       const seen = new Set();
       const dedup = [];
       for (const s of ordered) {

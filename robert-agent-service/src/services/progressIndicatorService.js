@@ -5,6 +5,90 @@
 
 import { conversations } from '../shared/state.js';
 
+/**
+ * Per-tool acknowledgment phrase spoken to the caller immediately when a tool starts.
+ * Each phrase should tell the caller exactly what is happening — not a generic filler.
+ * Keys are exact tool names. Falls back to global config acknowledgmentMessages when absent.
+ */
+const TOOL_ACKNOWLEDGMENT_PHRASES = {
+  // ── Booking workflow ────────────────────────────────────────────────────────
+  booking_step_check_availability:     "Let me check the available slots for you now.",
+  booking_step_authenticate:           "I'm logging into the system now, just a moment.",
+  booking_step_navigate_contacts:      "Navigating to contacts now.",
+  booking_step_search_client:          "Searching for your details in our system — please hold on.",
+  booking_step_select_session:         "I'm opening the booking diary to select your session now.",
+  booking_step_select_booking_options: "I'm applying your booking options now.",
+  booking_step_lookup_contact:         "Looking up your contact details in the booking form — this may take a moment.",
+  booking_step_create_new_contact:     "Creating your contact record now.",
+  booking_step_fill_contact_details:   "Filling in your contact details now — please bear with me.",
+  booking_step_process_payment:        "I'm processing the payment now — this may take up to a minute, please bear with me.",
+  booking_step_send_payment_request:   "I have sent your payment request, please check now.",
+  booking_step_send_confirmation:      "Sending your booking confirmation email now.",
+  booking_step_send_terms:             "Sending the terms and conditions to you now.",
+  booking_step_send_sms:               "Sending your SMS confirmation now.",
+  // ── Cancellation workflow ───────────────────────────────────────────────────
+  cancellation_step_verify_booking_intent:   "Let me verify your booking details now.",
+  cancellation_step_authenticate:            "I'm logging into the system to process your cancellation.",
+  cancellation_step_determine_workflow:      "Checking your booking workflow now.",
+  cancellation_step_navigate_contacts:       "Navigating to your contact record.",
+  cancellation_step_search_client:           "Searching for your booking record — please hold on.",
+  cancellation_step_select_client:           "Locating your client profile.",
+  cancellation_step_locate_booking:          "Finding your booking now — just a moment.",
+  cancellation_step_confirm_cancellation:    "Confirming your cancellation request.",
+  cancellation_step_initiate_cancellation:   "Initiating the cancellation now — please bear with me.",
+  cancellation_step_fill_cancellation_form:  "Filling in the cancellation form — this may take a moment.",
+  cancellation_step_navigate_communication:  "Opening the communication screen now.",
+  cancellation_step_select_template:         "Selecting your cancellation confirmation template.",
+  cancellation_step_send_confirmation:       "Sending your cancellation confirmation now.",
+  cancellation_step_voice_confirmation:      "Processing your verbal confirmation of cancellation.",
+  // ── Other tools ────────────────────────────────────────────────────────────
+  client_verification:                 "I'm verifying your details now.",
+};
+
+/**
+ * Per-tool delay (ms) before the acknowledgment phrase fires.
+ * 0 = announce immediately on tool start.
+ * Quick tools should use 0 so the caller hears intent before the tool finishes.
+ * Long browser-automation tools can use a small delay to avoid beating rapid results.
+ */
+const TOOL_ACK_DELAY_MS = {
+  // Instant — announce immediately (tool may take seconds)
+  booking_step_check_availability:     0,
+  booking_step_authenticate:           0,
+  booking_step_navigate_contacts:      0,
+  booking_step_select_booking_options: 0,
+  booking_step_send_confirmation:      0,
+  booking_step_send_terms:             0,
+  booking_step_send_sms:               0,
+  client_verification:                 0,
+  cancellation_step_verify_booking_intent:  0,
+  cancellation_step_authenticate:           0,
+  cancellation_step_determine_workflow:     0,
+  cancellation_step_navigate_contacts:      0,
+  cancellation_step_confirm_cancellation:   0,
+  cancellation_step_initiate_cancellation:  0,
+  cancellation_step_navigate_communication: 0,
+  cancellation_step_select_template:        0,
+  cancellation_step_voice_confirmation:     0,
+  // Short delay — tool is fast but browser interaction benefits from brief pause
+  booking_step_search_client:          500,
+  booking_step_create_new_contact:     500,
+  // 500ms delay so the fast-path (requiresTermsBeforeSend ~100ms) finishes and sets
+  // toolExecutionCompleting before the ack timer fires, preventing a responseLock race.
+  booking_step_send_payment_request:   500,
+  cancellation_step_search_client:     500,
+  cancellation_step_select_client:     500,
+  cancellation_step_send_confirmation: 500,
+  // Moderate delay — tool is medium-length, allow lock to be free
+  booking_step_select_session:         1000,
+  booking_step_fill_contact_details:   500,
+  booking_step_process_payment:        500,
+  cancellation_step_locate_booking:    500,
+  cancellation_step_fill_cancellation_form: 500,
+  // Longer delay — must wait for previous tool's completion response to release lock
+  booking_step_lookup_contact:         6000,
+};
+
 class ProgressIndicatorService {
   constructor() {
     this.activeExecutions = new Map(); // callSid -> { toolName, startTime, lastUpdateTime, updateTimeout, periodicUpdateCount, maxPeriodicUpdates, stateManager, allowsPeriodicUpdates, delayedStartTime, expectHoldingResponse }
@@ -101,29 +185,36 @@ class ProgressIndicatorService {
     const bikeTypeCompletion = conversations[callSid]?.bikeTypeQuestionsCompleted;
     const shouldDelayPeriodicUpdates = bikeTypeCompletion && toolName === 'booking_step_create_new_contact';
 
-    // Enable progress tracking for all tools, including step-based tools
-    // Step-based tools will use longer thresholds to avoid redundant messages for quick steps
+    // Every tool that has a TOOL_ACKNOWLEDGMENT_PHRASES entry gets at least one acknowledgment update
+    // (the initial phrase fired almost immediately). Whitelisted long-running tools also get
+    // subsequent periodic holding updates during execution.
     const allowsPeriodicUpdates = this.shouldEnablePeriodicUpdates(toolName);
+
+    // Tools that get 4 periodic updates:
+    // - booking_step_select_session (diaries tab — navigates multiple pages, slow)
     // Tools that get 3 periodic updates:
-    // - booking_step_lookup_contact, booking_step_search_client, booking_step_select_session (diaries), booking_step_process_payment (45s+), cancellation_step_search_client
+    // - booking_step_lookup_contact, booking_step_search_client, booking_step_process_payment (45s+), cancellation_step_search_client
+    // - booking_step_select_booking_options (user-requested extra update)
     // Tools that get 2 periodic updates:
-    // - booking_step_select_booking_options (avoids race with lookup_contact start), booking_step_create_new_contact, booking_step_fill_contact_details (new workflow), cancellation_step_*
-    // Last 3 post-booking steps get 0 updates (fast/chained; completion messages only)
-    // Others get 1 update
+    // - booking_step_create_new_contact, booking_step_fill_contact_details (new workflow), cancellation_step_*
+    // Last 3 post-booking steps get 0 SUBSEQUENT periodic updates (fast/chained; one ack only)
+    // Others get 1 update (the initial acknowledgment)
     const toolsWithZeroUpdates = [
       'booking_step_send_confirmation',
       'booking_step_send_terms',
       'booking_step_send_sms'
     ];
+    const toolsWithFourUpdates = [
+      'booking_step_select_session',
+    ];
     const toolsWithThreeUpdates = [
       'booking_step_lookup_contact',
       'booking_step_search_client',
-      'booking_step_select_session',
+      'booking_step_select_booking_options',
       'booking_step_process_payment',
       'cancellation_step_search_client'
     ];
     const toolsWithTwoUpdates = [
-      'booking_step_select_booking_options',
       'booking_step_create_new_contact',
       'cancellation_step_locate_booking',
       'cancellation_step_fill_cancellation_form',
@@ -138,12 +229,22 @@ class ProgressIndicatorService {
       const workflowType = session?.workflowType;
       // Existing workflow gets 3 updates, new workflow gets 2 updates
       maxPeriodicUpdates = workflowType === 'existing' ? 3 : 2;
+    } else if (toolsWithZeroUpdates.includes(toolName)) {
+      // Fast post-booking tools: still send one ack, but no subsequent periodic updates.
+      // We use maxPeriodicUpdates=1 here; the initial acknowledgment counts as that one update.
+      maxPeriodicUpdates = 1;
     } else {
-      maxPeriodicUpdates = toolsWithZeroUpdates.includes(toolName) ? 0
+      maxPeriodicUpdates = toolsWithFourUpdates.includes(toolName) ? 4
         : toolsWithThreeUpdates.includes(toolName) ? 3
           : toolsWithTwoUpdates.includes(toolName) ? 2
             : 1;
     }
+
+    // Every tool with an acknowledgment phrase gets at least one periodic update slot
+    // (for the initial announcement). Tools without a phrase that are also not whitelisted
+    // keep their existing zero-or-one behaviour controlled by allowsPeriodicUpdates.
+    const hasToolPhrase = Object.prototype.hasOwnProperty.call(TOOL_ACKNOWLEDGMENT_PHRASES, toolName);
+    const effectiveAllowsPeriodicUpdates = allowsPeriodicUpdates || hasToolPhrase;
     // Calculate delayed start time if bike type questions were just completed
     let delayedStartTime = null;
     if (shouldDelayPeriodicUpdates && bikeTypeCompletion) {
@@ -170,13 +271,14 @@ class ProgressIndicatorService {
       queuedUpdateCount: 0, // Number of queue-driven updates sent this tool
       maxQueuedUpdatesPerTool: 15, // Cap queue-driven updates per tool
       stateManager: stateManager, // Store reference for thread-safe checks
-      allowsPeriodicUpdates: allowsPeriodicUpdates, // Track if this tool should have periodic updates enabled
+      allowsPeriodicUpdates: effectiveAllowsPeriodicUpdates, // True for whitelisted tools OR tools with a specific acknowledgment phrase
+      isLongRunning: allowsPeriodicUpdates, // True only for whitelisted long-running tools (keeps subsequent periodic updates)
       delayedStartTime: delayedStartTime, // When to start periodic updates (if delayed)
       expectHoldingResponse: false, // Set true before sending periodic response.create; cleared when response.created is notified
       getWsRef: existing?.getWsRef ?? null, // Preserve from first schedule (toolCallHandler); set by scheduleAcknowledgmentAndPeriodicUpdates
       config: existing?.config ?? null // Preserve from first schedule
     });
-    console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${allowsPeriodicUpdates ? ' (periodic updates enabled)' : ''}`);
+    console.log(`📊 [${callSid}] Started tracking tool execution: ${toolName}${effectiveAllowsPeriodicUpdates ? (allowsPeriodicUpdates ? ' (periodic updates enabled)' : ' (acknowledgment-only)') : ''}`);
   }
 
   /**
@@ -198,12 +300,13 @@ class ProgressIndicatorService {
       return;
     }
     this.startToolExecution(callId, toolName, stateManager);
-    // Start periodic updates immediately for whitelisted tools
+    // Start periodic updates for all tools that allow them (whitelisted long-running tools AND
+    // any tool with a specific acknowledgment phrase — covers every known tool).
     const execution = this.activeExecutions.get(callId);
     if (execution) {
       execution.getWsRef = typeof getWsRef === 'function' ? getWsRef : () => openaiWs;
       execution.config = config;
-      console.log(`[PROGRESS] [${callId}] scheduleAcknowledgmentAndPeriodicUpdates: execution registered for ${toolName}, stateManager=${!!stateManager}, allowsPeriodicUpdates=${execution.allowsPeriodicUpdates}`);
+      console.log(`[PROGRESS] [${callId}] scheduleAcknowledgmentAndPeriodicUpdates: execution registered for ${toolName}, stateManager=${!!stateManager}, allowsPeriodicUpdates=${execution.allowsPeriodicUpdates}, isLongRunning=${execution.isLongRunning}`);
       if (execution.allowsPeriodicUpdates) {
         const ws = execution.getWsRef();
         if (ws && ws.readyState === 1) {
@@ -398,9 +501,9 @@ class ProgressIndicatorService {
       return;
     }
 
-    // CRITICAL: Only enable periodic updates for whitelisted tools
+    // Allow both long-running whitelisted tools and acknowledgment-only tools
     if (!execution.allowsPeriodicUpdates) {
-      console.log(`⏭️ [${callSid}] Skipping periodic updates - tool ${execution.toolName} is not whitelisted`);
+      console.log(`⏭️ [${callSid}] Skipping periodic updates - tool ${execution.toolName} has no acknowledgment phrase and is not whitelisted`);
       return;
     }
 
@@ -436,16 +539,27 @@ class ProgressIndicatorService {
     const messages = config.progressIndicators.updateMessages || [
       "Please bear with me for a moment"
     ];
-    // First (acknowledgment) message set: use acknowledgmentMessages from config when present, else updateMessages
-    const firstMessages = (config?.progressIndicators?.acknowledgmentMessages?.length)
-      ? config.progressIndicators.acknowledgmentMessages
-      : messages;
 
-    // First periodic update delay: use acknowledgmentThresholdMs from config when present, else cap updateInterval by FIRST_PERIODIC
-    let firstIntervalMs = config?.progressIndicators?.acknowledgmentThresholdMs ?? Math.min(updateInterval, this.FIRST_PERIODIC_INTERVAL_MS);
-    // Delay first update for lookup_contact so it fires after previous tool's "Done." response releases the lock (avoids response-already-active retries)
-    if (execution.toolName === 'booking_step_lookup_contact') {
-      firstIntervalMs = Math.max(firstIntervalMs, 6000);
+    // First (acknowledgment) message: prefer per-tool phrase, then config acknowledgmentMessages, then updateMessages
+    const toolPhrase = TOOL_ACKNOWLEDGMENT_PHRASES[execution.toolName];
+    const firstMessages = toolPhrase
+      ? [toolPhrase]
+      : (config?.progressIndicators?.acknowledgmentMessages?.length)
+        ? config.progressIndicators.acknowledgmentMessages
+        : messages;
+
+    // First periodic update delay: prefer per-tool override, then config acknowledgmentThresholdMs,
+    // then fall back to capping updateInterval by FIRST_PERIODIC_INTERVAL_MS.
+    let firstIntervalMs;
+    if (Object.prototype.hasOwnProperty.call(TOOL_ACK_DELAY_MS, execution.toolName)) {
+      firstIntervalMs = TOOL_ACK_DELAY_MS[execution.toolName];
+    } else {
+      firstIntervalMs = config?.progressIndicators?.acknowledgmentThresholdMs ?? Math.min(updateInterval, this.FIRST_PERIODIC_INTERVAL_MS);
+      // Legacy: delay first update for lookup_contact so it fires after previous tool's "Done." response
+      // releases the lock. This is now also captured in TOOL_ACK_DELAY_MS but kept for safety.
+      if (execution.toolName === 'booking_step_lookup_contact') {
+        firstIntervalMs = Math.max(firstIntervalMs, 6000);
+      }
     }
 
     // Use setTimeout instead of setInterval to send only ONE update
@@ -528,7 +642,14 @@ class ProgressIndicatorService {
 
     const queuedEntry = sm?.progressQueue?.shift();
     let message = queuedEntry ? queuedEntry.message : (isFirst ? messages[Math.floor(Math.random() * messages.length)] : messages[0]);
-    // Restrict periodic updates to generic holding phrases only — never use booking confirmation or step-specific text
+
+    // Check if this is the designated tool-specific acknowledgment phrase (first update, from TOOL_ACKNOWLEDGMENT_PHRASES).
+    // Tool-specific phrases are pre-validated and must not be filtered by the isGeneric length/content guard.
+    const toolSpecificPhrase = TOOL_ACKNOWLEDGMENT_PHRASES[execution.toolName];
+    const isToolSpecificAck = isFirst && !queuedEntry && toolSpecificPhrase && message === toolSpecificPhrase;
+
+    // Restrict subsequent periodic updates to generic holding phrases — never use booking confirmation or step-specific text.
+    // The initial tool-specific acknowledgment phrase bypasses this guard entirely.
     const genericMaxLen = 80;
     const bookingConfirmationPhrases = ['has been confirmed', "you're all set", 'you\'ll receive a confirmation', 'confirmation shortly', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'at 09:00', 'at 10:00', 'introduction to motorcycling', 'eltham', 'location'];
     const isGeneric = (m) => {
@@ -536,7 +657,7 @@ class ProgressIndicatorService {
       const lower = m.toLowerCase();
       return !bookingConfirmationPhrases.some(p => lower.includes(p));
     };
-    if (!isGeneric(message)) {
+    if (!isToolSpecificAck && !isGeneric(message)) {
       if (queuedEntry) {
         console.log(`🗑️ [${callSid}] Rejected non-generic progress message for periodic update (length=${(message || '').length}, using config): "${(message || '').substring(0, 50)}..."`);
       }

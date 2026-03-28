@@ -17,16 +17,12 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
  */
 export async function executeSendConfirmation(page, args, sessionState, screenshotsDir, progressCallback = null) {
   progressCallback?.({ message: 'Sending your confirmation.' });
-  const courseType = args.courseType || sessionState?.courseType;
-  
-  // Map course type to email template type
-  let emailCourseType = 'tfl';
-  if (courseType === 'Full Licence Assessment' || courseType === 'Full Motorcycle Licence Assessment') {
-    emailCourseType = 'full-licence';
-  }
-  
-  // Use existing sendBookingConfirmationEmail logic
-  await commonSteps.sendBookingConfirmationEmail(page, screenshotsDir, emailCourseType, progressCallback);
+  const courseType = args.courseType || sessionState?.courseType || 'Introduction to Motorcycling';
+  const location = sessionState?.sessionDetails?.location || args.location || null;
+
+  console.log(`📧 [SEND-CONFIRMATION] courseType="${courseType}", location="${location || 'none'}"`);
+
+  await commonSteps.sendBookingConfirmationEmail(page, screenshotsDir, courseType, progressCallback, location);
 
   return {
     success: true,

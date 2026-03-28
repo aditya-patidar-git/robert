@@ -84,13 +84,14 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
       // Enforce explicit terms confirmation in the balance path too (same policy as payment-link flow).
       const termsValidation = validateTermsAcceptance(termsAccepted);
       if (termsValidation.requiresTermsBeforeSend) {
+        const termsText = getTermsText();
         return {
           success: true,
           paymentCompleted: false,
           requiresTermsBeforeSend: true,
-          termsText: getTermsText(),
-          message: 'Before I can proceed with completing the booking using your available balance, I must make you aware of the following terms and conditions.',
-          instruction: 'CRITICAL: Read the terms to the caller and ask "Do you agree with the statements that I have just made?" Wait for response. If yes, call booking_step_process_payment again with the same parameters plus useAvailableBalance: true and termsAccepted: true.'
+          termsText,
+          message: `Before I can proceed with completing the booking using your available balance, I must make you aware of the following terms and conditions:\n\n${termsText}`,
+          instruction: 'CRITICAL — MANDATORY TERMS STEP: Read the termsText field above word-for-word to the caller (do NOT summarise or paraphrase). After reading, ask exactly: "Do you agree with the statements that I have just made?" Wait for response. If YES: call booking_step_process_payment again with the same parameters plus useAvailableBalance: true and termsAccepted: true. If NO: handle as a terms decline.'
         };
       }
       if (termsValidation.termsNotAccepted) {
@@ -128,17 +129,18 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
         console.log('ℹ️ [PAYMENT] Payment dropdown not available but "Make booking" button is visible — payment likely already satisfied (e.g. refund/credit)');
         const termsValidation = validateTermsAcceptance(args.termsAccepted);
         if (termsValidation.requiresTermsBeforeSend) {
+          const termsText = getTermsText();
           return {
             success: true,
             paymentCompleted: false,
             requiresTermsBeforeSend: true,
             makeBookingReady: true,
             paymentAlreadyCovered: true,
-            termsText: getTermsText(),
+            termsText,
             message:
-              'The payment page does not show a payment method dropdown, but the booking can be completed: the fee appears already covered—for example by credit from a previous cancellation refund or similar. Do not offer a payment request link. Terms and conditions must be read and agreed before Make booking.',
+              `The payment page shows no further payment is required — the booking fee appears already covered (for example, from a previous cancellation refund or account credit). Do NOT offer a payment request link. Before completing the booking, read the following terms and conditions word-for-word to the caller:\n\n${termsText}`,
             instruction:
-              'CRITICAL: Tell the caller briefly that on screen no further payment is required (for example, the course may already be covered from a previous cancellation refund or account credit). Do NOT offer a payment request link. Read termsText to the caller and ask exactly: "Do you agree with the statements that I have just made?" If yes, call **booking_step_process_payment** again with courseType, workflowType, **termsAccepted: true**, and **useAvailableBalance: true** to complete the booking. If no, handle as a terms decline (same as before sending a payment request).'
+              'CRITICAL — MANDATORY TERMS STEP: Read the termsText field above word-for-word to the caller (do NOT summarise or paraphrase). After reading, ask exactly: "Do you agree with the statements that I have just made?" Wait for the caller\'s answer. If YES: call **booking_step_process_payment** again with courseType, workflowType, **termsAccepted: true**, and **useAvailableBalance: true**. If NO: handle as a terms decline — try to address concerns; if they still decline, offer transfer_call. Do NOT proceed to Make Booking until termsAccepted: true is confirmed.'
           };
         }
         if (termsValidation.termsNotAccepted) {
