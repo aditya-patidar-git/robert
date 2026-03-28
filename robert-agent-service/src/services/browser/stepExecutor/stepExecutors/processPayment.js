@@ -79,8 +79,6 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     // Caller chose to use available balance: select "No payment required" and finalize booking.
     if (requestedPaymentSource === 'balance') {
       progressCallback?.({ message: 'Applying available balance.' });
-      const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
-      const { acceptTermsAndMakeBooking } = await import('../../../commonBookingSteps/acceptTermsAndMakeBooking.js');
       const termsAccepted = args.termsAccepted;
 
       // Enforce explicit terms confirmation in the balance path too (same policy as payment-link flow).
@@ -107,60 +105,15 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
         };
       }
 
-      // In many CRM states with available credit, no payment selection is required and "Make booking" is already available.
-      // Only attempt selecting "No payment required" when the payment dropdown is actually visible.
-      const paymentDropdownVisible = await isPaymentDropdownVisible(page);
-      if (paymentDropdownVisible) {
-        const selectionResult = await selectPaymentOption(page, screenshotsDir, 'none', progressCallback, args.abortSignal);
-        if (!selectionResult?.success) {
-          return {
-            success: false,
-            paymentCompleted: false,
-            paymentMethod: 'balance',
-            canRetry: true,
-            error: selectionResult?.error || 'Unable to select "No payment required" on the payment page.'
-          };
-        }
-        screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-balance.png', screenshotsDir));
-        await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
-      } else {
-        console.log('ℹ️ [PAYMENT] Payment dropdown not visible in balance path - proceeding directly to booking confirmation');
-      }
-
-      const bookingResult = await acceptTermsAndMakeBooking(page, screenshotsDir, true, false);
-      if (!bookingResult.success) {
-        return {
-          success: false,
-          paymentCompleted: false,
-          paymentMethod: 'balance',
-          error: bookingResult.error || 'Failed to complete booking using available balance.'
-        };
-      }
-
-      try {
-        const bookingData = buildBookingData({
-          bookingArgs: args,
-          callContext: { callSid: args.callSid },
-          sessionDetails: sessionState?.sessionDetails || {},
-          paymentCompleted: true,
-          workflowType: sessionState?.workflowType || args.workflowType || 'new',
-          serviceType: args.courseType || sessionState?.courseType || 'ITM'
-        });
-        const trackingResult = await trackCRMBooking(bookingData);
-        if (!trackingResult.success) {
-          console.warn(`⚠️ [PAYMENT] Booking tracking failed (non-critical): ${trackingResult.error}`);
-        }
-      } catch (trackingError) {
-        console.warn(`⚠️ [PAYMENT] Booking tracking error (non-critical):`, trackingError.message);
-      }
-
-      return {
-        success: true,
-        paymentCompleted: true,
-        bookingFinalized: true,
-        paymentMethod: 'balance',
-        message: 'Booking completed using available balance.'
-      };
+      return finalizeBookingUsingCoveredPayment(
+        page,
+        args,
+        sessionState,
+        screenshots,
+        screenshotsDir,
+        progressCallback,
+        'Booking completed using available balance.'
+      );
     }
 
     // Step 1: Select "Send a payment request" option (updated strategy)
@@ -168,20 +121,46 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
     const requestSelectionResult = await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
     if (!requestSelectionResult?.success) {
-      // Fallback: if payment dropdown was not found, the CRM may have already satisfied
-      // payment via credit/balance and is showing "Make booking" directly.
+      // Fallback: payment method dropdown could not be used after retries, but "Make booking" is visible —
+      // CRM shows payment as already satisfied (e.g. credit from a previous cancellation refund).
       const makeBookingVisible = await isMakeBookingButtonVisible(page);
       if (makeBookingVisible) {
-        console.log('ℹ️ [PAYMENT] Payment dropdown not available but "Make booking" button is visible — CRM likely pre-satisfied payment via balance');
-        return {
-          success: true,
-          paymentCompleted: false,
-          requiresBalanceDecision: true,
-          availableBalance: 0,
-          makeBookingReady: true,
-          message: 'The payment appears to already be covered (possibly by an existing balance). Would you like to proceed with completing the booking, or should I send a payment link instead?',
-          instruction: 'CRITICAL: Ask the caller: "It looks like the payment may already be covered. Would you like me to complete the booking, or would you prefer a payment link via email or SMS?" If they say complete/proceed/yes, call **booking_step_process_payment** with useAvailableBalance: true and termsAccepted: true. If they want a link, call **booking_step_process_payment** with useAvailableBalance: false.'
-        };
+        console.log('ℹ️ [PAYMENT] Payment dropdown not available but "Make booking" button is visible — payment likely already satisfied (e.g. refund/credit)');
+        const termsValidation = validateTermsAcceptance(args.termsAccepted);
+        if (termsValidation.requiresTermsBeforeSend) {
+          return {
+            success: true,
+            paymentCompleted: false,
+            requiresTermsBeforeSend: true,
+            makeBookingReady: true,
+            paymentAlreadyCovered: true,
+            termsText: getTermsText(),
+            message:
+              'The payment page does not show a payment method dropdown, but the booking can be completed: the fee appears already covered—for example by credit from a previous cancellation refund or similar. Do not offer a payment request link. Terms and conditions must be read and agreed before Make booking.',
+            instruction:
+              'CRITICAL: Tell the caller briefly that on screen no further payment is required (for example, the course may already be covered from a previous cancellation refund or account credit). Do NOT offer a payment request link. Read termsText to the caller and ask exactly: "Do you agree with the statements that I have just made?" If yes, call **booking_step_process_payment** again with courseType, workflowType, **termsAccepted: true**, and **useAvailableBalance: true** to complete the booking. If no, handle as a terms decline (same as before sending a payment request).'
+          };
+        }
+        if (termsValidation.termsNotAccepted) {
+          return {
+            success: false,
+            paymentCompleted: false,
+            termsNotAccepted: true,
+            requiresRetry: true,
+            paymentMethod: 'balance',
+            message: 'The client did not agree with the terms. Try to answer their questions. If they still do not agree, offer transfer to a human agent.',
+            instruction: 'Try to address the caller concerns. If they still do not agree, ask if they want to be transferred to a human agent. If yes, use transfer_call.'
+          };
+        }
+        return finalizeBookingUsingCoveredPayment(
+          page,
+          args,
+          sessionState,
+          screenshots,
+          screenshotsDir,
+          progressCallback,
+          'Booking completed. Payment was already satisfied on screen (for example from a previous cancellation refund or account credit); no payment link was required.'
+        );
       }
       return {
         success: false,
@@ -343,6 +322,76 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     paymentMethod: 'payment_request',
     error: paymentResult.error,
     message: paymentResult.message
+  };
+}
+
+/**
+ * Complete booking when CRM already shows no further payment due (balance, credit, or prepaid/refund path).
+ */
+async function finalizeBookingUsingCoveredPayment(
+  page,
+  args,
+  sessionState,
+  screenshots,
+  screenshotsDir,
+  progressCallback,
+  completionMessage
+) {
+  const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
+  const { acceptTermsAndMakeBooking } = await import('../../../commonBookingSteps/acceptTermsAndMakeBooking.js');
+  const { takeScreenshot } = await import('../../../commonBookingSteps/utils.js');
+
+  const paymentDropdownVisible = await isPaymentDropdownVisible(page);
+  if (paymentDropdownVisible) {
+    const selectionResult = await selectPaymentOption(page, screenshotsDir, 'none', progressCallback, args.abortSignal);
+    if (!selectionResult?.success) {
+      return {
+        success: false,
+        paymentCompleted: false,
+        paymentMethod: 'balance',
+        canRetry: true,
+        error: selectionResult?.error || 'Unable to select "No payment required" on the payment page.'
+      };
+    }
+    screenshots.push(await takeScreenshot(page, 'payment-option-selected-balance.png', screenshotsDir));
+    await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+  } else {
+    console.log('ℹ️ [PAYMENT] Payment dropdown not visible in covered-payment path - proceeding directly to booking confirmation');
+  }
+
+  const bookingResult = await acceptTermsAndMakeBooking(page, screenshotsDir, true, false);
+  if (!bookingResult.success) {
+    return {
+      success: false,
+      paymentCompleted: false,
+      paymentMethod: 'balance',
+      error: bookingResult.error || 'Failed to complete booking using available balance.'
+    };
+  }
+
+  try {
+    const bookingData = buildBookingData({
+      bookingArgs: args,
+      callContext: { callSid: args.callSid },
+      sessionDetails: sessionState?.sessionDetails || {},
+      paymentCompleted: true,
+      workflowType: sessionState?.workflowType || args.workflowType || 'new',
+      serviceType: args.courseType || sessionState?.courseType || 'ITM'
+    });
+    const trackingResult = await trackCRMBooking(bookingData);
+    if (!trackingResult.success) {
+      console.warn(`⚠️ [PAYMENT] Booking tracking failed (non-critical): ${trackingResult.error}`);
+    }
+  } catch (trackingError) {
+    console.warn(`⚠️ [PAYMENT] Booking tracking error (non-critical):`, trackingError.message);
+  }
+
+  return {
+    success: true,
+    paymentCompleted: true,
+    bookingFinalized: true,
+    paymentMethod: 'balance',
+    message: completionMessage
   };
 }
 

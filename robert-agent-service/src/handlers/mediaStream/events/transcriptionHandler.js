@@ -129,7 +129,7 @@ export class TranscriptionHandler {
       const reason = shouldPreventLoop ? 'response_loop_prevention' : qualityAssessment.reason;
       console.log(`🔇 [${this.state.callSid}] Filtered background noise: "${transcript}" (confidence: ${qualityAssessment.confidenceScore}, quality: ${qualityAssessment.qualityScore}, reason: ${reason})`);
       
-      if (this.state.isInterrupted && isAgentAudioPlaying(this.state) && this.bargeInHandler?.responseHandler) {
+      if (this.state.isInterrupted && isAgentAudioPlaying(this.state, { forBargeIn: true }) && this.bargeInHandler?.responseHandler) {
         this.bargeInHandler.responseHandler.immediatelyStopAudio();
       }
       
@@ -227,7 +227,7 @@ export class TranscriptionHandler {
     const effectiveAudioPlayingForBlocking =
       isAudioPlayingForBlocking && !postInterruptBypass;
 
-    if (this.state.isInterrupted && isAudioPlaying && this.bargeInHandler?.responseHandler) {
+    if (this.state.isInterrupted && isAgentAudioPlaying(this.state, { forBargeIn: true }) && this.bargeInHandler?.responseHandler) {
       this.bargeInHandler.responseHandler.immediatelyStopAudio();
     }
 

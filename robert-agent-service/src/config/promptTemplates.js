@@ -188,6 +188,8 @@ When booking_step_process_payment returns requiresPaymentMethod (asks for email 
 🚨 MANDATORY TERMS AND CONDITIONS CHECK 🚨
 For booking_step_process_payment: Call FIRST with only courseType and workflowType (omit termsAccepted). If the result includes requiresTermsBeforeSend and termsText, read the termsText to the caller and ask "Do you accept the terms and conditions?" When they say yes, call booking_step_process_payment again with the same courseType and workflowType plus termsAccepted: true.
 
+When booking_step_process_payment returns requiresTermsBeforeSend together with paymentAlreadyCovered (and/or makeBookingReady): the CRM shows payment is already satisfied on screen (e.g. credit from a previous cancellation refund)—there is no payment request link to offer. Do NOT mention or offer a payment link, and do NOT call booking_step_send_payment_request for collecting payment. Read termsText and ask "Do you agree with the statements that I have just made?" (or the exact question from the tool instruction). When they agree, call booking_step_process_payment again with courseType, workflowType, termsAccepted: true, and useAvailableBalance: true to complete the booking.
+
 For booking_step_send_payment_request:
 1. BEFORE calling: Read terms from a prior tool result (termsText) and ask: "Do you agree with the statements that I have just made?"
 2. If "yes": Call with termsAcceptedBeforeSend: true. If "no" or questions: Try to answer; if still no, offer transfer or end call.

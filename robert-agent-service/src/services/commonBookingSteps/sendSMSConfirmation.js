@@ -5,12 +5,13 @@ import * as stationeryHelpers from './stationeryHelpers.js';
  * Send SMS confirmation after booking is completed
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
- * @param {string} courseType - Course type enum value (can be simplified format like 'tfl-one-to-one' or full enum like 'ITM', 'CBT', etc.)
+ * @param {string} courseType - Course type enum value (e.g. 'ITM', 'CBT', 'TfL 1-2-1')
  * @param {string|null} clientMobile - Optional client mobile number (from stored client details); when form and this are empty, returns requiresClientMobile so agent asks caller
  * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
+ * @param {{ sessionDetails?: object|null, courseType?: string }|null} [options] - sessionDetails for CBT venue + "Choose a course" line matching
  * @returns {Promise<{success: boolean, smsSent?: boolean, requiresClientMobile?: boolean, message?: string, instruction?: string}>}
  */
-export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tfl-one-to-one', clientMobile = null, progressCallback = null) {
+export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'ITM', clientMobile = null, progressCallback = null, options = null) {
   try {
     progressCallback?.({ message: 'Preparing the SMS.' });
     console.log('📱 [SMS] Sending SMS confirmation...');
@@ -132,15 +133,27 @@ export async function sendSMSConfirmation(page, screenshotsDir, courseType = 'tf
       console.log('⚠️ [SMS] Continuing with preset selection despite "Send To" field error');
     }
     
+    const courseTypeResolved = options?.courseType ?? courseType;
+    const sessionDetails = options?.sessionDetails ?? null;
+
     // Determine preset template name based on course type using helper function
-    const presetTemplateName = stationeryHelpers.getSMSPresetTemplateName(courseType);
+    const presetTemplateName = stationeryHelpers.getSMSPresetTemplateName(courseTypeResolved);
     console.log(`🔍 [SMS] Looking for preset template: "${presetTemplateName}"`);
-    
+
+    const ctLower = String(courseTypeResolved).toLowerCase();
+    const venueHint =
+      ctLower.includes('cbt') && sessionDetails?.location ? String(sessionDetails.location).trim() : null;
+
     // Select the SMS preset template (using smsEdit_iframe context)
-    await stationeryHelpers.selectSMSPreset(page, smsSearchContext, presetTemplateName);
-    
+    await stationeryHelpers.selectSMSPreset(page, smsSearchContext, presetTemplateName, venueHint);
+
     await takeScreenshot(page, 'preset-selected.png', screenshotsDir);
-    
+
+    if (sessionDetails) {
+      await stationeryHelpers.selectSMSCourseOption(page, smsSearchContext, sessionDetails, courseTypeResolved);
+      await takeScreenshot(page, 'course-selected.png', screenshotsDir);
+    }
+
     // Click Send message button (using smsEdit_iframe context)
     await stationeryHelpers.clickSendMessageButton(page, smsSearchContext);
     

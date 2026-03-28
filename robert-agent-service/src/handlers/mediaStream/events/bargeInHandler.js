@@ -82,7 +82,7 @@ export class BargeInHandler {
     // INDUSTRY STANDARD: Trigger IMMEDIATE barge-in when user speaks during agent response
     // This achieves <200ms interruptible latency (industry best practice)
 
-    const isAudioPlaying = isAgentAudioPlaying(this.state);
+    const isAudioPlaying = isAgentAudioPlaying(this.state, { forBargeIn: true });
 
     if (isAudioPlaying) {
       const timeSinceResponseCreated = this.state.responseStartTime > 0 ? Date.now() - this.state.responseStartTime : Infinity;
@@ -93,9 +93,18 @@ export class BargeInHandler {
         return;
       }
 
-      // Speakerphone/echo: suppress barge-in for first T ms of each response to reduce self-interruption
+      // Speakerphone/echo: suppress barge-in for first T ms of each response to reduce self-interruption.
+      // Skip suppress when we only match Twilio playout tail (activeResponseId/isResponding already cleared but audio still in ear).
+      const onlyTwilioPlayout =
+        !this.state.isResponding &&
+        this.state.activeResponseId == null &&
+        (this.state.lastOutboundSendTime ?? 0) > 0;
       const bargeInSuppressMs = conversationBehaviorConfig?.conversationFlow?.bargeInSuppressMs ?? 1000;
-      if (bargeInSuppressMs > 0 && timeSinceResponseCreated < bargeInSuppressMs) {
+      if (
+        !onlyTwilioPlayout &&
+        bargeInSuppressMs > 0 &&
+        timeSinceResponseCreated < bargeInSuppressMs
+      ) {
         console.log(`🔇 [${this.state.callSid}] Barge-in suppressed (within ${bargeInSuppressMs}ms of response start, ${Math.round(timeSinceResponseCreated)}ms) - reduces speakerphone echo`);
         return;
       }
@@ -121,7 +130,11 @@ export class BargeInHandler {
       return;
     } else {
       // Normal user input - agent is waiting, not responding
-      console.log(`👤 [${this.state.callSid}] User speech started but no audio playing - normal input (not barge-in)`);
+      const lastSend = this.state.lastOutboundSendTime ?? 0;
+      const tail = this.state.bargeInTailUntil ?? 0;
+      console.log(
+        `👤 [${this.state.callSid}] User speech started but no audio playing - normal input (not barge-in) (lastOutboundSendAgeMs=${lastSend ? Date.now() - lastSend : 'n/a'}, bargeInTailUntilInMs=${tail > Date.now() ? tail - Date.now() : 0})`
+      );
       return; // Exit early if barge-in conditions not met
     }
   }

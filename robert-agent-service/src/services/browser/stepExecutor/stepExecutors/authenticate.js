@@ -5,6 +5,8 @@
  */
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
+import { rehydrateSessionDetailsFromLastAvailability } from '../../../commonBookingSteps/slotStorageUtils.js';
+import sessionStateManager from '../../sessionStateManager.js';
 
 /**
  * Execute authenticate step
@@ -31,6 +33,11 @@ export async function executeAuthenticate(page, args, sessionState, screenshotsD
   if (args.agreedSlot && args.callSid) {
     sessionStateManager.setSessionDetails(args.callSid, args.agreedSlot);
     console.log(`✅ [authenticate] Persisted agreedSlot to session state for ${args.callSid}`);
+  } else if (args.callSid) {
+    const recovered = rehydrateSessionDetailsFromLastAvailability(args.callSid);
+    if (recovered) {
+      console.log(`✅ [authenticate] Auto-persisted single-slot availability as session details (no agreedSlot in args) for ${args.callSid}`);
+    }
   }
 
   return {

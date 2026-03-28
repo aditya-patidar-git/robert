@@ -11,7 +11,7 @@ import { validatePreferences, generatePreferenceErrorMessage } from '../../servi
 import { BrowserManager } from '../../services/browser/browserManager.js';
 import configManager from '../../agent/configManager.js';
 import { conversations, updateConversation } from '../../shared/state.js';
-import { storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from '../../services/commonBookingSteps/slotStorageUtils.js';
+import { storeSelectedSlot, storePreferencesBeforeAvailabilityCheck, rehydrateSessionDetailsFromLastAvailability } from '../../services/commonBookingSteps/slotStorageUtils.js';
 import { computeAnchorRangeFromSlots } from '../../services/commonBookingSteps/availabilityDateIntent.js';
 
 const bookingToolNameMap = {
@@ -340,6 +340,12 @@ export class BaseStepTool {
             slotCount: result.slotCount ?? 0
           };
           console.log(`✅ [${callSid}] Stored availability data in conversation.lastAvailabilityCheck (allSlots: ${result.allSlots?.length || 0}, selectedSlot: ${!!result.selectedSlot}, sessionDetails: ${!!result.sessionDetails}, anchors: ${anchor.anchorDateMin}–${anchor.anchorDateMax})`);
+          if (!(result.selectedSlot || result.sessionDetails)) {
+            const rh = rehydrateSessionDetailsFromLastAvailability(callSid);
+            if (rh) {
+              console.log(`✅ [${callSid}] Auto-bound single-slot availability after Step 1 (select_session/authenticate can use session details)`);
+            }
+          }
         }
 
         // CRITICAL FIX: Store selected slot when user picks one (via agreedSlot/selectedSlot parameter)

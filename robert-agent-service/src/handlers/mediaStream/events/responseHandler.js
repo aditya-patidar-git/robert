@@ -437,7 +437,6 @@ export class ResponseHandler {
     if (this.state.outboundAudioBuffer) {
       bufferSize = this.state.outboundAudioBuffer.length;
       this.state.outboundAudioBuffer = null;
-      this.state.lastOutboundSendTime = 0;
 
       if (bufferSize > 0) {
         console.log(`🛑 [${this.state.callSid}] Cleared ${bufferSize} bytes of buffered audio during barge-in`);
@@ -509,7 +508,8 @@ export class ResponseHandler {
     console.log(`   - Buffer clear: ${bufferSize > 0 ? 'cleared ' + bufferSize + ' bytes' : 'no buffer'}`);
     console.log(`   - Twilio clear message: ${wsExists && wsIsOpen && streamSidExists && callIsOpen ? 'sent' : 'skipped'}`);
 
-    // Barge-in hard stop: clear post-TTS tail so isAgentAudioPlaying() does not stay true after Twilio clear
+    // Barge-in hard stop: clear post-TTS tail and last-send clock so isAgentAudioPlaying(..., { forBargeIn }) does not stay true after Twilio clear
+    this.state.lastOutboundSendTime = 0;
     this.state.bargeInTailUntil = 0;
     this.state.agentFinishedSpeakingTime = Date.now();
 
@@ -767,6 +767,21 @@ export class ResponseHandler {
         this.state.hasInitialGreetingCompleted = true;
         console.log(
           `🎯 [${this.state.callSid}] Initial greeting response ended (cancelled); advancing flow so caller can receive follow-up (memory consent not triggered from this path)`
+        );
+      }
+
+      // Active response tracking was cleared (e.g. tool call) before this response.done; bargeInTailUntil may not have been set. Extend tail so barge-in still sees "playing" while audio drains.
+      const statusNorm = String(status || '').toLowerCase();
+      const hasAudioModality = event.response?.modalities?.includes('audio') ?? false;
+      if (statusNorm === 'completed' && hasAudioModality) {
+        const bargeInTailCfg = configManager.getConversationBehaviorConfig()?.bargeInTail;
+        const drainBufferMs = bargeInTailCfg?.drainBufferMs ?? 2000;
+        const maxTailMs = bargeInTailCfg?.maxTailMs ?? 8000;
+        const nonActiveSafetyMs = Math.min(maxTailMs, 6000);
+        const tailEnd = Date.now() + drainBufferMs + nonActiveSafetyMs;
+        this.state.bargeInTailUntil = Math.max(this.state.bargeInTailUntil || 0, tailEnd);
+        console.log(
+          `📋 [${this.state.callSid}] Non-active audio response.done — ensured bargeInTailUntil covers playback edge (+${drainBufferMs + nonActiveSafetyMs}ms window)`
         );
       }
     }

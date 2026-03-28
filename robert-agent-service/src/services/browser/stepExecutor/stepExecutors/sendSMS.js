@@ -5,6 +5,17 @@
  */
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
+import { conversations } from '../../../../shared/state.js';
+import sessionStateManager from '../../sessionStateManager.js';
+
+function resolveCallSid(args, sessionState) {
+  if (args?.callSid) return args.callSid;
+  if (sessionState?.browserSessionId) {
+    const m = String(sessionState.browserSessionId).match(/^browser_(.+?)_\d+$/);
+    if (m) return m[1];
+  }
+  return null;
+}
 
 /**
  * Execute sendSMS step
@@ -17,18 +28,27 @@ import * as commonSteps from '../../../commonBookingSteps/index.js';
  */
 export async function executeSendSMS(page, args, sessionState, screenshotsDir, progressCallback = null) {
   progressCallback?.({ message: 'Sending the SMS.' });
-  const courseType = args.courseType || sessionState?.courseType;
+  const courseTypeStr = args.courseType || sessionState?.courseType || 'ITM';
   const clientMobile = args.customerMobile || args.clientMobile || sessionState?.customerMobile || null;
 
-  // Map course type to SMS template type
-  let smsCourseType = 'tfl-one-to-one';
-  if (courseType === 'TfL Beyond CBT' || courseType === 'TfL - Beyond CBT - Skills for Delivery Riders') {
-    smsCourseType = 'tfl-beyond-cbt';
-  } else if (courseType === 'Full Licence Assessment' || courseType === 'Full Motorcycle Licence Assessment') {
-    smsCourseType = 'full-licence';
+  const callSid = resolveCallSid(args, sessionState);
+  let sessionDetails = sessionState?.sessionDetails ?? null;
+  if (!sessionDetails && callSid) {
+    sessionDetails = sessionStateManager.getSessionDetails(callSid);
   }
-  
-  const result = await commonSteps.sendSMSConfirmation(page, screenshotsDir, smsCourseType, clientMobile, progressCallback);
+  if (!sessionDetails && callSid && conversations[callSid]?.lastAvailabilityCheck) {
+    const lac = conversations[callSid].lastAvailabilityCheck;
+    sessionDetails = lac.sessionDetails || lac.selectedSlot || null;
+  }
+
+  const result = await commonSteps.sendSMSConfirmation(
+    page,
+    screenshotsDir,
+    courseTypeStr,
+    clientMobile,
+    progressCallback,
+    { sessionDetails, courseType: courseTypeStr }
+  );
 
   if (result?.requiresClientMobile === true) {
     return {
