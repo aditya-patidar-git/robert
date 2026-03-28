@@ -441,9 +441,23 @@ export async function findSendSMSButton(page, searchContext) {
  * @param {import('playwright').Locator} dropdownRow
  */
 async function openSmsDevExtremeDropdown(page, searchContext, dropdownRow) {
-  await dropdownRow.click();
-  await page.waitForTimeout(2000);
-  await page.waitForTimeout(1000);
+  // DevExtreme dropdowns require two interactions to open:
+  // - first click focuses the input (shows current value, does NOT open the list)
+  // - second click (or clicking the arrow button) actually opens the list overlay.
+  // Try the dedicated arrow button first — it opens the list in a single click.
+  const arrowButton = dropdownRow.locator('.dx-dropdowneditor-button').first();
+  const hasArrowButton = (await arrowButton.count()) > 0;
+
+  if (hasArrowButton) {
+    await arrowButton.click();
+    await page.waitForTimeout(1500);
+  } else {
+    // Fallback: click once to focus, then again to open.
+    await dropdownRow.click();
+    await page.waitForTimeout(500);
+    await dropdownRow.click();
+    await page.waitForTimeout(1500);
+  }
 
   let dropdownOverlay = searchContext.locator('div.dx-dropdownlist-popup-wrapper').last();
   let overlayExists = await dropdownOverlay.count() > 0;

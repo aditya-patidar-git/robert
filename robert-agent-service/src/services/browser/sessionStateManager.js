@@ -189,6 +189,23 @@ class SessionStateManager {
   }
 
   /**
+   * Clear specific preference keys from known preferences
+   * @param {string} callSid - Call SID identifier
+   * @param {string[]} keys - Preference keys to remove
+   */
+  clearPreferences(callSid, keys) {
+    if (!keys || keys.length === 0) return;
+    this._syncBookingSession(callSid, (session) => {
+      if (session.knownPreferences) {
+        for (const key of keys) {
+          delete session.knownPreferences[key];
+        }
+      }
+    });
+    console.log(`🧹 [SESSION] ${callSid}: Cleared preferences:`, keys.join(', '));
+  }
+
+  /**
    * Get workflow type
    * @param {string} callSid - Call SID identifier
    * @returns {string|null} Workflow type ('existing', 'new', or null)

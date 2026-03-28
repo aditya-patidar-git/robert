@@ -64,9 +64,25 @@ export async function executeCheckAvailability(page, args, sessionState, screens
   const slotsToAnnounce = result.slotsToAnnounce ?? [];
   const slotCount = slotsToAnnounce.length;
   const requiresExplicitSlotChoice = slotCount > 1;
-  // Tool message must list EVERY slot the filter produced (slotCount), not only selectedSlot—otherwise the model reads one slot while slotCount > 1.
+
+  // Short location name for voice — city/centre only, no full postal address.
+  const POSTCODE_TO_CENTRE = {
+    RM9: 'Dagenham', EN11: 'Hoddesdon', HA0: 'Alperton',
+    CR0: 'Croydon', HA8: 'Edgware', SE3: 'Eltham', KT3: 'Wimbledon',
+  };
+  const _shortLocation = (loc) => {
+    const id = commonSteps.extractLocationIdentifier(loc || '');
+    if (!id) return loc || 'Unknown';
+    return POSTCODE_TO_CENTRE[String(id).toUpperCase()] || id;
+  };
+
+  // Concise voice-friendly format: "Mon 20th at 07:00, Hoddesdon, £125.00"
+  // Full address, instructor and other details remain available in slotsToAnnounce
+  // objects for the model to share on request.
   const formatSlot = (s) =>
-    `${s.date} at ${s.time}, ${s.location}, ${s.price}`;
+    `${s.date} at ${s.time}, ${_shortLocation(s.location)}, ${s.price}`;
+
+  // Tool message must list EVERY slot the filter produced (slotCount), not only selectedSlot.
   const slotsSummary =
     slotsToAnnounce.length > 0
       ? slotsToAnnounce.map(formatSlot).join('; ')

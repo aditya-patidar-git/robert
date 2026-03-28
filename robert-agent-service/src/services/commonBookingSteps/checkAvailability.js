@@ -313,87 +313,164 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       ? allSlots[0].monthYear
       : latestMonthYear;
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Build slotsToAnnounce: the 3-slot spoken shortlist.
+    //
+    // Five cases depending on what preferences were provided and whether the
+    // selected slot actually matched the preferred location:
+    //
+    //   EC-5  : noSlotsInDateFilter      → 3 closest-date slots (all centres)
+    //   Base  : no preferences / no slot → earliest date's slots (diverse)
+    //   Case 1: date only, no location   → same-date all-centre diverse, fill proximity
+    //   Case 2: date+location, matched   → same-centre same-date, then proximity fill
+    //   Case 3: date+location, fallback  → same-date all-centre diverse, then preferred-centre proximity
+    // ─────────────────────────────────────────────────────────────────────
     let slotsToAnnounce;
-    if (noSlotsInDateFilter) {
-      slotsToAnnounce = [];
-    } else if (preferredDateNorm) {
-      slotsToAnnounce = candidateSlots.filter(s => s.startDate && s.startDate.startsWith(preferredDateNorm));
-    } else {
-      const firstSlot = candidateSlots[0];
-      const soonestDateStr = firstSlot?.startDate ? firstSlot.startDate.split('T')[0] : null;
-      slotsToAnnounce = soonestDateStr
-        ? candidateSlots.filter(s => s.startDate && s.startDate.startsWith(soonestDateStr))
-        : candidateSlots.slice(0, 3);
-    }
+    {
+      // ── Shared helpers ──────────────────────────────────────────────────
+      const _slotKey = (s) => `${s.date}|${s.time}|${String(s.location || '').slice(0, 160)}`;
+      const _centre  = (loc) => normaliseToCentreName(extractLocationIdentifier(loc || ''));
 
-
-    // P2 FIX A2 Extension: Filter announced slots by location or instructor if preference exists
-    if (preferences.location || preferences.instructor) {
-      const prefLoc = preferences.location ? normalizeLocation(preferences.location) : null;
-      const prefInst = preferences.instructor ? normalizeInstructor(preferences.instructor) : null;
-
-      const filteredSlots = slotsToAnnounce.filter(slot => {
-        let matches = true;
-        if (prefLoc) {
-          const slotLoc = normalizeLocation(slot.location);
-          matches = matches && slotLoc && (slotLoc === prefLoc || slotLoc.includes(prefLoc) || prefLoc.includes(slotLoc));
+      // Dedup ordered list, capped at `cap`.
+      const _dedup = (ordered, cap = 3) => {
+        const seen = new Set();
+        const out  = [];
+        for (const s of ordered) {
+          const k = _slotKey(s);
+          if (!seen.has(k)) { seen.add(k); out.push(s); }
+          if (out.length >= cap) break;
         }
-        if (prefInst) {
-          const slotInst = normalizeInstructor(slot.instructor);
-          matches = matches && slotInst && (slotInst === prefInst || slotInst.includes(prefInst) || prefInst.includes(slotInst));
-        }
-        return matches;
-      });
-
-      if (filteredSlots.length > 0) {
-        slotsToAnnounce = filteredSlots;
-      }
-    }
-
-    if (slotsToAnnounce.length === 0 && !noSlotsInDateFilter && candidateSlots.length > 0) {
-      slotsToAnnounce = selectedSlot ? [selectedSlot] : [candidateSlots[0]];
-    }
-
-    // When preferences produced a selectedSlot, the spoken list must lead with it and then
-    // include alternatives at the same centre sorted by date proximity to the selected slot.
-    // Sorting by proximity (not chronologically) ensures that when the preferred date was April 10
-    // but location was unavailable, the fallback centre's nearby dates (Apr 8, Apr 11) appear
-    // rather than the earliest calendar slots (Mar 31, Apr 1).
-    if (selectedSlot && candidateSlots.length > 0) {
-      const slotKey = (s) =>
-        `${s.date}|${s.time}|${String(s.location || '').slice(0, 160)}`;
-      const selKey = slotKey(selectedSlot);
-      const centre = (loc) =>
-        normaliseToCentreName(extractLocationIdentifier(loc || ''));
-      const centreSel = centre(selectedSlot.location);
-      const sameCentre = (s) => {
-        const c = centre(s.location);
-        return centreSel && c && c.toLowerCase() === centreSel.toLowerCase();
+        return out;
       };
-      const byCentre = allSlots.filter(sameCentre);
-      // Sort alternatives by proximity to the selected slot's date so the caller hears
-      // the nearest dates first, not the chronologically earliest ones.
-      const selTime = selectedSlot.startDate ? new Date(selectedSlot.startDate).getTime() : null;
-      const alternatives = byCentre.filter((s) => slotKey(s) !== selKey);
-      if (selTime !== null) {
-        alternatives.sort((a, b) => {
-          const aTime = a.startDate ? new Date(a.startDate).getTime() : Infinity;
-          const bTime = b.startDate ? new Date(b.startDate).getTime() : Infinity;
-          return Math.abs(aTime - selTime) - Math.abs(bTime - selTime);
+
+      // Pick up to `cap` slots, preferring one per centre first (diversity), then extras.
+      const _diversePick = (slots, cap = 3) => {
+        const seen = new Set();
+        const seenCentres = new Set();
+        const first = [];
+        const rest  = [];
+        for (const s of slots) {
+          const k = _slotKey(s);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const c = _centre(s.location) || 'unknown';
+          if (!seenCentres.has(c)) { seenCentres.add(c); first.push(s); }
+          else rest.push(s);
+        }
+        return [...first, ...rest].slice(0, cap);
+      };
+
+      // Sort a copy of `slots` by |date - refMs|, ascending.
+      const _byProximity = (slots, refMs) => {
+        if (refMs == null) return [...slots];
+        return [...slots].sort((a, b) => {
+          const aMs = a.startDate ? new Date(a.startDate).getTime() : Infinity;
+          const bMs = b.startDate ? new Date(b.startDate).getTime() : Infinity;
+          return Math.abs(aMs - refMs) - Math.abs(bMs - refMs);
+        });
+      };
+
+      // All slots whose ISO date (YYYY-MM-DD) matches `isoDate`.
+      const _onDate = (pool, isoDate) =>
+        pool.filter(s => s.startDate && s.startDate.startsWith(isoDate));
+
+      // ── Reference timestamps ────────────────────────────────────────────
+      const prefDateMs  = preferredDateNorm
+        ? new Date(preferredDateNorm + 'T00:00:00Z').getTime()
+        : null;
+      const selectedIso = selectedSlot?.startDate?.split('T')[0] ?? null;
+      const selDateMs   = selectedSlot?.startDate
+        ? new Date(selectedSlot.startDate).getTime()
+        : prefDateMs;
+
+      // ── Determine which case applies ────────────────────────────────────
+      const locationPreferenceGiven =
+        !!(preferences.location && String(preferences.location).trim());
+
+      const locationMatchedForSelectedSlot =
+        locationPreferenceGiven &&
+        selectedSlot != null &&
+        !!(_centre(selectedSlot.location) &&
+           _centre(preferences.location) &&
+           _centre(selectedSlot.location).toLowerCase() ===
+             _centre(preferences.location).toLowerCase());
+
+      if (noSlotsInDateFilter) {
+        // EC-5: Date given but zero slots in that window — show 3 closest to preferred date.
+        console.log(`📋 [SLOTS] EC-5: no slots in date window — showing closest alternatives (refMs=${prefDateMs})`);
+        slotsToAnnounce = prefDateMs
+          ? _dedup(_byProximity(allSlots, prefDateMs))
+          : _dedup(allSlots);
+
+      } else if (!hasPreferences || !selectedSlot) {
+        // Base: no preferences — show earliest date's slots (centre-diverse), then fill.
+        const firstIso     = allSlots[0]?.startDate?.split('T')[0] ?? null;
+        const sameDaySlots = firstIso ? _onDate(allSlots, firstIso) : [];
+        const otherSlots   = firstIso ? allSlots.filter(s => !s.startDate?.startsWith(firstIso)) : allSlots;
+        console.log(`📋 [SLOTS] Base: no preferences — earliest-date diverse pick (date=${firstIso})`);
+        slotsToAnnounce = _dedup([..._diversePick(sameDaySlots), ...otherSlots]);
+
+      } else if (!locationPreferenceGiven) {
+        // Case 1: Date only (no location) — all centres on preferred date (diverse), fill by proximity.
+        const sameDateAll = selectedIso ? _onDate(allSlots, selectedIso) : [];
+        const otherSlots  = _byProximity(
+          allSlots.filter(s => !s.startDate?.startsWith(selectedIso ?? '\0')),
+          selDateMs
+        );
+        console.log(`📋 [SLOTS] Case 1: date-only (${selectedIso}) — all-centre diverse + proximity fill`);
+        slotsToAnnounce = _dedup([..._diversePick(sameDateAll), ...otherSlots]);
+
+      } else if (locationMatchedForSelectedSlot) {
+        // Case 2: Date + location matched — same-centre same-date first, then proximity.
+        const centreSel  = _centre(selectedSlot.location);
+        const selKey     = _slotKey(selectedSlot);
+        const sameCentreAll = allSlots.filter(s => {
+          const c = _centre(s.location);
+          return c && centreSel && c.toLowerCase() === centreSel.toLowerCase();
+        });
+        const sameDateSC = sameCentreAll.filter(
+          s => s.startDate?.startsWith(selectedIso ?? '\0') && _slotKey(s) !== selKey
+        );
+        const otherSC    = _byProximity(
+          sameCentreAll.filter(s => !s.startDate?.startsWith(selectedIso ?? '\0')),
+          selDateMs
+        );
+        console.log(`📋 [SLOTS] Case 2: date+location matched (centre=${centreSel}, date=${selectedIso}) — same-centre fill`);
+        slotsToAnnounce = _dedup([selectedSlot, ...sameDateSC, ...otherSC]);
+
+      } else {
+        // Case 3: Date + location, preferred location unavailable on that date —
+        // diverse same-date slots (all centres), fill with preferred-centre proximity.
+        const prefCentre   = _centre(preferences.location);
+        const sameDateAll  = selectedIso ? _onDate(allSlots, selectedIso) : [];
+        const prefLocSlots = allSlots.filter(s => {
+          const c = _centre(s.location);
+          return c && prefCentre && c.toLowerCase() === prefCentre.toLowerCase();
+        });
+        const prefLocFill  = _byProximity(
+          prefLocSlots.filter(s => !s.startDate?.startsWith(selectedIso ?? '\0')),
+          selDateMs
+        );
+        console.log(`📋 [SLOTS] Case 3: date+location fallback (prefCentre=${prefCentre}, date=${selectedIso}) — all-centre same-date + pref-centre proximity fill`);
+        slotsToAnnounce = _dedup([..._diversePick(sameDateAll), ...prefLocFill]);
+      }
+
+      // ── Soft instructor sort ────────────────────────────────────────────
+      // If instructor preference given, float matching-instructor slots to top
+      // without excluding non-matching ones (instructor availability is sparse).
+      if (preferences.instructor && slotsToAnnounce.length > 1) {
+        const prefInst = normalizeInstructor(preferences.instructor);
+        slotsToAnnounce.sort((a, b) => {
+          const aMatch = normalizeInstructor(a.instructor) === prefInst ? 0 : 1;
+          const bMatch = normalizeInstructor(b.instructor) === prefInst ? 0 : 1;
+          return aMatch - bMatch;
         });
       }
-      const ordered = [selectedSlot, ...alternatives];
-      const seen = new Set();
-      const dedup = [];
-      for (const s of ordered) {
-        const k = slotKey(s);
-        if (!seen.has(k)) {
-          seen.add(k);
-          dedup.push(s);
-        }
-        if (dedup.length >= 3) break;
+
+      // ── Final safety fallback ───────────────────────────────────────────
+      if (slotsToAnnounce.length === 0 && candidateSlots.length > 0) {
+        slotsToAnnounce = _dedup(selectedSlot ? [selectedSlot, ...candidateSlots] : candidateSlots);
       }
-      slotsToAnnounce = dedup;
     }
 
     return {

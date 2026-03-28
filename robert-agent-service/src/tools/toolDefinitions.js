@@ -30,7 +30,9 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
 
 4. If the tool listed MULTIPLE slots: do NOT call booking_step_authenticate until the caller clearly chooses one slot from that list. If only ONE slot was presented, caller confirmation ("yes", "proceed", etc.) is enough. agreedSlot must match the slot the caller chose (not a default). Do NOT ask for full name, email, or contact details—Step 2 is CRM system login only.
 
-5. RE-CHECK: If the caller asks for other dates, locations, "earliest at [centre]", "show me Wimbledon", "check again", or any new criteria after a previous run, call this tool again with courseType and the updated preference fields—then present only the new result. Do not tell them you can only use the previous list or to use the website instead.`,
+5. RE-CHECK: If the caller asks for other dates, locations, "earliest at [centre]", "show me Wimbledon", "check again", or any new criteria after a previous run, call this tool again with courseType and the updated preference fields—then present only the new result. Do not tell them you can only use the previous list or to use the website instead.
+
+PREFERENCE CLEARING: If the caller previously gave a location preference but now says "any location", "no location preference", "all centres", or similar, you MUST explicitly pass location: null (not omit it) so the previous preference is cleared. The same applies to date and instructor. Omitting a field that was previously set will reuse the old value; passing null always clears it.`,
       parameters: {
         type: 'object',
         properties: {
@@ -50,11 +52,13 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
           },
           location: {
             type: 'string',
-            description: 'Preferred location: one of the training centre names (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon). If the caller gave their area or town, use the nearest centre from this list and pass that name.'
+            description: 'Preferred location: one of the training centre names (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon). If the caller gave their area or town, use the nearest centre from this list and pass that name. Pass null (not omit) if the caller explicitly removes their location preference (e.g. "any location", "no preference", "all centres") — omitting the field will reuse the previously stored location.',
+            nullable: true
           },
           instructor: {
             type: 'string',
-            description: 'Preferred instructor (optional, for slot matching/filtering)'
+            description: 'Preferred instructor (optional, for slot matching/filtering)',
+            nullable: true
           }
         },
         required: ['courseType']

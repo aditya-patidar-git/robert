@@ -173,17 +173,26 @@ export function storePreferencesBeforeAvailabilityCheck(callSid, preferences) {
     return;
   }
 
-  // Remove undefined values
-  const cleanPreferences = {};
+  const toUpdate = {};
+  const toDelete = [];
+
   Object.keys(preferences).forEach(key => {
-    if (preferences[key] !== undefined && preferences[key] !== null) {
-      cleanPreferences[key] = preferences[key];
+    if (preferences[key] === undefined) {
+      // Key not provided — leave session value untouched
+    } else if (preferences[key] === null) {
+      // Explicit null → clear this preference from the session
+      toDelete.push(key);
+    } else {
+      toUpdate[key] = preferences[key];
     }
   });
 
-  if (Object.keys(cleanPreferences).length > 0) {
-    sessionStateManager.updatePreferences(callSid, cleanPreferences);
-    console.log(`✅ [${callSid}] Stored preferences BEFORE Step 1:`, cleanPreferences);
+  if (toDelete.length > 0) {
+    sessionStateManager.clearPreferences(callSid, toDelete);
+  }
+  if (Object.keys(toUpdate).length > 0) {
+    sessionStateManager.updatePreferences(callSid, toUpdate);
+    console.log(`✅ [${callSid}] Stored preferences BEFORE Step 1:`, toUpdate);
   }
 }
 

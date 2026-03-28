@@ -822,7 +822,7 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
           : `SINGLE SLOT: When the caller confirms they want this slot (e.g. "yes", "okay go ahead", "proceed", "book that"), call booking_step_authenticate with agreedSlot matching the tool result slot.`;
         const instruction = `${supersession}
 
-CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool}
+CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message. Each slot is given in short format (date, time, location name, price) — this is intentional for voice. If the caller asks for more detail about a specific slot (e.g. full address, instructor name), you may provide it from the full slot data in the tool result (slotsToAnnounce objects).${slotsFromTool}
 
 ${slotRules}
 
