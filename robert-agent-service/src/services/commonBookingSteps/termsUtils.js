@@ -41,23 +41,23 @@ export function getTermsText() {
  * @returns {Object} Validation result with appropriate flags
  */
 export function validateTermsAcceptance(termsAcceptedBeforeSend) {
-  // If undefined or false, terms must be asked
-  if (termsAcceptedBeforeSend === undefined || termsAcceptedBeforeSend === false) {
+  // Terms have not been presented yet — agent must read them and get agreement
+  if (termsAcceptedBeforeSend === undefined) {
     return {
       requiresTermsBeforeSend: true,
       termsText: getTermsText()
     };
   }
-  
-  // If explicitly false (rejected), return not accepted
+
+  // Caller explicitly rejected the terms
   if (termsAcceptedBeforeSend === false) {
     return {
       termsNotAccepted: true,
       requiresRetry: true
     };
   }
-  
-  // If true, terms are accepted
+
+  // Terms accepted
   return {
     termsAccepted: true
   };

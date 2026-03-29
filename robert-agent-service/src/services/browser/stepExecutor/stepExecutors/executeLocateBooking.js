@@ -62,8 +62,13 @@ export async function executeLocateBooking(page, args, sessionState, screenshots
           if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) return d;
         }
       }
+      // ISO strings (e.g. "2026-03-30") are parsed as UTC midnight by the JS spec.
+      // Normalise to local midnight so the comparison against CRM dates (always local) is consistent.
       const iso = new Date(trimmed);
-      return !isNaN(iso.getTime()) ? iso : null;
+      if (!isNaN(iso.getTime())) {
+        return new Date(iso.getFullYear(), iso.getMonth(), iso.getDate());
+      }
+      return null;
     };
 
     const targetDateOnly = parseCourseDateInput(courseDate);

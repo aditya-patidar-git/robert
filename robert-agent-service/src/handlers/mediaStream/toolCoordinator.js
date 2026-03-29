@@ -88,7 +88,8 @@ export class ToolCoordinator {
       (text) => this.applyIntentFromTranscript(text),
       () => this.openaiIntegration?.getCurrentWorkflowPhase?.(),
       (utterance) => this.queueLanguageSelectionBackup(utterance),
-      () => this.createAudioResponse()
+      () => this.createAudioResponse(),
+      () => this.nudgeSlotChoiceAfterInterruptionTimeout()
     );
     this.toolCallHandler = new ToolCallHandler(stateManager, openaiWs, {
       onBeforeTriggerResponse: (callSid, context) => {
@@ -407,6 +408,28 @@ export class ToolCoordinator {
    * - Without disabling tools, OpenAI may call tools and generate JSON/URL output instead of speech
    * - For initial greeting, we rely on instructions rather than dummy conversation items to avoid confusion
    */
+  /**
+   * When interrupt timeout fires with no usable transcript (e.g. noise filtered), reprompt slot choice in booking_availability.
+   */
+  nudgeSlotChoiceAfterInterruptionTimeout() {
+    const callSid = this.state.callSid;
+    const conv = conversations[callSid];
+    const phase =
+      this.openaiIntegration?.getCurrentWorkflowPhase?.() ??
+      promptService.getWorkflowPhaseFromConversation(conv, this.state);
+    const lac = conv?.lastAvailabilityCheck;
+    const needsSlot =
+      phase === 'booking_availability' &&
+      lac?.requiresExplicitSlotChoice === true &&
+      (lac?.slotCount ?? 0) > 0;
+    if (!needsSlot) return;
+    this.state.pendingInterruptionInstructionSuffix =
+      'The caller may have been interrupted while you were listing slots. Briefly acknowledge, then ask which of the listed slots they want (by date, time, or location). If you are unsure what they said, ask one short clarifying question. Do NOT open with generic "what is your question?" or generic chit-chat.';
+    this.state.forceToolChoiceNoneOnce = true;
+    this.state.explicitResponseRequested = true;
+    this.createAudioResponse().catch(() => {});
+  }
+
   async createAudioResponse() {
     if (!this.openaiWs || this.openaiWs.readyState !== 1) {
       console.error(`❌ [${this.state.callSid}] WebSocket not ready: ${this.openaiWs?.readyState}`);
@@ -968,16 +991,16 @@ export class ToolCoordinator {
               syntheticSpeechStopped,
               snapshotSpeechStopped
             );
-            if (
-              mergedBatch &&
-              shouldCreateFromSpeechStopped &&
-              !this.state.isInterrupted &&
-              this.state.tryAcquireResponseLock()
-            ) {
+            if (mergedBatch && shouldCreateFromSpeechStopped && !this.state.isInterrupted) {
+              if (this.state.isResponding && this.state.activeResponseId === null) {
+                console.warn(
+                  `⚠️ [${this.state.callSid}] Releasing stuck response lock before speech_stopped process_transcriptions`
+                );
+                this.state.forceReleaseResponseLock();
+              }
               try {
                 if (this.state.isInterrupted) {
-                  console.log(`🛑 [${this.state.callSid}] Skipping response creation - user interrupted after lock acquisition`);
-                  this.state.releaseResponseLock();
+                  console.log(`🛑 [${this.state.callSid}] Skipping response creation - user interrupted before create`);
                   return;
                 }
                 console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] speech_stopped process_transcriptions`);
@@ -1004,17 +1027,21 @@ export class ToolCoordinator {
             }
           }
           // Handle acknowledge_interruption return value
+          // Do not call tryAcquireResponseLock here — createAudioResponse() acquires the lock. Pre-acquiring would
+          // always fail the inner tryAcquire (double-acquire bug).
           if (speechStoppedResult && speechStoppedResult.type === 'acknowledge_interruption') {
-            // CRITICAL: Don't create acknowledgment if interrupted (user said stop)
-            if (this.state.waitingForUser && !this.state.isResponding && this.state.activeResponseId === null && !this.state.isInterrupted && this.state.tryAcquireResponseLock()) {
+            if (this.state.waitingForUser && !this.state.isInterrupted) {
+              if (this.state.isResponding && this.state.activeResponseId === null) {
+                console.warn(
+                  `⚠️ [${this.state.callSid}] Releasing stuck response lock (isResponding with null activeResponseId) before acknowledge_interruption`
+                );
+                this.state.forceReleaseResponseLock();
+              }
               try {
-                // Double-check interruption state after acquiring lock
                 if (this.state.isInterrupted) {
-                  console.log(`🛑 [${this.state.callSid}] Skipping acknowledgment response - user interrupted after lock acquisition`);
-                  this.state.releaseResponseLock();
+                  console.log(`🛑 [${this.state.callSid}] Skipping acknowledgment response - user interrupted before create`);
                   return;
                 }
-                
                 console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] acknowledge_interruption`);
                 this.state.explicitResponseRequested = true;
                 await this.createAudioResponse();

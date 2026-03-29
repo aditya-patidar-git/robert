@@ -5,10 +5,11 @@ import * as stationeryHelpers from './stationeryHelpers.js';
  * Send booking confirmation email after booking is completed
  * @param {Page} page - Playwright page object
  * @param {string} screenshotsDir - Directory to save screenshots
- * @param {string} courseType - Course type enum value (e.g., 'ITM', 'Introduction to Motorcycling', 'CBT', 'TfL 1-2-1', etc.)
+ * @param {string} courseType - Course type enum value (e.g., 'Introduction to Motorcycling', 'Compulsory Basic Training', etc.)
  * @param {Function|null} progressCallback - Optional callback({ message }) for path-based voice updates
+ * @param {string|null} [location] - Raw location string from sessionDetails (used for CBT site-specific template)
  */
-export async function sendBookingConfirmationEmail(page, screenshotsDir, courseType = 'tfl', progressCallback = null) {
+export async function sendBookingConfirmationEmail(page, screenshotsDir, courseType = 'Introduction to Motorcycling', progressCallback = null, location = null) {
   try {
     progressCallback?.({ message: 'Preparing your confirmation.' });
     console.log('📧 [CONFIRMATION] Sending booking confirmation email...');
@@ -109,9 +110,9 @@ export async function sendBookingConfirmationEmail(page, screenshotsDir, courseT
     
     await takeScreenshot(page, 'stationary-page-loaded.png', screenshotsDir);
     
-    // Determine template name based on course type using helper function
-    const templateName = stationeryHelpers.getConfirmationTemplateName(courseType);
-    console.log(`🔍 [CONFIRMATION] Looking for template: "${templateName}"`);
+    // Determine template name based on course type (and location for CBT site-specific templates)
+    const templateName = stationeryHelpers.getConfirmationTemplateName(courseType, location);
+    console.log(`🔍 [CONFIRMATION] Looking for template: "${templateName}" (courseType="${courseType}", location="${location || 'none'}")`);
     
     // Select the stationery template (using stationerySender_iframe context)
     await stationeryHelpers.selectStationeryTemplate(page, stationerySearchContext, templateName);

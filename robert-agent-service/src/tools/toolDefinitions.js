@@ -30,7 +30,9 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
 
 4. If the tool listed MULTIPLE slots: do NOT call booking_step_authenticate until the caller clearly chooses one slot from that list. If only ONE slot was presented, caller confirmation ("yes", "proceed", etc.) is enough. agreedSlot must match the slot the caller chose (not a default). Do NOT ask for full name, email, or contact details—Step 2 is CRM system login only.
 
-5. RE-CHECK: If the caller asks for other dates, locations, "earliest at [centre]", "show me Wimbledon", "check again", or any new criteria after a previous run, call this tool again with courseType and the updated preference fields—then present only the new result. Do not tell them you can only use the previous list or to use the website instead.`,
+5. RE-CHECK: If the caller asks for other dates, locations, "earliest at [centre]", "show me Wimbledon", "check again", or any new criteria after a previous run, call this tool again with courseType and the updated preference fields—then present only the new result. Do not tell them you can only use the previous list or to use the website instead.
+
+PREFERENCE CLEARING: If the caller previously gave a location preference but now says "any location", "no location preference", "all centres", or similar, you MUST explicitly pass location: null (not omit it) so the previous preference is cleared. The same applies to date and instructor. Omitting a field that was previously set will reuse the old value; passing null always clears it.`,
       parameters: {
         type: 'object',
         properties: {
@@ -50,11 +52,13 @@ STRICT: Do NOT mention any specific dates, times, locations, or slot options unt
           },
           location: {
             type: 'string',
-            description: 'Preferred location: one of the training centre names (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon). If the caller gave their area or town, use the nearest centre from this list and pass that name.'
+            description: 'Preferred location: one of the training centre names (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon). If the caller gave their area or town, use the nearest centre from this list and pass that name. Pass null (not omit) if the caller explicitly removes their location preference (e.g. "any location", "no preference", "all centres") — omitting the field will reuse the previously stored location.',
+            nullable: true
           },
           instructor: {
             type: 'string',
-            description: 'Preferred instructor (optional, for slot matching/filtering)'
+            description: 'Preferred instructor (optional, for slot matching/filtering)',
+            nullable: true
           }
         },
         required: ['courseType']
@@ -831,11 +835,17 @@ function getCancellationStepToolDefinitions() {
       name: 'cancellation_step_verify_booking_intent',
       description: `Step 1: Verify caller has a current booking, collect course type, then explain cancellation policy. You MUST invoke this tool—do not output courseType or parameters as speech or JSON.
 
-🚨 STRICT ORDER: (1) Ask "Do you have a current booking with us?" (2) If yes, ask "What type of course is your booking for?" (e.g. CBT, Introduction to Motorcycling, Private Lesson, Gear Conversion)—courseType is REQUIRED before the policy. (3) Only after you have courseType, explain the policy and ask "Would you like to proceed?" (4) If they say yes to proceed, call with verified: true, proceedToStep2: true, courseType: <the one they gave>; then immediately call cancellation_step_authenticate.
+🚨 STRICT ORDER: (1) Ask "Do you have a current booking with us?" (2) If yes, ask "What type of course is your booking for?" (e.g. CBT, Introduction to Motorcycling, Private Lesson, Gear Conversion)—courseType is REQUIRED before the policy. (3) Only after you have courseType, explain the policy and ask "Would you like to proceed with the cancellation?" (4) WAIT for an unambiguous YES before setting proceedToStep2: true.
 
-When to call (interpret caller response in context of the last question):
-- After "Do you have a current booking with us?" and caller confirms (yes, I do, etc.): call with verified: true only. The tool will tell you to ask for course type—ask that question, then when they answer call with verified: true, courseType: <their answer>. Do NOT explain the policy until you have courseType.
-- After you have courseType and have explained the policy and asked "Would you like to proceed?" and caller agrees (yes, proceed, etc.): call with verified: true, proceedToStep2: true, courseType: <same courseType>; then immediately call cancellation_step_authenticate with that courseType.
+🚨 CRITICAL — proceedToStep2 RULES:
+- Set proceedToStep2: true ONLY when the caller gives a clear, unambiguous affirmation to the exact question "Would you like to proceed with the cancellation?" — accepted words: "yes", "yes please", "go ahead", "proceed", "sure", "okay", "ok", "that's fine", "agreed", "confirm", "please do".
+- NEVER set proceedToStep2: true if the caller says anything else: greetings ("hello", "hi"), questions, corrections about course type, unclear or non-committal responses, or anything that is not a direct "yes" to the proceed question.
+- If the caller barged in during policy recitation and did NOT clearly say yes: re-read the key policy points and re-ask "Would you like to proceed with the cancellation?" Wait for a clear answer before calling again.
+- If the caller corrects the course type mid-flow: update courseType to their corrected value and re-explain the policy for that course, then re-ask "Would you like to proceed?"
+
+When to call:
+- After "Do you have a current booking with us?" and caller confirms: call with verified: true only. Ask for course type, then call with verified: true, courseType: <their answer>. Do NOT explain the policy until you have courseType.
+- After explaining policy and receiving an unambiguous YES: call with verified: true, proceedToStep2: true, courseType: <confirmed courseType>; then immediately call cancellation_step_authenticate.
 - If caller says they do not have a booking: call with verified: false.
 - If caller has a booking but declines to proceed: call with verified: true, proceedToStep2: false, courseType: <same as before>.
 
@@ -854,7 +864,7 @@ Cancellation policy: minimum 3 full working days' notice, 30% admin fee; less th
           },
           proceedToStep2: {
             type: 'boolean',
-            description: 'Whether to proceed to Step 2 (true only when caller agreed to proceed after policy; requires courseType)'
+            description: 'Set to true ONLY when the caller gave an explicit, unambiguous "yes" to "Would you like to proceed with the cancellation?" — greetings, barge-in utterances, course corrections, or non-committal phrases must NOT trigger true. Requires courseType.'
           }
         },
         required: []
@@ -924,7 +934,7 @@ Ask the caller: "Have you done training with us before?"
     {
       type: 'function',
       name: 'cancellation_step_search_client',
-      description: `Step 5: Search for client using smart search with fallback (mobile → email → name). Includes client verification. Reuses booking search logic. ALWAYS pass courseType and workflowType "existing" on every call (same as prior cancellation steps). When the caller gives a phone or email, pass customerMobile or customerEmail, or contactInfo as a single string — server maps contactInfo to mobile/email. If email search fails, ask "Could you please tell me your full name?" and call again with customerName; name search uses first 3 letters of first name + space + first 3 of last name (or middle 3 if no match). WARNING: Never disclose any personal information from our clients found in the system to the caller (GDPR).`,
+      description: `Step 5: Search for the client in the CRM. ALWAYS pass courseType and workflowType "existing". BEFORE calling this tool, ask the caller for their mobile number ONLY. Your spoken question MUST be exactly one sentence asking for their mobile number — NEVER mention email, email address, or any alternative contact method in that sentence. Example: "Could you please provide your mobile number?" Pass the number as customerMobile. If the mobile search does not return a match the tool handles all internal retries; you do not need to ask the caller for anything else unless the tool explicitly tells you to. WARNING: Never disclose any personal client information to the caller (GDPR).`,
       parameters: {
         type: 'object',
         properties: {
@@ -961,7 +971,7 @@ Ask the caller: "Have you done training with us before?"
     {
       type: 'function',
       name: 'cancellation_step_select_client',
-      description: 'Step 6: Click on verified client name in search results to open their profile.',
+      description: 'Step 6: Open the verified client\'s profile in the CRM. ALWAYS pass clientName with the full name you received and verified in Step 5 — do not omit it under any circumstances. Without clientName this step cannot open the correct profile.',
       parameters: {
         type: 'object',
         properties: {
@@ -977,10 +987,10 @@ Ask the caller: "Have you done training with us before?"
           },
           clientName: {
             type: 'string',
-            description: 'Verified client name (from Step 5)'
+            description: 'Verified full name of the client from Step 5 (e.g. "Daniel Carter"). Required on every call.'
           }
         },
-        required: ['courseType', 'workflowType']
+        required: ['courseType', 'workflowType', 'clientName']
       }
     },
     {

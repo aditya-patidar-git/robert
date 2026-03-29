@@ -148,6 +148,13 @@ const ConversationBehaviorConfigSchema = new mongoose.Schema({
       default: 8000,
       min: 1000,
       max: 30000
+    },
+    /** After last 20ms frame sent to Twilio, barge-in still treats agent as "playing" for this long (OpenAI may clear response before the ear hears the end). */
+    twilioPlayoutAfterLastFrameMs: {
+      type: Number,
+      default: 4500,
+      min: 0,
+      max: 60000
     }
   },
   // Error Handling Settings

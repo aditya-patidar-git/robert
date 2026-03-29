@@ -10,6 +10,7 @@ import { conversations } from '../shared/state.js';
 import configManager from '../agent/configManager.js';
 import { AFTER_LOGIN_MESSAGE, AFTER_DETERMINE_WORKFLOW_MESSAGE, AFTER_CONFIRM_CANCEL_MESSAGE, AFTER_FORM_OPENED_MESSAGE, AFTER_FORM_SUBMITTED_MESSAGE, BEAR_WITH_ME } from '../config/cancellationPhrases.js';
 import sessionStateManager from './browser/sessionStateManager.js';
+import { rehydrateSessionDetailsFromLastAvailability } from './commonBookingSteps/slotStorageUtils.js';
 import progressIndicatorService from './progressIndicatorService.js';
 import { getNextStepName } from './browser/stepConfiguration.js';
 import {
@@ -606,8 +607,7 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
         console.log(`🎯 [${callId}] Step tool parameter/validation error - instructing to resolve and retry, not transfer`);
       }
 
-      // Targeted recovery: select_session without sessionDetails can loop forever.
-      // Route back to check_availability to reconstruct a concrete slot, then proceed.
+      // Targeted recovery: select_session without sessionDetails — rehydrate single-slot context, or chain correct tool (avoid step-1 when past Step 1).
       const isSelectSessionMissingDetails =
         toolName === 'booking_step_select_session' &&
         toolResult?.success === false &&
@@ -617,23 +617,48 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
         const reqCourseType = courseType || session?.courseType;
         const wfType = workflowType || session?.workflowType || 'existing';
         const prefs = sessionStateManager.getKnownPreferences(callSid) || {};
-        const args = {
-          courseType: reqCourseType,
-          workflowType: wfType
-        };
-        if (prefs.preferredDate) args.preferredDate = prefs.preferredDate;
-        if (prefs.preferredTime) args.preferredTime = prefs.preferredTime;
-        if (prefs.location) args.location = prefs.location;
-        if (prefs.instructor) args.instructor = prefs.instructor;
+        const currentStep = sessionStateManager.getCurrentStep(callSid);
+        const rehydrated = rehydrateSessionDetailsFromLastAvailability(callSid);
 
-        if (this.stateManager && reqCourseType) {
-          this.stateManager.pendingChainedToolCall = { toolName: 'booking_step_check_availability', args };
+        if (rehydrated && this.stateManager && reqCourseType) {
+          this.stateManager.pendingChainedToolCall = {
+            toolName: 'booking_step_select_session',
+            args: {
+              courseType: reqCourseType,
+              workflowType: wfType,
+              sessionDetails: rehydrated
+            }
+          };
+          const recoveryInstruction = `CRITICAL: Slot context was recovered from the last availability check (single-slot or stored). In THIS response, briefly acknowledge and IMMEDIATELY call **booking_step_select_session** again with the same courseType/workflowType; sessionDetails are now available server-side (you may omit sessionDetails in the tool call).`;
+          responseInstructions = responseInstructions
+            ? `${recoveryInstruction}\n\n${responseInstructions}`
+            : recoveryInstruction;
+          console.log(`🎯 [${callId}] select_session missing session details — rehydrated slot; chaining booking_step_select_session (not check_availability)`);
+        } else if (currentStep != null && currentStep > 1) {
+          const recoveryInstruction = `CRITICAL: booking_step_select_session failed because no structured slot is stored. You are past Step 1 — do NOT call **booking_step_check_availability** (the workflow will reject it). Ask the caller which slot they want (date, time, location) matching the slots you already offered, then call **booking_step_select_session** with **sessionDetails** set to that full slot object. If they already chose one, pass that slot as sessionDetails.`;
+          responseInstructions = responseInstructions
+            ? `${recoveryInstruction}\n\n${responseInstructions}`
+            : recoveryInstruction;
+          console.log(`🎯 [${callId}] select_session missing session details — currentStep=${currentStep}>1; instructing explicit sessionDetails (no check_availability chain)`);
+        } else {
+          const args = {
+            courseType: reqCourseType,
+            workflowType: wfType
+          };
+          if (prefs.preferredDate) args.preferredDate = prefs.preferredDate;
+          if (prefs.preferredTime) args.preferredTime = prefs.preferredTime;
+          if (prefs.location) args.location = prefs.location;
+          if (prefs.instructor) args.instructor = prefs.instructor;
+
+          if (this.stateManager && reqCourseType) {
+            this.stateManager.pendingChainedToolCall = { toolName: 'booking_step_check_availability', args };
+          }
+          const recoveryInstruction = `CRITICAL: booking_step_select_session cannot proceed because slot/session details are missing. Do NOT call booking_step_select_session again now. In THIS response, briefly acknowledge and IMMEDIATELY call **booking_step_check_availability** (with courseType/workflowType and known preferences). Present the returned slots, get explicit slot agreement, then call **booking_step_authenticate** with **agreedSlot** and continue the normal flow.`;
+          responseInstructions = responseInstructions
+            ? `${recoveryInstruction}\n\n${responseInstructions}`
+            : recoveryInstruction;
+          console.log(`🎯 [${callId}] select_session missing session details — routing recovery to booking_step_check_availability (early workflow)`);
         }
-        const recoveryInstruction = `CRITICAL: booking_step_select_session cannot proceed because slot/session details are missing. Do NOT call booking_step_select_session again now. In THIS response, briefly acknowledge and IMMEDIATELY call **booking_step_check_availability** (with courseType/workflowType and known preferences). Present the returned slots, get explicit slot agreement, then call **booking_step_authenticate** and continue the normal flow.`;
-        responseInstructions = responseInstructions
-          ? `${recoveryInstruction}\n\n${responseInstructions}`
-          : recoveryInstruction;
-        console.log(`🎯 [${callId}] select_session missing session details - routing recovery to booking_step_check_availability to avoid retry loop`);
       }
 
       // Step execution failure (timeout or retriable): offer to retry or restart workflow
@@ -797,7 +822,7 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
           : `SINGLE SLOT: When the caller confirms they want this slot (e.g. "yes", "okay go ahead", "proceed", "book that"), call booking_step_authenticate with agreedSlot matching the tool result slot.`;
         const instruction = `${supersession}
 
-CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message.${slotsFromTool}
+CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message. Each slot is given in short format (date, time, location name, price) — this is intentional for voice. If the caller asks for more detail about a specific slot (e.g. full address, instructor name), you may provide it from the full slot data in the tool result (slotsToAnnounce objects).${slotsFromTool}
 
 ${slotRules}
 
@@ -1068,6 +1093,21 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
         console.log(`🎯 [${callId}] process_payment requiresBalanceDecision - instructing to ask balance-or-link question in this response`);
+      }
+
+      // process_payment: payment already covered on screen (dropdown unavailable) — terms before Make booking; never offer payment link
+      if (
+        toolName === 'booking_step_process_payment' &&
+        toolResult?.requiresTermsBeforeSend === true &&
+        toolResult?.paymentAlreadyCovered === true
+      ) {
+        const fallback =
+          'CRITICAL: Payment already appears satisfied on screen (e.g. from a previous cancellation refund or account credit). Do NOT offer a payment request link and do NOT call booking_step_send_payment_request for payment. Read termsText to the caller and ask "Do you agree with the statements that I have just made?" If yes, call **booking_step_process_payment** with courseType, workflowType, termsAccepted: true, and useAvailableBalance: true.';
+        const instruction = toolResult.instruction || fallback;
+        responseInstructions = responseInstructions
+          ? `${instruction}\n\n${responseInstructions}`
+          : instruction;
+        console.log(`🎯 [${callId}] process_payment paymentAlreadyCovered + requiresTermsBeforeSend - reinforcing no payment link`);
       }
 
       // send_payment_request returned requiresClientEmail: agent must ask caller for email, then call again with clientEmail

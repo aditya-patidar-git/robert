@@ -361,7 +361,10 @@ class ToolExecutor {
     }
     if (toolName === 'cancellation_step_locate_booking') {
       if (normalized.courseDate == null || String(normalized.courseDate).trim() === '') {
-        if (normalized.preferredDate != null && String(normalized.preferredDate).trim() !== '') {
+        if (normalized.bookingDate != null && String(normalized.bookingDate).trim() !== '') {
+          normalized.courseDate = normalized.bookingDate;
+          delete normalized.bookingDate;
+        } else if (normalized.preferredDate != null && String(normalized.preferredDate).trim() !== '') {
           normalized.courseDate = normalized.preferredDate;
           delete normalized.preferredDate;
         } else if (normalized.date != null && String(normalized.date).trim() !== '') {
@@ -586,6 +589,13 @@ class ToolExecutor {
         resolvedToolName = 'cancellation_step_locate_booking';
       }
 
+      // Model invents cancellation_step_process_cancellation (non-existent) after the user agrees to proceed —
+      // map it to cancellation_step_confirm_cancellation which is the correct next step after locate_booking
+      if (resolvedToolName === 'cancellation_step_process_cancellation' && this.toolRegistry.has('cancellation_step_confirm_cancellation')) {
+        console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Resolved alias "${resolvedToolName}" → cancellation_step_confirm_cancellation`);
+        resolvedToolName = 'cancellation_step_confirm_cancellation';
+      }
+
       if (!this.toolRegistry.has(resolvedToolName)) {
         span.setStatus({ code: SpanStatusCode.ERROR, message: `Tool not found: ${resolvedToolName}` });
         span.end();
@@ -621,10 +631,28 @@ class ToolExecutor {
         if (normalizedParams.workflowType == null || normalizedParams.workflowType === '') {
           normalizedParams.workflowType = 'existing';
         }
+        const sessionCourseType = conversations[callSid]?.bookingSession?.courseType;
         if (normalizedParams.courseType == null || normalizedParams.courseType === '') {
-          const sessionCourseType = conversations[callSid]?.bookingSession?.courseType;
           if (sessionCourseType && sessionCourseType !== 'TBD') {
             normalizedParams.courseType = sessionCourseType;
+          }
+        } else if (
+          normalizedParams.courseType !== 'TBD' &&
+          sessionCourseType &&
+          normalizedParams.courseType !== sessionCourseType
+        ) {
+          // Caller corrected the course type mid-flow — persist the correction to session
+          // so all subsequent steps automatically use the updated value.
+          sessionStateManager.initializeSession(callSid, normalizedParams.courseType);
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] courseType corrected mid-flow: "${sessionCourseType}" → "${normalizedParams.courseType}"`);
+        }
+        // Inject verified client name into select_client if the LLM omitted it
+        if (resolvedToolName === 'cancellation_step_select_client' &&
+            (normalizedParams.clientName == null || String(normalizedParams.clientName).trim() === '')) {
+          const stored = conversations[callSid]?.verifiedCancellationClientName;
+          if (stored) {
+            normalizedParams.clientName = stored;
+            console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Auto-injected verifiedCancellationClientName into select_client: ${stored}`);
           }
         }
       }
@@ -847,6 +875,15 @@ class ToolExecutor {
         console.log(`✅ [${callSid}] [TOOL EXECUTOR] Tool ${resolvedToolName} completed successfully`);
         console.log(`✅ [${callSid}] [TOOL EXECUTOR] Execution time: ${executionTime}ms`);
         console.log(`✅ [${callSid}] [TOOL EXECUTOR] Result preview:`, JSON.stringify(result, null, 2).substring(0, 300));
+
+        // After cancellation_step_search_client: persist verified client name for use by select_client
+        // Note: the search result uses "fullName" as the key, with "name" as a fallback
+        const _resolvedClientName = result?.clientDetails?.fullName || result?.clientDetails?.name;
+        if (resolvedToolName === 'cancellation_step_search_client' && result?.success && _resolvedClientName) {
+          if (!conversations[callSid]) conversations[callSid] = {};
+          conversations[callSid].verifiedCancellationClientName = _resolvedClientName;
+          console.log(`🔧 [${callSid}] [TOOL EXECUTOR] Stored verifiedCancellationClientName: ${_resolvedClientName}`);
+        }
 
         // Update usage statistics in database (async, don't wait)
         this.updateToolUsage(resolvedToolName).catch(err => {

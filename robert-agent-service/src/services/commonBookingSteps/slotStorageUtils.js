@@ -52,6 +52,58 @@ export function matchSlotToAvailableSlots(selectedSlot, allSlots) {
 }
 
 /**
+ * Recover a concrete slot when selectedSlot/sessionDetails were never written (e.g. model skipped agreedSlot)
+ * but availability left exactly one option in allSlots or slotsToAnnounce.
+ * Also returns already-stored slot/sessionDetails from conversation or sessionStateManager if present.
+ *
+ * @param {string} callSid
+ * @returns {Object|null} Usable slot object, or null if ambiguous or nothing to recover
+ */
+export function rehydrateSessionDetailsFromLastAvailability(callSid) {
+  if (!callSid) return null;
+  if (!conversations[callSid]) return null;
+
+  const fromManager = sessionStateManager.getSessionDetails(callSid);
+  if (fromManager && typeof fromManager === 'object') {
+    return fromManager;
+  }
+
+  const lac = conversations[callSid].lastAvailabilityCheck;
+  if (!lac || typeof lac !== 'object') return null;
+
+  const existing = lac.selectedSlot || lac.sessionDetails;
+  if (existing && typeof existing === 'object') {
+    return existing;
+  }
+
+  const allSlots = Array.isArray(lac.allSlots) ? lac.allSlots : [];
+  const announce = Array.isArray(lac.slotsToAnnounce) ? lac.slotsToAnnounce : [];
+
+  let candidate = null;
+  if (allSlots.length === 1) {
+    candidate = allSlots[0];
+  } else if (announce.length === 1) {
+    candidate = announce[0];
+  }
+
+  if (!candidate || typeof candidate !== 'object') {
+    return null;
+  }
+
+  try {
+    return storeSelectedSlot(callSid, candidate, allSlots.length ? allSlots : null);
+  } catch (e) {
+    console.warn(`⚠️ [${callSid}] rehydrateSessionDetailsFromLastAvailability: storeSelectedSlot failed (${e.message}) — persisting to conversation only`);
+    if (!conversations[callSid].lastAvailabilityCheck) {
+      conversations[callSid].lastAvailabilityCheck = {};
+    }
+    conversations[callSid].lastAvailabilityCheck.selectedSlot = candidate;
+    conversations[callSid].lastAvailabilityCheck.sessionDetails = candidate;
+    return candidate;
+  }
+}
+
+/**
  * Store selected slot in conversation and session state
  * @param {string} callSid - Call SID identifier
  * @param {Object} selectedSlot - Slot selected by user
@@ -121,17 +173,26 @@ export function storePreferencesBeforeAvailabilityCheck(callSid, preferences) {
     return;
   }
 
-  // Remove undefined values
-  const cleanPreferences = {};
+  const toUpdate = {};
+  const toDelete = [];
+
   Object.keys(preferences).forEach(key => {
-    if (preferences[key] !== undefined && preferences[key] !== null) {
-      cleanPreferences[key] = preferences[key];
+    if (preferences[key] === undefined) {
+      // Key not provided — leave session value untouched
+    } else if (preferences[key] === null) {
+      // Explicit null → clear this preference from the session
+      toDelete.push(key);
+    } else {
+      toUpdate[key] = preferences[key];
     }
   });
 
-  if (Object.keys(cleanPreferences).length > 0) {
-    sessionStateManager.updatePreferences(callSid, cleanPreferences);
-    console.log(`✅ [${callSid}] Stored preferences BEFORE Step 1:`, cleanPreferences);
+  if (toDelete.length > 0) {
+    sessionStateManager.clearPreferences(callSid, toDelete);
+  }
+  if (Object.keys(toUpdate).length > 0) {
+    sessionStateManager.updatePreferences(callSid, toUpdate);
+    console.log(`✅ [${callSid}] Stored preferences BEFORE Step 1:`, toUpdate);
   }
 }
 

@@ -24,5 +24,5 @@ export { takeScreenshot, extractLocationIdentifier, extractPriceFromBooking, sav
 export { findBooking } from './findBooking.js';
 export { checkAvailabilityAndNoteDetails, getAvailabilityUrl, selectBestMatchingSlot } from './checkAvailability.js';
 export { cancelBooking } from './cancelBooking.js';
-export { matchSlotToAvailableSlots, storeSelectedSlot, storePreferencesBeforeAvailabilityCheck } from './slotStorageUtils.js';
+export { matchSlotToAvailableSlots, storeSelectedSlot, storePreferencesBeforeAvailabilityCheck, rehydrateSessionDetailsFromLastAvailability } from './slotStorageUtils.js';
 

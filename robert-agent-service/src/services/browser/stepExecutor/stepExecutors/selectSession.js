@@ -5,7 +5,7 @@
  */
 
 import * as commonSteps from '../../../commonBookingSteps/index.js';
-import { matchSlotToAvailableSlots } from '../../../commonBookingSteps/slotStorageUtils.js';
+import { matchSlotToAvailableSlots, rehydrateSessionDetailsFromLastAvailability } from '../../../commonBookingSteps/slotStorageUtils.js';
 import sessionStateManager from '../../sessionStateManager.js';
 import { conversations } from '../../../../shared/state.js';
 
@@ -58,8 +58,19 @@ export async function executeSelectSession(page, args, sessionState, screenshots
     }
   }
 
+  // Single-slot or already-persisted recovery: agreedSlot may never have been passed to authenticate
+  if (!sessionDetails && args.callSid) {
+    const recovered = rehydrateSessionDetailsFromLastAvailability(args.callSid);
+    if (recovered) {
+      sessionDetails = recovered;
+      console.log(`✅ [selectSession] Resolved sessionDetails via rehydrateSessionDetailsFromLastAvailability`);
+    }
+  }
+
   if (!sessionDetails) {
-    throw new Error('Session details are required to select a session. Please ensure a slot was agreed upon in Step 1 (check_availability) before proceeding to Step 6 (select_session).');
+    throw new Error(
+      'Session details are required to select a session. If multiple slots were offered, the caller must confirm one (then pass agreedSlot on authenticate or sessionDetails here). If one slot was offered, call booking_step_authenticate with agreedSlot from that result.'
+    );
   }
 
   // NORMALIZE FOR DIARIES: If agent passed sessionDetails without a machine-usable date (e.g. date: "Thu 12th", no startDate),
