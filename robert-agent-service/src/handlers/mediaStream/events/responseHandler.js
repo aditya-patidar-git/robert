@@ -675,7 +675,7 @@ export class ResponseHandler {
       const responseDurationMs = Math.max(0, framesThisResponse) * 20;
       const bargeInTail = configManager.getConversationBehaviorConfig()?.bargeInTail;
       const drainBufferMs = bargeInTail?.drainBufferMs ?? 2000;
-      const maxTailMs = bargeInTail?.maxTailMs ?? 8000;
+      const maxTailMs = bargeInTail?.maxTailMs ?? 180000;
       this.state.bargeInTailUntil = Date.now() + Math.min(responseDurationMs, maxTailMs) + drainBufferMs;
 
       // Clear response tracking

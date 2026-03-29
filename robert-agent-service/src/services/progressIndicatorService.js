@@ -237,8 +237,11 @@ class ProgressIndicatorService {
       // We use maxPeriodicUpdates=1 here; the initial acknowledgment counts as that one update.
       maxPeriodicUpdates = 1;
     } else {
+      const sessionCourseType = (conversations[callSid]?.bookingSession?.courseType || '').toLowerCase();
+      const isFullLicenceCourse = sessionCourseType.includes('full licence') || sessionCourseType.includes('full motorcycle licence');
       maxPeriodicUpdates = toolsWithFourUpdates.includes(toolName) ? 4
-        : toolsWithThreeUpdates.includes(toolName) ? 3
+        : toolsWithThreeUpdates.includes(toolName)
+            ? (toolName === 'booking_step_select_booking_options' && isFullLicenceCourse ? 4 : 3)
           : toolsWithTwoUpdates.includes(toolName) ? 2
             : 1;
     }
