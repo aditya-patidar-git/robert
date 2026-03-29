@@ -181,14 +181,16 @@ AFTER THIS STEP: Once authentication succeeds and the caller confirms they want 
     {
       type: 'function',
       name: 'booking_step_select_booking_options',
-      description: `Step 7 (Existing) / Step 5 (New): Select booking options. The tool name is exactly booking_step_select_booking_options. This step APPLIES the chosen options on the page (e.g. selects bike type).
+      description: `Step 7 (Existing) / Step 5 (New): Select booking options. The tool name is exactly booking_step_select_booking_options. This step APPLIES the chosen options on the page.
 
 CRITICAL WORKFLOW:
 1. Call this tool first with ONLY courseType and workflowType to see what options are required on the page.
-2. Ask the caller for those options (e.g. for ITM: "125cc automatic, 50cc automatic, 125cc manual").
-3. Call this tool again with chosen options (bikeType, duration, etc.) as TOP-LEVEL parameters.
-4. For Gear Conversion, duration is ALWAYS 2 hours by default - do NOT ask the caller about duration. ONLY ask for bike type.
-5. DO NOT ask for contact details (Name, Email, Phone) yet. Only ask for options appearing on the "1. Price" page. Contact details (name, email, phone, postcode, etc.) may ONLY be collected after the contact details page is reached—i.e. after booking_step_fill_contact_details has been called and returned.`,
+2. Ask the caller for those options based on the course type:
+   - CBT / ITM courses: ask for bikeType (125cc automatic, 50cc automatic, 125cc manual)
+   - Full Licence Assessment / Full Motorcycle Licence Assessment: ask which bike the caller wants from these 5 options: "125cc automatic (scooter)", "50cc automatic", "125cc manual (geared)", "500cc restricted bike", or "600cc". Pass their choice as bikeType (e.g. "125cc automatic", "500cc restricted", "600cc"). Do NOT ask separate questions about licence category or transmission.
+   - Gear Conversion: ask for bikeType only (duration is always 2 hours — do NOT ask)
+3. Call this tool again with the chosen options as TOP-LEVEL parameters (not nested).
+4. DO NOT ask for contact details (Name, Email, Phone) yet. Only ask for options appearing on the "1. Price" page.`,
 
       parameters: {
         type: 'object',
@@ -205,18 +207,18 @@ CRITICAL WORKFLOW:
           },
           bikeType: {
             type: 'string',
-            enum: ['125cc automatic', '50cc automatic', '125cc manual'],
-            description: 'Bike type preference (REQUIRED for most courses). Pass as top-level parameter; do not nest under selectedOptions.'
+            enum: ['125cc automatic', '50cc automatic', '125cc manual', '500cc restricted', '600cc'],
+            description: 'Bike/course type selection. Use for ALL course types that require booking options:\n- CBT / ITM: 125cc automatic, 50cc automatic, 125cc manual\n- Full Licence Assessment / Full Motorcycle Licence Assessment: 125cc automatic, 50cc automatic, 125cc manual, 500cc restricted, 600cc\n- Gear Conversion: 125cc automatic, 50cc automatic, 125cc manual\nPass the value that matches the caller\'s spoken choice. Do NOT use licenceCategory or transmission.'
           },
           cbtType: {
             type: 'string',
             enum: ['standard', 'renewal'],
-            description: 'CBT type: "standard" or "renewal" (REQUIRED for CBT courses only)'
+            description: 'CBT type: "standard" or "renewal" (for CBT courses only)'
           },
           duration: {
             type: 'string',
             enum: ['2', '3', '4'],
-            description: 'Duration in hours: "2", "3", or "4" (REQUIRED for Gear Conversion only)'
+            description: 'Duration in hours: "2", "3", or "4" (for Gear Conversion only — always pass "2", do not ask the caller)'
           }
         },
         required: ['courseType', 'workflowType']
