@@ -368,7 +368,12 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
     const bookingSession = conversation?.bookingSession;
     const workflowContext = conversation?.workflowContext;
 
-    if (workflowContext === 'cancellation' || (bookingSession?.cancellationCurrentStep != null && bookingSession.cancellationCurrentStep >= 1)) {
+    // Only enter cancellation phase when workflowContext is explicitly 'cancellation'.
+    // The old OR condition (|| cancellationCurrentStep >= 1) caused the agent to stay locked
+    // in cancellation phase permanently after completion, because cancellationCurrentStep
+    // is never reset. Now that workflowContext is cleared on completion, the explicit check
+    // is sufficient and won't re-engage a completed cancellation.
+    if (workflowContext === 'cancellation') {
       const ccStep = bookingSession?.cancellationCurrentStep;
       if (ccStep != null) {
         if (ccStep >= 1 && ccStep <= 3) return 'cancellation_verify';
@@ -398,7 +403,10 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
       if (workflowType === 'new') return 'booking_new_client';
       return 'booking_start';
     }
-    if (bookingSession) {
+    // Only fall back to booking-phase mapping when still in an active booking workflow.
+    // If workflowContext was cleared (e.g. after booking_step_send_sms completed), skip this
+    // block so the agent returns to general inquiry instead of staying locked to booking_completion.
+    if (bookingSession && workflowContext === 'booking') {
       const currentStep = bookingSession.currentStep ?? state.currentBookingStep;
       const wt = bookingSession.workflowType ?? state.workflowType;
       if (currentStep !== null && currentStep !== undefined) {
@@ -451,12 +459,10 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
           }
           return 'cancellation';
         }
-        if (conv?.bookingSession?.cancellationCurrentStep != null && conv.bookingSession.cancellationCurrentStep >= 1) {
-          const ccStep = conv.bookingSession.cancellationCurrentStep;
-          if (ccStep >= 1 && ccStep <= 3) return 'cancellation_verify';
-          if (ccStep === 8) return 'cancellation_confirm';
-          return 'cancellation';
-        }
+        // Removed: fallback based solely on cancellationCurrentStep >= 1.
+        // That condition caused permanent lock-in to cancellation phase after completion
+        // because cancellationCurrentStep is never reset. workflowContext === 'cancellation'
+        // (handled above) is now the sole authority - it gets cleared on completion.
         if (conv?.workflowContext === 'booking') {
           const bookingSession = conv.bookingSession;
           const currentStep = bookingSession?.currentStep;
@@ -486,19 +492,23 @@ Remember: You're having a natural conversation. Speak naturally, don't generate 
     }
 
     let bookingSession = null;
+    let tiebreakerWorkflowContext = null;
     if (callSid) {
       try {
         const stateModule = await import('../../shared/state.js');
         const { conversations } = stateModule;
         bookingSession = conversations[callSid]?.bookingSession;
+        tiebreakerWorkflowContext = conversations[callSid]?.workflowContext ?? null;
       } catch (e) {
         // ignore
       }
     }
 
-    // Tiebreaker only when bookingSession is null: use state
+    // Tiebreaker only when bookingSession is null: use state.
+    // Skip step-based phase mapping when workflowContext was cleared (booking fully complete)
+    // so the agent returns to general inquiry rather than staying locked to booking_completion.
     const courseType = bookingSession?.courseType || state.courseType;
-    if (courseType) {
+    if (courseType && tiebreakerWorkflowContext === 'booking') {
       const currentStep = bookingSession?.currentStep ?? state.currentBookingStep;
       if (currentStep !== null && currentStep !== undefined) {
         if (currentStep === 1) return 'booking_availability';
