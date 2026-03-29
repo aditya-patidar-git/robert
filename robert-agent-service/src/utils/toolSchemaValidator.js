@@ -196,7 +196,8 @@ const bookingStepSelectSessionSchema = z.object({
 const bookingStepSelectBookingOptionsSchema = z.object({
   courseType: courseTypeEnum,
   workflowType: z.enum(['existing', 'new']),
-  bikeType: z.enum(['125cc automatic', '50cc automatic', '125cc manual']).optional(),
+  // CBT / ITM / Gear Conversion + Full Licence Assessment bike choices all use bikeType
+  bikeType: z.enum(['125cc automatic', '50cc automatic', '125cc manual', '500cc restricted', '600cc']).optional(),
   cbtType: z.enum(['standard', 'renewal']).optional(),
   duration: z.enum(['2', '3', '4']).optional()
 });
