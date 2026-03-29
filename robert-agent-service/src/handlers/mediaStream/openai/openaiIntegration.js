@@ -612,14 +612,15 @@ export class OpenAIIntegration {
                 create_response: false,
                 interrupt_response: (audioConfig?.bargeInPolicy === 'stop')
               },
-              tools: tools,
-              tool_choice: 'auto',
-              input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLang }
-            }
-          };
-          // Use robust send method with connection manager support
-          this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
-          console.log(`[PICKUP_LATENCY] [${this.state.callSid}] session_update_sent ${this.state.pickupLatencyMs()}ms`);
+            tools: tools,
+            tool_choice: 'auto',
+            input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLang },
+            max_response_output_tokens: 'inf'
+          }
+        };
+        // Use robust send method with connection manager support
+        this.sendToOpenAI(sessionUpdateMessage, { priority: 'high' });
+        console.log(`[PICKUP_LATENCY] [${this.state.callSid}] session_update_sent ${this.state.pickupLatencyMs()}ms`);
           console.log(`📤 Sent session.update with config and ${tools.length} tools (phase: ${this.currentWorkflowPhase}) for call: ${this.state.callSid}`);
           console.log(`🔍 [${this.state.callSid}] Session config details:`);
           console.log(`   - input_audio_format: g711_ulaw`);
@@ -779,7 +780,8 @@ export class OpenAIIntegration {
             },
             tools: tools,
             tool_choice: 'auto',
-            input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLangOpen }
+            input_audio_transcription: { model: 'gpt-4o-transcribe', language: transcriptionLangOpen },
+            max_response_output_tokens: 'inf'
           }
         };
         

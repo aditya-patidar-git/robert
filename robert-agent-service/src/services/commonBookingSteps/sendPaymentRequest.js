@@ -412,9 +412,9 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     // CRITICAL: Polling logic - check every 30 seconds for "Make booking" button
     console.log('⏳ [PAYMENT_REQUEST] Starting polling for payment completion (every 30 seconds, max 10 minutes)...');
     
-    const POLL_INTERVAL = 30000; // 30 seconds
+    const POLL_INTERVAL = 15000; // 15 seconds
     const MAX_WAIT_TIME = 600000; // 10 minutes
-    const MAX_ATTEMPTS = 20; // 10 minutes / 30 seconds = 20 attempts
+    const MAX_ATTEMPTS = 40; // 10 minutes / 15 seconds = 40 attempts
     
     // Make booking button selectors - CRITICAL FIX: Button is a div element, not a button element
     // Based on HTML structure: <div id="diaryNewCourseBookingWiz_OKBtn" role="button" aria-label="Make booking" class="dx-button-success jqx_wizardBtn">
@@ -444,20 +444,39 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
       }
       
       // CRITICAL FIX: Re-check which iframes exist on EACH polling attempt
-      // After payment completion, the page transitions back to eventNewBooking2_iframe
+      // After payment completion, the page may transition to contactSelect_iframe, eventNewBooking2_iframe, or stay in contactSend3DSecureRequest_iframe
       // So we need to check iframe existence dynamically, not use static flags
       const currentBookingIframeExists = await page.locator('#eventNewBooking2_iframe').count() > 0;
       const currentPaymentRequestIframeExists = await page.locator('#contactSend3DSecureRequest_iframe').count() > 0;
+      const currentContactSelectIframeExists = await page.locator('#contactSelect_iframe').count() > 0;
       
-      console.log(`🔍 [PAYMENT_REQUEST] Polling attempt ${attempt}: Checking iframes - eventNewBooking2_iframe: ${currentBookingIframeExists}, contactSend3DSecureRequest_iframe: ${currentPaymentRequestIframeExists}`);
+      console.log(`🔍 [PAYMENT_REQUEST] Polling attempt ${attempt}: Checking iframes - eventNewBooking2_iframe: ${currentBookingIframeExists}, contactSend3DSecureRequest_iframe: ${currentPaymentRequestIframeExists}, contactSelect_iframe: ${currentContactSelectIframeExists}`);
       
-      // Check for "Make booking" button - prioritize eventNewBooking2_iframe FIRST
-      // (since after payment completion, the page transitions back to the main payment page)
+      // Check for "Make booking" button - prioritize contactSelect_iframe FIRST
+      // (after payment gateway confirms, CRM renders the button inside contactSelect_iframe)
       for (const selector of makeBookingSelectors) {
         try {
-          // PRIORITY 1: Check in booking iframe FIRST (eventNewBooking2_iframe)
-          // This is where the button will be after payment completion
-          if (currentBookingIframeExists) {
+          // PRIORITY 0: Check in contactSelect_iframe FIRST — this is where the button appears after payment link is paid
+          if (currentContactSelectIframeExists) {
+            try {
+              const contactSelectIframe = page.frameLocator('#contactSelect_iframe');
+              const iframeButton = contactSelectIframe.locator(selector).first();
+              if (await iframeButton.count() > 0) {
+                const isVisible = await iframeButton.isVisible().catch(() => false);
+                if (isVisible) {
+                  console.log(`✅ [PAYMENT_REQUEST] Found "Make booking" button in contactSelect_iframe using selector: "${selector}"`);
+                  makeBookingButton = iframeButton;
+                  break;
+                }
+              }
+            } catch (iframeError) {
+              console.log(`⚠️ [PAYMENT_REQUEST] Error checking contactSelect_iframe: ${iframeError.message}`);
+            }
+          }
+
+          // PRIORITY 1: Check in booking iframe (eventNewBooking2_iframe)
+          // This is where the button may also appear after payment completion
+          if (!makeBookingButton && currentBookingIframeExists) {
             try {
               const bookingIframe = page.frameLocator('#eventNewBooking2_iframe');
               const iframeButton = bookingIframe.locator(selector).first();
@@ -476,7 +495,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           }
           
           // PRIORITY 2: Check in payment request iframe (contactSend3DSecureRequest_iframe) as fallback
-          if (currentPaymentRequestIframeExists) {
+          if (!makeBookingButton && currentPaymentRequestIframeExists) {
             try {
               const paymentRequestIframe = page.frameLocator('#contactSend3DSecureRequest_iframe');
               const iframeButton = paymentRequestIframe.locator(selector).first();
@@ -495,6 +514,7 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
           }
           
           // PRIORITY 3: Check in main page context
+          if (makeBookingButton) break;
           const mainPageButton = page.locator(selector).first();
           if (await mainPageButton.count() > 0) {
             const isVisible = await mainPageButton.isVisible().catch(() => false);

@@ -27,7 +27,7 @@ function normalizeCourseName(courseName) {
   if (!courseName) return '';
   return courseName
     .replace(/\s*-?\s*£[\d,]+\.?\d*/g, '')  // remove price suffixes
-    .replace(/\bmotorcycle\b\s*/gi, '')       // "Full Motorcycle Licence" → "Full  Licence"
+    .replace(/\bmotorcycl(?:e|ing)\b\s*/gi, '') // "Full Motorcycle Licence" → "Full Licence", "Private Motorcycling Lessons" → "Private Lessons"
     .replace(/\s{2,}/g, ' ')                  // collapse double spaces
     .trim()
     .toLowerCase();

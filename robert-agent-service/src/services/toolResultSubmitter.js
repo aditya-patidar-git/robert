@@ -1185,6 +1185,24 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         console.log(`🎯 [${callId}] Post-booking chain: next automatic step ${nextTool}`);
       }
 
+      // After booking_step_send_sms completes successfully (last post-booking step), exit booking workflow context
+      // so the agent can handle general queries and start new workflows without being locked to booking_completion tools.
+      const isBookingFullyComplete = toolName === 'booking_step_send_sms' &&
+        toolResult?.success === true && callSid && conversations[callSid];
+      if (isBookingFullyComplete) {
+        conversations[callSid].workflowContext = null;
+        console.log(`✅ [${callId}] Booking fully complete - cleared workflowContext to allow general inquiry and new workflows`);
+      }
+
+      // After cancellation_step_voice_confirmation completes successfully (last cancellation step), exit cancellation
+      // workflow context so the agent can handle general queries and start new workflows.
+      const isCancellationFullyComplete = toolName === 'cancellation_step_voice_confirmation' &&
+        toolResult?.cancellationComplete === true && callSid && conversations[callSid];
+      if (isCancellationFullyComplete) {
+        conversations[callSid].workflowContext = null;
+        console.log(`✅ [${callId}] Cancellation fully complete - cleared workflowContext to allow general inquiry and new workflows`);
+      }
+
       if (toolName === 'transfer_call' && toolResult?.allTransferNumbersFailed === true && toolResult?.messageForCaller) {
         const msg = toolResult.messageForCaller;
         const transferInstruction = `CRITICAL: The transfer could not be completed because all agents are busy. You MUST say exactly this to the caller: "${msg}" Then offer to help with anything else or end the call.`;

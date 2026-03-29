@@ -305,12 +305,25 @@ export class ResponseHandler {
     try {
       const frame = this.state.outboundAudioBuffer.slice(0, frameSize);
       this.state.outboundAudioBuffer = this.state.outboundAudioBuffer.slice(frameSize);
-      this.state.lastOutboundSendTime = Date.now();
+      const now = Date.now();
+      this.state.lastOutboundSendTime = now;
+
+      // Extend barge-in tail on every frame sent so it always covers "last frame + drain window",
+      // regardless of when response.done fired relative to the audio pacing completion.
+      {
+        const bargeInTailCfg = configManager.getConversationBehaviorConfig()?.bargeInTail;
+        const drainBufferMs = bargeInTailCfg?.drainBufferMs ?? 2000;
+        const twilioPlayoutMs = bargeInTailCfg?.twilioPlayoutAfterLastFrameMs ?? 4500;
+        const frameTailEnd = now + drainBufferMs + twilioPlayoutMs;
+        if (!this.state.isInterrupted && frameTailEnd > (this.state.bargeInTailUntil || 0)) {
+          this.state.bargeInTailUntil = frameTailEnd;
+        }
+      }
 
       // Track frames sent for diagnostic summary
       if (!this.state.audioFramesSentCount) {
         this.state.audioFramesSentCount = 0;
-        this.state.firstAudioFrameTime = Date.now();
+        this.state.firstAudioFrameTime = now;
       }
       this.state.audioFramesSentCount++;
 
@@ -776,8 +789,8 @@ export class ResponseHandler {
       if (statusNorm === 'completed' && hasAudioModality) {
         const bargeInTailCfg = configManager.getConversationBehaviorConfig()?.bargeInTail;
         const drainBufferMs = bargeInTailCfg?.drainBufferMs ?? 2000;
-        const maxTailMs = bargeInTailCfg?.maxTailMs ?? 8000;
-        const nonActiveSafetyMs = Math.min(maxTailMs, 6000);
+        const maxTailMs = bargeInTailCfg?.maxTailMs ?? 180000;
+        const nonActiveSafetyMs = Math.min(maxTailMs, 8000);
         const tailEnd = Date.now() + drainBufferMs + nonActiveSafetyMs;
         this.state.bargeInTailUntil = Math.max(this.state.bargeInTailUntil || 0, tailEnd);
         console.log(
