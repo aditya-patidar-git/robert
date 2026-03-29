@@ -113,10 +113,27 @@ export class ConfirmCancellationStep extends CancellationBaseStepTool {
         };
       }
 
-      // No response yet - need to explain fees and ask for confirmation
-      const feeMessage = cancellationFee > 0 
+      // No response yet - need to explain fees and ask for confirmation.
+      // Check if cancellation fees were already disclosed to the caller in the locate_booking step.
+      // If the session already has a stored cancellationFee it means the LLM already relayed the
+      // fee breakdown to the caller — avoid re-reading the full T&C and simply confirm intent.
+      const sessionFeeAlreadyStored = sessionStateManager.getCancellationFee(callSid);
+      const feesAlreadyDisclosed = sessionFeeAlreadyStored != null;
+
+      const feeMessage = cancellationFee > 0
         ? `The cancellation fee is £${cancellationFee.toFixed(2)}. ${refundAmount > 0 ? `You will receive a refund of £${refundAmount.toFixed(2)}.` : 'No refund will be issued.'}`
         : 'No cancellation fee applies.';
+
+      if (feesAlreadyDisclosed) {
+        // Fees were already shown; just ask for final confirmation without repeating T&C
+        return {
+          success: false,
+          requiresUserInput: true,
+          feesAlreadyDisclosed: true,
+          message: `Just to confirm — you would like to go ahead with the cancellation? Please say yes or no.`,
+          prompt: 'Ask the caller to confirm they want to proceed. If they say yes, call this tool again with confirmed: true. If they say no, call it with confirmed: false.'
+        };
+      }
 
       return {
         success: false,

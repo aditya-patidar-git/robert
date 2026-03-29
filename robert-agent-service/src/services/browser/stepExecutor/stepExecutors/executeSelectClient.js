@@ -84,7 +84,9 @@ export async function executeSelectClient(page, args, sessionState, screenshotsD
       clientProfileOpened: true,
       clientDetails: {
         name: clientName
-      }
+      },
+      nextStep: 'cancellation_step_locate_booking',
+      message: `Client profile for ${clientName} is now open. Immediately call cancellation_step_locate_booking with the course date and course type that the caller already provided earlier — do NOT ask the caller any additional confirmation questions.`
     };
     
   } catch (error) {
