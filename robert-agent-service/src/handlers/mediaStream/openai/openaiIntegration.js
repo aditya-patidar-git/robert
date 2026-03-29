@@ -893,7 +893,20 @@ export class OpenAIIntegration {
             console.warn(`⚠️ [${this.state.callSid}] Non-critical OpenAI error (ignoring):`, event.error);
             return;
           }
-          
+
+          // conversation_already_has_active_response means we accidentally tried to create a second
+          // response while one was already running (response-lock race). This is non-fatal: the
+          // active response will still play. Release the lock so the caller's next utterance can
+          // always get a response — without this the agent goes permanently mute.
+          if (errorCode === 'conversation_already_has_active_response' ||
+              (errorMessage && errorMessage.includes('already has an active response'))) {
+            console.warn(`⚠️ [${this.state.callSid}] Non-critical: conversation_already_has_active_response — releasing response lock`);
+            if (this.state && this.state.isResponding && this.state.activeResponseId === null) {
+              this.state.releaseResponseLock();
+            }
+            return; // do NOT increment errorCount — this is a transient race, not an API error
+          }
+
           this.state.incrementErrorCount();
           console.error(`❌ [${this.state.callSid}] OpenAI error logged (error count: ${this.state.errorCount})`);
           

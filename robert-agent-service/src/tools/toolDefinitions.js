@@ -69,7 +69,9 @@ PREFERENCE CLEARING: If the caller previously gave a location preference but now
       name: 'booking_step_authenticate',
       description: `Step 2: Log the system into the CRM (cookie-based browser login). This is NOT asking the caller for their name, email, or any contact details—it is a backend step. Call when the caller has agreed a specific slot from Step 1: if multiple slots were offered, they must have clearly chosen one before you call. Pass agreedSlot matching that choice.
 
-CRITICAL: agreedSlot must match the slot the caller selected from the check_availability result (date, time, location). If multiple slots were listed, do not use a default—use the one they picked.`,
+CRITICAL: agreedSlot must match the slot the caller selected from the check_availability result (date, time, location). If multiple slots were listed, do not use a default—use the one they picked.
+
+AFTER THIS STEP: Once authentication succeeds and the caller confirms they want to proceed (existing workflow: after client_verification succeeds and caller says yes; new workflow: immediately after authentication), call booking_step_select_session and pass the SAME agreedSlot object as sessionDetails. Do NOT omit sessionDetails — the server cannot reliably retrieve it automatically.`,
       parameters: {
         type: 'object',
         properties: {
@@ -154,7 +156,7 @@ CRITICAL: agreedSlot must match the slot the caller selected from the check_avai
     {
       type: 'function',
       name: 'booking_step_select_session',
-      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot. Session details are automatically retrieved from the availability check if not provided.`,
+      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot. ALWAYS pass sessionDetails — use the same slot object (date, time, location) from the agreedSlot you passed to booking_step_authenticate. Do NOT call this tool without sessionDetails; omitting it will cause the step to fail.`,
       parameters: {
         type: 'object',
         properties: {
@@ -772,6 +774,8 @@ export function getToolDefinitions() {
 - Telephone mismatch: "Unfortunately, the telephone number that you have provided does not match the one that we hold on file for you; have you changed your telephone number or have you ever provided us with an alternative telephone number?"
 
 After successful verification of all three fields, say: "You are successfully verified. Would you like to proceed with your booking? Please say yes or no." and wait for confirmation.
+
+AFTER CALLER SAYS YES: Immediately call booking_step_select_session with sessionDetails set to the same slot object that was passed as agreedSlot in booking_step_authenticate. Do NOT call booking_step_select_session without sessionDetails — pass the slot you already know (date, time, location) from the earlier availability check.
 
 WARNING: Never disclose any personal information from our clients found in the system to the caller (GDPR).`,
       parameters: {
