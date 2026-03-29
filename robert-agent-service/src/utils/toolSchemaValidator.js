@@ -164,10 +164,10 @@ const sessionDetailsSchema = z.object({
 // Booking Step Schemas
 const bookingStepCheckAvailabilitySchema = z.object({
   courseType: courseTypeEnum,
-  preferredDate: z.string().optional(),
-  preferredTime: z.string().optional(),
-  location: z.string().optional(),
-  instructor: z.string().optional()
+  preferredDate: z.string().optional().nullable(),
+  preferredTime: z.string().optional().nullable(),
+  location: z.string().optional().nullable(),
+  instructor: z.string().optional().nullable()
 });
 
 const bookingStepAuthenticateSchema = z.object({

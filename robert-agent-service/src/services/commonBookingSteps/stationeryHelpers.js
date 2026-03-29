@@ -62,7 +62,7 @@ export function getConfirmationTemplateName(courseType, location = null) {
     return 'TfL Sessions - Booking confirmation';
   }
   if (courseTypeLower.includes('full licence') || courseTypeLower.includes('das')) {
-    return 'DAS/A2/A1 - BOOKING CONFIRMATION EMAIL';
+    return 'DAS / A2 / A1 - BOOKING CONFIRMATION EMAIL';
   }
   
   return 'ITM / Gear Conversion confirmation';

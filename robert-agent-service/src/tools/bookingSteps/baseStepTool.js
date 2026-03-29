@@ -773,7 +773,8 @@ export class BaseStepTool {
 
     // Step 1 (check_availability): Agent MUST ask date, location, and instructor preferences first; answers may all be "no preference".
     // First call with no preferences → return requiresPreferences and set flag so agent asks, then calls again. Second call with no preferences → allow.
-    const hasAnyPreference = !!(stepArgs.preferredDate || stepArgs.preferredTime || stepArgs.location || stepArgs.instructor);
+    const PREF_KEYS = ['preferredDate', 'preferredTime', 'location', 'instructor'];
+    const hasAnyPreference = PREF_KEYS.some(k => k in stepArgs);
     if (stepNumber === 1 && !hasAnyPreference) {
       const promptSent = conversations[callSid]?.checkAvailabilityPreferencePromptSent;
       if (!promptSent) {
