@@ -52,24 +52,28 @@ const TOOL_ACKNOWLEDGMENT_PHRASES = {
  * Long browser-automation tools can use a small delay to avoid beating rapid results.
  */
 const TOOL_ACK_DELAY_MS = {
-  // Instant — announce immediately (tool may take seconds)
+  // Instant — announce immediately (tool always takes seconds — browser automation)
   booking_step_check_availability:     0,
   booking_step_authenticate:           0,
   booking_step_navigate_contacts:      0,
-  booking_step_select_booking_options: 0,
   booking_step_send_confirmation:      0,
   booking_step_send_terms:             0,
   booking_step_send_sms:               0,
   client_verification:                 0,
-  cancellation_step_verify_booking_intent:  0,
   cancellation_step_authenticate:           0,
-  cancellation_step_determine_workflow:     0,
   cancellation_step_navigate_contacts:      0,
-  cancellation_step_confirm_cancellation:   0,
   cancellation_step_initiate_cancellation:  0,
   cancellation_step_navigate_communication: 0,
   cancellation_step_select_template:        0,
-  cancellation_step_voice_confirmation:     0,
+  // 500ms delay — these tools have a fast path (or are pure voice-only with no browser automation)
+  // that can complete in <20ms. Without the delay the ack fires before toolExecutionCompleting is
+  // set, causing a response-lock race that permanently mutes the agent.
+  // Same rationale as booking_step_send_payment_request below.
+  booking_step_select_booking_options: 500,
+  cancellation_step_verify_booking_intent:  500,
+  cancellation_step_confirm_cancellation:   500,
+  cancellation_step_determine_workflow:     500,
+  cancellation_step_voice_confirmation:     500,
   // Short delay — tool is fast but browser interaction benefits from brief pause
   booking_step_search_client:          500,
   booking_step_create_new_contact:     500,
