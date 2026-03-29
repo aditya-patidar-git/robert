@@ -635,7 +635,7 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
             : recoveryInstruction;
           console.log(`🎯 [${callId}] select_session missing session details — rehydrated slot; chaining booking_step_select_session (not check_availability)`);
         } else if (currentStep != null && currentStep > 1) {
-          const recoveryInstruction = `CRITICAL: booking_step_select_session failed because no structured slot is stored. You are past Step 1 — do NOT call **booking_step_check_availability** (the workflow will reject it). Ask the caller which slot they want (date, time, location) matching the slots you already offered, then call **booking_step_select_session** with **sessionDetails** set to that full slot object. If they already chose one, pass that slot as sessionDetails.`;
+          const recoveryInstruction = `CRITICAL: booking_step_select_session failed because sessionDetails was not passed. You are past Step 1 — do NOT call **booking_step_check_availability** (the workflow will reject it). If the caller has already agreed to a slot (date, time, location), call **booking_step_select_session** IMMEDIATELY and RIGHT NOW with that slot as sessionDetails — do NOT ask the caller to confirm again or wait for another utterance. Only ask the caller to clarify which slot they want if they genuinely have not yet chosen one.`;
           responseInstructions = responseInstructions
             ? `${recoveryInstruction}\n\n${responseInstructions}`
             : recoveryInstruction;
