@@ -20,11 +20,11 @@ function getStepBookingToolDefinitions() {
 
 STRICT: Do NOT mention any specific dates, times, locations, or slot options until this tool has RETURNED. Before the tool returns, say ONLY that you are checking (e.g. "Let me check availability for you" or "Checking now."). Never invent or list slots—only present what the tool result contains.
 
-1. BEFORE calling: Ask preferences in order. Each "no preference" (or "show latest slots") is a valid answer—then call with what was collected (or omit nulls).
-   - Date/time: "Do you have any preference for date or time?" If they say "I want to see the latest available slots", "show me the latest slots", or "no preference", treat as valid: we use the earliest date (topmost in table). Then ask location.
-   - Location: "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon). If no preference, we show all slots on the earliest date; if they give a location, we narrow down. If the caller gives their area/town (e.g. "I'm in Sutton"), use the nearest centre from the list and pass that name.
-   - Instructor: "Do you have any instructor preference?" If no preference, no filter; if they give one, we narrow down further.
-2. Call this tool with courseType and any preferences they gave; omit or pass null for "no preference". With no preferences the tool uses the earliest date and returns all slots on that date; with location or instructor it narrows options.
+1. BEFORE calling: Ask ALL THREE preference questions first, in order. "No preference" is a valid answer to each.
+   - Date/time: "Do you have any preference for date or time?" If they say "I want to see the latest available slots", "show me the latest slots", or "no preference", that is a valid answer.
+   - Location: "Do you have any location preference?" (Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon). If no preference, we show all slots on the earliest date; if they give a location, we narrow down. If the caller gives their area/town (e.g. "I'm in Sutton"), use the nearest centre from the list.
+   - Instructor: "Do you have any instructor preference?" If no preference, no filter.
+2. AFTER asking all three questions: call this tool with courseType and ALL FOUR preference fields (preferredDate, preferredTime, location, instructor). For each question they answered "no preference" to, pass null explicitly — do NOT omit those fields. Passing all four fields (even as null) is required so the tool knows the questions have been asked. With no preferences the tool uses the earliest date and returns all slots on that date; with location or instructor it narrows options.
 
 3. AFTER this tool returns: Present ONLY the slot(s) from the tool result message. Do not add or substitute any other slots.
 
@@ -156,7 +156,11 @@ AFTER THIS STEP: Once authentication succeeds and the caller confirms they want 
     {
       type: 'function',
       name: 'booking_step_select_session',
-      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot. ALWAYS pass sessionDetails — use the same slot object (date, time, location) from the agreedSlot you passed to booking_step_authenticate. Do NOT call this tool without sessionDetails; omitting it will cause the step to fail.`,
+      description: `Step 6 (Existing) / Step 4 (New): Navigate to Diaries tab and select the agreed session slot.
+
+MANDATORY: You MUST always pass sessionDetails. Use the same slot object (date, time, location) the caller agreed to — from the agreedSlot you passed to booking_step_authenticate or from the slot the caller confirmed during the availability check. Do NOT call this tool without sessionDetails; omitting it will cause an immediate failure that requires an extra round-trip to fix.
+
+If the caller just said "yes", "proceed", or confirmed they want to go ahead: you already know the agreed slot from the earlier conversation — pass it as sessionDetails right now without asking again.`,
       parameters: {
         type: 'object',
         properties: {
@@ -172,10 +176,18 @@ AFTER THIS STEP: Once authentication succeeds and the caller confirms they want 
           },
           sessionDetails: {
             type: 'object',
-            description: 'Session details from availability check (date, time, location, instructor). Optional - will be retrieved from session state if not provided.'
+            description: 'REQUIRED. The slot the caller agreed to (date, time, location, and optionally instructor and startDate). Must be passed on every call — the server will not supply it automatically.',
+            properties: {
+              date: { type: 'string', description: 'Date string from the slot (e.g. "Mon 30th")' },
+              time: { type: 'string', description: 'Time string from the slot (e.g. "10:00")' },
+              location: { type: 'string', description: 'Full location string from the slot' },
+              instructor: { type: 'string', description: 'Instructor name (if known)' },
+              startDate: { type: 'string', description: 'ISO start date from the slot (if available)' }
+            },
+            required: ['date', 'time', 'location']
           }
         },
-        required: ['courseType', 'workflowType']
+        required: ['courseType', 'workflowType', 'sessionDetails']
       }
     },
     {

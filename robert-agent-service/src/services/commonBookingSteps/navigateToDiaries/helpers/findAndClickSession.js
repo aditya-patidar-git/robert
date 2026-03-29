@@ -16,14 +16,21 @@ function extractTimeFromAttribute(dateTimeString) {
 }
 
 /**
- * Helper function to normalize course name for matching (remove price variations).
+ * Helper function to normalize course name for matching.
+ * - Removes price patterns like "£125", "- £125"
+ * - Strips the word "motorcycle" so that "Full Licence Assessment" and
+ *   "Full Motorcycle Licence Assessment" resolve to the same string.
  * @param {string} courseName - Course name to normalize.
  * @returns {string} Normalized course name.
  */
 function normalizeCourseName(courseName) {
   if (!courseName) return '';
-  // Remove price patterns like "£125", "- £125", etc.
-  return courseName.replace(/\s*-?\s*£[\d,]+\.?\d*/g, '').trim().toLowerCase();
+  return courseName
+    .replace(/\s*-?\s*£[\d,]+\.?\d*/g, '')  // remove price suffixes
+    .replace(/\bmotorcycle\b\s*/gi, '')       // "Full Motorcycle Licence" → "Full  Licence"
+    .replace(/\s{2,}/g, ' ')                  // collapse double spaces
+    .trim()
+    .toLowerCase();
 }
 
 /**
