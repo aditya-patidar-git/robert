@@ -802,7 +802,7 @@ export class ResponseHandler {
       // is tracked (activeResponseId=null), the lock is orphaned. This can happen when a
       // conversation_already_has_active_response race causes the completion to arrive as non-active.
       // Release the lock so the caller's next utterance always gets a response.
-      if (this.state.isResponding && this.state.activeResponseId === null) {
+      if (this.state.isResponding && this.state.activeResponseId === null && !this.state.explicitResponseRequested) {
         console.warn(
           `⚠️ [${this.state.callSid}] Non-active response.done with orphaned response lock — releasing to prevent permanent mute`
         );

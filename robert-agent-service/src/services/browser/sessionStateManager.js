@@ -102,7 +102,8 @@ class SessionStateManager {
   setCurrentStep(callSid, step, result = null) {
     const session = this.getSession(callSid);
     if (!session) {
-      throw new Error(`No booking session found for ${callSid}`);
+      console.warn(`[SESSION] setCurrentStep skipped — session already cleared for ${callSid} (call likely ended)`);
+      return;
     }
 
     const previousStep = session.currentStep;
@@ -135,7 +136,8 @@ class SessionStateManager {
   setCancellationCurrentStep(callSid, step, result = null) {
     const session = this.getSession(callSid);
     if (!session) {
-      throw new Error(`No booking session found for ${callSid}`);
+      console.warn(`[SESSION] setCancellationCurrentStep skipped — session already cleared for ${callSid} (call likely ended)`);
+      return;
     }
     if (!session.cancellationStepHistory) {
       session.cancellationStepHistory = [];
@@ -350,11 +352,10 @@ class SessionStateManager {
    * @param {Object} pageRef - Playwright page reference
    */
   setBrowserSession(callSid, pageRef) {
-    // Note: pageRef is not serialized/synced (Playwright page objects can't be serialized)
-    // Only update local state for this field
     const session = this.getSession(callSid);
     if (!session) {
-      throw new Error(`No booking session found for ${callSid}`);
+      console.warn(`[SESSION] setBrowserSession skipped — session already cleared for ${callSid} (call likely ended)`);
+      return;
     }
 
     session.pageRef = pageRef;
@@ -372,7 +373,8 @@ class SessionStateManager {
   _syncBookingSession(callSid, updater) {
     const session = this.getSession(callSid);
     if (!session) {
-      throw new Error(`No booking session found for ${callSid}`);
+      console.warn(`[SESSION] _syncBookingSession skipped — session already cleared for ${callSid} (call likely ended)`);
+      return;
     }
 
     // Update local state immediately (for fast reads)

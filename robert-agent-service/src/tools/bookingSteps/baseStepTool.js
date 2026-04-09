@@ -239,15 +239,15 @@ export class BaseStepTool {
         };
       }
 
-      // CRITICAL: Store preferences BEFORE Step 1 if they're provided
-      // This ensures preferences are available when opening the availability table
-      if (stepNumber === 1 && (stepArgs.preferredDate || stepArgs.preferredTime || stepArgs.location || stepArgs.instructor)) {
-        storePreferencesBeforeAvailabilityCheck(callSid, {
-          preferredDate: stepArgs.preferredDate,
-          preferredTime: stepArgs.preferredTime,
-          location: stepArgs.location,
-          instructor: stepArgs.instructor
-        });
+      // CRITICAL: Store preferences BEFORE Step 1 when the model passes any pref key (including explicit null to clear).
+      // Truthy-only guard skipped clears: location:null would not run store and stale session prefs would return on the next call.
+      const STEP1_PREF_KEYS = ['preferredDate', 'preferredTime', 'location', 'instructor'];
+      if (stepNumber === 1 && STEP1_PREF_KEYS.some((k) => Object.hasOwn(stepArgs, k))) {
+        const prefsForStore = {};
+        for (const k of STEP1_PREF_KEYS) {
+          if (Object.hasOwn(stepArgs, k)) prefsForStore[k] = stepArgs[k];
+        }
+        storePreferencesBeforeAvailabilityCheck(callSid, prefsForStore);
       }
 
       // Merge known preferences from session with provided args
@@ -272,6 +272,11 @@ export class BaseStepTool {
         session,
         progressCallback
       );
+
+      if (callContext.callAbortSignal?.aborted) {
+        console.log(`⚠️ [${this.getStepName()}] Call ended during step execution — skipping state updates`);
+        return { success: false, error: 'Call ended', callEnded: true };
+      }
 
       if (result.success) {
         if (this.isCancellationWorkflow) {
@@ -337,7 +342,9 @@ export class BaseStepTool {
             anchorDateMin: anchor.anchorDateMin,
             anchorDateMax: anchor.anchorDateMax,
             requiresExplicitSlotChoice: result.requiresExplicitSlotChoice === true,
-            slotCount: result.slotCount ?? 0
+            slotCount: result.slotCount ?? 0,
+            instructorLocationMeta: result.instructorLocationMeta ?? null,
+            announceIncludesNonPreferredInstructor: result.announceIncludesNonPreferredInstructor === true
           };
           console.log(`✅ [${callSid}] Stored availability data in conversation.lastAvailabilityCheck (allSlots: ${result.allSlots?.length || 0}, selectedSlot: ${!!result.selectedSlot}, sessionDetails: ${!!result.sessionDetails}, anchors: ${anchor.anchorDateMin}–${anchor.anchorDateMax})`);
           if (!(result.selectedSlot || result.sessionDetails)) {
@@ -358,6 +365,13 @@ export class BaseStepTool {
 
         // Store page reference
         sessionStateManager.setBrowserSession(callSid, page);
+      }
+
+      // Track process_payment → requiresPaymentMethod so the dedup guard above can block repeats
+      if (this.getStepName() === STEP_NAMES.PROCESS_PAYMENT && result?.requiresPaymentMethod === true) {
+        if (!conversations[callSid]) conversations[callSid] = {};
+        conversations[callSid]._processPaymentRequiresMethod = true;
+        console.log(`🔒 [${callSid}] Stored _processPaymentRequiresMethod flag — next process_payment without deliveryMethod will be blocked`);
       }
 
       return result;
@@ -786,6 +800,46 @@ export class BaseStepTool {
           requiresPreferences: true,
           message: 'You MUST ask the caller these three questions before checking availability: (1) Do you have any preference for date or time? (2) Do you have any location preference? (e.g. Alperton, Croydon, Edgware, Eltham, Wimbledon, Dagenham, Hoddesdon) (3) Do you have any instructor preference? They may answer "no preference" to any or all. After you have asked and received their answers, call this tool again with courseType and their preferences (or omit/null for no preference).'
         };
+      }
+    }
+
+    // Step 1 spelling-confirmation dedup: if the previous check triggered suggestInstructorSpellingConfirmation
+    // and the model is re-calling with the same (normalised) instructor, block until the caller actually spells it.
+    if (stepNumber === 1 && stepArgs.instructor) {
+      const lac = conversations[callSid]?.lastAvailabilityCheck;
+      if (lac?.instructorLocationMeta?.suggestInstructorSpellingConfirmation === true) {
+        const prev = String(lac.instructorLocationMeta._spellingInstructorRaw || stepArgs.instructor || '').trim().toLowerCase();
+        const curr = String(stepArgs.instructor || '').trim().toLowerCase();
+        if (curr && curr === prev) {
+          console.log(`🛑 [${callSid}] Blocking duplicate check_availability: spelling confirmation pending for instructor "${curr}"`);
+          return {
+            valid: false,
+            spellingPending: true,
+            message: `You already searched for instructor "${stepArgs.instructor}" and no exact match was found. You asked the caller to spell the name. Wait for the caller to spell it, then call booking_step_check_availability with the corrected instructor name. Do NOT re-run with the same name.`
+          };
+        }
+      }
+    }
+
+    // process_payment dedup: once the tool has returned requiresPaymentMethod, the model
+    // must call booking_step_send_payment_request (not process_payment again).
+    // Block repeat process_payment calls that still lack deliveryMethod.
+    if (this.getStepName() === STEP_NAMES.PROCESS_PAYMENT && !stepArgs.deliveryMethod) {
+      const conv = conversations[callSid];
+      if (conv?._processPaymentRequiresMethod === true) {
+        console.log(`🛑 [${callSid}] Blocking duplicate process_payment: requiresPaymentMethod already returned — model must call booking_step_send_payment_request`);
+        return {
+          valid: false,
+          requiresPaymentMethod: true,
+          message: `STOP: You have already called booking_step_process_payment and it told you to ask the caller for email or SMS. Do NOT call booking_step_process_payment again. You MUST call **booking_step_send_payment_request** with deliveryMethod set to "email" or "sms" (plus courseType, workflowType, and the caller's email or mobile). If the caller has not yet told you email or SMS, ask them now: "Would you like to receive the payment link via email or SMS?"`
+        };
+      }
+    }
+    // Clear the dedup flag when send_payment_request is called (correct tool)
+    if (this.getStepName() === STEP_NAMES.SEND_PAYMENT_REQUEST) {
+      const conv = conversations[callSid];
+      if (conv?._processPaymentRequiresMethod) {
+        delete conv._processPaymentRequiresMethod;
       }
     }
 

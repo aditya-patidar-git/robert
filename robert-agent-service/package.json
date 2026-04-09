@@ -7,7 +7,7 @@
   "scripts": {
     "start:agent": "node src/agent/index.js",
     "dev:agent": "nodemon src/agent/index.js",
-    "test": "node --test src/services/commonBookingSteps/availabilityDateIntent.test.js src/services/commonBookingSteps/paymentFlowHardening.test.js"
+    "test": "node --test src/services/commonBookingSteps/availabilityDateIntent.test.js src/services/commonBookingSteps/checkAvailability.test.js src/services/commonBookingSteps/paymentFlowHardening.test.js"
   },
   "keywords": [
     "voice-agent",

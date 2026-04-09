@@ -22,7 +22,12 @@ export { sendSMSConfirmation } from './sendSMSConfirmation.js';
 export { validateAge } from './validateAge.js';
 export { takeScreenshot, extractLocationIdentifier, extractPriceFromBooking, saveAuditLog, ensureDirectories, CRM_SELECTOR_TIMEOUT_MS, CRM_IFRAME_TIMEOUT_MS, CRM_STABILITY_DELAY_MS, waitForThenOptionalDelay } from './utils.js';
 export { findBooking } from './findBooking.js';
-export { checkAvailabilityAndNoteDetails, getAvailabilityUrl, selectBestMatchingSlot } from './checkAvailability.js';
+export {
+  checkAvailabilityAndNoteDetails,
+  computeInstructorAvailabilityMeta,
+  getAvailabilityUrl,
+  selectBestMatchingSlot
+} from './checkAvailability.js';
 export { cancelBooking } from './cancelBooking.js';
 export { matchSlotToAvailableSlots, storeSelectedSlot, storePreferencesBeforeAvailabilityCheck, rehydrateSessionDetailsFromLastAvailability } from './slotStorageUtils.js';
 

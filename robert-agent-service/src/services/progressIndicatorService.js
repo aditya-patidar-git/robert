@@ -22,7 +22,7 @@ const TOOL_ACKNOWLEDGMENT_PHRASES = {
   booking_step_create_new_contact:     "Creating your contact record now.",
   booking_step_fill_contact_details:   "Filling in your contact details now — please bear with me.",
   booking_step_process_payment:        "I'm processing the payment now — this may take up to a minute, please bear with me.",
-  booking_step_send_payment_request:   "I have sent your payment request, please check now.",
+  booking_step_send_payment_request:   "Processing your payment request now — please bear with me.",
   booking_step_send_confirmation:      "Sending your booking confirmation email now.",
   booking_step_send_terms:             "Sending the terms and conditions to you now.",
   booking_step_send_sms:               "Sending your SMS confirmation now.",
@@ -82,14 +82,27 @@ const TOOL_ACK_DELAY_MS = {
   cancellation_step_search_client:     500,
   cancellation_step_select_client:     500,
   cancellation_step_send_confirmation: 500,
-  // Moderate delay — tool is medium-length, allow lock to be free
-  booking_step_select_session:         1000,
+  // Instant — select_session is a long diary navigation; announce immediately to avoid silence
+  booking_step_select_session:         0,
   booking_step_fill_contact_details:   500,
   booking_step_process_payment:        500,
   cancellation_step_locate_booking:    500,
   cancellation_step_fill_cancellation_form: 500,
   // Longer delay — must wait for previous tool's completion response to release lock
   booking_step_lookup_contact:         6000,
+};
+
+/**
+ * Per-tool override for *subsequent* periodic update messages (updates 2, 3, 4 …).
+ * When a tool is listed here its messages replace the generic config.updateMessages
+ * ("This is taking a bit longer than usual, please hold on.") so the caller hears
+ * context-appropriate holding phrases.
+ */
+const TOOL_SUBSEQUENT_UPDATE_MESSAGES = {
+  booking_step_send_payment_request: [
+    "The payment link has been sent to your email — just waiting for the payment to come through.",
+    "Still waiting for the payment. Please check your email for the payment link and complete the payment.",
+  ],
 };
 
 class ProgressIndicatorService {
@@ -152,6 +165,7 @@ class ProgressIndicatorService {
       || toolName === 'booking_step_create_new_contact'
       || toolName === 'booking_step_fill_contact_details'
       || toolName === 'booking_step_process_payment'
+      || toolName === 'booking_step_send_payment_request'
       || toolName === 'booking_step_send_confirmation'
       || toolName === 'booking_step_send_terms'
       || toolName === 'booking_step_send_sms'
@@ -209,6 +223,7 @@ class ProgressIndicatorService {
     ];
     const toolsWithFourUpdates = [
       'booking_step_select_session',
+      'booking_step_send_payment_request',
     ];
     const toolsWithThreeUpdates = [
       'booking_step_lookup_contact',
@@ -699,8 +714,10 @@ class ProgressIndicatorService {
         }
         if (execution.periodicUpdateCount < execution.maxPeriodicUpdates) {
         if (isFirst) {
-          // Subsequent updates use updateMessages only (not acknowledgmentMessages)
-          const nextMessages = config?.progressIndicators?.updateMessages || ["Please bear with me for a moment"];
+          // Subsequent updates: prefer tool-specific messages, fall back to config updateMessages
+          const nextMessages = TOOL_SUBSEQUENT_UPDATE_MESSAGES[execution.toolName]
+            || config?.progressIndicators?.updateMessages
+            || ["Please bear with me for a moment"];
           this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, updateCompletionTime, updateInterval, nextMessages);
         } else {
           this.scheduleNextPeriodicUpdate(callSid, openaiWs, config, updateCompletionTime, scheduleNextArgs.updateGapMs, scheduleNextArgs.messages);

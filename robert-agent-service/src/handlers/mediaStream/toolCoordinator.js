@@ -886,6 +886,29 @@ export class ToolCoordinator {
               segment.isBackgroundNoise = true;
             }
             
+            // no_alpha fallback: if the caller's speech was blocked because it contained no Latin
+            // letters (non-English script, pure punctuation), they're probably a real speaker whose
+            // language wasn't recognised. After 2 consecutive no_alpha blocks, send ONE clarification
+            // so the caller isn't left in silence. Other noise reasons (too_short, low_confidence, etc.)
+            // reset the counter — they indicate different acoustic conditions.
+            if (transcriptionResult.reason === 'no_alpha') {
+              this.state._consecutiveNoAlphaCount = (this.state._consecutiveNoAlphaCount || 0) + 1;
+              const cooldownActive = this.state._lastNoAlphaClarificationTime &&
+                (Date.now() - this.state._lastNoAlphaClarificationTime) < 30000;
+              if (this.state._consecutiveNoAlphaCount >= 2 && !cooldownActive) {
+                console.log(`🗣️ [${this.state.callSid}] no_alpha fallback: ${this.state._consecutiveNoAlphaCount} consecutive blocks — sending clarification`);
+                this.state._consecutiveNoAlphaCount = 0;
+                this.state._lastNoAlphaClarificationTime = Date.now();
+                this.state.pendingInterruptionInstructionSuffix =
+                  'The caller spoke but the system could not understand the words. Say a brief, friendly clarification such as "I\'m sorry, I didn\'t quite catch that. Could you please repeat that for me?" Do NOT mention technical reasons. Do not call any tools.';
+                this.state.forceToolChoiceNoneOnce = true;
+                this.state.explicitResponseRequested = true;
+                this.createAudioResponse().catch(() => {});
+              }
+            } else {
+              this.state._consecutiveNoAlphaCount = 0;
+            }
+            
             // DO NOT create response - break the loop
             break;
           }
@@ -914,15 +937,30 @@ export class ToolCoordinator {
           const shouldCreateResponse = conversationService.shouldCreateResponse(transcriptionResult, stateSnapshot);
 
           if (shouldCreateResponse) {
+            this.state._consecutiveNoAlphaCount = 0;
             try {
               console.log(`[RESPONSE-SOURCE] [${this.state.callSid}] transcription.completed`);
               this.state.explicitResponseRequested = true;
               await this.createAudioResponse();
-              // Prevent grace period from creating a duplicate response for this transcript
+              // Prevent grace period from using stale transcripts: drop this utterance and anything older
               if (this.state.pendingTranscriptionsAfterGrace?.length) {
-                this.state.pendingTranscriptionsAfterGrace = this.state.pendingTranscriptionsAfterGrace.filter(
-                  t => (t?.transcript || '').trim() !== (transcriptText || '').trim()
-                );
+                const cut = transcriptionResult?.transcriptionTime;
+                if (typeof cut === 'number') {
+                  const before = this.state.pendingTranscriptionsAfterGrace.length;
+                  this.state.pendingTranscriptionsAfterGrace = this.state.pendingTranscriptionsAfterGrace.filter(
+                    t => (t?.time ?? 0) > cut
+                  );
+                  const dropped = before - this.state.pendingTranscriptionsAfterGrace.length;
+                  if (dropped > 0) {
+                    console.log(
+                      `🧹 [${this.state.callSid}] Grace queue: removed ${dropped} transcript(s) with time<=${cut} after immediate response`
+                    );
+                  }
+                } else {
+                  this.state.pendingTranscriptionsAfterGrace = this.state.pendingTranscriptionsAfterGrace.filter(
+                    t => (t?.transcript || '').trim() !== (transcriptText || '').trim()
+                  );
+                }
               }
               console.log(`🎯 [${this.state.callSid}] Created response after high-quality transcription (quality: ${transcriptionResult.qualityScore?.toFixed(2)})`);
               if (isTransferToHumanRequest(transcriptText)) {

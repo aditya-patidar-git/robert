@@ -220,13 +220,18 @@ export class LanguageDetector {
     }
 
     if (currentBase === 'en' && inferredBase !== 'en') {
-      if (
-        t.length < 6 &&
-        !/[\u0900-\u097F\u0980-\u09FF\u0A80-\u0AFF\u0A00-\u0A7F\u0B80-\u0BFF\u0600-\u06FF]/.test(
-          t
-        )
-      ) {
-        return;
+      const hasNonLatinScript =
+        /[\u0900-\u097F\u0980-\u09FF\u0A80-\u0AFF\u0A00-\u0A7F\u0B80-\u0BFF\u0600-\u06FF\u0D00-\u0D7F\u0E00-\u0E7F]/.test(t);
+      if (hasNonLatinScript) {
+        if (t.length < 6) return;
+      } else {
+        // Latin-script transcript inferred as non-English: single borrowed words
+        // (Arrivederci, Gracias, Bon appétit) used casually in English must not trigger a switch.
+        // Require an explicit language-change phrase, OR substantial non-English speech (4+ words, 30+ chars).
+        const explicitSwitch =
+          /\b(speak|switch to|talk in|change.*language|parle|habla|sprechen|parlo)\b/i.test(t);
+        const wordCount = t.split(/\s+/).length;
+        if (!explicitSwitch && (wordCount < 4 || t.length < 30)) return;
       }
     }
 

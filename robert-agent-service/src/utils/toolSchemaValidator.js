@@ -378,6 +378,9 @@ const toolSchemas = {
   set_call_language: z.object({
     language_code: z.string().min(1).max(16)
   }),
+  recording_consent_response: z.object({
+    given: z.boolean()
+  }),
   // Booking step tools
   booking_step_check_availability: bookingStepCheckAvailabilitySchema,
   booking_step_authenticate: bookingStepAuthenticateSchema,

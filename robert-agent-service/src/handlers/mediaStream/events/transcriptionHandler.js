@@ -107,13 +107,21 @@ export class TranscriptionHandler {
       (this.state.lastCancellationTime > 0 && msSinceCancellation < POST_BARGE_IN_GRACE_MS);
     const isRecentCancellation = this.state.lastCancellationTime > 0 && msSinceCancellation < 3000;
 
+    // When the last availability check triggered a spelling-confirmation prompt, relax
+    // the minimum-length filter so single-letter utterances ("S", "E", "A", "N") are not dropped.
+    const spellingMode =
+      conversations[this.state.callSid]?.lastAvailabilityCheck?.instructorLocationMeta?.suggestInstructorSpellingConfirmation === true;
+
+    const digitCollectionMode =
+      conversations[this.state.callSid]?.extendTurnSilenceForDigits === true;
+
     // CRITICAL: Industry-standard multi-factor background noise filtering
     // Uses confidence, pattern matching, length, and character composition
     const qualityAssessment = noiseFilterService.assessTranscriptionQuality(
       transcript,
       confidence,
       itemId,
-      { postBargeInGrace }
+      { postBargeInGrace, spellingMode, digitCollectionMode }
     );
     
     // Check for response loop prevention (recent response + noise = prevent loop)
@@ -350,7 +358,9 @@ export class TranscriptionHandler {
       shouldCreateResponse: allowResponse,
       qualityScore: qualityAssessment.qualityScore,
       isBackgroundNoise: false,
-      isHighQuality: true
+      isHighQuality: true,
+      /** Used to drop older grace-queue entries after this utterance gets an immediate response.create */
+      transcriptionTime
     };
   }
 
@@ -442,6 +452,11 @@ export class TranscriptionHandler {
     // Handle normal speech continuation grace period
     if (speechContinuation?.enabled && this.state.pendingTranscriptionsAfterGrace.length > 0) {
       const gracePeriodMs = speechContinuation.gracePeriodMs || 1500;
+
+      if (this.state.speechContinuationGraceTimer) {
+        clearTimeout(this.state.speechContinuationGraceTimer);
+        this.state.speechContinuationGraceTimer = null;
+      }
       
       // Start grace period timer
       this.state.speechContinuationGraceTimer = setTimeout(async () => {

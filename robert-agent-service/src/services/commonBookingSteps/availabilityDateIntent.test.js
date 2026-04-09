@@ -5,7 +5,12 @@ import {
   filterSlotsByDateIntent,
   nextCalendarWeekAfterCurrentLondon,
   midMonthRangeLondon,
-  computeAnchorRangeFromSlots
+  computeAnchorRangeFromSlots,
+  rollingYearFromTodayLondon,
+  thisCalendarWeekLondon,
+  nextSevenDaysLondon,
+  thisMonthRangeLondon,
+  nextMonthRangeLondon
 } from './availabilityDateIntent.js';
 
 test('ISO date is single-day range', () => {
@@ -116,4 +121,89 @@ test('computeAnchorRangeFromSlots', () => {
   });
   assert.equal(a.anchorDateMin, '2026-04-02');
   assert.equal(a.anchorDateMax, '2026-04-05');
+});
+
+const ANCHOR = new Date('2026-04-07T12:00:00.000Z');
+
+test('next 1 year resolves to rolling year range (not single day)', () => {
+  const y = rollingYearFromTodayLondon(ANCHOR);
+  for (const phrase of ['next 1 year', 'next one year', 'next year', 'within a year', 'next 12 months']) {
+    const r = resolveAvailabilityDateIntent({
+      preferredDate: phrase,
+      now: ANCHOR,
+      lastCheck: null
+    });
+    assert.equal(r.type, 'range');
+    assert.equal(r.startISO, y.startISO);
+    assert.equal(r.endISO, y.endISO);
+  }
+});
+
+test('earliest / ASAP / next available resolve to no date filter (full table scan intent)', () => {
+  for (const phrase of [
+    'earliest',
+    'ASAP',
+    'as soon as possible',
+    'next available',
+    'first available',
+    'soonest'
+  ]) {
+    const r = resolveAvailabilityDateIntent({
+      preferredDate: phrase,
+      now: ANCHOR,
+      lastCheck: null
+    });
+    assert.equal(r.type, 'none', phrase);
+  }
+});
+
+test('this month and next month spans London current month through end of following month', () => {
+  const tm = thisMonthRangeLondon(ANCHOR);
+  const nm = nextMonthRangeLondon(ANCHOR);
+  const r = resolveAvailabilityDateIntent({
+    preferredDate: 'this month and next month',
+    now: ANCHOR,
+    lastCheck: null
+  });
+  assert.equal(r.type, 'range');
+  assert.equal(r.startISO, tm.startISO);
+  assert.equal(r.endISO, nm.endISO);
+});
+
+test('this week / next 7 days / this month / next month match helpers', () => {
+  const w = thisCalendarWeekLondon(ANCHOR);
+  const r1 = resolveAvailabilityDateIntent({
+    preferredDate: 'this week',
+    now: ANCHOR,
+    lastCheck: null
+  });
+  assert.equal(r1.startISO, w.startISO);
+  assert.equal(r1.endISO, w.endISO);
+
+  const d7 = nextSevenDaysLondon(ANCHOR);
+  const r2 = resolveAvailabilityDateIntent({
+    preferredDate: 'next 7 days',
+    now: ANCHOR,
+    lastCheck: null
+  });
+  assert.equal(r2.startISO, d7.startISO);
+  assert.equal(r2.endISO, d7.endISO);
+
+  const tm = thisMonthRangeLondon(ANCHOR);
+  const r3 = resolveAvailabilityDateIntent({
+    preferredDate: 'this month',
+    now: ANCHOR,
+    lastCheck: null
+  });
+  assert.equal(r3.startISO, tm.startISO);
+  assert.equal(r3.endISO, tm.endISO);
+
+  const nm = nextMonthRangeLondon(ANCHOR);
+  const r4 = resolveAvailabilityDateIntent({
+    preferredDate: 'next month',
+    now: ANCHOR,
+    lastCheck: null
+  });
+  assert.equal(r4.startISO, nm.startISO);
+  assert.equal(r4.endISO, nm.endISO);
 });
