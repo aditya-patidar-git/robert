@@ -406,6 +406,9 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
       console.error('❌ [PAYMENT_REQUEST] Error clicking send button:', error);
       throw new Error(`Failed to click send button: ${error.message}`);
     }
+
+    const channelLabel = deliveryMethod === 'sms' ? 'phone via SMS' : 'email';
+    progressCallback?.({ message: `The payment link has been sent to your ${channelLabel}. Just waiting for the payment to come through now.` });
     
     await takeScreenshot(page, 'payment-request-sent.png', screenshotsDir);
     
@@ -441,6 +444,11 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
       } else {
         // On first attempt, wait a bit before checking (give time for payment processing to start)
         await page.waitForTimeout(5000);
+      }
+
+      if (attempt >= 2 && attempt % 2 === 0 && progressCallback) {
+        const ch = deliveryMethod === 'sms' ? 'phone' : 'email';
+        progressCallback({ message: `Still waiting for the payment — please check your ${ch} for the payment link.` });
       }
       
       // CRITICAL FIX: Re-check which iframes exist on EACH polling attempt

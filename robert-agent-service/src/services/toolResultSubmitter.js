@@ -533,6 +533,13 @@ export class WebSocketResultSubmitter extends ToolResultSubmitter {
       const toolName = options?.toolName;
       const toolResult = options?.toolResult;
 
+      // Reset consecutive failure counter when a step tool succeeds
+      if (toolName && toolResult?.success === true && (toolName.startsWith('booking_step_') || toolName.startsWith('cancellation_step_'))) {
+        if (conversations[callSid]?._consecutiveStepFailure) {
+          conversations[callSid]._consecutiveStepFailure = null;
+        }
+      }
+
       if (toolName === 'set_call_language' && toolResult?.success === true) {
         const lang = toolResult.language_code || conversations[callSid]?.language || 'en';
         if (toolResult.midCallLanguageSwitch === true) {
@@ -666,11 +673,32 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
         toolResult && toolResult.success === false &&
         (toolResult.canRetry === true || /timeout|exceeded|failed/i.test(toolResult.error || ''));
       if (isStepExecutionFailure) {
-        const failureInstruction = `CRITICAL: This step failed (e.g. timeout or temporary error). Briefly acknowledge what happened (e.g. "That step took too long" or "Something didn't complete in time"). Then offer the caller two options: (1) "I can try that step again" — if they agree, call the same step again with the same parameters. (2) "Or we can start over from the beginning" — if they say start over, restart, or from the beginning, the system will reset and you can begin the booking/cancellation flow again. Do not transfer to a human unless the caller explicitly asks for it or both retry and start-over fail.`;
+        // Track consecutive failures of the same tool to offer transfer after repeated issues
+        if (!conversations[callSid]) conversations[callSid] = {};
+        const prev = conversations[callSid]._consecutiveStepFailure;
+        if (prev && prev.toolName === toolName) {
+          prev.count++;
+        } else {
+          conversations[callSid]._consecutiveStepFailure = { toolName, count: 1 };
+        }
+        const failCount = conversations[callSid]._consecutiveStepFailure.count;
+
+        let failureInstruction;
+        if (failCount >= 2) {
+          failureInstruction = `CRITICAL: This step has failed ${failCount} times in a row — this is likely a technical issue that retrying will not fix. Apologise briefly (e.g. "I'm sorry, it seems we're having a technical issue with this step."). Then offer: (1) "I can transfer you to a team member who can complete this for you" — if they agree, call transfer_call. (2) "Or we can start over from the beginning" — if they prefer, restart the workflow. Do NOT offer to retry the same step again.`;
+        } else {
+          failureInstruction = `CRITICAL: This step failed (e.g. timeout or temporary error). Briefly acknowledge what happened (e.g. "That step took too long" or "Something didn't complete in time"). Then offer the caller two options: (1) "I can try that step again" — if they agree, call the same step again with the same parameters. (2) "Or we can start over from the beginning" — if they say start over, restart, or from the beginning, the system will reset and you can begin the booking/cancellation flow again. Do not transfer to a human unless the caller explicitly asks for it or both retry and start-over fail.`;
+        }
+
+        // For select_booking_options: remind model to re-use any bikeType the caller already provided
+        if (toolName === 'booking_step_select_booking_options') {
+          failureInstruction += `\n\nIMPORTANT — PARAMETER MEMORY: If the caller already told you their bike type preference earlier in this conversation, you MUST re-use it when retrying. Do NOT ask for the bike type again. Include bikeType in your tool call exactly as the caller stated it (e.g. bikeType: "500cc restricted").`;
+        }
+
         responseInstructions = responseInstructions
           ? `${failureInstruction}\n\n${responseInstructions}`
           : failureInstruction;
-        console.log(`🎯 [${callId}] Step execution failure (timeout/retriable) - instructing to offer retry or start over`);
+        console.log(`🎯 [${callId}] Step execution failure (timeout/retriable) - consecutive failures: ${failCount} - instructing to ${failCount >= 2 ? 'offer transfer or start over' : 'offer retry or start over'}`);
       }
 
       // Unknown tool recovery (booking): any non-existent or wrong booking_step_* — tally correct next step from session and auto-run (like cancellation)
@@ -820,9 +848,33 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
         const slotRules = multi
           ? `MULTIPLE SLOTS (${toolResult?.slotCount ?? 'several'}): Do NOT call booking_step_authenticate until the caller has clearly chosen ONE slot that matches the list (e.g. they name date, time, location, or "the first/second"). Barge-in or interruption while you are reading the list is NOT confirmation—ask which slot they want, then call authenticate with agreedSlot set to THAT slot only (must match slotsToAnnounce/selectedSlot from the tool). Never default to selectedSlot if the caller intended a different listed slot.`
           : `SINGLE SLOT: When the caller confirms they want this slot (e.g. "yes", "okay go ahead", "proceed", "book that"), call booking_step_authenticate with agreedSlot matching the tool result slot.`;
+        const ilm = toolResult?.instructorLocationMeta;
+        let instructorExtra = '';
+        if (toolResult?.noSlotsInDateFilter) {
+          instructorExtra +=
+            '\n\nDATE_WINDOW: The requested date window had no matching rows on the loaded availability page. Slots after "Slots to present:" are outside that window unless stated otherwise—read dates verbatim. Do not say you searched a full calendar year unless the tool message DATE_FILTER describes that range. Offer another booking_step_check_availability with a different preferredDate if the caller wants.';
+        }
+        if (ilm?.instructorAwayFromPreferredCentre) {
+          instructorExtra +=
+            '\n\nINSTRUCTOR vs LOCATION: Follow any INSTRUCTOR_CLARIFICATION in the tool message. The requested instructor may appear only at a different centre than the caller\'s preferred one. Only attribute an instructor to a slot if that slot\'s instructor field in slotsToAnnounce matches—never from preference alone.';
+        } else if (toolResult?.announceIncludesNonPreferredInstructor) {
+          instructorExtra +=
+            '\n\nINSTRUCTOR_SHORTLIST: Follow INSTRUCTOR_CLARIFICATION in the tool message. Earlier slots in the list are the requested instructor where each line\'s instructor field matches; any later slots are other instructors—state that clearly.';
+        } else if (ilm?.suggestInstructorSpellingConfirmation) {
+          instructorExtra +=
+            '\n\nINSTRUCTOR SPELLING: The table has slots but none list the requested instructor name. Do NOT assert that the instructor has no availability as if the name were certain—similar names are often misheard (e.g. Sean vs Shaun). Ask the caller to spell the first name letter-by-letter, then call booking_step_check_availability again with instructor set to exactly what they confirmed. GROUNDING RULE: Do NOT spell or state the instructor name yourself (e.g. never say "S-E-A-N" or "S-H-A-U-N") unless the caller has explicitly spelled it out in their own words—only say "Could you spell the first name for me?" or similar. Until then, read listed slots verbatim without assigning them to that instructor.';
+        } else if (ilm?.instructorRequestedButNoSlotMatch) {
+          instructorExtra +=
+            '\n\nINSTRUCTOR: No row on the loaded calendar matches the requested instructor (for the scope of this result). Say that clearly; do not assign that instructor to any listed slot unless the slot object shows that name.';
+        } else if (ilm?.noSlotsInRequestedDateWindow && ilm?.anyInstructorMatch && toolResult?.noSlotsInDateFilter) {
+          instructorExtra +=
+            '\n\nINSTRUCTOR vs DATE: The requested instructor may exist on the loaded table but not inside the date window the caller asked for. Follow INSTRUCTOR_CLARIFICATION in the tool message; verify each slot\'s instructor field.';
+        }
         const instruction = `${supersession}
 
-CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message. Each slot is given in short format (date, time, location name, price) — this is intentional for voice. If the caller asks for more detail about a specific slot (e.g. full address, instructor name), you may provide it from the full slot data in the tool result (slotsToAnnounce objects).${slotsFromTool}
+GROUNDING: Only claim instructors, dates, times, locations, or availability cutoffs ("nothing before…", "earliest is…") that appear in THIS tool result after "Slots to present:" or in slotsToAnnounce. Do not invent cutoffs or restate instructor names from preference alone.
+
+CRITICAL: booking_step_check_availability just returned the exact slots to present. You MUST read the slot list from the tool result verbatim—do NOT paraphrase, infer, or substitute any date, time, or location. Do NOT invent or add any slots; present ONLY what appears after "Slots to present:" in the tool result message. Each slot line includes date (calendar month and year when shown), time, centre name, and price; when several slots are listed and the caller asked for a specific instructor, each line includes that slot's instructor. If the caller asks for more detail about a specific slot (e.g. full address), you may provide it from the full slot data in the tool result (slotsToAnnounce objects).${slotsFromTool}${instructorExtra}
 
 ${slotRules}
 
@@ -1073,7 +1125,12 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
 
       // process_payment returned requiresPaymentMethod: agent MUST ask the question in THIS response (do not say "let me proceed" and then wait)
       if (toolName === 'booking_step_process_payment' && toolResult?.requiresPaymentMethod === true) {
-        const instruction = toolResult.instruction || `CRITICAL: Do NOT call booking_step_process_payment again. In THIS response you MUST ask the caller exactly: "Would you like to receive the payment request via email or SMS?" Do NOT say "I'll call the correct step" or "Let me proceed" and then wait—ask the question now. When they answer (email or SMS), call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms", plus courseType, workflowType, and clientEmail or clientMobile as needed.`;
+        const instruction = toolResult.instruction || `CRITICAL — READ CAREFULLY:
+1. Do NOT call booking_step_process_payment again — it will be blocked.
+2. In THIS response, ask the caller: "Would you like to receive the payment link via email or SMS?"
+3. Wait for the caller to clearly say "email" or "SMS" / "text message". Do NOT assume a preference from unclear or garbled speech.
+4. Once they answer, call **booking_step_send_payment_request** (NOT booking_step_process_payment) with: deliveryMethod set to "email" or "sms", courseType, workflowType, and clientEmail or clientMobile as appropriate.
+5. Do NOT mention terms, system issues, or apologize — simply ask the email/SMS question.`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
@@ -1153,7 +1210,7 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         toolResult?.success === true &&
         (toolResult?.paymentCompleted === true || toolResult?.bookingFinalized === true);
       if (isBookingFinalized) {
-        const instruction = `CRITICAL: Booking is finalized. Say ONLY a brief confirmation to the caller (e.g. "Your booking is complete. I'm sending your confirmation and details now."). Do NOT wait for the caller to respond. The system will automatically send the confirmation email, terms, and SMS. Do not call any tools in this response.`;
+        const instruction = `CRITICAL: Payment has been received and your booking is now confirmed. Say EXACTLY this pattern to the caller: first acknowledge payment ("Great news — your payment has come through"), then confirm the booking is complete, then tell them you are sending a confirmation email, terms, and SMS now (e.g. "Great news — your payment has come through and your booking is confirmed! I'm sending your confirmation email, terms, and an SMS to your phone right now."). Do NOT wait for the caller to respond. The system will automatically send the confirmation email, terms, and SMS. Do not call any tools in this response.`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;

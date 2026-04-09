@@ -3,7 +3,17 @@
  * Uses Europe/London for "next week", "mid month", and weekday refinements.
  */
 
-import { parseISO, getDay, startOfWeek, addWeeks, addDays } from 'date-fns';
+import {
+  parseISO,
+  getDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  addWeeks,
+  addDays,
+  addMonths
+} from 'date-fns';
 import { formatInTimeZone, toZonedTime, fromZonedTime } from 'date-fns-tz';
 import * as chrono from 'chrono-node';
 
@@ -87,6 +97,81 @@ export function nextCalendarWeekAfterCurrentLondon(now) {
   return {
     startISO: formatInTimeZone(mondayNext, LONDON, 'yyyy-MM-dd'),
     endISO: formatInTimeZone(sundayNext, LONDON, 'yyyy-MM-dd')
+  };
+}
+
+/**
+ * Rolling 366-day window: today (London) through the calendar date 365 days later (inclusive).
+ * @param {Date} now
+ * @returns {{ startISO: string, endISO: string }}
+ */
+export function rollingYearFromTodayLondon(now) {
+  const todayStr = formatDateInLondon(now);
+  const start = fromZonedTime(`${todayStr} 12:00:00`, LONDON);
+  const end = addDays(start, 365);
+  return {
+    startISO: todayStr,
+    endISO: formatDateInLondon(end)
+  };
+}
+
+/**
+ * Monday–Sunday of the calendar week that contains `now` (London).
+ * @param {Date} now
+ * @returns {{ startISO: string, endISO: string }}
+ */
+export function thisCalendarWeekLondon(now) {
+  const z = toZonedTime(now, LONDON);
+  const mon = startOfWeek(z, { weekStartsOn: 1 });
+  const sun = endOfWeek(z, { weekStartsOn: 1 });
+  return {
+    startISO: formatInTimeZone(mon, LONDON, 'yyyy-MM-dd'),
+    endISO: formatInTimeZone(sun, LONDON, 'yyyy-MM-dd')
+  };
+}
+
+/**
+ * Today through today+6 (London), seven calendar days inclusive.
+ * @param {Date} now
+ * @returns {{ startISO: string, endISO: string }}
+ */
+export function nextSevenDaysLondon(now) {
+  const todayStr = formatDateInLondon(now);
+  const start = fromZonedTime(`${todayStr} 12:00:00`, LONDON);
+  const end = addDays(start, 6);
+  return {
+    startISO: todayStr,
+    endISO: formatDateInLondon(end)
+  };
+}
+
+/**
+ * First and last day of the current calendar month (London).
+ * @param {Date} now
+ * @returns {{ startISO: string, endISO: string }}
+ */
+export function thisMonthRangeLondon(now) {
+  const z = toZonedTime(now, LONDON);
+  const sm = startOfMonth(z);
+  const em = endOfMonth(z);
+  return {
+    startISO: formatInTimeZone(sm, LONDON, 'yyyy-MM-dd'),
+    endISO: formatInTimeZone(em, LONDON, 'yyyy-MM-dd')
+  };
+}
+
+/**
+ * First and last day of the next calendar month (London).
+ * @param {Date} now
+ * @returns {{ startISO: string, endISO: string }}
+ */
+export function nextMonthRangeLondon(now) {
+  const z = toZonedTime(now, LONDON);
+  const nmStart = addMonths(startOfMonth(z), 1);
+  const em = endOfMonth(nmStart);
+  return {
+    startISO: formatInTimeZone(nmStart, LONDON, 'yyyy-MM-dd'),
+    endISO: formatInTimeZone(em, LONDON, 'yyyy-MM-dd')
   };
 }
 
@@ -216,6 +301,33 @@ export function resolveAvailabilityDateIntent({ preferredDate, now = new Date(),
 
   const lower = raw.toLowerCase();
 
+  // Earliest / ASAP — no date window; scan full loaded table (same effect as null preferredDate).
+  if (
+    lower === 'earliest' ||
+    lower === 'asap' ||
+    lower === 'a.s.a.p.' ||
+    /^as\s+soon\s+as\s+possible$/i.test(raw.trim()) ||
+    lower === 'next available' ||
+    lower === 'the next available' ||
+    lower === 'first available' ||
+    lower === 'soonest' ||
+    lower === 'soonest available'
+  ) {
+    return { type: 'none' };
+  }
+
+  // "This month and next month" (and similar word order) — London calendar span.
+  if (/\bthis\s+month\b/.test(lower) && /\bnext\s+month\b/.test(lower)) {
+    const t = thisMonthRangeLondon(now);
+    const n = nextMonthRangeLondon(now);
+    return {
+      type: 'range',
+      startISO: t.startISO,
+      endISO: n.endISO,
+      label: 'this month and next month'
+    };
+  }
+
   if (lower === 'next week' || /^next\s+week\.?$/.test(lower)) {
     const { startISO, endISO } = nextCalendarWeekAfterCurrentLondon(now);
     return { type: 'range', startISO, endISO, label: 'next week' };
@@ -229,6 +341,43 @@ export function resolveAvailabilityDateIntent({ preferredDate, now = new Date(),
   ) {
     const { startISO, endISO } = midMonthRangeLondon(now);
     return { type: 'range', startISO, endISO, label: 'mid month' };
+  }
+
+  // Year-style and calendar windows (before chrono — avoids "next 1 year" → single day)
+  if (
+    /^next\s+1\s+year$/i.test(lower) ||
+    /^next\s+one\s+year$/i.test(lower) ||
+    lower === 'next year' ||
+    /^within\s+(a\s+)?year$/i.test(lower) ||
+    /^next\s+12\s+months$/i.test(lower)
+  ) {
+    const { startISO, endISO } = rollingYearFromTodayLondon(now);
+    return { type: 'range', startISO, endISO, label: raw };
+  }
+
+  if (lower === 'this week' || /^this\s+week$/i.test(lower)) {
+    const { startISO, endISO } = thisCalendarWeekLondon(now);
+    return { type: 'range', startISO, endISO, label: 'this week' };
+  }
+
+  if (
+    lower === 'next 7 days' ||
+    lower === 'next seven days' ||
+    /^next\s+7\s+days$/i.test(lower) ||
+    /^next\s+seven\s+days$/i.test(lower)
+  ) {
+    const { startISO, endISO } = nextSevenDaysLondon(now);
+    return { type: 'range', startISO, endISO, label: 'next 7 days' };
+  }
+
+  if (lower === 'this month' || /^this\s+month$/i.test(lower)) {
+    const { startISO, endISO } = thisMonthRangeLondon(now);
+    return { type: 'range', startISO, endISO, label: 'this month' };
+  }
+
+  if (lower === 'next month' || /^next\s+month$/i.test(lower)) {
+    const { startISO, endISO } = nextMonthRangeLondon(now);
+    return { type: 'range', startISO, endISO, label: 'next month' };
   }
 
   const weekdayOnly = parseWeekdayToken(lower);

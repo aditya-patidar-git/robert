@@ -189,6 +189,7 @@ export function storePreferencesBeforeAvailabilityCheck(callSid, preferences) {
 
   if (toDelete.length > 0) {
     sessionStateManager.clearPreferences(callSid, toDelete);
+    console.log(`✅ [${callSid}] Cleared preferences BEFORE Step 1:`, toDelete);
   }
   if (Object.keys(toUpdate).length > 0) {
     sessionStateManager.updatePreferences(callSid, toUpdate);

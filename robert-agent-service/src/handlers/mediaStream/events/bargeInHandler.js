@@ -199,8 +199,13 @@ export class BargeInHandler {
         } else {
           console.warn(`⚠️ [${this.state.callSid}] STEP 1: response.cancel queued or connection not ready`);
         }
+      } else if (this.state.isResponding) {
+        // No tracked response ID but we believe a response is in-flight (Twilio pacer/buffer race).
+        // Send response.cancel without response_id so OpenAI cancels any current generation.
+        this.state.sendToOpenAI({ type: 'response.cancel' }, { priority: 'high' });
+        console.warn(`⚠️ [${this.state.callSid}] STEP 1: No active response ID — sent blanket response.cancel (isResponding=true)`);
       } else {
-        console.warn(`⚠️ [${this.state.callSid}] STEP 1: No active response ID to cancel`);
+        console.log(`ℹ️ [${this.state.callSid}] STEP 1: No active response ID and isResponding=false — skipping response.cancel`);
       }
       
       // Clear the input audio buffer using robust send method
@@ -271,6 +276,7 @@ export class BargeInHandler {
         }
         const existing = (conv.bargeInFlushedGraceText || '').trim();
         conv.bargeInFlushedGraceText = existing ? `${existing} ${flushed}`.trim() : flushed;
+        conv.bargeInFlushedGraceTextTime = Date.now();
         console.log(
           `📎 [${this.state.callSid}] Preserved ${pendingGrace.length} grace-buffer segment(s) before barge-in clear (${flushed.length} chars)`
         );

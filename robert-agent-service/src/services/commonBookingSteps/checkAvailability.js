@@ -109,24 +109,20 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       preferences.instructor ||
       (dateIntent && dateIntent.type !== 'none')
     );
-    const MAX_SLOTS_WHEN_NO_PREFERENCES = 25;
-
+    // Full table scan in one page.evaluate — avoids missing instructors/slots that appear after an arbitrary row cap.
     let rowsToScan = allDataRows;
     let rowCountToUse = rowCount;
     let rowIndexOffset = 0;
     let scanStartIndex = 0;
 
     if (preferredDateNorm) {
-      // For preferred date, scan the whole table (it's fast with bulk evaluate)
-      // and let the internal date filtering handle the subset.
       scanStartIndex = 0;
       rowCountToUse = rowCount;
       console.log(`📅 [AVAILABILITY] Preferred date ${preferredDateNorm} provided - scanning entire table for matches`);
-    } else if (!hasPreferences && rowCount > MAX_SLOTS_WHEN_NO_PREFERENCES) {
-
-      scanStartIndex = 0; // Prioritize soonest available slots (top of table)
-      rowCountToUse = MAX_SLOTS_WHEN_NO_PREFERENCES;
-      console.log(`📅 [AVAILABILITY] No preferences provided - scanning first ${rowCountToUse} slots (from row ${scanStartIndex})`);
+    } else {
+      scanStartIndex = 0;
+      rowCountToUse = rowCount;
+      console.log(`📅 [AVAILABILITY] Scanning full availability table (${rowCountToUse} row(s))`);
     }
 
 
@@ -270,6 +266,25 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     const { filtered: candidateSlots, noMatch: dateFilterNoMatch } = filterSlotsByDateIntent(allSlots, dateIntent);
     const noSlotsInDateFilter = dateIntent.type !== 'none' && dateFilterNoMatch;
     const dateFilterSummary = summarizeDateIntent(dateIntent);
+    const instructorLocationMetaWindow = computeInstructorAvailabilityMeta(candidateSlots, preferences);
+    const strictLocationOrInstructor =
+      !!(String(preferences.instructor || '').trim() || String(preferences.location || '').trim());
+    const instructorLocationMetaLoadedTable =
+      noSlotsInDateFilter && strictLocationOrInstructor
+        ? computeInstructorAvailabilityMeta(allSlots, preferences)
+        : null;
+    const instructorLocationMeta = instructorLocationMetaLoadedTable
+      ? {
+          ...instructorLocationMetaLoadedTable,
+          noSlotsInRequestedDateWindow: true,
+          dateWindowSummary: dateFilterSummary || null
+        }
+      : {
+          ...instructorLocationMetaWindow,
+          noSlotsInRequestedDateWindow: noSlotsInDateFilter && dateIntent.type !== 'none',
+          dateWindowSummary:
+            noSlotsInDateFilter && dateIntent.type !== 'none' ? dateFilterSummary || null : null
+        };
 
     // Log the date range of extracted slots for debugging
     if (allSlots.length > 0) {
@@ -325,6 +340,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     //   Case 2: date+location, matched   → same-centre same-date, then proximity fill
     //   Case 3: date+location, fallback  → same-date all-centre diverse, then preferred-centre proximity
     // ─────────────────────────────────────────────────────────────────────
+    let announceIncludesNonPreferredInstructor = false;
     let slotsToAnnounce;
     {
       // ── Shared helpers ──────────────────────────────────────────────────
@@ -395,12 +411,24 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
            _centre(selectedSlot.location).toLowerCase() ===
              _centre(preferences.location).toLowerCase());
 
+      const ec5RefMs =
+        prefDateMs ??
+        (noSlotsInDateFilter &&
+        dateIntent.type === 'range' &&
+        dateIntent.startISO &&
+        dateIntent.endISO
+          ? Math.round(
+              (new Date(`${dateIntent.startISO}T12:00:00.000Z`).getTime() +
+                new Date(`${dateIntent.endISO}T12:00:00.000Z`).getTime()) /
+                2
+            )
+          : null);
+
       if (noSlotsInDateFilter) {
-        // EC-5: Date given but zero slots in that window — show 3 closest to preferred date.
-        console.log(`📋 [SLOTS] EC-5: no slots in date window — showing closest alternatives (refMs=${prefDateMs})`);
-        slotsToAnnounce = prefDateMs
-          ? _dedup(_byProximity(allSlots, prefDateMs))
-          : _dedup(allSlots);
+        // EC-5: Date given but zero slots in that window — show 3 closest to reference (single-day norm or range midpoint).
+        console.log(`📋 [SLOTS] EC-5: no slots in date window — showing closest alternatives (refMs=${ec5RefMs})`);
+        slotsToAnnounce =
+          ec5RefMs != null ? _dedup(_byProximity(allSlots, ec5RefMs)) : _dedup(allSlots);
 
       } else if (!hasPreferences || !selectedSlot) {
         // Base: no preferences — show earliest date's slots (centre-diverse), then fill.
@@ -467,6 +495,42 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
         });
       }
 
+      // When caller asked for a specific centre + instructor but the instructor only appears elsewhere,
+      // ensure at least one "other centre" match appears in the shortlist so the model does not imply wrong attribution.
+      if (instructorLocationMeta.instructorAwayFromPreferredCentre && instructorLocationMeta.instructorSlotsOtherCentres[0]) {
+        const away = instructorLocationMeta.instructorSlotsOtherCentres[0];
+        const seenK = new Set(slotsToAnnounce.map(_slotKey));
+        if (!seenK.has(_slotKey(away))) {
+          slotsToAnnounce = _dedup([away, ...slotsToAnnounce], 3);
+          console.log('📋 [SLOTS] Prepended instructor match at alternate centre for voice clarity');
+        }
+      }
+
+      // Instructor + no location preference: spoken shortlist prefers that instructor (up to 3, centre-diverse),
+      // then fills with other instructors only if fewer than 3 matches (tool message clarifies).
+      const instPrefAnnounce = String(preferences.instructor || '').trim();
+      const applyInstructorFirstShortlist =
+        instPrefAnnounce &&
+        !locationPreferenceGiven &&
+        instructorLocationMeta.anyInstructorMatch &&
+        !instructorLocationMeta.instructorAwayFromPreferredCentre &&
+        !instructorLocationMeta.suggestInstructorSpellingConfirmation &&
+        !noSlotsInDateFilter &&
+        hasPreferences &&
+        selectedSlot &&
+        candidateSlots.length > 0;
+
+      if (applyInstructorFirstShortlist) {
+        const built = buildInstructorPriorityShortlist(candidateSlots, preferences.instructor, selDateMs, 3);
+        if (built.slots.length > 0) {
+          slotsToAnnounce = built.slots;
+          announceIncludesNonPreferredInstructor = built.includesOtherInstructors;
+          console.log(
+            `📋 [SLOTS] Instructor-first shortlist (no location pref): ${built.slots.length} slot(s), includesOtherInstructors=${built.includesOtherInstructors}`
+          );
+        }
+      }
+
       // ── Final safety fallback ───────────────────────────────────────────
       if (slotsToAnnounce.length === 0 && candidateSlots.length > 0) {
         slotsToAnnounce = _dedup(selectedSlot ? [selectedSlot, ...candidateSlots] : candidateSlots);
@@ -478,8 +542,10 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       selectedSlot: selectedSlot ?? null,
       monthYear: returnMonthYear,
       slotsToAnnounce,
+      announceIncludesNonPreferredInstructor,
       noSlotsInDateFilter,
-      dateFilterSummary: dateFilterSummary || null
+      dateFilterSummary: dateFilterSummary || null,
+      instructorLocationMeta
     };
 
   } catch (error) {
@@ -491,7 +557,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
 /**
  * Select the best matching slot based on caller preferences
  * @param {Array} allSlots - Array of available slots
- * @param {Object} preferences - Caller preferences {preferredDate, preferredTime, location}
+ * @param {Object} preferences - Caller preferences {preferredDate, preferredTime, location, instructor}
  * @returns {Object} - Best matching slot
  */
 export function selectBestMatchingSlot(allSlots, preferences = {}) {
@@ -523,16 +589,21 @@ export function selectBestMatchingSlot(allSlots, preferences = {}) {
 
   const dateIntent = preferences._availabilityDateIntent;
   const hasActiveDateIntent = dateIntent && dateIntent.type !== 'none';
+  const hasInstructorPref = !!(instructor && String(instructor).trim());
 
   // If no preferences provided, return null to indicate user should choose
   // According to documentation: "Feel free to discuss with the client the availability"
-  if (!preferredDate && !preferredTime && !location && !hasActiveDateIntent) {
+  // Instructor alone counts (must match hasPreferences in checkAvailabilityAndNoteDetails).
+  if (!preferredDate && !preferredTime && !location && !hasActiveDateIntent && !hasInstructorPref) {
     console.log('📋 No preferences provided - returning null to indicate user selection needed');
     return null; // Changed from allSlots[0] - don't auto-select
   }
 
+  // When strict location matches exist, score only within that pool (not other centres).
+  const slotsToScore = filteredSlots;
+
   // Score each slot based on how well it matches preferences
-  const scoredSlots = allSlots.map(slot => {
+  const scoredSlots = slotsToScore.map(slot => {
     let score = 0;
     let matchDetails = [];
 
@@ -762,6 +833,12 @@ function normalizeLocation(locationStr) {
   return normalized.trim();
 }
 
+/** Common STT / spelling variants → canonical first-name token for matching */
+const INSTRUCTOR_NAME_CANONICAL = {
+  shawn: 'sean',
+  sean: 'sean'
+};
+
 /**
  * Normalize instructor name for comparison
  * @param {string} instructor - Instructor name
@@ -769,7 +846,185 @@ function normalizeLocation(locationStr) {
  */
 function normalizeInstructor(instructor) {
   if (!instructor) return null;
-  return instructor.toLowerCase().trim().split(' ')[0]; // Match first name only
+  const first = instructor.toLowerCase().trim().split(' ')[0];
+  return INSTRUCTOR_NAME_CANONICAL[first] || first;
+}
+
+const INSTRUCTOR_META_CAP = 5;
+
+function slotMatchesInstructorPref(slot, preferredInstructor) {
+  if (!preferredInstructor || !String(preferredInstructor).trim()) return false;
+  const slotInstructor = normalizeInstructor(slot.instructor);
+  const preferred = normalizeInstructor(preferredInstructor);
+  if (!slotInstructor || !preferred) return false;
+  return (
+    slotInstructor === preferred ||
+    slotInstructor.includes(preferred) ||
+    preferred.includes(slotInstructor)
+  );
+}
+
+/**
+ * Up to `cap` slots for voice: matching instructor first (centre-diverse), then proximity fill from the rest.
+ * @returns {{ slots: object[], includesOtherInstructors: boolean }}
+ */
+export function buildInstructorPriorityShortlist(candidateSlots, preferredInstructor, selDateMs, cap = 3) {
+  if (!Array.isArray(candidateSlots) || candidateSlots.length === 0) {
+    return { slots: [], includesOtherInstructors: false };
+  }
+  if (!String(preferredInstructor || '').trim()) {
+    return { slots: [], includesOtherInstructors: false };
+  }
+  const matchingPool = candidateSlots.filter(s => slotMatchesInstructorPref(s, preferredInstructor));
+  if (matchingPool.length === 0) {
+    return { slots: [], includesOtherInstructors: false };
+  }
+
+  const _slotKey = (s) => `${s.date}|${s.time}|${String(s.location || '').slice(0, 160)}`;
+  const _centre = (loc) => normaliseToCentreName(extractLocationIdentifier(loc || ''));
+
+  const _dedup = (ordered, c = cap) => {
+    const seen = new Set();
+    const out = [];
+    for (const s of ordered) {
+      const k = _slotKey(s);
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(s);
+      }
+      if (out.length >= c) break;
+    }
+    return out;
+  };
+
+  const _diversePick = (slots, c = cap) => {
+    const seen = new Set();
+    const seenCentres = new Set();
+    const first = [];
+    const rest = [];
+    for (const s of slots) {
+      const k = _slotKey(s);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const centre = _centre(s.location) || 'unknown';
+      if (!seenCentres.has(centre)) {
+        seenCentres.add(centre);
+        first.push(s);
+      } else {
+        rest.push(s);
+      }
+    }
+    return [...first, ...rest].slice(0, c);
+  };
+
+  const _byProximity = (slots, refMs) => {
+    if (refMs == null) return [...slots];
+    return [...slots].sort((a, b) => {
+      const aMs = a.startDate ? new Date(a.startDate).getTime() : Infinity;
+      const bMs = b.startDate ? new Date(b.startDate).getTime() : Infinity;
+      return Math.abs(aMs - refMs) - Math.abs(bMs - refMs);
+    });
+  };
+
+  let primary = _dedup(_diversePick(matchingPool, cap), cap);
+  if (primary.length < cap) {
+    const others = candidateSlots.filter(s => !slotMatchesInstructorPref(s, preferredInstructor));
+    primary = _dedup([...primary, ..._byProximity(others, selDateMs)], cap);
+  }
+  const includesOtherInstructors = primary.some(s => !slotMatchesInstructorPref(s, preferredInstructor));
+  return { slots: primary, includesOtherInstructors };
+}
+
+function slotCentreMatchesPreference(slotLoc, prefLocation) {
+  const pref = normaliseToCentreName(extractLocationIdentifier(prefLocation || ''));
+  const c = normaliseToCentreName(extractLocationIdentifier(slotLoc || ''));
+  return !!(pref && c && pref.toLowerCase() === c.toLowerCase());
+}
+
+/**
+ * Cross-check instructor vs location over the date-filtered slot pool (for voice messaging and tests).
+ * @param {object[]} candidateSlots
+ * @param {{ instructor?: string, location?: string }} preferences
+ */
+export function computeInstructorAvailabilityMeta(candidateSlots, preferences = {}) {
+  const instructorPreferenceGiven = !!(preferences.instructor && String(preferences.instructor).trim());
+  const locationPreferenceGiven = !!(preferences.location && String(preferences.location).trim());
+  const prefCentre = locationPreferenceGiven
+    ? normaliseToCentreName(extractLocationIdentifier(preferences.location))
+    : null;
+
+  const matchesAtPreferred = [];
+  const instructorOtherCentres = [];
+  const preferredCentreOtherInstructors = [];
+
+  let anyInstructorMatch = false;
+
+  for (const slot of candidateSlots || []) {
+    if (instructorPreferenceGiven && slotMatchesInstructorPref(slot, preferences.instructor)) {
+      anyInstructorMatch = true;
+      if (locationPreferenceGiven && prefCentre) {
+        if (slotCentreMatchesPreference(slot.location, preferences.location)) {
+          matchesAtPreferred.push(slot);
+        } else {
+          instructorOtherCentres.push(slot);
+        }
+      }
+    }
+    if (
+      instructorPreferenceGiven &&
+      locationPreferenceGiven &&
+      prefCentre &&
+      slotCentreMatchesPreference(slot.location, preferences.location) &&
+      !slotMatchesInstructorPref(slot, preferences.instructor)
+    ) {
+      preferredCentreOtherInstructors.push(slot);
+    }
+  }
+
+  const dedupKey = (s) => `${s.date}|${s.time}|${String(s.location || '').slice(0, 160)}`;
+  const takeDedup = (arr, cap) => {
+    const seen = new Set();
+    const out = [];
+    for (const s of arr) {
+      const k = dedupKey(s);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(s);
+      if (out.length >= cap) break;
+    }
+    return out;
+  };
+
+  const instructorMatchAtPreferredLocation = matchesAtPreferred.length > 0;
+  const instructorSlotsOtherCentres = takeDedup(instructorOtherCentres, INSTRUCTOR_META_CAP);
+  const preferredCentreSlotsOtherInstructors = takeDedup(preferredCentreOtherInstructors, INSTRUCTOR_META_CAP);
+
+  const instructorAwayFromPreferredCentre =
+    instructorPreferenceGiven &&
+    locationPreferenceGiven &&
+    !instructorMatchAtPreferredLocation &&
+    instructorSlotsOtherCentres.length > 0;
+
+  const instructorRequestedButNoSlotMatch = instructorPreferenceGiven && !anyInstructorMatch;
+  /** True when the table has rows but none match the requested instructor—often STT/spelling (e.g. Sean vs Shaun). */
+  const suggestInstructorSpellingConfirmation =
+    instructorRequestedButNoSlotMatch &&
+    Array.isArray(candidateSlots) &&
+    candidateSlots.length > 0;
+
+  return {
+    instructorPreferenceGiven,
+    locationPreferenceGiven,
+    preferredCentreLabel: prefCentre,
+    instructorMatchAtPreferredLocation,
+    instructorSlotsOtherCentres,
+    preferredCentreSlotsOtherInstructors,
+    instructorAwayFromPreferredCentre,
+    instructorRequestedButNoSlotMatch,
+    suggestInstructorSpellingConfirmation,
+    anyInstructorMatch,
+    _spellingInstructorRaw: suggestInstructorSpellingConfirmation ? String(preferences.instructor || '').trim() : undefined
+  };
 }
 
 /**

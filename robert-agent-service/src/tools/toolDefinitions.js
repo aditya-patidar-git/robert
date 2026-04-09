@@ -44,11 +44,14 @@ PREFERENCE CLEARING: If the caller previously gave a location preference but now
           preferredDate: {
             type: 'string',
             description:
-              'Preferred date or natural-language phrase (optional). Pass ISO dates (YYYY-MM-DD) or phrases such as "next week", "mid of this month", "Friday", "this Friday"—the backend resolves these in Europe/London before matching slots. Refinements after a prior availability result (e.g. "Friday instead") are resolved using conversation context when available.'
+              'Preferred date or natural-language phrase (optional). Pass ISO dates (YYYY-MM-DD) or phrases resolved in Europe/London: "next week", "mid of this month", "Friday", "this Friday"; rolling windows: "next year", "next 1 year", "next one year", "within a year", "next 12 months"; calendar slices: "this week", "next 7 days", "this month", "next month", "this month and next month" (start of current month through end of following month). For earliest / no specific window use null, or phrases treated like no window: "earliest", "ASAP", "as soon as possible", "next available", "first available". Refinements after a prior availability (e.g. "Friday instead") use conversation anchors when available. Pass null (not omit) to clear a stored date preference—omitting reuses session.',
+            nullable: true
           },
           preferredTime: {
             type: 'string',
-            description: 'Preferred time (optional, for slot matching/filtering)'
+            description:
+              'Preferred time (optional, for slot matching/filtering). Pass null (not omit) to clear a previously stored time preference.',
+            nullable: true
           },
           location: {
             type: 'string',
@@ -57,7 +60,8 @@ PREFERENCE CLEARING: If the caller previously gave a location preference but now
           },
           instructor: {
             type: 'string',
-            description: 'Preferred instructor (optional, for slot matching/filtering)',
+            description:
+              'Preferred instructor (optional, for slot matching/filtering). If the tool or system asked for letter-by-letter spelling because no row matched the name, pass the exact spelling the caller confirmed on the next check_availability call—do not silently substitute a similar name.',
             nullable: true
           }
         },

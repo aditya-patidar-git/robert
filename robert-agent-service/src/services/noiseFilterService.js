@@ -78,14 +78,14 @@ class NoiseFilterService {
    * @param {string} transcript - Transcription text
    * @param {number} confidence - Confidence score (0-1)
    * @param {string} itemId - Optional item ID for tracking
-   * @param {{ postBargeInGrace?: boolean }} [options] - postBargeInGrace: relax min length briefly after barge-in
+   * @param {{ postBargeInGrace?: boolean, spellingMode?: boolean, digitCollectionMode?: boolean }} [options] - postBargeInGrace: relax min length briefly after barge-in; spellingMode: caller is spelling an instructor name so accept single letters; digitCollectionMode: system is collecting phone numbers/digits so accept numeric-only transcripts
    * @returns {object} - Quality assessment result
    */
   assessTranscriptionQuality(transcript, confidence, itemId = null, options = {}) {
     // Get thresholds from config (or use defaults)
     const thresholds = this.getThresholds();
     const minLen =
-      options.postBargeInGrace === true ? 1 : thresholds.minTranscriptLength;
+      (options.postBargeInGrace === true || options.spellingMode === true) ? 1 : thresholds.minTranscriptLength;
     
     // If noise filtering is disabled, accept all transcriptions
     if (!thresholds.enabled) {
@@ -106,6 +106,30 @@ class NoiseFilterService {
     
     const trimmed = (transcript || '').trim();
     const confidenceScore = confidence || 0;
+
+    // Zero-alpha guard: transcripts with no Latin letters are never actionable
+    // (pure punctuation like ".", "...", "?", emoji, or non-Latin script when session is English).
+    // Single-letter transcripts are allowed so spelling mode still works.
+    // Exception: when collecting phone numbers / digits, numeric-only transcripts are valid.
+    const hasAlpha = /[a-zA-Z]/.test(trimmed);
+    if (trimmed.length > 0 && !hasAlpha) {
+      const isDigitString = options.digitCollectionMode === true && /^[\d\s\-\+\(\)\.]+$/.test(trimmed);
+      if (!isDigitString) {
+        return {
+          isHighQuality: false,
+          qualityScore: 0,
+          confidenceScore: Math.round(confidenceScore * 100) / 100,
+          passesConfidence: false,
+          passesLength: false,
+          passesPatternCheck: false,
+          hasRepeatedChars: false,
+          noiseRatio: 1,
+          isBackgroundNoise: true,
+          reason: 'no_alpha',
+          itemId
+        };
+      }
+    }
     
     // Factor 1: Confidence score (primary indicator - 40% weight)
     const passesConfidence = confidenceScore >= thresholds.minConfidence;

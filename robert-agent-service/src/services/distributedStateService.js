@@ -118,6 +118,21 @@ function buildSyncPayload(sanitizedConversation, options = {}) {
         time: lac.selectedSlot.time
       };
     }
+    if (lac.instructorLocationMeta && typeof lac.instructorLocationMeta === 'object') {
+      const m = lac.instructorLocationMeta;
+      compact.instructorLocationMeta = {
+        instructorAwayFromPreferredCentre: !!m.instructorAwayFromPreferredCentre,
+        instructorMatchAtPreferredLocation: !!m.instructorMatchAtPreferredLocation,
+        instructorRequestedButNoSlotMatch: !!m.instructorRequestedButNoSlotMatch,
+        suggestInstructorSpellingConfirmation: !!m.suggestInstructorSpellingConfirmation,
+        noSlotsInRequestedDateWindow: !!m.noSlotsInRequestedDateWindow,
+        anyInstructorMatch: !!m.anyInstructorMatch,
+        preferredCentreLabel: m.preferredCentreLabel || undefined
+      };
+    }
+    if (lac.announceIncludesNonPreferredInstructor === true) {
+      compact.announceIncludesNonPreferredInstructor = true;
+    }
     if (lac.sessionDetails && typeof lac.sessionDetails === 'object') {
       compact.sessionDetails = {
         id: lac.sessionDetails.id,
