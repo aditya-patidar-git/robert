@@ -513,11 +513,25 @@ export function extractAvailableBalanceFromText(text) {
     return { hasAvailableBalance: false, availableBalance: 0, evidenceLine: null };
   }
 
-  // Only treat explicit credit-like wording as available balance.
-  // Do NOT match generic "balance" because payment pages often show "balance due".
-  const positiveCreditRegex = /(?:available\s+balance|account\s+credit|credit\s+balance|credit\s+on\s+account|unapplied\s+credit|customer\s+credit|wallet\s+credit|credit\s+available|available\s+credit|overpayment\s+credit|on\s+account\s+credit|in\s+credit)/i;
-  const nonCreditBalanceRegex = /(?:balance\s+due|amount\s+due|to\s+pay|payable|grand\s+total|sub\s*total|total\s+due|cost\s+per\s+space)/i;
-  const amountRegex = /(£\s*-?\d+(?:\.\d{1,2})?)|(-?\d+(?:\.\d{1,2})?\s*£)/i;
+  // --- TARGETED extraction for CRM "Balance £X in credit" pattern ---
+  // This runs FIRST because the CRM financial summary may appear as a single
+  // concatenated line (no newlines).  The generic scan would pick the first £
+  // amount on the line (e.g. "Money owed £839") instead of the correct one
+  // ("Balance £170 in credit").  The targeted regex captures the amount
+  // immediately preceding "in credit".
+  const inCreditMatch = text.match(/balance\s+(£\s*\d+(?:,\d{3})*(?:\.\d{1,2})?)\s+in\s+credit/i);
+  if (inCreditMatch) {
+    const raw = inCreditMatch[1].replace(/[^\d.]/g, '');
+    const value = Number.parseFloat(raw);
+    if (Number.isFinite(value) && value > 0) {
+      return { hasAvailableBalance: true, availableBalance: value, evidenceLine: inCreditMatch[0] };
+    }
+  }
+
+  // --- Generic line-by-line scan for other credit patterns ---
+  const positiveCreditRegex = /(?:available\s+balance|account\s+credit|credit\s+balance|credit\s+on\s+account|unapplied\s+credit|customer\s+credit|wallet\s+credit|credit\s+available|available\s+credit|overpayment\s+credit|on\s+account\s+credit)/i;
+  const nonCreditBalanceRegex = /(?:balance\s+due|amount\s+due|to\s+pay|payable|grand\s+total|sub\s*total|total\s+due|cost\s+per\s+space|money\s+owed|money\s+paid)/i;
+  const amountRegex = /(£\s*-?\d+(?:,\d{3})*(?:\.\d{1,2})?)|(-?\d+(?:,\d{3})*(?:\.\d{1,2})?\s*£)/i;
 
   if (!positiveCreditRegex.test(text)) {
     return { hasAvailableBalance: false, availableBalance: 0, evidenceLine: null };
@@ -546,12 +560,15 @@ export function extractAvailableBalanceFromText(text) {
 }
 
 async function detectAvailableBalance(page) {
+  // Only scan the main page and the booking iframe.  Do NOT scan contactEdit_iframe
+  // because it shows the client's overall profile and may contain stale financial
+  // data from before the current booking was added (e.g. "Balance £170 in credit"
+  // when the booking iframe already shows "Balance £35" owed).
   const candidates = [
     page,
-    page.frameLocator('#eventNewBooking2_iframe'),
-    page.frameLocator('#contactEdit_iframe')
+    page.frameLocator('#eventNewBooking2_iframe')
   ];
-  const scopeNames = ['main_page', 'eventNewBooking2_iframe', 'contactEdit_iframe'];
+  const scopeNames = ['main_page', 'eventNewBooking2_iframe'];
   const scannedSnippets = [];
 
   for (let idx = 0; idx < candidates.length; idx += 1) {
