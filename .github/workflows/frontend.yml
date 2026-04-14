@@ -1,0 +1,74 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate unique image tag
+        id: tag
+        run: echo "IMAGE_TAG=$(date +%Y%m%d%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Copy Frontend code to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.FRONTEND_EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          source: "frontend/"
+          target: "/var/www/robert-main-old/"
+
+      - name: Deploy to Frontend EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.FRONTEND_EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
+          script: |
+            set -e
+
+            IMAGE_TAG="${{ steps.tag.outputs.IMAGE_TAG }}"
+            cd /var/www/robert-main-old/frontend || exit
+
+            echo "Removing old .env..."
+            rm -f .env
+
+            echo "Creating .env file..."
+            echo "VITE_API_BASE=$(aws secretsmanager get-secret-value --secret-id robert-main-secret --region eu-north-1 --query SecretString --output text | jq -r .FRONTEND_VITE_API_BASE)" >> .env
+            echo "VITE_BACKEND_URL=$(aws secretsmanager get-secret-value --secret-id robert-main-secret --region eu-north-1 --query SecretString --output text | jq -r .FRONTEND_VITE_BACKEND_URL)" >> .env
+            echo "REACT_APP_BACKEND_URL=$(aws secretsmanager get-secret-value --secret-id robert-main-secret --region eu-north-1 --query SecretString --output text | jq -r .FRONTEND_REACT_APP_BACKEND_URL)" >> .env
+            echo "BASE_URL=$(aws secretsmanager get-secret-value --secret-id robert-main-secret --region eu-north-1 --query SecretString --output text | jq -r .FRONTEND_BASE_URL)" >> .env
+            echo "AGENT_SERVICE_URL=$(aws secretsmanager get-secret-value --secret-id robert-main-secret --region eu-north-1 --query SecretString --output text | jq -r .FRONTEND_AGENT_SERVICE_URL)" >> .env
+
+            echo "Building Docker image with tag: $IMAGE_TAG..."
+            docker build --no-cache -t fe.universalmct.ai:$IMAGE_TAG .
+
+            echo "Stopping old container (if exists)..."
+            docker stop fe.universalmct.ai || true
+            docker rm fe.universalmct.ai || true
+
+            echo "Starting new container..."
+            docker run -d \
+              --name fe.universalmct.ai \
+              --restart always \
+              -p 3000:80 \
+              --env-file .env \
+              fe.universalmct.ai:$IMAGE_TAG
+
+            echo "Cleaning old Docker images (keep latest 2)..."
+            docker images fe.universalmct.ai --format "{{.ID}}" | tail -n +3 | xargs -r docker rmi -f
+
+            echo "Removing dangling images..."
+            docker image prune -f
+
+            echo "Deployment completed successfully "
