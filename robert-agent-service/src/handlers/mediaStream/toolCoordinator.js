@@ -835,6 +835,18 @@ export class ToolCoordinator {
 
         case 'response.done':
           this.responseHandler.handleResponseDone(event);
+          if (this.state._pendingSilentAudioRetryResponse) {
+            this.state._pendingSilentAudioRetryResponse = false;
+            queueMicrotask(() => {
+              if (this.state.isClosed || this.state.activeResponseId != null) return;
+              this.createAudioResponse().catch((err) => {
+                console.error(
+                  `❌ [${this.state.callSid}] Silent-audio recovery createAudioResponse failed:`,
+                  err?.message || err
+                );
+              });
+            });
+          }
           break;
           
         case 'input_audio_buffer.speech_started':

@@ -53,15 +53,21 @@ Now you MUST ask the caller conversationally: "Have you done training with us be
 
 STRICT NEXT STEPS (follow EXACTLY based on response):
 
-1. If they say YES (EXISTING CLIENT):
+1. If they say YES / SURE / YEAH / OF COURSE / any affirmative (EXISTING CLIENT):
    - Workflow Type: "existing"
    - Next Tool: Call booking_step_navigate_contacts with courseType and workflowType: "existing".
    - Following Step: After navigation, call booking_step_search_client to find them by phone/email.
 
-2. If they say NO (NEW CLIENT):
+2. If they say NO / NOPE / NEVER (NEW CLIENT):
    - Workflow Type: "new"
    - Next Tool: Call booking_step_select_session with courseType and workflowType: "new". (This enters the Diaries to book the slot agreed in Step 1).
    - Following Step: After session selection, call booking_step_select_booking_options to ask for bike type.
+
+3. If they say UNSURE / I DON'T KNOW / NOT SURE (treat as NEW CLIENT):
+   - Workflow Type: "new"
+   - Same as option 2 above.
+
+IMPORTANT: "Sure", "Yeah", "Of course", "I have", "I did" all mean YES → workflowType "existing". Do NOT confuse short affirmatives with uncertainty.
 
 DO NOT use made-up tool names like booking_step_find_and_verify_client. Use only the tools defined in your registry.`
   };

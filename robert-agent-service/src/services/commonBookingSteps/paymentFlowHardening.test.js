@@ -63,6 +63,19 @@ test('detects "On account credit £7.50"', () => {
   assert.equal(r.availableBalance, 7.5);
 });
 
+test('detects "Balance £170.00 in credit" (CRM financial summary)', () => {
+  const text = 'Financial summary\nMoney owed £839.00 (including this booking)\nMoney paid £1,009.00\nBalance £170.00 in credit';
+  const r = extractAvailableBalanceFromText(text);
+  assert.equal(r.hasAvailableBalance, true);
+  assert.equal(r.availableBalance, 170);
+});
+
+test('detects "Balance £25.50 in credit" on single line', () => {
+  const r = extractAvailableBalanceFromText('Balance £25.50 in credit');
+  assert.equal(r.hasAvailableBalance, true);
+  assert.equal(r.availableBalance, 25.5);
+});
+
 // =========================================================================
 // 2. Balance detection: non-credit wording must NOT trigger
 // =========================================================================

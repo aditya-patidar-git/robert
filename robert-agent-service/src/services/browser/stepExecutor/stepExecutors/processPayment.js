@@ -61,6 +61,54 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     // Balance-first branch: if CRM shows positive available balance and caller has not chosen yet,
     // ask whether to use balance or send a payment link.
     const balanceInfo = await detectAvailableBalance(page);
+
+    // "No payment required" fast path: the CRM may display a banner such as
+    // "There is no need to take a payment" when the client's balance/credit already covers the
+    // booking fee.  In that case the payment dropdown does NOT exist on the page — there is
+    // nothing to select.  We skip the balance-decision question and go straight to terms → Make Booking.
+    const noPaymentRequired = await detectNoPaymentRequired(page);
+    if (noPaymentRequired && requestedPaymentSource == null && args.deliveryMethod == null) {
+      const effectiveBalance = balanceInfo.hasAvailableBalance ? balanceInfo.availableBalance : 0;
+      console.log(`✅ [PAYMENT] CRM indicates no payment required (credit/balance: GBP ${effectiveBalance.toFixed(2)}) — skipping payment dropdown, proceeding to terms → Make Booking`);
+
+      const termsValidation = validateTermsAcceptance(args.termsAccepted);
+      if (termsValidation.requiresTermsBeforeSend) {
+        const termsText = getTermsText();
+        return {
+          success: true,
+          paymentCompleted: false,
+          requiresTermsBeforeSend: true,
+          makeBookingReady: true,
+          paymentAlreadyCovered: true,
+          noPaymentRequired: true,
+          termsText,
+          message: `The system shows there is no need to take a payment — the booking fee is already covered (for example, from a previous overpayment or account credit of GBP ${effectiveBalance.toFixed(2)}). Do NOT offer a payment request link. Before completing the booking, read the following terms and conditions word-for-word to the caller:\n\n${termsText}`,
+          instruction: 'CRITICAL — MANDATORY TERMS STEP: Read the termsText field above word-for-word to the caller (do NOT summarise or paraphrase). After reading, ask exactly: "Do you agree with the statements that I have just made?" Wait for the caller\'s answer. If YES: call **booking_step_process_payment** again with courseType, workflowType, **termsAccepted: true**, and **useAvailableBalance: true**. If NO: handle as a terms decline — try to address concerns; if they still decline, offer transfer_call. Do NOT proceed to Make Booking until termsAccepted: true is confirmed.'
+        };
+      }
+      if (termsValidation.termsNotAccepted) {
+        return {
+          success: false,
+          paymentCompleted: false,
+          termsNotAccepted: true,
+          requiresRetry: true,
+          paymentMethod: 'balance',
+          message: 'The client did not agree with the terms. Try to answer their questions. If they still do not agree, offer transfer to a human agent.',
+          instruction: 'Try to address the caller concerns. If they still do not agree, ask if they want to be transferred to a human agent. If yes, use transfer_call.'
+        };
+      }
+
+      return finalizeBookingUsingCoveredPayment(
+        page,
+        args,
+        sessionState,
+        screenshots,
+        screenshotsDir,
+        progressCallback,
+        `Booking completed. The CRM indicated no payment was required — the booking fee was already covered by the client's account credit/balance of GBP ${effectiveBalance.toFixed(2)}.`
+      );
+    }
+
     if (
       balanceInfo.hasAvailableBalance &&
       requestedPaymentSource == null &&
@@ -122,11 +170,16 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     const { selectPaymentOption } = await import('../../../commonBookingSteps/selectPaymentOption.js');
     const requestSelectionResult = await selectPaymentOption(page, screenshotsDir, 'request', progressCallback, args.abortSignal);
     if (!requestSelectionResult?.success) {
-      // Fallback: payment method dropdown could not be used after retries, but "Make booking" is visible —
-      // CRM shows payment as already satisfied (e.g. credit from a previous cancellation refund).
+      // Payment dropdown could not be used — re-check if a real balance/credit exists before
+      // assuming payment is covered.  The "Make Booking" button alone is NOT proof of payment;
+      // it is always present on the "Confirm and Pay" page.
       const makeBookingVisible = await isMakeBookingButtonVisible(page);
-      if (makeBookingVisible) {
-        console.log('ℹ️ [PAYMENT] Payment dropdown not available but "Make booking" button is visible — payment likely already satisfied (e.g. refund/credit)');
+      const reconfirmedBalance = await detectAvailableBalance(page);
+      const noPaymentBanner = await detectNoPaymentRequired(page);
+
+      if (makeBookingVisible && (reconfirmedBalance.hasAvailableBalance || noPaymentBanner)) {
+        const effectiveBal = reconfirmedBalance.hasAvailableBalance ? reconfirmedBalance.availableBalance : 0;
+        console.log(`ℹ️ [PAYMENT] Payment dropdown not available but payment covered (balance: GBP ${effectiveBal.toFixed(2)}, noPaymentBanner: ${noPaymentBanner}) — payment already satisfied`);
         const termsValidation = validateTermsAcceptance(args.termsAccepted);
         if (termsValidation.requiresTermsBeforeSend) {
           const termsText = getTermsText();
@@ -138,7 +191,7 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
             paymentAlreadyCovered: true,
             termsText,
             message:
-              `The payment page shows no further payment is required — the booking fee appears already covered (for example, from a previous cancellation refund or account credit). Do NOT offer a payment request link. Before completing the booking, read the following terms and conditions word-for-word to the caller:\n\n${termsText}`,
+              `The payment page shows no further payment is required — the booking fee appears already covered (for example, from a previous cancellation refund or account credit${effectiveBal > 0 ? ` of GBP ${effectiveBal.toFixed(2)}` : ''}). Do NOT offer a payment request link. Before completing the booking, read the following terms and conditions word-for-word to the caller:\n\n${termsText}`,
             instruction:
               'CRITICAL — MANDATORY TERMS STEP: Read the termsText field above word-for-word to the caller (do NOT summarise or paraphrase). After reading, ask exactly: "Do you agree with the statements that I have just made?" Wait for the caller\'s answer. If YES: call **booking_step_process_payment** again with courseType, workflowType, **termsAccepted: true**, and **useAvailableBalance: true**. If NO: handle as a terms decline — try to address concerns; if they still decline, offer transfer_call. Do NOT proceed to Make Booking until termsAccepted: true is confirmed.'
           };
@@ -164,11 +217,18 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
           'Booking completed. Payment was already satisfied on screen (for example from a previous cancellation refund or account credit); no payment link was required.'
         );
       }
+
+      // No confirmed balance — do NOT assume payment is covered.
+      // Return requiresPaymentMethod so the agent asks the caller about email/SMS payment link.
+      console.log('⚠️ [PAYMENT] Payment dropdown not available and NO confirmed balance — returning requiresPaymentMethod');
       return {
         success: false,
         paymentCompleted: false,
+        requiresPaymentMethod: true,
         canRetry: true,
-        error: requestSelectionResult?.error || 'Unable to select "Send a payment request".'
+        error: requestSelectionResult?.error || 'Unable to select payment option. No confirmed balance on account.',
+        message: 'Would you like to receive the payment link via email or SMS?',
+        instruction: 'CRITICAL: The payment dropdown could not be loaded but no balance/credit was found on the account. Ask the caller: "Would you like to receive the payment link via email or SMS?" When they answer, call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms" (and courseType, workflowType). Do NOT call booking_step_process_payment again.'
       };
     }
     screenshots.push(await (await import('../../../commonBookingSteps/utils.js')).takeScreenshot(page, 'payment-option-selected-request.png', screenshotsDir));
@@ -455,7 +515,7 @@ export function extractAvailableBalanceFromText(text) {
 
   // Only treat explicit credit-like wording as available balance.
   // Do NOT match generic "balance" because payment pages often show "balance due".
-  const positiveCreditRegex = /(?:available\s+balance|account\s+credit|credit\s+balance|credit\s+on\s+account|unapplied\s+credit|customer\s+credit|wallet\s+credit|credit\s+available|available\s+credit|overpayment\s+credit|on\s+account\s+credit)/i;
+  const positiveCreditRegex = /(?:available\s+balance|account\s+credit|credit\s+balance|credit\s+on\s+account|unapplied\s+credit|customer\s+credit|wallet\s+credit|credit\s+available|available\s+credit|overpayment\s+credit|on\s+account\s+credit|in\s+credit)/i;
   const nonCreditBalanceRegex = /(?:balance\s+due|amount\s+due|to\s+pay|payable|grand\s+total|sub\s*total|total\s+due|cost\s+per\s+space)/i;
   const amountRegex = /(£\s*-?\d+(?:\.\d{1,2})?)|(-?\d+(?:\.\d{1,2})?\s*£)/i;
 
@@ -514,4 +574,43 @@ async function detectAvailableBalance(page) {
 
   console.log(`ℹ️ [PAYMENT] No available balance/credit detected. Scanned text snippets:\n${scannedSnippets.join('\n')}`);
   return { hasAvailableBalance: false, availableBalance: 0 };
+}
+
+/**
+ * Detect the CRM "no payment required" banner.
+ * When a client has sufficient credit/balance the CRM hides the payment dropdown
+ * entirely and shows a green info banner reading "There is no need to take a payment".
+ * Returns true if that banner text is found in any accessible frame.
+ */
+async function detectNoPaymentRequired(page) {
+  const noPaymentPatterns = [
+    /no\s+need\s+to\s+take\s+a\s+payment/i,
+    /no\s+payment\s+required/i,
+    /no\s+payment\s+is\s+required/i,
+    /payment\s+is\s+not\s+required/i
+  ];
+
+  const scopes = [
+    page,
+    page.frameLocator('#eventNewBooking2_iframe')
+  ];
+  const scopeNames = ['main_page', 'eventNewBooking2_iframe'];
+
+  for (let idx = 0; idx < scopes.length; idx += 1) {
+    try {
+      const body = scopes[idx].locator('body').first();
+      await body.waitFor({ state: 'attached', timeout: 1500 });
+      const text = await body.innerText({ timeout: 2000 });
+      if (!text) continue;
+      for (const pattern of noPaymentPatterns) {
+        if (pattern.test(text)) {
+          console.log(`✅ [PAYMENT] "No payment required" banner detected in ${scopeNames[idx]} (matched: ${pattern})`);
+          return true;
+        }
+      }
+    } catch (_) {
+      // scope not accessible — skip
+    }
+  }
+  return false;
 }
