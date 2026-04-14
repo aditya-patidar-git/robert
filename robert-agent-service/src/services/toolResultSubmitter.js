@@ -1129,8 +1129,8 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
 1. Do NOT call booking_step_process_payment again — it will be blocked.
 2. In THIS response, ask the caller: "Would you like to receive the payment link via email or SMS?"
 3. Wait for the caller to clearly say "email" or "SMS" / "text message". Do NOT assume a preference from unclear or garbled speech.
-4. Once they answer, call **booking_step_send_payment_request** (NOT booking_step_process_payment) with: deliveryMethod set to "email" or "sms", courseType, workflowType, and clientEmail or clientMobile as appropriate.
-5. Do NOT mention terms, system issues, or apologize — simply ask the email/SMS question.`;
+4. Once they answer, call **booking_step_send_payment_request** (NOT booking_step_process_payment) with: deliveryMethod set to "email" or "sms", courseType, and workflowType. Do NOT include termsAcceptedBeforeSend — the tool will return the terms for you to read.
+5. Do NOT mention terms, system issues, or apologize — simply ask the email/SMS question. The terms will come from the tool automatically.`;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;

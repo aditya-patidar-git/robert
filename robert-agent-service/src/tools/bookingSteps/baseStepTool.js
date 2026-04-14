@@ -204,6 +204,18 @@ export class BaseStepTool {
       if (workflowType && (workflowType === 'existing' || workflowType === 'new')) {
         const currentSession = sessionStateManager.getSession(callSid);
         if (currentSession && (!currentSession.workflowType || currentSession.workflowType !== workflowType)) {
+          // Final guard: if a caller hint was captured and conflicts, reject
+          const callerHint = sessionStateManager.getCallerTrainedBeforeHint(callSid);
+          if (callerHint && callerHint !== workflowType) {
+            const correctLabel = callerHint === 'existing' ? 'YES (they trained before)' : 'NO (new client)';
+            console.log(`⚠️ [${callSid}] workflowType MISMATCH (execute): model chose "${workflowType}" but caller indicated "${callerHint}"`);
+            return {
+              success: false,
+              error: `Workflow type mismatch. The caller said ${correctLabel}, so workflowType must be "${callerHint}" — not "${workflowType}". Please retry with workflowType: "${callerHint}".`,
+              correctedWorkflowType: callerHint,
+              autoRetryInstruction: `CRITICAL: The caller indicated "${callerHint}". You MUST use workflowType: "${callerHint}" in your next tool call.`
+            };
+          }
           // Set workflowType in session (this also marks workflowTypeAsked as true)
           sessionStateManager.setWorkflowType(callSid, workflowType);
           console.log(`✅ [${callSid}] Workflow type set to ${workflowType} - Step 3 marked as completed`);
@@ -495,6 +507,20 @@ export class BaseStepTool {
       // we MUST have asked the Step 3 question first (or provide workflowType)
       if (currentStep === 2 && requiresWorkflowType && !workflowTypeAsked) {
         if (workflowType && (workflowType === 'existing' || workflowType === 'new')) {
+          // Guard: compare LLM's choice against the caller's verbal hint (if captured)
+          const callerHint = sessionStateManager.getCallerTrainedBeforeHint(callSid);
+          if (callerHint && callerHint !== workflowType) {
+            const correctLabel = callerHint === 'existing' ? 'YES (they trained before)' : 'NO (new client)';
+            console.log(`⚠️ [${callSid}] workflowType MISMATCH: model chose "${workflowType}" but caller indicated "${callerHint}"`);
+            return {
+              valid: false,
+              error: `Workflow type mismatch. The caller said ${correctLabel}, so workflowType must be "${callerHint}" — not "${workflowType}". Please retry with workflowType: "${callerHint}".`,
+              currentStep,
+              requiresWorkflowType: true,
+              correctedWorkflowType: callerHint,
+              autoRetryInstruction: `CRITICAL: The caller indicated "${callerHint}". You MUST use workflowType: "${callerHint}" in your next tool call. Do NOT use "${workflowType}".`
+            };
+          }
           // workflowType provided means Step 3 was asked conversationally - allow and mark
           sessionStateManager.setWorkflowType(callSid, workflowType);
           console.log(`✅ [${callSid}] Step 3 (workflow type question) marked as asked - workflowType provided: ${workflowType}`);

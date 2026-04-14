@@ -699,6 +699,34 @@ export class ResponseHandler {
       const activeToolExecution = progressIndicatorService.getExecutionInfo(this.state.callSid);
       const hasPendingRecoveryTool = !!this.state.pendingChainedToolCall;
       const isHoldingResponse = progressIndicatorService.isHoldingResponse(this.state.callSid, responseId);
+
+      const callerHeardNoAudio =
+        status === 'completed' &&
+        hasAudioModality &&
+        audioTokens === 0 &&
+        framesThisResponse === 0 &&
+        !isHoldingResponse &&
+        !activeToolExecution &&
+        !hasPendingRecoveryTool &&
+        !isRefusalResponse;
+      if (callerHeardNoAudio) {
+        const n = this.state._silentAudioRetryCount || 0;
+        if (n < 2) {
+          this.state._silentAudioRetryCount = n + 1;
+          this.state.pendingInterruptionInstructionSuffix =
+            'CRITICAL — AUDIO GLITCH: Your previous spoken reply did not produce playable audio on the phone. Say ONE or two short sentences: apologize for the glitch and repeat your last substantive point (same meaning). Do NOT change dates, policy, or booking facts. Do NOT call tools this turn.';
+          this.state.forceToolChoiceNoneOnce = true;
+          this.state._pendingSilentAudioRetryResponse = true;
+          console.warn(
+            `⚠️ [${this.state.callSid}] Silent response recovery: scheduling one-shot audio retry (${this.state._silentAudioRetryCount}/2)`
+          );
+        } else {
+          console.warn(
+            `⚠️ [${this.state.callSid}] Silent response (0 audio / 0 frames): auto-retry cap reached — not scheduling further retries`
+          );
+        }
+      }
+
       if (isHoldingResponse) {
         // Warn if model output booking-like content instead of generic holding phrase
         const bookingLike = fullResponseText && fullResponseText.length > 150 && (

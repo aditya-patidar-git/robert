@@ -54,7 +54,29 @@ export async function selectPaymentOption(page, screenshotsDir, paymentType = 'n
         throw e;
       }
       try {
-        await paymentDropdown.waitFor({ state: 'visible', timeout: 15000 }); // Increased from 10000 to 15000
+        // Before waiting for visibility, scroll the iframe body so the dropdown section is in view.
+        // The CRM "Confirm and Pay" page has course/pricing details at the top; the payment
+        // dropdown renders further down and may not be visible (or even fully initialized by
+        // DevExpress) until it enters the viewport.
+        if (eventBookingIframeExists) {
+          try {
+            const iframe = page.frameLocator('#eventNewBooking2_iframe');
+            const iframeBody = iframe.locator('body').first();
+            // Scroll to bottom first to trigger any lazy-loaded widgets
+            await iframeBody.evaluate(el => el.scrollTo(0, el.scrollHeight));
+            await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+            // If the dropdown element exists in DOM, scroll it into the viewport
+            const existsInDom = await paymentDropdown.count() > 0;
+            if (existsInDom) {
+              await paymentDropdown.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+              await page.waitForTimeout(CRM_STABILITY_DELAY_MS);
+            }
+          } catch (_scrollErr) {
+            // Scrolling is best-effort; don't break the flow
+          }
+        }
+
+        await paymentDropdown.waitFor({ state: 'visible', timeout: 15000 });
         dropdownFound = true;
         console.log('✅ [STEP 10] Found payment dropdown');
         break;

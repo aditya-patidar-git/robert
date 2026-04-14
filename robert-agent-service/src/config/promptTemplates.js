@@ -107,6 +107,12 @@ BARGE-IN / PAUSE DURING SLOT READOUT (when requiresExplicitSlotChoice is true or
 
   booking_authentication: `Step 2 (booking_step_authenticate) is CRM system login only—it runs in the background; do NOT ask the caller for name, email, or contact details. Once the tool has been called and returns success, ask: "Have you done training with us before?" This determines existing vs new client workflow. Do NOT ask for full name or contact details at this step.
 
+WORKFLOW TYPE MAPPING (critical):
+- YES / Sure / Yeah / Of course / I have / I did / any affirmative → workflowType: "existing"
+- NO / Nope / Never → workflowType: "new"
+- Unsure / Don't know / Not sure → workflowType: "new"
+Do NOT confuse short affirmatives like "Sure" or "Yeah" with uncertainty — they mean YES (existing).
+
 AUTOMATIC CONTINUATION: After booking_step_authenticate completes, IMMEDIATELY ask the workflow type question. Do NOT wait for prompts.`,
 
   booking_existing_client: `You're booking for an existing client. Follow steps strictly using ONLY the tool names listed below. Do NOT assume or invent any step name (e.g. there is NO tool named booking_step_existing_client, and NO tool named booking_step_finalize_booking).
@@ -190,14 +196,14 @@ For booking_step_process_payment: Call FIRST with only courseType and workflowTy
 
 When booking_step_process_payment returns requiresTermsBeforeSend together with paymentAlreadyCovered (and/or makeBookingReady): the CRM shows payment is already satisfied on screen (e.g. credit from a previous cancellation refund)—there is no payment request link to offer. Do NOT mention or offer a payment link, and do NOT call booking_step_send_payment_request for collecting payment. Read termsText and ask "Do you agree with the statements that I have just made?" (or the exact question from the tool instruction). When they agree, call booking_step_process_payment again with courseType, workflowType, termsAccepted: true, and useAvailableBalance: true to complete the booking.
 
-For booking_step_send_payment_request:
-1. BEFORE calling: Read terms from a prior tool result (termsText) and ask: "Do you agree with the statements that I have just made?"
-2. If "yes": Call with termsAcceptedBeforeSend: true. If "no" or questions: Try to answer; if still no, offer transfer or end call.
-3. ONLY after termsAcceptedBeforeSend: true, proceed with payment request sending.
+For booking_step_send_payment_request (2-step terms flow):
+1. Call **booking_step_send_payment_request** with deliveryMethod, courseType, and workflowType. Do NOT include termsAcceptedBeforeSend on the first call. The tool will return requiresTermsBeforeSend: true together with termsText containing the terms and conditions.
+2. Read the returned termsText to the caller word-for-word and ask: "Do you agree with the statements that I have just made?"
+3. If "yes": Call **booking_step_send_payment_request** again with the SAME parameters plus **termsAcceptedBeforeSend: true**. If "no" or questions: Try to answer; if still no, offer transfer or end call.
 4. When the tool returns requiresConfirmation (email/phone to confirm): Ask the caller to confirm the address. When they say yes, you MUST call **booking_step_send_payment_request** again (the SAME tool—do NOT use any other tool name). Use the exact name: **booking_step_send_payment_request** with the SAME parameters plus **confirmed: true**. There is NO tool called "booking_step_confirm_payment_request"—only **booking_step_send_payment_request** exists. Calling it again with confirmed: true is what clicks "Send by email now" / "Send by SMS" and sends the link. Do NOT omit confirmed: true and do NOT call a different tool name.
 5. CORRECT TOOL NAME ONLY: For the confirmation step, the ONLY valid tool is **booking_step_send_payment_request** with confirmed: true. Do NOT invoke booking_step_confirm_payment_request (it does not exist).
 
-CRITICAL: Terms check is MANDATORY. When a tool returns requiresTermsBeforeSend and termsText, you MUST read termsText to the caller and get acceptance before calling again with termsAccepted/termsAcceptedBeforeSend: true.
+CRITICAL: Do NOT try to read terms before calling the tool — the tool provides them. When a tool returns requiresTermsBeforeSend and termsText, you MUST read termsText to the caller and get acceptance before calling again with termsAccepted/termsAcceptedBeforeSend: true. Do NOT say "I'm having trouble retrieving terms" — just call the tool and it will give you the terms.
 
 AUTOMATIC CONTINUATION: After payment tools complete, IMMEDIATELY proceed to next steps (confirmation email, terms, SMS). Do NOT wait for prompts.`,
 
@@ -225,7 +231,7 @@ STEP 2: cancellation_step_authenticate (automatic - say "Please bear with me" if
 
 STEP 3: cancellation_step_determine_workflow
 - Ask: "Have you done training with us before?"
-- Based on response, set workflowType: 'existing' or 'new'
+- For cancellation, workflowType is always 'existing' (cancellation requires an existing booking). Call the tool — it will set the correct value.
 
 STEP 4: cancellation_step_navigate_contacts (automatic - no questions)
 

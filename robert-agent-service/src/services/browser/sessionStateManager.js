@@ -249,6 +249,28 @@ class SessionStateManager {
   }
 
   /**
+   * Store the caller's trained-before hint derived from their verbal response.
+   * @param {string} callSid
+   * @param {'existing'|'new'} hint
+   */
+  setCallerTrainedBeforeHint(callSid, hint) {
+    this._syncBookingSession(callSid, (session) => {
+      session.callerTrainedBeforeHint = hint;
+    });
+    console.log(`🔍 [SESSION] ${callSid}: Caller trained-before hint stored: ${hint}`);
+  }
+
+  /**
+   * Retrieve the stored trained-before hint (if any).
+   * @param {string} callSid
+   * @returns {'existing'|'new'|null}
+   */
+  getCallerTrainedBeforeHint(callSid) {
+    const session = this.getSession(callSid);
+    return session?.callerTrainedBeforeHint ?? null;
+  }
+
+  /**
    * Get course type
    * @param {string} callSid - Call SID identifier
    * @returns {string|null} Course type

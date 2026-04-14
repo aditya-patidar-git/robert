@@ -126,7 +126,7 @@ export class ConversationService {
   /**
    * Decide whether to create a response after a transcription.
    * Pure function: no side effects.
-   * @param {Object} transcriptionResult - { processed, shouldCreateResponse, qualityScore, isBackgroundNoise }
+   * @param {Object} transcriptionResult - { processed, shouldCreateResponse, qualityScore, isBackgroundNoise, presenceCheckBypass? }
    * @param {Object} stateSnapshot - { waitingForUser, browserToolExecution, toolExecutionCompleting, isResponding, activeResponseId, hasInitialGreetingCompleted, outboundAudioPacer, outboundAudioBuffer, bargeInTailUntil, inConsentOrLanguagePhase }
    * @returns {boolean}
    */
@@ -150,10 +150,15 @@ export class ConversationService {
     const canMidGap =
       allowMid && hasBrowserTool && !completing && stateSnapshot.waitingForUser === false;
 
+    const presenceBypass =
+      transcriptionResult?.presenceCheckBypass === true &&
+      stateSnapshot.hasInitialGreetingCompleted === true &&
+      (stateSnapshot.waitingForUser === true || hasBrowserTool);
+
     return (
       shouldCreate &&
       (canNormal || canMidGap) &&
-      !isAudioPlaying &&
+      (presenceBypass || !isAudioPlaying) &&
       stateSnapshot.activeResponseId == null &&
       stateSnapshot.hasInitialGreetingCompleted === true
     );

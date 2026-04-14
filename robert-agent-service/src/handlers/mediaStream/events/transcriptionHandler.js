@@ -14,6 +14,9 @@ import { LanguageDetector } from '../utils/languageDetector.js';
 import { isAgentAudioPlaying } from '../utils/audioPlayingState.js';
 import { mergeWithBargeInFlushedGrace } from '../utils/graceBufferMerge.js';
 import progressIndicatorService from '../../../services/progressIndicatorService.js';
+import { isCallerPresenceCheckPhrase } from '../../../services/callerPresenceCheckPhrases.js';
+import { detectTrainedBeforeHint } from '../../../services/bookingCallerTrainedBeforeHint.js';
+import sessionStateManager from '../../../services/browser/sessionStateManager.js';
 import toolExecutor from '../../../tools/index.js';
 
 /** Snapshot for conversationService.shouldCreateResponse (Media Streams). */
@@ -329,6 +332,21 @@ export class TranscriptionHandler {
           };
         }
       }
+
+      // Detect trained-before hint when in booking_authentication phase (Step 2 done, workflowType not yet set)
+      const bookingSession = conversations[this.state.callSid]?.bookingSession;
+      if (
+        bookingSession &&
+        bookingSession.currentStep === 2 &&
+        !bookingSession.workflowType &&
+        transcript?.trim()
+      ) {
+        const { hint, confidence: hintConf } = detectTrainedBeforeHint(transcript);
+        if (hint && hintConf === 'high') {
+          sessionStateManager.setCallerTrainedBeforeHint(this.state.callSid, hint);
+          console.log(`🎯 [${this.state.callSid}] Trained-before hint from caller speech: "${transcript}" → ${hint}`);
+        }
+      }
     }
     
     // Store transcription for processing after grace period
@@ -352,13 +370,24 @@ export class TranscriptionHandler {
       this.state.agentFinishedSpeakingTime > 0 ? Date.now() - this.state.agentFinishedSpeakingTime : Infinity;
     const waitingForAnswerAfterAgent =
       this.state.waitingForUser && msSinceAgentFinished > 1200 && msSinceAgentFinished < 600000;
-    const allowResponse = !effectiveAudioPlayingForBlocking || waitingForAnswerAfterAgent;
-    return { 
-      processed: true, 
+    const isPresenceCheck = isCallerPresenceCheckPhrase(transcript);
+    const browserBusy = progressIndicatorService.getExecutionInfo(this.state.callSid);
+    const presenceWantsReply =
+      isPresenceCheck &&
+      this.state.hasInitialGreetingCompleted &&
+      (this.state.waitingForUser === true || !!browserBusy);
+    const allowResponse =
+      !effectiveAudioPlayingForBlocking ||
+      waitingForAnswerAfterAgent ||
+      presenceWantsReply;
+    return {
+      processed: true,
       shouldCreateResponse: allowResponse,
       qualityScore: qualityAssessment.qualityScore,
       isBackgroundNoise: false,
       isHighQuality: true,
+      /** Lets conversationService ignore false-positive "agent still playing" after presence phrases */
+      presenceCheckBypass: presenceWantsReply,
       /** Used to drop older grace-queue entries after this utterance gets an immediate response.create */
       transcriptionTime
     };
@@ -501,11 +530,13 @@ export class TranscriptionHandler {
             this.state.hasInitialGreetingCompleted &&
             !this.state.isInterrupted &&
             conversationService.shouldCreateResponse(syntheticTranscription, decisionSnapshot);
-          if (allowGraceResponse && this.state.tryAcquireResponseLock()) {
+          // Do not call tryAcquireResponseLock here — createAudioResponseFn() acquires the lock.
+          // Pre-acquiring caused a double-lock bug: inner tryAcquire fails while isResponding is true
+          // and activeResponseId is still null ("Already responding ... skipping duplicate").
+          if (allowGraceResponse) {
             try {
               if (this.state.isInterrupted) {
                 console.log(`🛑 [${this.state.callSid}] Skipping response creation after grace period - user interrupted`);
-                this.state.releaseResponseLock();
                 return;
               }
               if (typeof this.createAudioResponseFn === 'function') {
@@ -515,6 +546,12 @@ export class TranscriptionHandler {
                   `🎯 [${this.state.callSid}] Created response after grace period via createAudioResponse (${transcriptionsToProcess.length} transcriptions)`
                 );
               } else if (this.openaiWs && this.openaiWs.readyState === 1) {
+                if (!this.state.tryAcquireResponseLock()) {
+                  console.warn(
+                    `⚠️ [${this.state.callSid}] Grace period fallback skipped — response lock busy (no createAudioResponseFn)`
+                  );
+                  return;
+                }
                 const overrideWorkflowPhase = this.onGetWorkflowPhase?.() ?? undefined;
                 const { toolChoice } = await conversationService.getToolChoiceForResponse({
                   callSid: this.state.callSid,
