@@ -100,8 +100,8 @@ const TOOL_ACK_DELAY_MS = {
  */
 const TOOL_SUBSEQUENT_UPDATE_MESSAGES = {
   booking_step_send_payment_request: [
-    "The payment link has been sent to your email — just waiting for the payment to come through.",
-    "Still waiting for the payment. Please check your email for the payment link and complete the payment.",
+    "Still working on the payment request — please bear with me.",
+    "The payment request is still being processed, just a moment longer.",
   ],
 };
 

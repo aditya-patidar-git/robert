@@ -7,6 +7,73 @@
 import { takeScreenshot } from '../../utils.js';
 
 /**
+ * Detect a CRM error/alert dialog (shown when the page transition fails due
+ * to validation issues), dismiss it by clicking OK, and return the error text.
+ * Returns null when no dialog is found.
+ */
+async function detectAndDismissCrmErrorDialog(page) {
+  const selectors = [
+    '.dx-overlay-wrapper .dx-dialog-message',
+    '.dx-popup-wrapper .dx-dialog-message',
+    '.dx-overlay-wrapper .dx-popup-content',
+    '.dx-dialog-wrapper .dx-popup-content',
+    '[role="dialog"] .dx-popup-content',
+  ];
+
+  // Also check inside eventNewBooking2_iframe — CRM may render the dialog there
+  const contexts = [page];
+  try {
+    const iframeEl = await page.$('#eventNewBooking2_iframe');
+    if (iframeEl) {
+      const frame = await iframeEl.contentFrame();
+      if (frame) contexts.push(frame);
+    }
+  } catch (_) { /* iframe may not exist */ }
+
+  for (const ctx of contexts) {
+    for (const sel of selectors) {
+      try {
+        const el = ctx.locator ? ctx.locator(sel).first() : null;
+        if (!el) continue;
+        if (await el.count() === 0) continue;
+        const visible = await el.isVisible().catch(() => false);
+        if (!visible) continue;
+
+        const dialogText = (await el.textContent().catch(() => '') || '').trim();
+        console.log(`⚠️ [STEP 9] CRM error dialog detected: "${dialogText}"`);
+        await takeScreenshot(ctx === page ? page : page, 'crm-error-dialog.png', undefined);
+
+        // Dismiss: click OK / Close button
+        const okSelectors = [
+          '.dx-dialog-button .dx-button:has-text("OK")',
+          '.dx-popup-bottom .dx-button:has-text("OK")',
+          '[aria-label="OK"]',
+          '.dx-dialog-button .dx-button',
+          '.dx-popup-bottom .dx-button',
+        ];
+        for (const okSel of okSelectors) {
+          try {
+            const okBtn = ctx.locator ? ctx.locator(okSel).first() : null;
+            if (!okBtn || await okBtn.count() === 0) continue;
+            await okBtn.click({ timeout: 3000 });
+            console.log(`✅ [STEP 9] Dismissed CRM error dialog via ${okSel}`);
+            break;
+          } catch (_) { /* try next selector */ }
+        }
+
+        return dialogText || 'Unknown CRM error';
+      } catch (_) { /* try next selector */ }
+    }
+  }
+
+  // Fallback: check for browser-native alert/confirm dialogs that may have already appeared
+  // (Playwright auto-dismisses these but we can detect them via page events — not needed here
+  // since CRM uses DevExpress overlay dialogs, not native alerts)
+
+  return null;
+}
+
+/**
  * Click Next button on Contact Details page
  * @param {Object} page - Playwright page object
  * @param {Object} iframe - Iframe locator (may be null)
@@ -120,7 +187,6 @@ export async function clickNext(page, iframe, iframeId, screenshotsDir) {
             btn.click();
             return true;
           }
-          // Try alternative selectors
           const altBtn = document.querySelector('[aria-label="Next"], [aria-label="next"]');
           if (altBtn) {
             altBtn.click();
@@ -130,16 +196,27 @@ export async function clickNext(page, iframe, iframeId, screenshotsDir) {
         });
         
         if (clickSuccess) {
+          // Wait briefly for CRM to process the click and potentially show error dialogs
+          await page.waitForTimeout(1500);
+
+          // Check for CRM error dialog (e.g. validation failure on Contact → Pay transition)
+          const crmError = await detectAndDismissCrmErrorDialog(page);
+          if (crmError) {
+            throw new Error(`CRM rejected the page transition: "${crmError}". A required field may be missing or invalid on the contact details page.`);
+          }
+
           console.log('✅ [STEP 9] ============================================');
           console.log('✅ [STEP 9] SUCCESS: Next button clicked successfully!');
           console.log('✅ [STEP 9] Contact details step completed.');
           console.log('✅ [STEP 9] IMMEDIATELY proceeding to payment step.');
           console.log('✅ [STEP 9] ============================================');
           
-          // CRITICAL: Return immediately after successful click - no delays, no screenshots, no further checks
-          return; // Return immediately - skip all further processing
+          return;
         }
       } catch (jsErr) {
+        if (jsErr.message && jsErr.message.includes('CRM rejected the page transition')) {
+          throw jsErr;
+        }
         console.log(`⚠️ [STEP 9] JavaScript click failed: ${jsErr.message}, trying Playwright click as fallback...`);
       }
     }
@@ -148,14 +225,19 @@ export async function clickNext(page, iframe, iframeId, screenshotsDir) {
     const isVisible = await nextButton.isVisible().catch(() => false);
     
     if (isVisible) {
-      // Button is visible, click normally
       await nextButton.click({ timeout: 5000 });
       console.log('✅ [STEP 9] Clicked Next button (Playwright fallback - visible)');
     } else {
-      // Button is hidden, use force click
       console.log('⚠️ [STEP 9] Next button is hidden, using force click');
       await nextButton.click({ force: true, timeout: 5000 });
       console.log('✅ [STEP 9] Clicked Next button (Playwright fallback - force)');
+    }
+
+    await page.waitForTimeout(1500);
+
+    const crmErrorFallback = await detectAndDismissCrmErrorDialog(page);
+    if (crmErrorFallback) {
+      throw new Error(`CRM rejected the page transition: "${crmErrorFallback}". A required field may be missing or invalid on the contact details page.`);
     }
     
     console.log('✅ [STEP 9] ============================================');
@@ -164,8 +246,7 @@ export async function clickNext(page, iframe, iframeId, screenshotsDir) {
     console.log('✅ [STEP 9] Ready to proceed to payment step.');
     console.log('✅ [STEP 9] ============================================');
     
-    // CRITICAL: Return immediately after successful click - no delays, no screenshots, no further checks
-    return; // Return immediately - skip all further processing
+    return;
   } catch (clickErr) {
     // Handle browser closure or other errors gracefully
     if (clickErr.message.includes('Target page, context or browser has been closed')) {

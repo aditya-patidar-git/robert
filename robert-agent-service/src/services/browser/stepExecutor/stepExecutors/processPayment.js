@@ -62,65 +62,37 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
     // ask whether to use balance or send a payment link.
     const balanceInfo = await detectAvailableBalance(page);
 
-    // "No payment required" fast path: the CRM may display a banner such as
-    // "There is no need to take a payment" when the client's balance/credit already covers the
-    // booking fee.  In that case the payment dropdown does NOT exist on the page — there is
-    // nothing to select.  We skip the balance-decision question and go straight to terms → Make Booking.
     const noPaymentRequired = await detectNoPaymentRequired(page);
-    if (noPaymentRequired && requestedPaymentSource == null && args.deliveryMethod == null) {
-      const effectiveBalance = balanceInfo.hasAvailableBalance ? balanceInfo.availableBalance : 0;
-      console.log(`✅ [PAYMENT] CRM indicates no payment required (credit/balance: GBP ${effectiveBalance.toFixed(2)}) — skipping payment dropdown, proceeding to terms → Make Booking`);
 
-      const termsValidation = validateTermsAcceptance(args.termsAccepted);
-      if (termsValidation.requiresTermsBeforeSend) {
-        const termsText = getTermsText();
-        return {
-          success: true,
-          paymentCompleted: false,
-          requiresTermsBeforeSend: true,
-          makeBookingReady: true,
-          paymentAlreadyCovered: true,
-          noPaymentRequired: true,
-          termsText,
-          message: `The system shows there is no need to take a payment — the booking fee is already covered (for example, from a previous overpayment or account credit of GBP ${effectiveBalance.toFixed(2)}). Do NOT offer a payment request link. Before completing the booking, read the following terms and conditions word-for-word to the caller:\n\n${termsText}`,
-          instruction: 'CRITICAL — MANDATORY TERMS STEP: Read the termsText field above word-for-word to the caller (do NOT summarise or paraphrase). After reading, ask exactly: "Do you agree with the statements that I have just made?" Wait for the caller\'s answer. If YES: call **booking_step_process_payment** again with courseType, workflowType, **termsAccepted: true**, and **useAvailableBalance: true**. If NO: handle as a terms decline — try to address concerns; if they still decline, offer transfer_call. Do NOT proceed to Make Booking until termsAccepted: true is confirmed.'
-        };
-      }
-      if (termsValidation.termsNotAccepted) {
-        return {
-          success: false,
-          paymentCompleted: false,
-          termsNotAccepted: true,
-          requiresRetry: true,
-          paymentMethod: 'balance',
-          message: 'The client did not agree with the terms. Try to answer their questions. If they still do not agree, offer transfer to a human agent.',
-          instruction: 'Try to address the caller concerns. If they still do not agree, ask if they want to be transferred to a human agent. If yes, use transfer_call.'
-        };
-      }
-
-      return finalizeBookingUsingCoveredPayment(
-        page,
-        args,
-        sessionState,
-        screenshots,
-        screenshotsDir,
-        progressCallback,
-        `Booking completed. The CRM indicated no payment was required — the booking fee was already covered by the client's account credit/balance of GBP ${effectiveBalance.toFixed(2)}.`
-      );
-    }
-
+    // CRITICAL: ALWAYS inform the caller about the payment/balance situation.
+    // NEVER silently bypass to Make Booking. The caller MUST be told about
+    // their balance/credit AND given the choice: use credit OR payment link.
     if (
-      balanceInfo.hasAvailableBalance &&
+      (balanceInfo.hasAvailableBalance || noPaymentRequired) &&
       requestedPaymentSource == null &&
       args.deliveryMethod == null
     ) {
+      const balanceAmount = balanceInfo.hasAvailableBalance ? balanceInfo.availableBalance : 0;
+      const balanceStr = balanceAmount > 0 ? `GBP ${balanceAmount.toFixed(2)}` : null;
+
+      let agentScript;
+      if (balanceStr && noPaymentRequired) {
+        agentScript = `I can see an available credit of ${balanceStr} on your account, which covers the booking fee. Would you like to proceed using this credit, or would you prefer to receive a payment link via email or SMS?`;
+      } else if (balanceStr) {
+        agentScript = `I can see an available balance of ${balanceStr}. Would you like to use this balance, or should I send a payment link via email or SMS?`;
+      } else {
+        agentScript = `The system shows that the booking fee is covered by your account credit. Would you like to proceed using your credit, or would you prefer to receive a payment link via email or SMS?`;
+      }
+
+      console.log(`ℹ️ [PAYMENT] Balance/credit detected (balance: ${balanceStr || 'unknown'}, noPaymentBanner: ${noPaymentRequired}) — asking caller for preference`);
       return {
         success: true,
         paymentCompleted: false,
         requiresBalanceDecision: true,
-        availableBalance: balanceInfo.availableBalance,
-        message: `An available balance of GBP ${balanceInfo.availableBalance.toFixed(2)} was found. Would you like to use this balance for payment, or should I send a payment link by email/SMS?`,
-        instruction: 'CRITICAL: Ask the caller in THIS response: "I can see an available balance of GBP ' + balanceInfo.availableBalance.toFixed(2) + '. Would you like to use this balance, or should I send a payment link via email or SMS?" If caller says use balance, call **booking_step_process_payment** again with useAvailableBalance: true (or paymentSource: "balance"). If caller says link/email/sms, call **booking_step_process_payment** again with useAvailableBalance: false (or paymentSource: "payment_request"), then follow normal email/SMS flow.'
+        availableBalance: balanceAmount,
+        noPaymentRequired: noPaymentRequired || false,
+        message: agentScript,
+        instruction: `CRITICAL: You MUST ask the caller in THIS response: "${agentScript}" Wait for their answer. If caller says use balance/credit/proceed: call **booking_step_process_payment** again with courseType, workflowType, and useAvailableBalance: true. If caller says payment link/email/sms: call **booking_step_process_payment** again with courseType, workflowType, and useAvailableBalance: false. Do NOT proceed without the caller's explicit choice. Do NOT silently book without informing the caller.`
       };
     }
 
@@ -179,7 +151,7 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
 
       if (makeBookingVisible && (reconfirmedBalance.hasAvailableBalance || noPaymentBanner)) {
         const effectiveBal = reconfirmedBalance.hasAvailableBalance ? reconfirmedBalance.availableBalance : 0;
-        console.log(`ℹ️ [PAYMENT] Payment dropdown not available but payment covered (balance: GBP ${effectiveBal.toFixed(2)}, noPaymentBanner: ${noPaymentBanner}) — payment already satisfied`);
+        console.log(`ℹ️ [PAYMENT] Payment dropdown not available — payment covered (balance: GBP ${effectiveBal.toFixed(2)}, noPaymentBanner: ${noPaymentBanner})`);
         const termsValidation = validateTermsAcceptance(args.termsAccepted);
         if (termsValidation.requiresTermsBeforeSend) {
           const termsText = getTermsText();
@@ -191,9 +163,9 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
             paymentAlreadyCovered: true,
             termsText,
             message:
-              `The payment page shows no further payment is required — the booking fee appears already covered (for example, from a previous cancellation refund or account credit${effectiveBal > 0 ? ` of GBP ${effectiveBal.toFixed(2)}` : ''}). Do NOT offer a payment request link. Before completing the booking, read the following terms and conditions word-for-word to the caller:\n\n${termsText}`,
+              `The payment link option is not available on screen because your account credit${effectiveBal > 0 ? ` of GBP ${effectiveBal.toFixed(2)}` : ''} already covers the booking fee. I will proceed using your account credit. Before completing the booking, here are the terms and conditions:\n\n${termsText}`,
             instruction:
-              'CRITICAL — MANDATORY TERMS STEP: Read the termsText field above word-for-word to the caller (do NOT summarise or paraphrase). After reading, ask exactly: "Do you agree with the statements that I have just made?" Wait for the caller\'s answer. If YES: call **booking_step_process_payment** again with courseType, workflowType, **termsAccepted: true**, and **useAvailableBalance: true**. If NO: handle as a terms decline — try to address concerns; if they still decline, offer transfer_call. Do NOT proceed to Make Booking until termsAccepted: true is confirmed.'
+              'CRITICAL — MANDATORY TERMS STEP: Tell the caller that their account credit covers the booking fee, then read the termsText field above word-for-word to the caller (do NOT summarise or paraphrase). After reading, ask exactly: "Do you agree with the statements that I have just made?" Wait for the caller\'s answer. If YES: call **booking_step_process_payment** again with courseType, workflowType, **termsAccepted: true**, and **useAvailableBalance: true**. If NO: handle as a terms decline — try to address concerns; if they still decline, offer transfer_call. Do NOT proceed to Make Booking until termsAccepted: true is confirmed.'
           };
         }
         if (termsValidation.termsNotAccepted) {
@@ -560,15 +532,16 @@ export function extractAvailableBalanceFromText(text) {
 }
 
 async function detectAvailableBalance(page) {
-  // Only scan the main page and the booking iframe.  Do NOT scan contactEdit_iframe
-  // because it shows the client's overall profile and may contain stale financial
-  // data from before the current booking was added (e.g. "Balance £170 in credit"
-  // when the booking iframe already shows "Balance £35" owed).
+  // Scan main page, booking iframe, and contactEdit_iframe (client profile).
+  // Priority: booking iframe first (most current for this booking), then
+  // contactEdit_iframe (has the financial summary with "Balance £X in credit").
+  // We return on the first positive match, so booking iframe data wins when both have data.
   const candidates = [
     page,
-    page.frameLocator('#eventNewBooking2_iframe')
+    page.frameLocator('#eventNewBooking2_iframe'),
+    page.frameLocator('#contactEdit_iframe')
   ];
-  const scopeNames = ['main_page', 'eventNewBooking2_iframe'];
+  const scopeNames = ['main_page', 'eventNewBooking2_iframe', 'contactEdit_iframe'];
   const scannedSnippets = [];
 
   for (let idx = 0; idx < candidates.length; idx += 1) {
