@@ -536,7 +536,21 @@ export async function executeExistingClientFlow(page, args, sessionState, screen
 
     // After handling missing fields (if any were provided), click Next
     progressCallback?.({ message: 'Saving your details.' });
-    await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false, true, progressCallback);
+    try {
+      await commonSteps.lookupContactAndWait(page, clientEmail, 'email', screenshotsDir, clientPostcode, false, true, progressCallback);
+    } catch (nextClickError) {
+      if (nextClickError.message && nextClickError.message.includes('CRM rejected the page transition')) {
+        console.error(`❌ [STEP 8] CRM error after clicking Next: ${nextClickError.message}`);
+        return {
+          success: false,
+          crmError: true,
+          doNotRetry: true,
+          message: `The booking system showed an error when trying to move to the payment page. This usually means a required field is missing or invalid in the contact details. Please ask the caller to confirm all their details are correct and try again.`,
+          instruction: `The CRM displayed an error dialog after clicking Next on the Contact Details page. The error was: "${nextClickError.message}". This is a CRM-side validation issue — a required contact field may be blank or invalid. Ask the caller if they can confirm their details (address, postcode, email, mobile) are correct, then call booking_step_fill_contact_details again with addressConfirmed=true.`
+        };
+      }
+      throw nextClickError;
+    }
 
     await page.waitForSelector('#contactSend3DSecureRequest_iframe, #eventNewBooking2_iframe', { state: 'attached', timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(commonSteps.CRM_STABILITY_DELAY_MS);

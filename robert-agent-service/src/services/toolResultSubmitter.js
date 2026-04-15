@@ -1152,19 +1152,19 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
         console.log(`🎯 [${callId}] process_payment requiresBalanceDecision - instructing to ask balance-or-link question in this response`);
       }
 
-      // process_payment: payment already covered on screen (dropdown unavailable) — terms before Make booking; never offer payment link
+      // process_payment: payment covered on screen (dropdown unavailable) — inform caller, then terms before Make booking
       if (
         toolName === 'booking_step_process_payment' &&
         toolResult?.requiresTermsBeforeSend === true &&
         toolResult?.paymentAlreadyCovered === true
       ) {
         const fallback =
-          'CRITICAL: Payment already appears satisfied on screen (e.g. from a previous cancellation refund or account credit). Do NOT offer a payment request link and do NOT call booking_step_send_payment_request for payment. Read termsText to the caller and ask "Do you agree with the statements that I have just made?" If yes, call **booking_step_process_payment** with courseType, workflowType, termsAccepted: true, and useAvailableBalance: true.';
+          'CRITICAL: The caller\'s account credit covers the booking fee, so a separate payment link is not needed. Inform the caller that their credit covers the cost, then read termsText word-for-word to the caller and ask "Do you agree with the statements that I have just made?" If yes, call **booking_step_process_payment** with courseType, workflowType, termsAccepted: true, and useAvailableBalance: true.';
         const instruction = toolResult.instruction || fallback;
         responseInstructions = responseInstructions
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
-        console.log(`🎯 [${callId}] process_payment paymentAlreadyCovered + requiresTermsBeforeSend - reinforcing no payment link`);
+        console.log(`🎯 [${callId}] process_payment paymentAlreadyCovered + requiresTermsBeforeSend - informing caller, then terms`);
       }
 
       // send_payment_request returned requiresClientEmail: agent must ask caller for email, then call again with clientEmail
