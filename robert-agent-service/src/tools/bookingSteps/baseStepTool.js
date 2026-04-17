@@ -867,6 +867,21 @@ export class BaseStepTool {
       if (conv?._processPaymentRequiresMethod) {
         delete conv._processPaymentRequiresMethod;
       }
+      // Retry cap: max 3 attempts for payment request before escalating to human
+      if (!conversations[callSid]) conversations[callSid] = {};
+      const retryCount = (conversations[callSid]._paymentRequestRetryCount ?? 0) + 1;
+      conversations[callSid]._paymentRequestRetryCount = retryCount;
+      if (retryCount > 3) {
+        console.log(`🛑 [${callSid}] Payment request retry cap reached (${retryCount} attempts)`);
+        return {
+          valid: false,
+          doNotRetry: true,
+          error: `Payment request has failed ${retryCount - 1} times. Do not retry.`,
+          message: 'I apologise, but the payment system is experiencing difficulties at the moment.',
+          autoRetryInstruction: 'CRITICAL: Do NOT call booking_step_send_payment_request again. You MUST tell the caller: "I apologise, but the payment system is experiencing technical difficulties right now. Would you like me to transfer you to a team member who can assist with the payment?" Then use transfer_call if they agree, or end the call politely if they decline.'
+        };
+      }
+      console.log(`📊 [${callSid}] Payment request attempt ${retryCount}/3`);
     }
 
     // CRITICAL FIX: For selectBookingOptions, defer preference validation until AFTER navigation

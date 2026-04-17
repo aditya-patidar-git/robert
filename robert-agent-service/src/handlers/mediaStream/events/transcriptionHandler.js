@@ -515,10 +515,18 @@ export class TranscriptionHandler {
             flowState.waitingForLanguage ||
             (flowState.languageSelected && !flowState.consentResponded) ||
             consentJustResponded;
+          // Use real quality score from the transcriptions if available, not hardcoded 1.
+          // Hardcoded 1 bypassed the noise filter, letting noise-only grace transcripts trigger responses.
+          const realScores = transcriptionsToProcess
+            .map(t => t?.qualityScore)
+            .filter(s => typeof s === 'number');
+          const realQuality = realScores.length > 0
+            ? Math.min(...realScores)
+            : 0.8; // Conservative default
           const syntheticTranscription = {
             processed: true,
             shouldCreateResponse: true,
-            qualityScore: 1,
+            qualityScore: realQuality,
             isBackgroundNoise: false
           };
           const decisionSnapshot = buildResponseDecisionSnapshot(

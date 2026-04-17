@@ -143,7 +143,7 @@ AFTER THIS STEP: Once authentication succeeds and the caller confirms they want 
           },
           customerMobile: {
             type: 'string',
-            description: 'Customer mobile number (11 digits, UK format)'
+            description: 'Customer mobile number (11 digits, UK format starting with 07). Callers may dictate digits in chunks across utterances — concatenate all digit segments, strip spaces/dashes/dots, and pass the complete 11-digit number.'
           },
           customerEmail: {
             type: 'string',
@@ -809,7 +809,7 @@ WARNING: Never disclose any personal information from our clients found in the s
           },
           telephoneNumber: {
             type: 'string',
-            description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07). Required for third verification step (after fullName and postcode are verified). Extract ONLY from caller\'s spoken response. DO NOT use stored client details or CRM data. If caller did not speak their telephone number, omit this parameter.'
+            description: 'Telephone number as spoken by the caller (UK mobile format, 11 digits starting with 07). Required for third verification step (after fullName and postcode are verified). Extract ONLY from caller\'s spoken response. DO NOT use stored client details or CRM data. If caller did not speak their telephone number, omit this parameter. IMPORTANT: Callers often dictate numbers in chunks across multiple utterances (e.g. "0 7 1 2 3" then "4 5 6 7 8 9"). Accumulate ALL digit segments from recent transcript entries and concatenate them into one string before passing here. Strip spaces, dashes, and dots. A valid UK mobile is exactly 11 digits starting with 07.'
           }
         },
         required: [] // Fields are required sequentially, not all at once
@@ -976,7 +976,7 @@ Ask the caller: "Have you done training with us before?"
           },
           customerMobile: {
             type: 'string',
-            description: 'Customer mobile number (11 digits, UK format starting with 07)'
+            description: 'Customer mobile number (11 digits, UK format starting with 07). Callers may dictate digits in chunks — concatenate all digit segments from recent transcript, strip spaces/dashes/dots, and pass the complete 11-digit number.'
           },
           customerEmail: {
             type: 'string',

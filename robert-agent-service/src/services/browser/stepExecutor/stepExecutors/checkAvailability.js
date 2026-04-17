@@ -108,10 +108,11 @@ export async function executeCheckAvailability(page, args, sessionState, screens
 
   const revisionPreamble = `AVAILABILITY_REVISION ${availabilityCheckRevision} (AUTHORITATIVE for this call). Ignore every earlier booking_step_check_availability result and any slot list you already read aloud—only this revision counts. `;
 
+  const totalSlotsInTable = result.allSlots?.length ?? 0;
   const dateFilterNote =
     dateIntent.type !== 'none' && result.dateFilterSummary
       ? result.noSlotsInDateFilter
-        ? ` NO_SLOTS_IN_DATE_FILTER (${result.dateFilterSummary}). No rows in that date window on the calendar currently loaded. "Slots to present" are nearest alternatives outside that window—read them verbatim and say they fall outside the requested period. Offer to call booking_step_check_availability again with preferredDate null, this month, next 7 days, this week, next week, or a rolling year phrase (e.g. next 12 months).`
+        ? ` NO_SLOTS_IN_DATE_FILTER (${result.dateFilterSummary}). No rows in that date window on the calendar currently loaded (${totalSlotsInTable} total slots exist in the diary across other dates). "Slots to present" are the nearest alternatives outside that window—read them verbatim and mention they fall outside the requested period. You can say something like "I have ${totalSlotsInTable} slots available on other dates—would you like me to suggest some?" Offer to call booking_step_check_availability again with preferredDate null, this month, next 7 days, this week, next week, or a rolling year phrase (e.g. next 12 months).`
         : ` DATE_FILTER: ${result.dateFilterSummary}.`
       : '';
 
@@ -157,7 +158,7 @@ export async function executeCheckAvailability(page, args, sessionState, screens
     slotCount,
     noSlotsInDateFilter: !!result.noSlotsInDateFilter,
     announceIncludesNonPreferredInstructor: !!result.announceIncludesNonPreferredInstructor,
-    message: `${revisionPreamble}✅ STEP 1 COMPLETE.${dateFilterNote}${instructorClause} Present ONLY these slot(s) to the caller from this result—do not read out any other slots. Slots to present: ${slotsSummary}. Do not call booking_step_check_availability again in the same assistant turn with the same preferences (avoid duplicate runs). If the caller wants different dates, times, locations, instructor, or a fresh availability table after other topics, collect their updated preferences and call booking_step_check_availability again—then present only the new tool result (higher AVAILABILITY_REVISION).${requiresExplicitSlotChoice ? ' MULTIPLE SLOTS: ask which one they want (by date, time, or location) and only call booking_step_authenticate after they clearly choose one slot that matches the list.' : ' When the caller confirms this slot, call booking_step_authenticate with agreedSlot set to it—do not ask for name or email; Step 2 is CRM login only.'}`,
+    message: `${revisionPreamble}✅ STEP 1 COMPLETE.${dateFilterNote}${instructorClause} Present ONLY these slot(s) to the caller from this result—do not read out any other slots. Slots to present: ${slotsSummary}. Do not call booking_step_check_availability again in the same assistant turn with the same preferences (avoid duplicate runs). If the caller wants different dates, times, locations, instructor, or a fresh availability table after other topics, collect their updated preferences and call booking_step_check_availability again—then present only the new tool result (higher AVAILABILITY_REVISION).${requiresExplicitSlotChoice ? ' MULTIPLE SLOTS: ask which one they want. If the caller interrupts during your readout with a clear selection (naming a specific date, time, or saying "the first one"), accept that immediately and call booking_step_authenticate. Only re-ask if their response is ambiguous.' : ' When the caller confirms this slot, call booking_step_authenticate with agreedSlot set to it—do not ask for name or email; Step 2 is CRM login only.'}`,
     allSlots: result.allSlots,
     selectedSlot: result.selectedSlot,
     slotsToAnnounce,

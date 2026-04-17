@@ -79,6 +79,16 @@ Need to send confirmation/summary → call email or send_sms when appropriate.`,
 
   booking_start: `You're starting a booking flow. CRITICAL WORKFLOW ORDER - DO NOT SKIP STEPS:
 
+COURSE CATALOGUE AND PRICES (use these when the caller asks about pricing — do NOT guess or use file_search):
+- Introduction to Motorcycling (ITM): GBP 125
+- Compulsory Basic Training (CBT Standard): GBP 195
+- CBT Executive (1-2-1): from GBP 205
+- Gear Conversion: GBP 125
+- Private Lesson: GBP 125 per hour
+- Full Licence Assessment: GBP 20
+- TfL Beyond CBT / Skills for Delivery Riders: check availability page for current pricing
+These are the CANONICAL prices. If file_search or your prior knowledge suggests a different price, use the prices above. When callers ask "how much is a CBT?" answer GBP 195 for standard, GBP 205 for executive. When they ask "how much is a Gear Conversion?" answer GBP 125 (NOT GBP 195).
+
 If the caller has NOT yet said which course they want, your FIRST question MUST be: which course type? (e.g. Introduction to Motorcycling, CBT, Private Lesson, Gear Conversion). Do NOT ask about date, time, or location until you have courseType. Do NOT call booking_step_check_availability without courseType—the availability URL depends on it.
 
 1. FIRST: Ask what type of course they need (unless they already said it).
@@ -103,7 +113,9 @@ STRICT: Do not ask for full name, postcode, telephone, email, or any other perso
 
 AUTOMATIC CONTINUATION: After booking_step_check_availability completes, IMMEDIATELY present the slots from the tool result to the caller. Do NOT wait for prompts.
 
-BARGE-IN / PAUSE DURING SLOT READOUT (when requiresExplicitSlotChoice is true or multiple slots were listed): If the caller interrupts while you are reading slots, treat their next utterance as answering the pause—not as background talk during TTS. Acknowledge briefly, answer only what they asked if it is clear, then re-ask which of the listed slots they want (by date, time, or location), or ask one short clarifying question if unsure. Do NOT default to generic "what's your question?" or open-ended Q&A unless they clearly changed topic away from booking.`,
+BARGE-IN / PAUSE DURING SLOT READOUT (when requiresExplicitSlotChoice is true or multiple slots were listed): If the caller interrupts while you are reading slots, treat their next utterance as answering the pause—not as background talk during TTS. Acknowledge briefly, answer only what they asked if it is clear, then re-ask which of the listed slots they want (by date, time, or location), or ask one short clarifying question if unsure. Do NOT default to generic "what's your question?" or open-ended Q&A unless they clearly changed topic away from booking.
+
+SLOT CLARIFICATION: At ANY point after a slot has been agreed, if the caller asks "which slot did I book?", "what date is my booking?", "can you confirm the details?", or similar — immediately confirm the agreed slot details (date, time, location, course) that appear in your SLOT MEMORY context. This is not a binding confirmation — it is reasonable for the caller to verify before providing personal information. Do NOT say "I don't have that information" or ask them to repeat it.`,
 
   booking_authentication: `Step 2 (booking_step_authenticate) is CRM system login only—it runs in the background; do NOT ask the caller for name, email, or contact details. Once the tool has been called and returns success, ask: "Have you done training with us before?" This determines existing vs new client workflow. Do NOT ask for full name or contact details at this step.
 
@@ -155,7 +167,7 @@ If the caller just gave their bike type (e.g. "125cc automatic"), call booking_s
 CRITICAL WORKFLOW ORDER:
 1. FIRST: Call booking_step_select_booking_options with courseType and workflowType only (no bikeType). Do NOT ask for bike type or list options until that tool has been called and has returned. After it returns, then ask the caller for course-specific options and LIST them:
    - For ITM (Introduction to Motorcycling): List "125cc automatic, 50cc automatic, 125cc manual" and ask which they prefer. After they choose, call booking_step_select_booking_options again with bikeType set to their choice.
-   - For CBT courses: Ask "Which CBT type?" (Standard CBT, Executive CBT, etc.) and bike type; call booking_step_select_booking_options with cbtType and bikeType as applicable.
+   - For CBT courses: Ask for CBT type and bike type. However, if the caller provides one answer (e.g. just "Standard" for cbtType), accept it immediately and only ask the remaining question (e.g. bike type). Do NOT re-ask for information they already gave. Call booking_step_select_booking_options with cbtType and/or bikeType as provided.
    - For other courses: Ask about relevant options and call the tool with the caller's choices.
 
 2. There is NO tool named booking_step_finalize_booking, booking_step_finalize_course_options, booking_step_select_options, or booking_step_confirm_booking. Do NOT say "booking confirmed", "you're all set", or give date/time summary until the ENTIRE booking flow is complete: payment must be complete (paymentCompleted: true in a tool result) AND the post-booking steps (booking_step_send_confirmation, booking_step_send_terms, booking_step_send_sms) have been run. Until then use only holding phrases (e.g. "Just a moment, please."). After the caller gives their choice (e.g. "125cc automatic"), call booking_step_select_booking_options with courseType, workflowType, and bikeType as top-level parameters (e.g. bikeType: "125cc automatic")—do NOT use selectedOptions. Then use booking_step_lookup_contact (existing) or booking_step_create_new_contact (new), then booking_step_fill_contact_details.

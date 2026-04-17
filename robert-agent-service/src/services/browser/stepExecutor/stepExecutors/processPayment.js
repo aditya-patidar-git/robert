@@ -192,12 +192,13 @@ export async function executeProcessPayment(page, args, sessionState, screenshot
 
       // No confirmed balance — do NOT assume payment is covered.
       // Return requiresPaymentMethod so the agent asks the caller about email/SMS payment link.
-      console.log('⚠️ [PAYMENT] Payment dropdown not available and NO confirmed balance — returning requiresPaymentMethod');
+      // doNotRetry: true prevents the model from calling process_payment again; it MUST use send_payment_request.
+      console.log('⚠️ [PAYMENT] Payment dropdown not available and NO confirmed balance — returning requiresPaymentMethod (doNotRetry)');
       return {
         success: false,
         paymentCompleted: false,
         requiresPaymentMethod: true,
-        canRetry: true,
+        doNotRetry: true,
         error: requestSelectionResult?.error || 'Unable to select payment option. No confirmed balance on account.',
         message: 'Would you like to receive the payment link via email or SMS?',
         instruction: 'CRITICAL: The payment dropdown could not be loaded but no balance/credit was found on the account. Ask the caller: "Would you like to receive the payment link via email or SMS?" When they answer, call **booking_step_send_payment_request** with deliveryMethod: "email" or "sms" (and courseType, workflowType). Do NOT call booking_step_process_payment again.'

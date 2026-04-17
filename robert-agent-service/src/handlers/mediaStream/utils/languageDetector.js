@@ -172,71 +172,43 @@ export class LanguageDetector {
       return;
     }
 
-    /**
-     * Mid-call transcript fallback: model-driven audio detection is primary; this catches missed switches.
-     */
+    // LANGUAGE LOCK: After initial selection, block automatic mid-call switches
+    // unless the caller explicitly requests a change (e.g. "switch to French").
+    // This prevents STT errors from triggering unwanted language changes.
+    const EXPLICIT_SWITCH_PATTERN =
+      /\b(switch\s+to|change\s+(?:to|the\s+)?language|speak\s+(?:in\s+)?|talk\s+in|parle|habla|sprechen|parlo|can\s+(?:we|you)\s+(?:speak|talk)\s+(?:in\s+)?)\b/i;
+    const t = transcript.trim();
+    const callerExplicitlyAskedSwitch = EXPLICIT_SWITCH_PATTERN.test(t);
+
+    if (!callerExplicitlyAskedSwitch) {
+      return;
+    }
+
     const MID_CALL_SWITCH_COOLDOWN_MS = 12000;
     const lastSwitch = this.state.lastMidCallLanguageSwitchAt || 0;
     if (Date.now() - lastSwitch < MID_CALL_SWITCH_COOLDOWN_MS) {
       return;
     }
 
-    const t = transcript.trim();
-    const MIN_MID_CALL_TRANSCRIPT_LENGTH = 12;
+    const MIN_MID_CALL_TRANSCRIPT_LENGTH = 8;
     if (t.length < MIN_MID_CALL_TRANSCRIPT_LENGTH) {
       return;
     }
 
-    /**
-     * Mid-call: any LanguageVoiceMapping language. Inference matches initial selection.
-     * English from non-English: explicit phrase or Latin-heavy utterance (relaxed thresholds).
-     */
     await multilingualService.loadLanguageMappings();
     const currentCanon =
       multilingualService.resolveSupportedLanguageKey(currentLanguage) || currentLanguage;
-    const currentBase = currentCanon.split(/[-_]/)[0].toLowerCase();
 
     const inferred = await inferLanguageCodeFromCallerUtterance(transcript);
     const inferredCanon =
       multilingualService.resolveSupportedLanguageKey(inferred) || inferred;
-    const inferredBase = inferred.split(/[-_]/)[0].toLowerCase();
 
     if (!inferredCanon || inferredCanon === currentCanon) {
       return;
     }
 
-    if (inferredBase === 'en' && currentBase !== 'en') {
-      const explicitEnglish =
-        /\b(english|in english|speak english|talk in english|switch to english|can we|could you|please answer|in english please)\b/i.test(
-          t
-        );
-      const latin = (t.match(/[a-zA-Z]/g) || []).length;
-      const latinRatio = latin / Math.max(t.length, 1);
-      const longEnglishUtterance =
-        (t.length >= 14 && latinRatio >= 0.55) || (t.length >= 22 && latinRatio >= 0.5);
-      if (!explicitEnglish && !longEnglishUtterance) {
-        return;
-      }
-    }
-
-    if (currentBase === 'en' && inferredBase !== 'en') {
-      const hasNonLatinScript =
-        /[\u0900-\u097F\u0980-\u09FF\u0A80-\u0AFF\u0A00-\u0A7F\u0B80-\u0BFF\u0600-\u06FF\u0D00-\u0D7F\u0E00-\u0E7F]/.test(t);
-      if (hasNonLatinScript) {
-        if (t.length < 6) return;
-      } else {
-        // Latin-script transcript inferred as non-English: single borrowed words
-        // (Arrivederci, Gracias, Bon appétit) used casually in English must not trigger a switch.
-        // Require an explicit language-change phrase, OR substantial non-English speech (4+ words, 30+ chars).
-        const explicitSwitch =
-          /\b(speak|switch to|talk in|change.*language|parle|habla|sprechen|parlo)\b/i.test(t);
-        const wordCount = t.split(/\s+/).length;
-        if (!explicitSwitch && (wordCount < 4 || t.length < 30)) return;
-      }
-    }
-
     console.log(
-      `🌐 [${this.state.callSid}] Mid-call language switch: ${currentCanon} -> ${inferredCanon} ("${t.substring(0, 70)}${t.length > 70 ? '...' : ''}")`
+      `🌐 [${this.state.callSid}] Mid-call EXPLICIT language switch: ${currentCanon} -> ${inferredCanon} ("${t.substring(0, 70)}${t.length > 70 ? '...' : ''}")`
     );
     const ok = await this.switchLanguage(inferred);
     if (ok) {

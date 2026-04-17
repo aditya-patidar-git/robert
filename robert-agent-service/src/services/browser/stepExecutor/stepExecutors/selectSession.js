@@ -127,8 +127,16 @@ export async function executeSelectSession(page, args, sessionState, screenshots
     sessionDetails.instructor = '';
   }
 
-  // Use existing navigateToDiariesAndSelectSession logic (progressCallback gives in-between messages)
-  await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, screenshotsDir, undefined, progressCallback);
+  // TfL courses use the "TfL Diary" calendar type, not the default "Day planner"
+  const TFL_COURSES = ['TfL 1-2-1', 'TfL 1-2-1 Motorcycle Skills', 'TfL Beyond CBT', 'TfL - Beyond CBT - Skills for Delivery Riders'];
+  const diaryType = TFL_COURSES.some(c =>
+    courseType && courseType.toLowerCase().includes(c.toLowerCase().split(' ')[0]) && courseType.toLowerCase().includes('tfl')
+  ) ? 'TfL Diary' : undefined;
+  if (diaryType) {
+    console.log(`📋 [selectSession] Using diary type: ${diaryType} for course: ${courseType}`);
+  }
+
+  await commonSteps.navigateToDiariesAndSelectSession(page, sessionDetails, screenshotsDir, diaryType, progressCallback);
 
   return {
     success: true,

@@ -846,7 +846,7 @@ Forbidden: skipping (1) or (2); English for non-en languages.`;
             ? `SUPERSESSION (revision ${rev}): Ignore every earlier booking_step_check_availability output in this conversation and any slot list you already read aloud. The ONLY valid slots are in THIS tool result (AVAILABILITY_REVISION ${rev}) after "Slots to present:". If you previously said different dates, times, or locations, do NOT repeat them—read ONLY this list verbatim.`
             : `SUPERSESSION: Ignore every earlier booking_step_check_availability output in this conversation and any slot list you already read aloud. The ONLY valid slots are in THIS tool result after "Slots to present:". If you previously said different dates, times, or locations, do NOT repeat them—read ONLY this list verbatim.`;
         const slotRules = multi
-          ? `MULTIPLE SLOTS (${toolResult?.slotCount ?? 'several'}): Do NOT call booking_step_authenticate until the caller has clearly chosen ONE slot that matches the list (e.g. they name date, time, location, or "the first/second"). Barge-in or interruption while you are reading the list is NOT confirmation—ask which slot they want, then call authenticate with agreedSlot set to THAT slot only (must match slotsToAnnounce/selectedSlot from the tool). Never default to selectedSlot if the caller intended a different listed slot.`
+          ? `MULTIPLE SLOTS (${toolResult?.slotCount ?? 'several'}): The caller must choose ONE slot before you call booking_step_authenticate. If they interrupt while you are reading the list with a CLEAR selection (naming a date, time, location, ordinal like "the first one", or "yes that one" when only one unread slot remains), accept it immediately and call booking_step_authenticate with agreedSlot matching THAT slot. Only re-ask if the interruption is truly ambiguous (noise, filler words, or an unrelated question). Never default to selectedSlot if the caller intended a different listed slot.`
           : `SINGLE SLOT: When the caller confirms they want this slot (e.g. "yes", "okay go ahead", "proceed", "book that"), call booking_step_authenticate with agreedSlot matching the tool result slot.`;
         const ilm = toolResult?.instructorLocationMeta;
         let instructorExtra = '';
@@ -1192,6 +1192,18 @@ Only AFTER booking_step_select_booking_options returns may you ask for bike type
           ? `${instruction}\n\n${responseInstructions}`
           : instruction;
         console.log(`🎯 [${callId}] send_payment_request requiresConfirmation - instructing to confirm with caller then call again with confirmed: true (emphasizing correct tool: booking_step_send_payment_request only)`);
+      }
+
+      // doNotRetry guard: tool explicitly said "stop retrying" (e.g. payment retry cap, unrecoverable CRM error)
+      // Only inject escalation when the tool actually FAILED — successful tools like check_availability
+      // return doNotRetry to prevent the LLM from auto-re-running, NOT as a failure signal.
+      if (toolResult?.doNotRetry === true && toolResult?.success !== true && toolResult?.valid !== true) {
+        const escalation = toolResult.autoRetryInstruction || toolResult.instruction ||
+          `CRITICAL: This tool returned doNotRetry. Do NOT call ${toolName} again. Apologise to the caller and offer to transfer them to a team member.`;
+        responseInstructions = responseInstructions
+          ? `${escalation}\n\n${responseInstructions}`
+          : escalation;
+        console.log(`🛑 [${callId}] ${toolName} doNotRetry — escalation instruction injected`);
       }
 
       // send_sms returned requiresClientMobile: agent must ask caller for mobile, then call again with customerMobile
