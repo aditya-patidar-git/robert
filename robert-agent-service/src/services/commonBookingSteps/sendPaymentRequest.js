@@ -436,6 +436,15 @@ export async function sendPaymentRequest(page, screenshotsDir, deliveryMethod, c
     
     while (attempt < MAX_ATTEMPTS) {
       attempt++;
+
+      // Check abort signal at the start of each polling iteration
+      if (abortSignal?.aborted) {
+        console.log('🛑 [PAYMENT_REQUEST] Abort signal received during polling — exiting');
+        const e = new Error('Aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
+
       console.log(`🔍 [PAYMENT_REQUEST] Polling attempt ${attempt}/${MAX_ATTEMPTS}...`);
       
       // Wait for polling interval (except on first attempt - already waited after clicking send)

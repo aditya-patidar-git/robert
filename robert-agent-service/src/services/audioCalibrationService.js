@@ -62,26 +62,27 @@ class AudioCalibrationService {
     let adjustment = 0;
 
     if (noiseLevel < 20) {
-      // Very quiet - make more sensitive (lower threshold)
-      adjustment = -0.1;
+      // Very quiet — do NOT lower threshold; quiet lines are more susceptible to
+      // faint background sounds triggering false speech_started events.
+      adjustment = 0;
     } else if (noiseLevel < 40) {
-      // Normal - slight sensitivity increase
-      adjustment = -0.05;
+      // Normal — keep base threshold
+      adjustment = 0;
     } else if (noiseLevel < 60) {
-      // Moderate noise - use base threshold
+      // Moderate noise — use base threshold
       adjustment = 0;
     } else if (noiseLevel < 80) {
-      // High noise - less sensitive (higher threshold)
+      // High noise — less sensitive (higher threshold)
       adjustment = 0.1;
     } else {
-      // Very noisy - significantly less sensitive
+      // Very noisy — significantly less sensitive
       adjustment = 0.2;
     }
 
     const calibratedThreshold = baseThreshold + adjustment;
     
-    // Clamp to reasonable bounds (0.3 to 1.0 seconds)
-    return Math.max(0.3, Math.min(1.0, calibratedThreshold));
+    // Minimum floor 0.45s prevents false positives; max 1.0s
+    return Math.max(0.45, Math.min(1.0, calibratedThreshold));
   }
 
   /**

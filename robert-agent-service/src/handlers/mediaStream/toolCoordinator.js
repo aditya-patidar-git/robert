@@ -430,7 +430,27 @@ export class ToolCoordinator {
     this.createAudioResponse().catch(() => {});
   }
 
+  _resetSilenceWatchdog() {
+    this._lastAudioActivityMs = Date.now();
+    if (this._silenceWatchdogTimer) clearTimeout(this._silenceWatchdogTimer);
+    const SILENCE_LIMIT_MS = 15000;
+    this._silenceWatchdogTimer = setTimeout(() => {
+      if (this.state.isClosed) return;
+      if (this.state.isResponding || this.state.activeResponseId) return;
+      if (this.state.activeBrowserTool) return;
+      if (this.state.waitingForUser) return;
+      const elapsed = Date.now() - (this._lastAudioActivityMs || 0);
+      if (elapsed >= SILENCE_LIMIT_MS) {
+        console.warn(`🔇 [${this.state.callSid}] Silence watchdog: ${(elapsed / 1000).toFixed(1)}s with no response — forcing recovery`);
+        this.state.explicitResponseRequested = true;
+        this.createAudioResponse().catch(() => {});
+      }
+    }, SILENCE_LIMIT_MS + 500);
+  }
+
   async createAudioResponse() {
+    this._resetSilenceWatchdog();
+
     if (!this.openaiWs || this.openaiWs.readyState !== 1) {
       console.error(`❌ [${this.state.callSid}] WebSocket not ready: ${this.openaiWs?.readyState}`);
       return;
@@ -1220,6 +1240,10 @@ export class ToolCoordinator {
    * Cleanup all handlers
    */
   cleanup() {
+    if (this._silenceWatchdogTimer) {
+      clearTimeout(this._silenceWatchdogTimer);
+      this._silenceWatchdogTimer = null;
+    }
     if (this.responseHandler && typeof this.responseHandler.cleanup === 'function') {
       this.responseHandler.cleanup();
     }

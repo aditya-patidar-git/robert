@@ -415,6 +415,24 @@ export function resolveAvailabilityDateIntent({ preferredDate, now = new Date(),
     }
   }
 
+  // Fallback: convert spelled-out ordinals/numbers ("twenty fourth of April") to digits and retry chrono
+  const normalized = normalizeSpelledOutDate(raw);
+  if (normalized && normalized !== raw) {
+    const retryParsed = chrono.parse(normalized, now, { forwardDate: true });
+    if (retryParsed.length > 0) {
+      const start = retryParsed[0].start?.date();
+      if (start && !isNaN(start.getTime())) {
+        const end = retryParsed[0].end?.date() || start;
+        const s = formatDateInLondon(start);
+        const e = formatDateInLondon(end);
+        if (s && e) {
+          const [a, b] = s <= e ? [s, e] : [e, s];
+          return { type: 'range', startISO: a, endISO: b, label: raw };
+        }
+      }
+    }
+  }
+
   return { type: 'none' };
 }
 
@@ -481,4 +499,51 @@ export function summarizeDateIntent(intent) {
     return name;
   }
   return '';
+}
+
+const WORD_TO_NUM = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30,
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8,
+  ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13, fourteenth: 14,
+  fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19,
+  twentieth: 20, thirtieth: 30, 'thirty-first': 31, 'twenty-first': 21, 'twenty-second': 22,
+  'twenty-third': 23, 'twenty-fourth': 24, 'twenty-fifth': 25, 'twenty-sixth': 26,
+  'twenty-seventh': 27, 'twenty-eighth': 28, 'twenty-ninth': 29
+};
+
+/**
+ * Convert spelled-out date strings like "twenty fourth of April" or "the fifteenth of June"
+ * into digit form that chrono can parse: "24 April", "15 June".
+ * @param {string} raw
+ * @returns {string|null}
+ */
+export function normalizeSpelledOutDate(raw) {
+  if (!raw) return null;
+  let text = raw.toLowerCase().trim();
+
+  // Remove leading "the" and "of" connectors
+  text = text.replace(/\bthe\b/g, '').replace(/\bof\b/g, '').trim();
+
+  // Replace compound ordinals like "twenty fourth" → look up with hyphen first, then try compound
+  const compoundPattern = /\b(twenty|thirty)\s+(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\b/g;
+  text = text.replace(compoundPattern, (_, tens, ones) => {
+    const key = `${tens}-${ones}`;
+    return WORD_TO_NUM[key] !== undefined ? String(WORD_TO_NUM[key]) : `${tens} ${ones}`;
+  });
+
+  // Replace single word ordinals/numbers
+  const wordPattern = /\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth)\b/g;
+  text = text.replace(wordPattern, (w) => {
+    return WORD_TO_NUM[w] !== undefined ? String(WORD_TO_NUM[w]) : w;
+  });
+
+  // Remove ordinal suffixes from digits already in text: "24th" → "24"
+  text = text.replace(/(\d+)(st|nd|rd|th)\b/g, '$1');
+
+  // Normalize spacing
+  text = text.replace(/\s+/g, ' ').trim();
+
+  return text || null;
 }

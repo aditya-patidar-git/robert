@@ -450,6 +450,24 @@ export class ConversationService {
       instructions = instructions ? `${verificationInstruction}\n\n${instructions}` : verificationInstruction;
     }
 
+    // Slot memory injection: ground the LLM with the agreed slot so it doesn't
+    // hallucinate or forget which slot was booked after 2–3 more tool calls.
+    if (currentStep >= 2 && callSid) {
+      const { conversations: convState } = await import('../shared/state.js');
+      const lac = convState[callSid]?.lastAvailabilityCheck;
+      const agreedSlot = lac?.selectedSlot || lac?.sessionDetails;
+      if (agreedSlot && (agreedSlot.date || agreedSlot.time || agreedSlot.location)) {
+        const parts = [];
+        if (agreedSlot.date) parts.push(agreedSlot.date);
+        if (agreedSlot.monthYear) parts.push(agreedSlot.monthYear);
+        if (agreedSlot.time) parts.push(`at ${agreedSlot.time}`);
+        if (agreedSlot.location) parts.push(agreedSlot.location);
+        if (agreedSlot.course) parts.push(`(${agreedSlot.course})`);
+        const slotReminder = `SLOT MEMORY: The caller's agreed booking slot is: ${parts.join(', ')}. Use this if the caller asks what slot was booked or for confirmation.`;
+        instructions = instructions ? `${slotReminder}\n\n${instructions}` : slotReminder;
+      }
+    }
+
     if (midToolEpistemicMode === true) {
       const suffix = this.buildMidToolEpistemicInstructionSuffix(browserToolExecution?.toolName);
       instructions = instructions ? `${instructions}\n\n${suffix}` : suffix;

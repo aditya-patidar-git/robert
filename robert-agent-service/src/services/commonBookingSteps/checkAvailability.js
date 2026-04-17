@@ -129,7 +129,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     // PERFORMANCE FIX: Bulk extract all slot data in a single page.evaluate() call
     // Instead of 6+ async locator calls per row (150+ round-trips for 25 rows),
     // we extract everything in one synchronous DOM traversal.
-    let allSlots = await page.evaluate(({ startIdx, count, prefDateNorm, prefEndOfDay }) => {
+    let allSlots = await page.evaluate(({ startIdx, count }) => {
       const rows = document.querySelectorAll('#availabilityTable tbody tr.availabilityDataRow');
       const slots = [];
       const endIdx = Math.min(startIdx + count, rows.length);
@@ -137,12 +137,6 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       for (let i = startIdx; i < endIdx; i++) {
         const row = rows[i];
         const startDateAttr = row.getAttribute('data-start_date');
-
-        // Early break if row date exceeds preferred date
-        if (prefEndOfDay !== null && startDateAttr) {
-          const rowTime = new Date(startDateAttr).getTime();
-          if (!isNaN(rowTime) && rowTime > prefEndOfDay) break;
-        }
 
         const cells = row.querySelectorAll('td');
         const date = cells[0]?.textContent?.trim() || '';
@@ -164,9 +158,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       return slots;
     }, {
       startIdx: scanStartIndex,
-      count: rowCountToUse,
-      prefDateNorm: preferredDateNorm,
-      prefEndOfDay: preferredEndOfDay
+      count: rowCountToUse
     }).catch(evalError => {
       console.warn(`⚠️ [AVAILABILITY] Bulk extraction failed, falling back to sequential:`, evalError.message);
       return null; // Will trigger fallback below
@@ -180,10 +172,6 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
         await dataRow.waitFor({ state: 'visible' }).catch(() => null);
         let startDateAttr = null;
         try { startDateAttr = await dataRow.getAttribute('data-start_date'); } catch (e) { /* ignore */ }
-        if (preferredEndOfDay !== null && startDateAttr) {
-          const rowTime = new Date(startDateAttr).getTime();
-          if (!isNaN(rowTime) && rowTime > preferredEndOfDay) break;
-        }
         try {
           const slot = {
             date: (await dataRow.locator('td').nth(0).textContent()).trim(),
@@ -343,12 +331,16 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
     let announceIncludesNonPreferredInstructor = false;
     let slotsToAnnounce;
     {
+      // When caller specified a date preference, show up to 5 slots for better coverage;
+      // otherwise default to 3 to keep the spoken list concise.
+      const shortlistCap = (dateIntent.type !== 'none' || preferredDateNorm) ? 5 : 3;
+
       // ── Shared helpers ──────────────────────────────────────────────────
       const _slotKey = (s) => `${s.date}|${s.time}|${String(s.location || '').slice(0, 160)}`;
       const _centre  = (loc) => normaliseToCentreName(extractLocationIdentifier(loc || ''));
 
       // Dedup ordered list, capped at `cap`.
-      const _dedup = (ordered, cap = 3) => {
+      const _dedup = (ordered, cap = shortlistCap) => {
         const seen = new Set();
         const out  = [];
         for (const s of ordered) {
@@ -360,7 +352,7 @@ export async function checkAvailabilityAndNoteDetails(page, courseType, screensh
       };
 
       // Pick up to `cap` slots, preferring one per centre first (diversity), then extras.
-      const _diversePick = (slots, cap = 3) => {
+      const _diversePick = (slots, cap = shortlistCap) => {
         const seen = new Set();
         const seenCentres = new Set();
         const first = [];

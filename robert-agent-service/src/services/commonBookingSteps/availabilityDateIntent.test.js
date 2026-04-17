@@ -10,7 +10,8 @@ import {
   thisCalendarWeekLondon,
   nextSevenDaysLondon,
   thisMonthRangeLondon,
-  nextMonthRangeLondon
+  nextMonthRangeLondon,
+  normalizeSpelledOutDate
 } from './availabilityDateIntent.js';
 
 test('ISO date is single-day range', () => {
@@ -206,4 +207,58 @@ test('this week / next 7 days / this month / next month match helpers', () => {
   });
   assert.equal(r4.startISO, nm.startISO);
   assert.equal(r4.endISO, nm.endISO);
+});
+
+// ── normalizeSpelledOutDate tests ────────────────────────────────────
+
+test('normalizeSpelledOutDate: "twenty fourth of April" → "24 april"', () => {
+  const result = normalizeSpelledOutDate('twenty fourth of April');
+  assert.ok(result.includes('24'), `Expected 24 in "${result}"`);
+  assert.ok(result.toLowerCase().includes('april'), `Expected april in "${result}"`);
+});
+
+test('normalizeSpelledOutDate: "the fifteenth of June" → "15 june"', () => {
+  const result = normalizeSpelledOutDate('the fifteenth of June');
+  assert.ok(result.includes('15'), `Expected 15 in "${result}"`);
+  assert.ok(result.toLowerCase().includes('june'), `Expected june in "${result}"`);
+});
+
+test('normalizeSpelledOutDate: "thirty first" → "31"', () => {
+  const result = normalizeSpelledOutDate('thirty first of December');
+  assert.ok(result.includes('31'), `Expected 31 in "${result}"`);
+});
+
+test('normalizeSpelledOutDate: "third of May" → contains "3"', () => {
+  const result = normalizeSpelledOutDate('third of May');
+  assert.ok(result.includes('3'), `Expected 3 in "${result}"`);
+});
+
+test('normalizeSpelledOutDate: null/empty returns null', () => {
+  assert.equal(normalizeSpelledOutDate(null), null);
+  assert.equal(normalizeSpelledOutDate(''), null);
+});
+
+// ── spelled-out date integration with resolveAvailabilityDateIntent ──
+
+test('spelled-out date "the twenty fourth of April" resolves to 2026-04-24', () => {
+  const now = new Date('2026-04-07T12:00:00.000Z');
+  const r = resolveAvailabilityDateIntent({
+    preferredDate: 'the twenty fourth of April',
+    now,
+    lastCheck: null
+  });
+  assert.equal(r.type, 'range', `Expected range but got ${r.type}`);
+  assert.equal(r.startISO, '2026-04-24');
+  assert.equal(r.endISO, '2026-04-24');
+});
+
+test('spelled-out date "fifteenth of June" resolves to a June 15 range', () => {
+  const now = new Date('2026-04-07T12:00:00.000Z');
+  const r = resolveAvailabilityDateIntent({
+    preferredDate: 'fifteenth of June',
+    now,
+    lastCheck: null
+  });
+  assert.equal(r.type, 'range');
+  assert.ok(r.startISO.endsWith('-06-15'), `Expected June 15 but got ${r.startISO}`);
 });
