@@ -109,12 +109,12 @@ jobs:
 
             echo "Starting new container..."
             docker run -d \
-              --name backend-container \
-              --restart always \
-              -p 5000:5000 \
-              --env-file .env \
-              -v backend-data:/app/data \
-              api.universalmct.ai:$IMAGE_TAG
+                --name backend-container \
+                --restart always \
+                -p 5000:5000 \
+                --env-file .env \
+                -v backend-data:/app/data \
+                api.universalmct.ai:$IMAGE_TAG
 
             echo "Cleaning old Docker images (keep latest 2)..."
             docker images api.universalmct.ai --format "{{.ID}}" | tail -n +3 | xargs -r docker rmi -f
