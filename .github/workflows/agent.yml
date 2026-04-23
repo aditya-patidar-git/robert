@@ -40,7 +40,7 @@ jobs:
             IMAGE_TAG="${{ steps.tag.outputs.IMAGE_TAG }}"
             cd /var/www/robert-main/robert-agent-service || exit
 
-            echo "Removing old .env..."
+            echo "Removing old .env.."
             rm -f .env
 
             echo "Creating .env file..."
