@@ -139,7 +139,7 @@ jobs:
             echo "Cleaning old Docker images (keep latest 2)..."
             docker images agent.universalmct.ai --format "{{.ID}}" | tail -n +3 | xargs -r docker rmi -f
 
-            echo "Removing dangling images..."
+            echo "Removing dangling images.."
             docker image prune -f
 
             echo "Deployment completed successfully "        
