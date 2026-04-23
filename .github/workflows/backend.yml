@@ -113,6 +113,7 @@ jobs:
               --restart always \
               -p 5000:5000 \
               --env-file .env \
+              -v backend-data:/app/data \
               api.universalmct.ai:$IMAGE_TAG
 
             echo "Cleaning old Docker images (keep latest 2)..."
