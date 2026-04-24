@@ -142,4 +142,4 @@ jobs:
             echo "Removing dangling images.."
             docker image prune -f
 
-            echo "Deployment completed successfully "        
+            echo "Deployment completed successfully "   
